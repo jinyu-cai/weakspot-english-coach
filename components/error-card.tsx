@@ -36,14 +36,14 @@ export function ErrorCard({ error }: { error: EnglishError }) {
         <p className="text-sm leading-relaxed text-card-foreground">{error.explanationZh}</p>
 
         <Collapsible open={open} onOpenChange={setOpen}>
-          <CollapsibleTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 w-fit gap-1.5 px-2 text-primary">
-              微课讲解
-              <ChevronDown
-                className={cn("transition-transform", open && "rotate-180")}
-                data-icon="inline-end"
-              />
-            </Button>
+          <CollapsibleTrigger
+            render={<Button variant="ghost" size="sm" className="h-8 w-fit gap-1.5 px-2 text-primary" />}
+          >
+            微课讲解
+            <ChevronDown
+              className={cn("transition-transform", open && "rotate-180")}
+              data-icon="inline-end"
+            />
           </CollapsibleTrigger>
           <CollapsibleContent>
             <p className="mt-2 rounded-xl border border-border bg-accent/40 p-3 text-sm leading-relaxed text-accent-foreground">

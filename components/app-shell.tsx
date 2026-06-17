@@ -23,10 +23,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-border bg-background/80 px-4 py-3 backdrop-blur-md lg:px-8">
           <div className="flex items-center gap-2">
             <Sheet open={open} onOpenChange={setOpen}>
-              <SheetTrigger asChild>
-                <Button variant="outline" size="icon" className="lg:hidden" aria-label="Open menu">
-                  <Menu />
-                </Button>
+              <SheetTrigger
+                render={
+                  <Button variant="outline" size="icon" className="lg:hidden" aria-label="Open menu" />
+                }
+              >
+                <Menu />
               </SheetTrigger>
               <SheetContent side="left" className="w-72 p-0">
                 <SheetTitle className="sr-only">Navigation</SheetTitle>
