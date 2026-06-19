@@ -2,6 +2,7 @@ export type LLMSettings = {
   apiKey: string
   baseUrl: string
   model: string
+  fastModel: string
 }
 
 export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
@@ -12,6 +13,7 @@ const defaultSettings: LLMSettings = {
   apiKey: "",
   baseUrl: DEFAULT_OPENAI_BASE_URL,
   model: "",
+  fastModel: "",
 }
 
 function canUseStorage() {
@@ -29,6 +31,7 @@ export function loadLLMSettings(): LLMSettings {
       apiKey: parsed.apiKey ?? "",
       baseUrl: parsed.baseUrl || DEFAULT_OPENAI_BASE_URL,
       model: parsed.model ?? "",
+      fastModel: parsed.fastModel ?? "",
     }
   } catch {
     return defaultSettings
@@ -43,6 +46,7 @@ export function saveLLMSettings(settings: LLMSettings) {
       apiKey: settings.apiKey.trim(),
       baseUrl: (settings.baseUrl || DEFAULT_OPENAI_BASE_URL).trim().replace(/\/+$/, ""),
       model: settings.model.trim(),
+      fastModel: settings.fastModel.trim(),
     }),
   )
 }
@@ -61,9 +65,13 @@ export function getLLMProviderHeaders(): Record<string, string> {
   const settings = loadLLMSettings()
   if (!settings.apiKey || !settings.model) return {}
 
-  return {
+  const headers: Record<string, string> = {
     "X-LLM-API-Key": settings.apiKey,
     "X-LLM-Base-URL": (settings.baseUrl || DEFAULT_OPENAI_BASE_URL).replace(/\/+$/, ""),
     "X-LLM-Model": settings.model,
   }
+  if (settings.fastModel) {
+    headers["X-LLM-Fast-Model"] = settings.fastModel
+  }
+  return headers
 }

@@ -1,13 +1,17 @@
-from typing import List
+from typing import List, Literal
 
 from pydantic import BaseModel, Field
 
 from app.models.common import CEFRLevel, Severity
 
 
+DiagnosisMode = Literal["fast", "deep"]
+
+
 class DiagnoseRequest(BaseModel):
     userId: str
     text: str = Field(min_length=20, max_length=4000)
+    diagnosisMode: DiagnosisMode = "deep"
 
 
 class DiagnosticErrorAI(BaseModel):

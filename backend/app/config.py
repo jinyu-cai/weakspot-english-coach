@@ -41,6 +41,9 @@ class Settings(BaseSettings):
 
     # Local dev: return canned AI results instead of calling DeepSeek (no key needed).
     use_fake_ai: bool = False
+    # Enable only while debugging malformed provider output; this can log model
+    # response snippets that may contain user text.
+    llm_debug_log_content: bool = False
 
     @property
     def cors_origin_list(self) -> List[str]:

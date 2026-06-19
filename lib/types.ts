@@ -1,6 +1,7 @@
 export type CEFRLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2"
 export type Severity = "low" | "medium" | "high"
 export type PracticeType = "fix_sentence" | "fill_blank" | "rewrite_sentence"
+export type DiagnosisMode = "fast" | "deep"
 
 export interface LearnerProfile {
   userId: string

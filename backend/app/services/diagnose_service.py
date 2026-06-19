@@ -1,5 +1,10 @@
+from typing import Literal
+
+from app.config import settings
 from app.models.diagnostic import DiagnosticAIResult
 from app.services.ai_client import LLMProviderConfig, parse_with_model
+
+DiagnosisMode = Literal["fast", "deep"]
 
 SYSTEM_PROMPT = """
 You are an expert English tutor for Chinese native speakers.
@@ -32,14 +37,47 @@ Important requirements:
 8. Always include every field required by the schema; use empty arrays when nothing applies.
 """.strip()
 
+FAST_PROMPT_APPENDIX = """
+Fast diagnosis mode:
+- Identify only the 1-3 highest-impact recurring issues.
+- Keep explanations and micro lessons concise.
+- Still return every field required by the schema.
+""".strip()
 
-def diagnose_english_text(input_text: str, llm_provider: LLMProviderConfig | None = None) -> DiagnosticAIResult:
+
+def select_diagnose_model(diagnosis_mode: DiagnosisMode, llm_provider: LLMProviderConfig | None = None) -> str:
+    if diagnosis_mode == "fast":
+        if llm_provider is not None:
+            return llm_provider.fast_model or llm_provider.model
+        return settings.default_llm_fast_model or settings.default_llm_model
+
+    if llm_provider is not None:
+        return llm_provider.model
+    return settings.default_llm_model
+
+
+def diagnose_english_text(
+    input_text: str,
+    diagnosis_mode: DiagnosisMode = "deep",
+    llm_provider: LLMProviderConfig | None = None,
+    trace_id: str | None = None,
+) -> DiagnosticAIResult:
     user_prompt = f'Student text:\n"""\n{input_text}\n"""'
+    selected_model = select_diagnose_model(diagnosis_mode, llm_provider=llm_provider)
+    system_prompt = SYSTEM_PROMPT
+    max_tokens = 4000
+    if diagnosis_mode == "fast":
+        system_prompt = f"{SYSTEM_PROMPT}\n\n{FAST_PROMPT_APPENDIX}"
+        max_tokens = 2200
+
     return parse_with_model(
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
         response_model=DiagnosticAIResult,
+        max_tokens=max_tokens,
+        model=selected_model,
         provider=llm_provider,
+        trace_id=trace_id,
     )

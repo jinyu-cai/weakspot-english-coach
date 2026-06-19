@@ -28,6 +28,7 @@ const emptySettings: LLMSettings = {
   apiKey: "",
   baseUrl: DEFAULT_OPENAI_BASE_URL,
   model: "",
+  fastModel: "",
 }
 
 export function LLMProviderSettings() {
@@ -49,6 +50,7 @@ export function LLMProviderSettings() {
       apiKey: settings.apiKey.trim(),
       baseUrl: (settings.baseUrl || DEFAULT_OPENAI_BASE_URL).trim(),
       model: settings.model.trim(),
+      fastModel: settings.fastModel.trim(),
     }
 
     if (!next.apiKey && !next.model) {
@@ -112,11 +114,21 @@ export function LLMProviderSettings() {
           </label>
 
           <label className="grid gap-1.5 text-sm font-medium text-foreground">
-            Model
+            Deep model
             <input
               value={settings.model}
               onChange={(event) => update("model", event.target.value)}
-              placeholder="gpt-4o-mini"
+              placeholder="deepseek-v4-pro"
+              className="h-9 rounded-lg border border-input bg-background px-3 text-sm font-normal outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            />
+          </label>
+
+          <label className="grid gap-1.5 text-sm font-medium text-foreground">
+            Fast model
+            <input
+              value={settings.fastModel}
+              onChange={(event) => update("fastModel", event.target.value)}
+              placeholder="deepseek-v4-flash"
               className="h-9 rounded-lg border border-input bg-background px-3 text-sm font-normal outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             />
           </label>

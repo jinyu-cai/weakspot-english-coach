@@ -18,6 +18,7 @@
 
 import type {
   DiagnoseResponse,
+  DiagnosisMode,
   HistoryResponse,
   LearningPlan,
   PlanResponse,
@@ -83,9 +84,13 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 /* In-memory exercise cache so submit() can grade against the generated item. */
 const exerciseCache = new Map<string, PracticeExercise>()
 
-export async function diagnose(userId: string, text: string): Promise<DiagnoseResponse> {
+export async function diagnose(
+  userId: string,
+  text: string,
+  diagnosisMode: DiagnosisMode = "deep",
+): Promise<DiagnoseResponse> {
   if (USE_MOCK) {
-    await delay(1400)
+    await delay(diagnosisMode === "fast" ? 700 : 1400)
     return {
       submission: {
         id: `sub-${Date.now()}`,
@@ -104,7 +109,7 @@ export async function diagnose(userId: string, text: string): Promise<DiagnoseRe
   }
   return apiFetch<DiagnoseResponse>("/diagnose", {
     method: "POST",
-    body: JSON.stringify({ userId, text }),
+    body: JSON.stringify({ userId, text, diagnosisMode }),
   })
 }
 

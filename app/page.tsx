@@ -4,13 +4,14 @@ import { useState } from "react"
 import { toast } from "sonner"
 import { diagnose } from "@/lib/api-client"
 import { DEMO_USER_ID, SAMPLE_PARAGRAPH } from "@/lib/mock-data"
-import type { DiagnosticResult } from "@/lib/types"
+import type { DiagnosticResult, DiagnosisMode } from "@/lib/types"
 import { DiagnosticInput } from "@/components/diagnostic-input"
 import { DiagnosticReport } from "@/components/diagnostic-report"
 import { DiagnosticLoading } from "@/components/loading-state"
 
 export default function DiagnosePage() {
   const [text, setText] = useState(SAMPLE_PARAGRAPH)
+  const [diagnosisMode, setDiagnosisMode] = useState<DiagnosisMode>("fast")
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<DiagnosticResult | null>(null)
 
@@ -18,9 +19,11 @@ export default function DiagnosePage() {
     setLoading(true)
     setResult(null)
     try {
-      const res = await diagnose(DEMO_USER_ID, text)
+      const res = await diagnose(DEMO_USER_ID, text, diagnosisMode)
       setResult(res.diagnostic)
-      toast.success("诊断完成", { description: "已生成你的英语弱点报告。" })
+      toast.success("诊断完成", {
+        description: diagnosisMode === "fast" ? "已生成快速英语弱点报告。" : "已生成深度英语弱点报告。",
+      })
     } catch (error) {
       toast.error("分析失败", {
         description: error instanceof Error ? error.message : "请稍后重试。",
@@ -46,7 +49,14 @@ export default function DiagnosePage() {
         </p>
       </header>
 
-      <DiagnosticInput value={text} onChange={setText} onAnalyze={handleAnalyze} loading={loading} />
+      <DiagnosticInput
+        value={text}
+        onChange={setText}
+        onAnalyze={handleAnalyze}
+        loading={loading}
+        diagnosisMode={diagnosisMode}
+        onDiagnosisModeChange={setDiagnosisMode}
+      />
 
       {loading && <DiagnosticLoading />}
       {!loading && result && <DiagnosticReport result={result} />}

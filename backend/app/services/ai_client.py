@@ -8,9 +8,11 @@ works across OpenAI-compatible providers.
 
 from dataclasses import dataclass
 import json
+import logging
+import time
 from typing import Optional, Type, TypeVar
 
-from openai import OpenAI
+from openai import OpenAI, OpenAIError
 from pydantic import BaseModel, ValidationError
 
 from app.config import settings
@@ -18,6 +20,7 @@ from app.config import settings
 T = TypeVar("T", bound=BaseModel)
 
 _client: Optional[OpenAI] = None
+logger = logging.getLogger("uvicorn.error")
 
 
 @dataclass(frozen=True)
@@ -25,6 +28,7 @@ class LLMProviderConfig:
     api_key: str
     base_url: str
     model: str
+    fast_model: Optional[str] = None
 
 
 def get_client(provider: Optional[LLMProviderConfig] = None) -> OpenAI:
@@ -47,6 +51,7 @@ def parse_with_model(
     max_tokens: int = 4000,
     model: Optional[str] = None,
     provider: Optional[LLMProviderConfig] = None,
+    trace_id: Optional[str] = None,
 ) -> T:
     # Local testing: return canned results without calling an external model.
     if settings.use_fake_ai:
@@ -70,19 +75,84 @@ def parse_with_model(
     }
 
     last_error: Optional[Exception] = None
-    for _ in range(2):  # one retry
-        resp = get_client(provider).chat.completions.create(
-            model=selected_model,
-            messages=messages,
-            response_format={"type": "json_object"},
-            temperature=0.2,
-            max_tokens=max_tokens,
-        )
-        content = resp.choices[0].message.content or ""
+    trace = trace_id or "-"
+    logger.info(
+        "llm[%s] start model=%s response_model=%s schema_bytes=%d max_tokens=%d",
+        trace,
+        selected_model,
+        response_model.__name__,
+        len(schema.encode("utf-8")),
+        max_tokens,
+    )
+
+    for attempt in range(1, 3):  # one retry
+        attempt_started = time.perf_counter()
         try:
-            return response_model.model_validate_json(content)
+            resp = get_client(provider).chat.completions.create(
+                model=selected_model,
+                messages=messages,
+                response_format={"type": "json_object"},
+                temperature=0.2,
+                max_tokens=max_tokens,
+            )
+        except OpenAIError as e:
+            elapsed_ms = int((time.perf_counter() - attempt_started) * 1000)
+            status_code = getattr(e, "status_code", None)
+            error_code = getattr(e, "code", None)
+            logger.warning(
+                "llm[%s] upstream_error attempt=%d model=%s elapsed_ms=%d error_type=%s status=%s code=%s message=%s",
+                trace,
+                attempt,
+                selected_model,
+                elapsed_ms,
+                type(e).__name__,
+                status_code,
+                error_code,
+                str(e),
+            )
+            raise ValueError(
+                f"LLM request failed ({type(e).__name__}, status={status_code}, code={error_code}): {e}"
+            ) from e
+
+        upstream_ms = int((time.perf_counter() - attempt_started) * 1000)
+        choice = resp.choices[0]
+        content = choice.message.content or ""
+        usage = getattr(resp, "usage", None)
+        logger.info(
+            "llm[%s] upstream_ok attempt=%d model=%s upstream_ms=%d output_chars=%d finish_reason=%s prompt_tokens=%s completion_tokens=%s total_tokens=%s",
+            trace,
+            attempt,
+            selected_model,
+            upstream_ms,
+            len(content),
+            choice.finish_reason,
+            getattr(usage, "prompt_tokens", None),
+            getattr(usage, "completion_tokens", None),
+            getattr(usage, "total_tokens", None),
+        )
+        try:
+            parsed = response_model.model_validate_json(content)
+            logger.info(
+                "llm[%s] validation_ok attempt=%d model=%s",
+                trace,
+                attempt,
+                selected_model,
+            )
+            return parsed
         except ValidationError as e:
             last_error = e
+            logger.warning(
+                "llm[%s] validation_error attempt=%d model=%s finish_reason=%s error_count=%d output_chars=%d first_error=%s",
+                trace,
+                attempt,
+                selected_model,
+                choice.finish_reason,
+                e.error_count(),
+                len(content),
+                e.errors()[0] if e.errors() else str(e),
+            )
+            if settings.llm_debug_log_content:
+                logger.warning("llm[%s] invalid_output_preview=%r", trace, content[:1200])
             messages.append(
                 {
                     "role": "user",
@@ -91,4 +161,4 @@ def parse_with_model(
                 }
             )
 
-    raise ValueError(f"LLM provider did not return valid structured output: {last_error}")
+    raise ValueError(f"LLM provider did not return valid structured output after retry: {last_error}")

@@ -90,9 +90,31 @@ The app also supports per-request BYOK for OpenAI-compatible providers. Send:
 X-LLM-API-Key: ...
 X-LLM-Base-URL: https://api.openai.com/v1
 X-LLM-Model: your_chat_model
+X-LLM-Fast-Model: your_fast_chat_model  # optional
 ```
 
 The request-scoped key is used only for that API call and is not stored in
 DynamoDB. The client uses JSON mode (`response_format={"type":"json_object"}`) +
 Pydantic validation + one retry, which works across providers that support the
 OpenAI-compatible chat completions shape.
+
+## Diagnose request debugging
+
+`POST /api/v1/diagnose` accepts `diagnosisMode: "fast" | "deep"`. Fast mode uses
+`OPENAI_COMPAT_FAST_MODEL` / `LLM_MODEL_FAST` when the server default provider is
+used, and falls back to the deep model if no fast model is configured.
+
+```bash
+curl -v -X POST http://localhost:8000/api/v1/diagnose \
+  -H 'content-type: application/json' \
+  -d '{"userId":"demo-user-001","diagnosisMode":"fast","text":"Yesterday I go to school and I meet my friend. I always use simple words."}'
+```
+
+The response includes `X-Request-ID`, `X-Diagnose-Mode`, and `X-LLM-Model`.
+Search the backend logs for `diagnose[REQUEST_ID]` or `llm[REQUEST_ID]` to see
+profile-load time, upstream LLM time, JSON validation status, persistence time,
+provider status codes, and retry failures.
+
+If the provider returns malformed JSON and you need to inspect a short preview,
+set `LLM_DEBUG_LOG_CONTENT=true` temporarily. Leave it off in normal use because
+the preview can contain user-submitted writing.
