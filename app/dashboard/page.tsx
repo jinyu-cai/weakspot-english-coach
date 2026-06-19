@@ -103,7 +103,12 @@ export default function DashboardPage() {
                           <span className={`text-sm font-semibold ${masteryTextClass(skill.mastery)}`}>
                             {skill.mastery}%
                           </span>
-                          <Button size="sm" variant="outline" render={<Link href={`/practice?skill=${skill.skillCode}`} />}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            nativeButton={false}
+                            render={<Link href={`/practice?skill=${skill.skillCode}`} />}
+                          >
                             Practice
                             <ArrowRight data-icon="inline-end" />
                           </Button>
