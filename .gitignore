@@ -18,6 +18,8 @@ yarn-error.log*
 
 # env files
 .env*
+!backend/.env.example
+!backend/deploy/.env.production.example
 
 # backend local/runtime files
 backend/.venv/
