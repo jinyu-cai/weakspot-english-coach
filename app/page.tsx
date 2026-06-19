@@ -21,8 +21,10 @@ export default function DiagnosePage() {
       const res = await diagnose(DEMO_USER_ID, text)
       setResult(res.diagnostic)
       toast.success("诊断完成", { description: "已生成你的英语弱点报告。" })
-    } catch {
-      toast.error("分析失败，请稍后重试。")
+    } catch (error) {
+      toast.error("分析失败", {
+        description: error instanceof Error ? error.message : "请稍后重试。",
+      })
     } finally {
       setLoading(false)
     }

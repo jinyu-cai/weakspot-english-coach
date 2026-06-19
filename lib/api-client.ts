@@ -38,19 +38,44 @@ import {
   mockSkills,
   mockSubmissions,
 } from "./mock-data"
+import { getLLMProviderHeaders } from "./llm-settings"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
 const USE_MOCK = !API_BASE_URL
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+async function getErrorMessage(res: Response, path: string) {
+  try {
+    const payload = await res.json()
+    const detail = payload?.detail
+    if (Array.isArray(detail)) {
+      return detail
+        .map((item) => {
+          const location = Array.isArray(item.loc) ? item.loc.join(".") : undefined
+          return [location, item.msg].filter(Boolean).join(": ")
+        })
+        .join("; ")
+    }
+    if (typeof detail === "string") return detail
+    if (payload?.message) return String(payload.message)
+  } catch {
+    // Fall through to the status-based message.
+  }
+  return `Request failed (${res.status}): ${path}`
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE_URL}/api/v1${path}`, {
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: {
+      "Content-Type": "application/json",
+      ...getLLMProviderHeaders(),
+      ...(init?.headers ?? {}),
+    },
     ...init,
   })
   if (!res.ok) {
-    throw new Error(`Request failed (${res.status}): ${path}`)
+    throw new Error(await getErrorMessage(res, path))
   }
   return (await res.json()) as T
 }
