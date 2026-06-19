@@ -71,9 +71,15 @@ function PracticeContent() {
           <label htmlFor="skill-select" className="text-xs font-medium text-muted-foreground">
             目标技能 Target skill
           </label>
-          <Select value={skill} onValueChange={setSkill}>
+          <Select value={skill} onValueChange={(v) => setSkill(v ?? "auto")}>
             <SelectTrigger id="skill-select" className="w-56">
-              <SelectValue />
+              <SelectValue>
+                {(value) =>
+                  value === "auto"
+                    ? "自动选择最薄弱项"
+                    : SKILL_LABELS[value as string] ?? "选择技能"
+                }
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>

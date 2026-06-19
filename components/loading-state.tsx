@@ -43,6 +43,25 @@ export function DiagnosticLoading() {
   )
 }
 
+export function ListLoading({ rows = 4 }: { rows?: number }) {
+  return (
+    <div className="flex flex-col gap-3">
+      {Array.from({ length: rows }).map((_, i) => (
+        <Card key={i}>
+          <CardContent className="flex flex-col gap-3 pt-6">
+            <div className="flex items-center justify-between">
+              <Skeleton className="h-5 w-24 rounded-full" />
+              <Skeleton className="h-4 w-16" />
+            </div>
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-4/5" />
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
 export function CardsLoading({ count = 3 }: { count?: number }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

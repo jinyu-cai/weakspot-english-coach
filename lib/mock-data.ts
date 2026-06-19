@@ -499,6 +499,8 @@ const exercisePool: Record<string, PracticeExercise> = {
     targetSkillCode: "verb_tense",
     promptZh: "下面的句子有一个动词时态错误，请改正整句。",
     question: "Last weekend we go to the beach and swim in the sea.",
+    answer: "Last weekend we went to the beach and swam in the sea.",
+    explanationZh: "叙述上周末发生的事要用一般过去时，go → went，swim → swam。",
     createdAt: iso(0),
   },
   prepositions: {
@@ -508,6 +510,8 @@ const exercisePool: Record<string, PracticeExercise> = {
     targetSkillCode: "prepositions",
     promptZh: "选择并填入正确的介词（若不需要介词请留空）。",
     question: "We will discuss ___ the budget at tomorrow's meeting.",
+    answer: "We will discuss the budget at tomorrow's meeting.",
+    explanationZh: "discuss 是及物动词，后面直接接宾语，不需要加介词 about。",
     createdAt: iso(0),
   },
   word_choice: {
@@ -517,6 +521,8 @@ const exercisePool: Record<string, PracticeExercise> = {
     targetSkillCode: "word_choice",
     promptZh: "改写句子，使用正确的形容词形式。",
     question: "The launch was a very success event for our team.",
+    answer: "The launch was a very successful event for our team.",
+    explanationZh: "修饰名词 event 要用形容词 successful，而非名词 success。",
     createdAt: iso(0),
   },
   default: {
@@ -526,8 +532,17 @@ const exercisePool: Record<string, PracticeExercise> = {
     targetSkillCode: "verb_tense",
     promptZh: "下面的句子有一处语法错误，请改正整句。",
     question: "She don't likes to wake up early on weekdays.",
+    answer: "She doesn't like to wake up early on weekdays.",
+    explanationZh: "第三人称单数用 doesn't，且其后动词用原形 like。",
     createdAt: iso(0),
   },
+}
+
+// Map an exercise id prefix back to its source pool entry so grading can return
+// the matching reference answer.
+function exerciseByGeneratedId(exerciseId: string): PracticeExercise {
+  const match = Object.values(exercisePool).find((ex) => exerciseId.startsWith(ex.id))
+  return match ?? exercisePool.default
 }
 
 export function mockExerciseFor(skillCode?: string): PracticeExercise {
@@ -536,19 +551,21 @@ export function mockExerciseFor(skillCode?: string): PracticeExercise {
 }
 
 export function mockGradeFor(exerciseId: string, userAnswer: string): PracticeGrade {
-  const answer = userAnswer.trim().toLowerCase()
-  const isCorrect =
-    answer.includes("went") ||
-    answer.includes("doesn't like") ||
-    answer.includes("successful") ||
-    (answer.length > 10 && !answer.includes("discuss about"))
+  const exercise = exerciseByGeneratedId(exerciseId)
+  const normalize = (s: string) =>
+    s
+      .trim()
+      .toLowerCase()
+      .replace(/[.,!?;:]/g, "")
+      .replace(/\s+/g, " ")
+  const isCorrect = normalize(userAnswer) === normalize(exercise.answer ?? "")
   return {
     isCorrect,
     score: isCorrect ? 92 : 48,
     feedbackZh: isCorrect
-      ? "很好！你正确地修正了核心错误，时态与用词都准确。继续保持。"
-      : "还差一点。请注意核心语法点——重点检查动词形式与介词搭配，再试一次。",
-    correctedAnswer: "Last weekend we went to the beach and swam in the sea.",
+      ? `很好！你正确地修正了核心错误。${exercise.explanationZh ?? ""}继续保持。`
+      : `还差一点。${exercise.explanationZh ?? "请注意核心语法点。"}对照参考答案再试一次。`,
+    correctedAnswer: exercise.answer ?? exercise.question,
     skillMasteryDelta: isCorrect ? 6 : -2,
   }
 }

@@ -35,7 +35,7 @@ export function SkillBarChart({ skills }: { skills: SkillState[] }) {
               tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
             />
             <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-            <Bar dataKey="mastery" radius={6} barSize={22}>
+            <Bar dataKey="mastery" radius={6} barSize={22} isAnimationActive={false}>
               {data.map((entry, i) => (
                 <Cell key={i} fill={entry.fill} />
               ))}
@@ -44,7 +44,7 @@ export function SkillBarChart({ skills }: { skills: SkillState[] }) {
                 position="right"
                 className="fill-foreground"
                 fontSize={12}
-                formatter={(v: number) => `${v}%`}
+                formatter={(v: unknown) => `${v}%`}
               />
             </Bar>
           </BarChart>

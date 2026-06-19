@@ -59,14 +59,12 @@ export default function DiagnosePage() {
           <>
             <DiagnosticReport result={result} />
             <div className="flex flex-wrap gap-3">
-              <Button asChild>
-                <Link href="/plan">
-                  Generate a 7-day plan
-                  <ArrowRight data-icon="inline-end" />
-                </Link>
+              <Button nativeButton={false} render={<Link href="/plan" />}>
+                Generate a 7-day plan
+                <ArrowRight data-icon="inline-end" />
               </Button>
-              <Button asChild variant="outline">
-                <Link href="/dashboard">View weakness profile</Link>
+              <Button nativeButton={false} variant="outline" render={<Link href="/dashboard" />}>
+                View weakness profile
               </Button>
             </div>
           </>

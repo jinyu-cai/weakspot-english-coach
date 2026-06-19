@@ -32,6 +32,7 @@ export function WeaknessRadar({ skills }: { skills: SkillState[] }) {
               fillOpacity={0.35}
               stroke="var(--color-mastery)"
               strokeWidth={2}
+              isAnimationActive={false}
             />
           </RadarChart>
         </ChartContainer>

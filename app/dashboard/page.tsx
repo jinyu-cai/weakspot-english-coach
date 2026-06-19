@@ -95,8 +95,13 @@ export default function DashboardPage() {
                             >
                               {skill.mastery}%
                             </span>
-                            <Button asChild size="sm" variant="outline">
-                              <Link href={`/practice?skill=${skill.skillCode}`}>Practice this</Link>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              nativeButton={false}
+                              render={<Link href={`/practice?skill=${skill.skillCode}`} />}
+                            >
+                              Practice this
                             </Button>
                           </div>
                         </div>
@@ -137,11 +142,15 @@ export default function DashboardPage() {
                       </div>
                     )
                   })}
-              <Button asChild variant="ghost" size="sm" className="mt-1 w-fit gap-1.5 px-2 text-primary">
-                <Link href="/history">
-                  查看全部历史
-                  <ArrowRight data-icon="inline-end" />
-                </Link>
+              <Button
+                variant="ghost"
+                size="sm"
+                nativeButton={false}
+                className="mt-1 w-fit gap-1.5 px-2 text-primary"
+                render={<Link href="/history" />}
+              >
+                查看全部历史
+                <ArrowRight data-icon="inline-end" />
               </Button>
             </CardContent>
           </Card>
