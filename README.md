@@ -2,6 +2,13 @@
 
 This is a [Next.js](https://nextjs.org) project bootstrapped with [v0](https://v0.app).
 
+## Repository layout note
+
+The repository root is currently the frontend project, with backend source under
+`backend/`. This keeps the existing Vercel deployment stable. A future cleanup
+will move to a clearer monorepo layout with `frontend/` and `backend/` as
+top-level folders. See [docs/project-structure-plan.md](docs/project-structure-plan.md).
+
 ## Built with v0
 
 This repository is linked to a [v0](https://v0.app) project. You can continue developing by visiting the link below -- start new chats to make changes, and v0 will push commits directly to this repo. Every merge to `main` will automatically deploy.
