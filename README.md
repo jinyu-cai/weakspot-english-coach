@@ -8,6 +8,20 @@ This repository is linked to a [v0](https://v0.app) project. You can continue de
 
 [Continue working on v0 →](https://v0.app/chat/projects/prj_AWmIPvTwLlarjoJtYdAzXdZMIomq)
 
+## Backend connection
+
+This frontend talks to the WeakSpot **FastAPI backend** (separate repo / Linux server).
+The backend URL is configured via `NEXT_PUBLIC_API_BASE_URL`:
+
+- **Local**: create `.env.local` with `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000`.
+  Run a no-keys local backend with `uv run python -m scripts.dev_server` (moto + fake AI).
+- **Vercel**: set `NEXT_PUBLIC_API_BASE_URL=https://<your-backend-domain>` in
+  Project Settings → Environment Variables, then redeploy (it's inlined at build time).
+
+If `NEXT_PUBLIC_API_BASE_URL` is unset, the app falls back to built-in mock data
+(`lib/mock-data.ts`) — handy for previewing the UI. The backend's `CORS_ORIGINS`
+must include this app's origin.
+
 ## Getting Started
 
 First, run the development server:

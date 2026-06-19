@@ -159,8 +159,8 @@ function PracticeFlow() {
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
           <ToggleGroup
-            value={skill}
-            onValueChange={(value) => value && setSkill(value)}
+            value={[skill]}
+            onValueChange={(value) => value[0] && setSkill(value[0])}
             className="flex flex-wrap justify-start gap-2"
           >
             {skillOptions.map((code) => (
