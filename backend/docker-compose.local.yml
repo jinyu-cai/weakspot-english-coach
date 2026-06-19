@@ -1,0 +1,17 @@
+# Local DynamoDB emulator only (no AWS needed) — for live-server / front+back testing.
+#
+#   docker compose -f docker-compose.local.yml up -d
+#
+# Then run the backend with:
+#   DYNAMODB_ENDPOINT_URL=http://localhost:8001 AWS_ACCESS_KEY_ID=local \
+#   AWS_SECRET_ACCESS_KEY=local uv run python -m scripts.create_table
+#   ... and the same env for uvicorn.
+#
+# Data is in-memory (lost on restart). Drop "-inMemory" to persist.
+services:
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: weakspot-dynamodb-local
+    ports:
+      - "8001:8000"
+    command: ["-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb"]

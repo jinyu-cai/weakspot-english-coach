@@ -19,6 +19,14 @@ yarn-error.log*
 # env files
 .env*
 
+# backend local/runtime files
+backend/.venv/
+backend/.uv-cache/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/.pytest_cache/
+
 # vercel
 .vercel
 
