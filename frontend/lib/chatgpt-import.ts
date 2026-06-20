@@ -128,7 +128,7 @@ export async function parseChatGPTImportFile(file: File): Promise<ChatImportConv
     const entry =
       zip.file("conversations.json") ??
       zip.file(/(^|\/)conversations\.json$/i)[0]
-    if (!entry) throw new Error("ZIP 里没有找到 conversations.json。")
+    if (!entry) throw new Error("Couldn't find conversations.json inside the ZIP.")
     text = await entry.async("string")
   } else {
     text = await file.text()
@@ -136,7 +136,7 @@ export async function parseChatGPTImportFile(file: File): Promise<ChatImportConv
 
   const raw = JSON.parse(text)
   const conversations = normalizeChatGPTExport(raw)
-  if (!conversations.length) throw new Error("没有找到可分析的 user/assistant 对话。")
+  if (!conversations.length) throw new Error("No analyzable user/assistant conversations were found.")
   return conversations
 }
 

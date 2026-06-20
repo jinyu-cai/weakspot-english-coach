@@ -34,7 +34,7 @@ export const mockSkills: SkillState[] = [
     userId: DEMO_USER_ID,
     skillCode: "verb_tense",
     label: "Verb Tense",
-    zhLabel: "动词时态",
+    zhLabel: "Verb Tense",
     mastery: 38,
     errorCount: 14,
     correctCount: 9,
@@ -46,7 +46,7 @@ export const mockSkills: SkillState[] = [
     userId: DEMO_USER_ID,
     skillCode: "prepositions",
     label: "Prepositions",
-    zhLabel: "介词使用",
+    zhLabel: "Prepositions",
     mastery: 45,
     errorCount: 11,
     correctCount: 12,
@@ -58,7 +58,7 @@ export const mockSkills: SkillState[] = [
     userId: DEMO_USER_ID,
     skillCode: "subject_verb_agreement",
     label: "Subject-Verb Agreement",
-    zhLabel: "主谓一致",
+    zhLabel: "Subject-Verb Agreement",
     mastery: 52,
     errorCount: 8,
     correctCount: 14,
@@ -70,7 +70,7 @@ export const mockSkills: SkillState[] = [
     userId: DEMO_USER_ID,
     skillCode: "vocabulary_range",
     label: "Vocabulary Range",
-    zhLabel: "词汇丰富度",
+    zhLabel: "Vocabulary Range",
     mastery: 61,
     errorCount: 6,
     correctCount: 18,
@@ -82,7 +82,7 @@ export const mockSkills: SkillState[] = [
     userId: DEMO_USER_ID,
     skillCode: "articles",
     label: "Articles",
-    zhLabel: "冠词使用",
+    zhLabel: "Articles",
     mastery: 68,
     errorCount: 5,
     correctCount: 21,
@@ -94,7 +94,7 @@ export const mockSkills: SkillState[] = [
     userId: DEMO_USER_ID,
     skillCode: "clarity",
     label: "Clarity & Cohesion",
-    zhLabel: "表达清晰度",
+    zhLabel: "Clarity & Cohesion",
     mastery: 72,
     errorCount: 4,
     correctCount: 22,
@@ -106,7 +106,7 @@ export const mockSkills: SkillState[] = [
     userId: DEMO_USER_ID,
     skillCode: "register",
     label: "Register & Tone",
-    zhLabel: "语域与语气",
+    zhLabel: "Register & Tone",
     mastery: 80,
     errorCount: 2,
     correctCount: 25,
@@ -126,10 +126,11 @@ export const mockErrors: EnglishError[] = [
     severity: "high",
     originalText: "Yesterday I go to the meeting",
     correctedText: "Yesterday I went to the meeting",
-    explanationZh: "句子中有明确的过去时间标志 “Yesterday”，因此动词必须使用过去式。go 的过去式是 went。",
+    explanationZh:
+      'The sentence has a clear past-time marker, "Yesterday," so the verb must be in the past tense. The past tense of "go" is "went."',
     microLessonZh:
-      "当句子里出现 yesterday、last week、ago 等过去时间词时，主要动词要用过去式。规则动词加 -ed（work → worked），不规则动词需要单独记忆（go → went, eat → ate, write → wrote）。",
-    practiceGoal: "在含有过去时间标志的句子中正确使用一般过去时",
+      "When a sentence contains past-time words like yesterday, last week, or ago, the main verb must be in the past tense. Regular verbs add -ed (work -> worked); irregular verbs must be memorized individually (go -> went, eat -> ate, write -> wrote).",
+    practiceGoal: "Use the simple past correctly in sentences with past-time markers",
     createdAt: "2026-06-17T14:22:00.000Z",
   },
   {
@@ -141,10 +142,11 @@ export const mockErrors: EnglishError[] = [
     severity: "medium",
     originalText: "we discuss about the new project",
     correctedText: "we discussed the new project",
-    explanationZh: "discuss 是及物动词，后面直接接宾语，不需要加介词 about。同时这里也应使用过去式 discussed。",
+    explanationZh:
+      '"Discuss" is a transitive verb, so it takes a direct object without the preposition "about." The past tense "discussed" is also needed here.',
     microLessonZh:
-      "一些动词本身已包含 “关于” 的含义，后面不能再加 about，例如 discuss、mention、explain。错误：discuss about the plan。正确：discuss the plan。",
-    practiceGoal: "去掉及物动词后多余的介词",
+      'Some verbs already include the meaning of "about," so you cannot add "about" after them, e.g. discuss, mention, explain. Wrong: discuss about the plan. Correct: discuss the plan.',
+    practiceGoal: "Remove unnecessary prepositions after transitive verbs",
     createdAt: "2026-06-17T14:22:00.000Z",
   },
   {
@@ -156,10 +158,11 @@ export const mockErrors: EnglishError[] = [
     severity: "high",
     originalText: "there is many problems",
     correctedText: "there are many problems",
-    explanationZh: "主语 problems 是复数，be 动词要用 are 而不是 is。there is 用于单数，there are 用于复数。",
+    explanationZh:
+      'The subject "problems" is plural, so the verb "be" must be "are," not "is." Use "there is" for singular and "there are" for plural.',
     microLessonZh:
-      "在 there is / there are 结构中，be 动词的单复数取决于其后的名词。单数或不可数：there is a problem / there is water。复数：there are many problems。",
-    practiceGoal: "根据名词单复数选择 there is / there are",
+      'In the "there is / there are" structure, the verb "be" agrees with the noun that follows it. Singular or uncountable: there is a problem / there is water. Plural: there are many problems.',
+    practiceGoal: 'Choose "there is" or "there are" based on the noun number',
     createdAt: "2026-06-17T14:22:00.000Z",
   },
   {
@@ -171,10 +174,11 @@ export const mockErrors: EnglishError[] = [
     severity: "medium",
     originalText: "My manager say that",
     correctedText: "My manager says that",
-    explanationZh: "主语 My manager 是第三人称单数，一般现在时的动词要加 -s，即 says。",
+    explanationZh:
+      'The subject "My manager" is third-person singular, so the simple-present verb takes -s: "says."',
     microLessonZh:
-      "一般现在时中，当主语是第三人称单数（he, she, it 或单个的人/物）时，动词要加 -s 或 -es：he works, she goes, my manager says。",
-    practiceGoal: "第三人称单数主语后给动词加 -s",
+      "In the simple present, when the subject is third-person singular (he, she, it, or a single person/thing), the verb adds -s or -es: he works, she goes, my manager says.",
+    practiceGoal: "Add -s to verbs after third-person singular subjects",
     createdAt: "2026-06-17T14:22:00.000Z",
   },
   {
@@ -186,10 +190,11 @@ export const mockErrors: EnglishError[] = [
     severity: "low",
     originalText: "make a good result",
     correctedText: "achieve a good result",
-    explanationZh: "result 与 make 搭配不自然，更地道的动词搭配是 achieve / get a good result。注意词语搭配（collocation）。",
+    explanationZh:
+      '"Result" does not collocate naturally with "make." The more idiomatic verbs are "achieve" or "get" a good result. Pay attention to collocations.',
     microLessonZh:
-      "英语中很多名词有固定的动词搭配。result 常与 achieve、get、produce 搭配，而不是 make。多积累 collocation 能让表达更自然。",
-    practiceGoal: "使用更自然的动词与名词搭配",
+      'Many English nouns have fixed verb collocations. "Result" commonly pairs with achieve, get, or produce rather than make. Building up your collocations makes your English sound more natural.',
+    practiceGoal: "Use more natural verb-noun collocations",
     createdAt: "2026-06-17T14:22:00.000Z",
   },
 ]
@@ -198,16 +203,16 @@ export const mockDiagnostic: DiagnosticResult = {
   cefrEstimate: "B1",
   overallScore: 64,
   summaryZh:
-    "你的表达能够清楚传达意思，整体可读性不错，但在动词时态和主谓一致方面存在反复出现的问题。建议重点练习过去时和第三人称单数。",
+    "Your writing communicates your meaning clearly and is generally easy to read, but you have recurring problems with verb tense and subject-verb agreement. Focus your practice on the past tense and third-person singular forms.",
   strengthsZh: [
-    "句子结构完整，逻辑连贯，读者能够理解你的意图",
-    "语气自然友好，适合职场沟通场景",
-    "词汇量足够表达日常和工作话题",
+    "Your sentences are complete and logically connected, so readers can follow your intent",
+    "Your tone is natural and friendly, well suited to workplace communication",
+    "Your vocabulary is sufficient to discuss everyday and work topics",
   ],
   weaknessesZh: [
-    "动词时态不一致，尤其是在描述过去事件时混用现在时",
-    "主谓一致出错（there is/are、第三人称单数）",
-    "部分动词与介词、名词的搭配不够地道",
+    "Inconsistent verb tenses, especially mixing in the present tense when describing past events",
+    "Subject-verb agreement errors (there is/are, third-person singular)",
+    "Some verb-preposition and verb-noun collocations are not idiomatic",
   ],
   correctedText:
     "Yesterday I went to the meeting with my manager and we discussed the new project. " +
@@ -220,29 +225,29 @@ export const mockDiagnostic: DiagnosticResult = {
     {
       skillCode: "verb_tense",
       label: "Verb Tense",
-      zhLabel: "动词时态",
+      zhLabel: "Verb Tense",
       masteryDelta: -6,
-      evidenceZh: "本次出现 2 处过去时错误，掌握度下降。",
+      evidenceZh: "2 past-tense errors this time, so mastery decreased.",
     },
     {
       skillCode: "subject_verb_agreement",
       label: "Subject-Verb Agreement",
-      zhLabel: "主谓一致",
+      zhLabel: "Subject-Verb Agreement",
       masteryDelta: -4,
-      evidenceZh: "there is many 与 manager say 两处错误。",
+      evidenceZh: 'Two errors: "there is many" and "manager say."',
     },
     {
       skillCode: "register",
       label: "Register & Tone",
-      zhLabel: "语域与语气",
+      zhLabel: "Register & Tone",
       masteryDelta: 3,
-      evidenceZh: "邮件语气得体，掌握度小幅提升。",
+      evidenceZh: "Appropriate email tone, so mastery increased slightly.",
     },
   ],
   recommendedNextActionsZh: [
-    "完成 5 道一般过去时改错练习",
-    "复习 there is / there are 的用法并做填空练习",
-    "积累 10 个常见的动词 + 名词搭配（collocation）",
+    "Complete 5 simple-past error-correction exercises",
+    'Review the use of "there is / there are" and do fill-in-the-blank practice',
+    "Collect 10 common verb + noun collocations",
   ],
 }
 
@@ -254,7 +259,7 @@ export const mockSubmissions: Submission[] = [
     originalText: SAMPLE_PARAGRAPH,
     correctedText: mockDiagnostic.correctedText,
     cefrEstimate: "B1",
-    summaryZh: "动词时态和主谓一致是本次的主要问题。",
+    summaryZh: "Verb tense and subject-verb agreement were the main issues this time.",
     createdAt: "2026-06-17T14:22:00.000Z",
   },
   {
@@ -266,7 +271,7 @@ export const mockSubmissions: Submission[] = [
     correctedText:
       "I am writing to follow up on our conversation last week. Could you please send me the report when you have time?",
     cefrEstimate: "B2",
-    summaryZh: "这封邮件几乎没有错误，语气专业，表现很好。",
+    summaryZh: "This email has almost no errors, the tone is professional, and it reads very well.",
     createdAt: "2026-06-15T09:30:00.000Z",
   },
   {
@@ -276,7 +281,7 @@ export const mockSubmissions: Submission[] = [
     originalText: "She don't like coffee in the morning.",
     correctedText: "She doesn't like coffee in the morning.",
     cefrEstimate: "B1",
-    summaryZh: "第三人称单数否定式应使用 doesn't。",
+    summaryZh: 'The third-person singular negative should use "doesn\'t."',
     createdAt: "2026-06-14T16:10:00.000Z",
   },
   {
@@ -286,7 +291,7 @@ export const mockSubmissions: Submission[] = [
     originalText: "Last year I have visited three countries for work.",
     correctedText: "Last year I visited three countries for work.",
     cefrEstimate: "B1",
-    summaryZh: "有明确过去时间时用一般过去时，而不是现在完成时。",
+    summaryZh: "Use the simple past, not the present perfect, when there is a clear past time reference.",
     createdAt: "2026-06-12T13:45:00.000Z",
   },
 ]
@@ -300,21 +305,21 @@ export const mockPlan: LearningPlan = {
   days: [
     {
       day: 1,
-      goalZh: "巩固一般过去时的基本规则",
+      goalZh: "Reinforce the basic rules of the simple past",
       targetSkillCodes: ["verb_tense"],
       tasks: [
         {
           id: "p1-t1",
-          titleZh: "规则动词过去式改错",
-          descriptionZh: "改写 8 个句子，将现在时动词改为正确的过去式。",
+          titleZh: "Regular verb past-tense correction",
+          descriptionZh: "Rewrite 8 sentences, changing present-tense verbs into the correct past tense.",
           practiceType: "fix_sentence",
           estimatedMinutes: 10,
           completed: true,
         },
         {
           id: "p1-t2",
-          titleZh: "不规则动词记忆",
-          descriptionZh: "学习并测试 15 个常见不规则动词的过去式。",
+          titleZh: "Irregular verb memorization",
+          descriptionZh: "Learn and test the past tense of 15 common irregular verbs.",
           practiceType: "fill_blank",
           estimatedMinutes: 12,
           completed: false,
@@ -323,21 +328,21 @@ export const mockPlan: LearningPlan = {
     },
     {
       day: 2,
-      goalZh: "区分一般过去时与现在完成时",
+      goalZh: "Distinguish the simple past from the present perfect",
       targetSkillCodes: ["verb_tense"],
       tasks: [
         {
           id: "p2-t1",
-          titleZh: "时态选择填空",
-          descriptionZh: "根据时间状语选择正确的时态。",
+          titleZh: "Tense-selection fill-in-the-blank",
+          descriptionZh: "Choose the correct tense based on the time expression.",
           practiceType: "fill_blank",
           estimatedMinutes: 12,
           completed: false,
         },
         {
           id: "p2-t2",
-          titleZh: "改写句子",
-          descriptionZh: "把现在完成时句子改写为一般过去时。",
+          titleZh: "Rewrite sentences",
+          descriptionZh: "Rewrite present-perfect sentences in the simple past.",
           practiceType: "rewrite_sentence",
           estimatedMinutes: 10,
           completed: false,
@@ -346,21 +351,21 @@ export const mockPlan: LearningPlan = {
     },
     {
       day: 3,
-      goalZh: "掌握 there is / there are",
+      goalZh: 'Master "there is / there are"',
       targetSkillCodes: ["subject_verb_agreement"],
       tasks: [
         {
           id: "p3-t1",
-          titleZh: "单复数判断填空",
-          descriptionZh: "根据名词选择 is 或 are。",
+          titleZh: "Singular/plural fill-in-the-blank",
+          descriptionZh: 'Choose "is" or "are" based on the noun.',
           practiceType: "fill_blank",
           estimatedMinutes: 8,
           completed: false,
         },
         {
           id: "p3-t2",
-          titleZh: "改错练习",
-          descriptionZh: "找出并改正 there is/are 的错误。",
+          titleZh: "Error-correction practice",
+          descriptionZh: 'Find and fix "there is/are" errors.',
           practiceType: "fix_sentence",
           estimatedMinutes: 10,
           completed: false,
@@ -369,13 +374,13 @@ export const mockPlan: LearningPlan = {
     },
     {
       day: 4,
-      goalZh: "第三人称单数动词变化",
+      goalZh: "Third-person singular verb forms",
       targetSkillCodes: ["subject_verb_agreement"],
       tasks: [
         {
           id: "p4-t1",
-          titleZh: "动词加 -s 练习",
-          descriptionZh: "为第三人称单数主语正确变化动词。",
+          titleZh: 'Adding "-s" to verbs',
+          descriptionZh: "Correctly conjugate verbs for third-person singular subjects.",
           practiceType: "fix_sentence",
           estimatedMinutes: 10,
           completed: false,
@@ -384,21 +389,21 @@ export const mockPlan: LearningPlan = {
     },
     {
       day: 5,
-      goalZh: "改进动词与介词搭配",
+      goalZh: "Improve verb-preposition collocations",
       targetSkillCodes: ["prepositions"],
       tasks: [
         {
           id: "p5-t1",
-          titleZh: "去掉多余介词",
-          descriptionZh: "改正 discuss about 等常见介词错误。",
+          titleZh: "Remove unnecessary prepositions",
+          descriptionZh: 'Fix common preposition errors like "discuss about."',
           practiceType: "fix_sentence",
           estimatedMinutes: 10,
           completed: false,
         },
         {
           id: "p5-t2",
-          titleZh: "介词填空",
-          descriptionZh: "选择正确的介词完成句子。",
+          titleZh: "Preposition fill-in-the-blank",
+          descriptionZh: "Choose the correct preposition to complete each sentence.",
           practiceType: "fill_blank",
           estimatedMinutes: 8,
           completed: false,
@@ -407,13 +412,13 @@ export const mockPlan: LearningPlan = {
     },
     {
       day: 6,
-      goalZh: "丰富动词与名词搭配",
+      goalZh: "Enrich verb-noun collocations",
       targetSkillCodes: ["vocabulary_range"],
       tasks: [
         {
           id: "p6-t1",
-          titleZh: "Collocation 改写",
-          descriptionZh: "用更地道的动词替换 make/do 等通用动词。",
+          titleZh: "Collocation rewriting",
+          descriptionZh: "Replace generic verbs like make/do with more idiomatic verbs.",
           practiceType: "rewrite_sentence",
           estimatedMinutes: 12,
           completed: false,
@@ -422,21 +427,21 @@ export const mockPlan: LearningPlan = {
     },
     {
       day: 7,
-      goalZh: "综合写作复盘",
+      goalZh: "Comprehensive writing review",
       targetSkillCodes: ["verb_tense", "subject_verb_agreement", "vocabulary_range"],
       tasks: [
         {
           id: "p7-t1",
-          titleZh: "写一段工作邮件",
-          descriptionZh: "写一封 80-100 词的工作邮件，综合运用本周所学。",
+          titleZh: "Write a work email",
+          descriptionZh: "Write an 80-100 word work email that applies everything you learned this week.",
           practiceType: "rewrite_sentence",
           estimatedMinutes: 15,
           completed: false,
         },
         {
           id: "p7-t2",
-          titleZh: "自我改错",
-          descriptionZh: "提交邮件并根据诊断报告复盘错误。",
+          titleZh: "Self error-correction",
+          descriptionZh: "Submit the email and review your errors using the diagnostic report.",
           practiceType: "fix_sentence",
           estimatedMinutes: 10,
           completed: false,
@@ -452,10 +457,10 @@ const practiceBank: Record<string, PracticeExercise> = {
     userId: DEMO_USER_ID,
     type: "fix_sentence",
     targetSkillCode: "verb_tense",
-    promptZh: "下面的句子有一个动词时态错误，请改正后写出完整的正确句子。",
+    promptZh: "The sentence below has a verb-tense error. Correct it and write out the full, correct sentence.",
     question: "Last weekend we go to the beach and swim in the sea.",
     answer: "Last weekend we went to the beach and swam in the sea.",
-    explanationZh: "有明确的过去时间 “Last weekend”，go 应改为 went，swim 应改为 swam。",
+    explanationZh: 'There is a clear past time, "Last weekend," so "go" becomes "went" and "swim" becomes "swam."',
     createdAt: "2026-06-17T15:30:00.000Z",
   },
   subject_verb_agreement: {
@@ -463,10 +468,10 @@ const practiceBank: Record<string, PracticeExercise> = {
     userId: DEMO_USER_ID,
     type: "fill_blank",
     targetSkillCode: "subject_verb_agreement",
-    promptZh: "用括号中动词的正确形式填空。",
+    promptZh: "Fill in the blank with the correct form of the verb in parentheses.",
     question: "There ____ (be) several mistakes in this report that we need to fix.",
     answer: "There are several mistakes in this report that we need to fix.",
-    explanationZh: "mistakes 为复数，be 动词用 are。",
+    explanationZh: '"Mistakes" is plural, so the verb "be" is "are."',
     createdAt: "2026-06-17T15:30:00.000Z",
   },
   prepositions: {
@@ -474,10 +479,10 @@ const practiceBank: Record<string, PracticeExercise> = {
     userId: DEMO_USER_ID,
     type: "fix_sentence",
     targetSkillCode: "prepositions",
-    promptZh: "改正下面句子中的介词错误。",
+    promptZh: "Correct the preposition error in the sentence below.",
     question: "Let's discuss about the budget tomorrow morning.",
     answer: "Let's discuss the budget tomorrow morning.",
-    explanationZh: "discuss 是及物动词，后面不加 about。",
+    explanationZh: '"Discuss" is a transitive verb, so do not add "about" after it.',
     createdAt: "2026-06-17T15:30:00.000Z",
   },
   vocabulary_range: {
@@ -485,10 +490,10 @@ const practiceBank: Record<string, PracticeExercise> = {
     userId: DEMO_USER_ID,
     type: "rewrite_sentence",
     targetSkillCode: "vocabulary_range",
-    promptZh: "用更地道的动词替换句子中的通用动词，并重写句子。",
+    promptZh: "Replace the generic verb in the sentence with a more idiomatic one, and rewrite the sentence.",
     question: "Our team made a very good result this quarter.",
     answer: "Our team achieved a very good result this quarter.",
-    explanationZh: "result 常与 achieve 搭配，而不是 make。",
+    explanationZh: '"Result" commonly pairs with "achieve" rather than "make."',
     createdAt: "2026-06-17T15:30:00.000Z",
   },
 }
@@ -516,8 +521,8 @@ export function gradeMockAnswer(exercise: PracticeExercise, userAnswer: string):
     isCorrect,
     score: isCorrect ? 100 : partial ? 55 : 0,
     feedbackZh: isCorrect
-      ? "完全正确！你准确地运用了目标语法点，继续保持。"
-      : `还差一点。参考答案：“${expected}”。请注意目标语法点：${exercise.explanationZh ?? ""}`,
+      ? "Perfect! You applied the target grammar point accurately. Keep it up."
+      : `Almost there. Reference answer: "${expected}". Focus on the target grammar point: ${exercise.explanationZh ?? ""}`,
     correctedAnswer: expected,
     skillMasteryDelta: isCorrect ? 5 : partial ? 1 : -2,
   }

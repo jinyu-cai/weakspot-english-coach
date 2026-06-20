@@ -14,9 +14,9 @@ export function masteryTextClass(mastery: number): string {
 }
 
 export function masteryLabel(mastery: number): string {
-  if (mastery < 50) return "需重点突破"
-  if (mastery < 75) return "进步中"
-  return "较为熟练"
+  if (mastery < 50) return "Needs focus"
+  if (mastery < 75) return "Improving"
+  return "Fairly strong"
 }
 
 export function sortByMasteryAsc(skills: SkillState[]): SkillState[] {

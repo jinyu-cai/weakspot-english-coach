@@ -12,8 +12,8 @@ export function LoginGate() {
   useEffect(() => {
     function onNeedAuth(e: Event) {
       const detail = (e as CustomEvent).detail as { message?: string } | undefined
-      toast.error(detail?.message || "免费次数已用完，请登录后继续。", {
-        action: { label: "GitHub 登录", onClick: () => startLogin() },
+      toast.error(detail?.message || "You've used up your free runs. Please sign in to continue.", {
+        action: { label: "Sign in with GitHub", onClick: () => startLogin() },
         duration: 8000,
       })
     }

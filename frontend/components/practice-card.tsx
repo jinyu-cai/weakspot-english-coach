@@ -14,6 +14,12 @@ import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
 import { CheckCircle2, XCircle, Lightbulb } from "lucide-react"
 
+/** Turns a raw skill code like "vocabulary_range" or "grammar.verb_tense" into "Vocabulary range". */
+function prettifySkillCode(code: string): string {
+  const words = code.replace(/^[a-z]+\./, "").replace(/[._]/g, " ").trim()
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
 type Props = {
   exercise: PracticeExercise
   index: number
@@ -29,7 +35,7 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
   const [submitting, setSubmitting] = useState(false)
 
   const typeMeta = PRACTICE_TYPE_META[exercise.type]
-  const skillLabel = SKILL_LABELS[exercise.targetSkillCode] ?? exercise.targetSkillCode
+  const skillLabel = SKILL_LABELS[exercise.targetSkillCode] ?? prettifySkillCode(exercise.targetSkillCode)
 
   async function handleSubmit() {
     if (submitting || grade) return
@@ -75,7 +81,7 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
           value={answer}
           onChange={(e) => setAnswer(e.target.value)}
           disabled={!!grade || submitting}
-          placeholder="在此输入你的答案……"
+          placeholder="Type your answer here..."
           className="min-h-28 resize-none"
         />
 
@@ -85,9 +91,9 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
             <Alert variant={grade.isCorrect ? "default" : "destructive"}>
               {grade.isCorrect ? <CheckCircle2 /> : <XCircle />}
               <AlertTitle className="flex items-center gap-2">
-                {grade.isCorrect ? "回答正确" : "还需改进"}
+                {grade.isCorrect ? "Correct" : "Needs improvement"}
                 <Badge variant="outline" className="tabular-nums">
-                  {grade.score} 分
+                  {grade.score} pts
                 </Badge>
               </AlertTitle>
               <AlertDescription>{grade.feedbackZh}</AlertDescription>
@@ -95,7 +101,7 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
             {!grade.isCorrect ? (
               <Alert>
                 <Lightbulb />
-                <AlertTitle>参考答案</AlertTitle>
+                <AlertTitle>Reference answer</AlertTitle>
                 <AlertDescription>{grade.correctedAnswer}</AlertDescription>
               </Alert>
             ) : null}
@@ -109,14 +115,14 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
             {submitting ? (
               <>
                 <Spinner data-icon="inline-start" />
-                批改中
+                Grading
               </>
             ) : (
-              "提交答案"
+              "Submit answer"
             )}
           </Button>
         ) : (
-          <Button onClick={handleNext}>{isLast ? "完成本轮练习" : "下一题"}</Button>
+          <Button onClick={handleNext}>{isLast ? "Finish session" : "Next question"}</Button>
         )}
       </CardFooter>
     </Card>

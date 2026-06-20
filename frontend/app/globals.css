@@ -57,17 +57,17 @@
 :root {
   color-scheme: light;
   --background: oklch(0.985 0.014 85);
-  --foreground: oklch(0.21 0.02 270);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.02 270);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.02 270);
+  --foreground: oklch(0.23 0.02 80);
+  --card: oklch(0.998 0.006 85);
+  --card-foreground: oklch(0.23 0.02 80);
+  --popover: oklch(0.998 0.006 85);
+  --popover-foreground: oklch(0.23 0.02 80);
   --primary: oklch(0.56 0.2 286);
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.96 0.012 270);
-  --secondary-foreground: oklch(0.3 0.04 277);
-  --muted: oklch(0.96 0.008 270);
-  --muted-foreground: oklch(0.52 0.02 270);
+  --secondary: oklch(0.955 0.016 85);
+  --secondary-foreground: oklch(0.32 0.03 80);
+  --muted: oklch(0.955 0.014 85);
+  --muted-foreground: oklch(0.5 0.02 80);
   --accent: oklch(0.95 0.025 277);
   --accent-foreground: oklch(0.42 0.16 277);
   --destructive: oklch(0.577 0.245 27.325);
@@ -77,8 +77,8 @@
   --warning-foreground: oklch(0.27 0.05 75);
   --danger: oklch(0.7 0.18 12);
   --danger-foreground: oklch(0.985 0 0);
-  --border: oklch(0.91 0.01 270);
-  --input: oklch(0.91 0.01 270);
+  --border: oklch(0.9 0.016 85);
+  --input: oklch(0.9 0.016 85);
   --ring: oklch(0.56 0.2 286);
   --chart-1: oklch(0.56 0.2 286);
   --chart-2: oklch(0.7 0.15 165);
@@ -86,13 +86,13 @@
   --chart-4: oklch(0.7 0.18 12);
   --chart-5: oklch(0.7 0.13 230);
   --radius: 1.1rem;
-  --sidebar: oklch(0.99 0.003 270);
-  --sidebar-foreground: oklch(0.21 0.02 270);
+  --sidebar: oklch(0.985 0.018 85);
+  --sidebar-foreground: oklch(0.23 0.02 80);
   --sidebar-primary: oklch(0.56 0.2 286);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.95 0.025 277);
-  --sidebar-accent-foreground: oklch(0.42 0.16 277);
-  --sidebar-border: oklch(0.91 0.01 270);
+  --sidebar-accent: oklch(0.88 0.08 75);
+  --sidebar-accent-foreground: oklch(0.22 0.04 70);
+  --sidebar-border: oklch(0.88 0.025 85);
   --sidebar-ring: oklch(0.56 0.2 286);
 }
 

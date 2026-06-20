@@ -20,7 +20,7 @@ export default function HistoryPage() {
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
       <header className="flex flex-col gap-2">
         <h1 className="font-heading text-3xl font-bold tracking-tight">History</h1>
-        <p className="text-muted-foreground">回顾你的所有提交记录和被标记的错误，复盘进步轨迹。</p>
+        <p className="text-muted-foreground">Review all your submissions and flagged errors to track your progress.</p>
       </header>
 
       {isLoading ? (
@@ -34,14 +34,14 @@ export default function HistoryPage() {
           <TabsList>
             <TabsTrigger value="submissions">
               <FileText data-icon="inline-start" />
-              提交记录
+              Submissions
               <Badge variant="secondary" className="ml-1 tabular-nums">
                 {submissions.length}
               </Badge>
             </TabsTrigger>
             <TabsTrigger value="errors">
               <AlertCircle data-icon="inline-start" />
-              错误集
+              Error log
               <Badge variant="secondary" className="ml-1 tabular-nums">
                 {errors.length}
               </Badge>
@@ -52,7 +52,7 @@ export default function HistoryPage() {
             {submissions.length ? (
               submissions.map((s) => <SubmissionCard key={s.id} submission={s} />)
             ) : (
-              <EmptyState icon={HistoryIcon} title="暂无提交记录" description="完成一次诊断后，你的提交会出现在这里。" />
+              <EmptyState icon={HistoryIcon} title="No submissions yet" description="Once you run a diagnosis, your submissions will appear here." />
             )}
           </TabsContent>
 
@@ -60,7 +60,7 @@ export default function HistoryPage() {
             {errors.length ? (
               errors.map((e) => <ErrorCard key={e.id} error={e} />)
             ) : (
-              <EmptyState icon={AlertCircle} title="暂无错误记录" description="太棒了！目前没有被标记的错误。" />
+              <EmptyState icon={AlertCircle} title="No errors logged" description="Great job! There are no flagged errors right now." />
             )}
           </TabsContent>
         </Tabs>

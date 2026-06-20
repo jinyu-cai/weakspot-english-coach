@@ -53,7 +53,7 @@ export default function DashboardPage() {
       <Card>
         <CardHeader>
           <CardTitle>Weakness model</CardTitle>
-          <CardDescription>{"按技能掌握度排列。红色 < 50，琥珀色 < 75，绿色为较熟练。"}</CardDescription>
+          <CardDescription>{"Ranked by skill mastery. Red < 50, amber < 75, green is fairly strong."}</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading || !data ? (

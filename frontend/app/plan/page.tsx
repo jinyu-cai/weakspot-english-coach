@@ -25,9 +25,9 @@ export default function PlanPage() {
       const newPlan = await generatePlan()
       setPlan(newPlan)
       mutate({ plan: newPlan }, { revalidate: false })
-      toast.success("已生成 7 天学习计划", { description: "根据你的薄弱技能定制。" })
+      toast.success("7-day plan generated", { description: "Tailored to your weakest skills." })
     } catch {
-      toast.error("生成计划失败，请稍后重试。")
+      toast.error("Couldn't generate the plan. Please try again shortly.")
     } finally {
       setGenerating(false)
     }
@@ -73,7 +73,7 @@ export default function PlanPage() {
         <EmptyState
           icon={CalendarRange}
           title="No plan yet"
-          description="生成一个为期 7 天的个性化计划，针对你最薄弱的技能逐日突破。"
+          description="Generate a personalized 7-day plan that targets your weakest skills day by day."
         >
           <Button size="lg" onClick={handleGenerate} disabled={generating}>
             {generating ? <Spinner /> : <Sparkles data-icon="inline-start" />}

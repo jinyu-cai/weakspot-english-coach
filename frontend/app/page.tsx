@@ -21,12 +21,15 @@ export default function DiagnosePage() {
     try {
       const res = await diagnose(DEMO_USER_ID, text, diagnosisMode)
       setResult(res.diagnostic)
-      toast.success("诊断完成", {
-        description: diagnosisMode === "fast" ? "已生成快速英语弱点报告。" : "已生成深度英语弱点报告。",
+      toast.success("Diagnosis complete", {
+        description:
+          diagnosisMode === "fast"
+            ? "Your quick English weakness report is ready."
+            : "Your deep English weakness report is ready.",
       })
     } catch (error) {
-      toast.error("分析失败", {
-        description: error instanceof Error ? error.message : "请稍后重试。",
+      toast.error("Analysis failed", {
+        description: error instanceof Error ? error.message : "Please try again shortly.",
       })
     } finally {
       setLoading(false)
