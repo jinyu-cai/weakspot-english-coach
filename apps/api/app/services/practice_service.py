@@ -8,7 +8,7 @@ Requirements:
 1. Generate exactly one exercise.
 2. The exercise must target the given weakness (targetSkillCode) directly.
 3. The difficulty should match the learner's CEFR level.
-4. Use Simplified Chinese for the instruction (promptZh) and explanation (explanationZh).
+4. Use clear, simple English for the instruction (promptZh) and explanation (explanationZh).
 5. The exercise `type` must be one of: fix_sentence, fill_blank, rewrite_sentence.
 6. `question` is the English prompt the student sees; `answer` is the model answer.
 7. Always include every field required by the schema.
@@ -20,7 +20,7 @@ You are grading a targeted English exercise for a Chinese native speaker.
 Requirements:
 1. Decide if the student's answer is correct (isCorrect).
 2. Give a score from 0 to 100.
-3. Give feedback in Simplified Chinese (feedbackZh).
+3. Give feedback in clear, simple English (feedbackZh).
 4. Provide the corrected answer (correctedAnswer).
 5. Provide a skillMasteryDelta:
    - +6 to +10 if clearly correct

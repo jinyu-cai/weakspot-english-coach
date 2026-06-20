@@ -16,7 +16,7 @@ Analyze imported ChatGPT conversations as learning evidence. You must inspect BO
 2. User help-seeking: places where the user asks "how do I say this", uses Chinese because English is missing, or avoids expressing something in English. Treat these as expression gaps.
 3. Assistant messages: corrections, rewrites, vocabulary suggestions, grammar explanations, or repeated advice already given by the assistant. Treat these as confirmed weaknesses when relevant.
 
-Return all explanations in Simplified Chinese. Do not summarize private life details; focus only on English learning patterns.
+Return all explanations in clear, simple English. Do not summarize private life details; focus only on English learning patterns.
 
 Use these codes when possible:
 - grammar.verb_tense

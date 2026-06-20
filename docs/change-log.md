@@ -200,3 +200,41 @@ Next step:
 
 - Add project-level filtering or manual conversation selection in the Import UI
   if full ChatGPT Project import becomes a product requirement.
+
+## 2026-06-20 — English-first AI feedback
+
+Date: 2026-06-20
+
+Branch: `feature/english-feedback` (from `origin/main`)
+
+GitHub status: Pushed; PR opened to `main`.
+
+Deploy status: Not in production. Restart backend after merge for English feedback.
+
+Summary:
+
+- Flipped all LLM feedback to clear, simple English (diagnose, plan, practice, and
+  chat-import system prompts). Audience note ("for Chinese native speakers") kept.
+- Translated the fake-AI canned data to English for dev/mock + integration-test
+  consistency.
+- Field names keep the `*Zh` suffix (they now hold English) to avoid a large
+  model+frontend rename; internal tech-debt only.
+
+Files changed:
+
+- `apps/api/app/services/{diagnose,plan,practice,chat_import}_service.py`
+- `apps/api/app/services/fake_ai.py`
+- `docs/change-log.md`
+
+Tests run:
+
+- `apps/api` `smoke_test` + `integration_test` passed.
+
+Known issues:
+
+- Dashboard skill labels still use Chinese taxonomy `zhLabel`; UI chrome strings are
+  mixed. Broader UI English-ification is a separate task.
+
+Next step:
+
+- Merge; restart the backend so production feedback is English.
