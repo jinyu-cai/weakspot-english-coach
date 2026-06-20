@@ -58,6 +58,7 @@ GET  /plan/{user_id}
 POST /practice/generate        { userId, targetSkillCode? }
 POST /practice/submit          { userId, exerciseId, userAnswer }
 GET  /history/{user_id}
+GET  /stats/daily/{user_id}?timezone=<IANA timezone>&days=7
 ```
 
 ## Deploy (Linux)

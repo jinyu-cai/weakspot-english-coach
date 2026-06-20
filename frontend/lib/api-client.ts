@@ -14,11 +14,13 @@
  *  POST /practice/generate { userId, targetSkillCode? }      -> { exercise }
  *  POST /practice/submit   { userId, exerciseId, userAnswer } -> PracticeSubmitResponse
  *  GET  /history/{userId}                                    -> HistoryResponse
+ *  GET  /stats/daily/{userId}?timezone=<IANA>&days=7         -> DailyStatsResponse
  */
 
 import type {
   ChatImportAnalyzeResponse,
   ChatImportConversation,
+  DailyStatsResponse,
   DiagnoseResponse,
   DiagnosisMode,
   HistoryResponse,
@@ -35,6 +37,7 @@ import {
   getMockExercise,
   gradeMockAnswer,
   mockDiagnostic,
+  mockDailyStats,
   mockErrors,
   mockPlan,
   mockProfile,
@@ -286,4 +289,23 @@ export async function getHistory(userId: string = DEMO_USER_ID): Promise<History
     return { submissions: mockSubmissions, errors: mockErrors }
   }
   return apiFetch<HistoryResponse>(`/history/${userId}`)
+}
+
+export async function getDailyStats(
+  userId: string = DEMO_USER_ID,
+  timezone?: string,
+  days = 7,
+): Promise<DailyStatsResponse> {
+  if (USE_MOCK) {
+    await delay(500)
+    return mockDailyStats
+  }
+
+  const browserTimezone =
+    timezone ?? (typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "UTC")
+  const params = new URLSearchParams({
+    timezone: browserTimezone || "UTC",
+    days: String(days),
+  })
+  return apiFetch<DailyStatsResponse>(`/stats/daily/${userId}?${params.toString()}`)
 }

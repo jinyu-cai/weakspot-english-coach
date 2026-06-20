@@ -22,7 +22,8 @@ repo-root/
 ```
 
 Vercel must use `frontend/` as the project Root Directory and keep
-`NEXT_PUBLIC_API_BASE_URL=https://enapi.jinxxx.de`.
+`NEXT_PUBLIC_API_BASE_URL=https://enapi.jinxxx.de`. The Vercel config lives at
+`frontend/vercel.json`, where Vercel reads it after entering that Root Directory.
 
 ## Verification
 

@@ -181,6 +181,15 @@ def save_practice_attempt(attempt: dict) -> None:
     _put(item)
 
 
+def list_recent_practice_attempts(user_id: str, limit: int = 100) -> list:
+    res = table.query(
+        KeyConditionExpression=Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("ATTEMPT#"),
+        ScanIndexForward=False,
+        Limit=limit,
+    )
+    return [clean(i) for i in res.get("Items", [])]
+
+
 # ----- Auth users + rate-limit counters -----
 
 def upsert_github_user(gh_id, login, name, avatar_url) -> dict:

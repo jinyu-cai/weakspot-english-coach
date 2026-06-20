@@ -38,10 +38,19 @@ just `NEXT_PUBLIC_API_BASE_URL` + `NEXT_PUBLIC_DEMO_USER_ID`.
 ## Repo layout
 
 ```
-backend/    FastAPI service — AI, DynamoDB, profile, plan, practice  (see backend/README.md)
-frontend/   Next.js app generated with v0 + integration kit          (see frontend/README.md)
-development.md   Full original spec (with an authoritative overrides banner at the top)
+repo-root/
+  backend/          FastAPI service: AI, DynamoDB, profile, plan, practice, stats
+  frontend/         Next.js app generated with v0 + integration kit
+  docs/             project notes and deployment structure
+  README.md
+  LOCAL_TESTING.md
 ```
+
+This Git repo already starts at the canonical monorepo root. If your local Finder
+path looks like `AWS-V0-EnglishLearningAgent/frontend/frontend`, that is only
+because the outer downloaded folder is also named `frontend`. Do not move `.git`;
+run backend commands from `repo-root/backend` and frontend commands from
+`repo-root/frontend`.
 
 ## Tech stack
 
@@ -69,6 +78,25 @@ uv run uvicorn app.main:app --reload --port 8000
 2. Keep frontend source in `frontend/app`, `frontend/components`, and `frontend/lib`.
 3. `cd frontend && pnpm install && pnpm dev` (point `NEXT_PUBLIC_API_BASE_URL` at the backend).
 
+## Vercel deployment
+
+In Vercel Project Settings, set **Root Directory** to:
+
+```text
+frontend
+```
+
+Then use the frontend defaults:
+
+```text
+Install Command: pnpm install --frozen-lockfile
+Build Command:   pnpm build
+Output:          .next
+```
+
+The tracked Vercel config lives in `frontend/vercel.json`, because Vercel reads
+that file after entering the configured Root Directory.
+
 ## Testing locally (before deploying)
 
 See **[LOCAL_TESTING.md](LOCAL_TESTING.md)**. The fastest check needs no Docker, no
@@ -83,7 +111,26 @@ frontend on `localhost` to test the full front+back integration before shipping.
 
 Diagnose a paragraph → see structured errors + CEFR + score → open Dashboard
 (weakness radar updates) → generate the 7-day Plan (built from weak skills) →
-do a Practice exercise targeting the weakest skill → re-diagnose and watch mastery move.
+do a Practice exercise targeting the weakest skill → open Daily Wins to see your
+7-day streak, focus minutes, badges, and next best action → re-diagnose and watch
+mastery move.
+
+## Branch workflow
+
+Every new feature starts from the latest remote main:
+
+```bash
+git fetch origin
+git switch -c feature/my-feature origin/main
+```
+
+Test locally, push the feature branch, open a PR, verify the Vercel Preview URL,
+then merge to `main` only after the preview and backend checks pass. See
+[`LOCAL_TESTING.md`](LOCAL_TESTING.md) for the full test and deploy checklist.
+Record each meaningful change in [`docs/change-log.md`](docs/change-log.md).
+
+User guide: [`docs/chatgpt-project-import-guide.md`](docs/chatgpt-project-import-guide.md)
+explains how to import ChatGPT Project conversations into the website.
 
 ## Hackathon submission checklist
 

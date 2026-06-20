@@ -162,6 +162,44 @@ export interface PracticeGrade {
   skillMasteryDelta: number
 }
 
+export interface DailyStatsDay {
+  date: string
+  checkins: number
+  practiceAttempts: number
+  correctAttempts: number
+  averageScore: number
+  errorsFound: number
+  minutesEstimated: number
+  active: boolean
+}
+
+export interface DailyStatsSummary {
+  days: number
+  activeDays: number
+  streakDays: number
+  totalCheckins: number
+  totalPracticeAttempts: number
+  totalCorrectAttempts: number
+  totalErrorsFound: number
+  averageScore: number
+  minutesEstimated: number
+}
+
+export interface DailyAchievement {
+  id: string
+  title: string
+  description: string
+  unlocked: boolean
+  progress: number
+  target: number
+}
+
+export interface NextBestAction {
+  title: string
+  description: string
+  href: string
+}
+
 /* ---- Composite API response shapes ---- */
 
 export interface DiagnoseResponse {
@@ -209,4 +247,14 @@ export interface PracticeSubmitResponse {
 export interface HistoryResponse {
   submissions: Submission[]
   errors: EnglishError[]
+}
+
+export interface DailyStatsResponse {
+  timezone: string
+  today: DailyStatsDay
+  weekly: DailyStatsDay[]
+  summary: DailyStatsSummary
+  achievements: DailyAchievement[]
+  nextBestAction: NextBestAction
+  generatedAt: string
 }
