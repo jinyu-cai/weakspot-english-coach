@@ -118,7 +118,7 @@ def resolve_identity(request: Request, response: Response) -> Identity:
     claims = read_session(request)
     if claims and claims.get("sub"):
         login = (claims.get("login") or "").lower()
-        is_owner = login in settings.owner_login_set
+        is_owner = login in settings.owner_login_set or login in settings.owner_email_set
         return Identity(
             user_id=claims["sub"],
             kind="owner" if is_owner else "user",

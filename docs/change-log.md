@@ -200,3 +200,46 @@ Next step:
 
 - Add project-level filtering or manual conversation selection in the Import UI
   if full ChatGPT Project import becomes a product requirement.
+
+## 2026-06-20 — Add Google (email) login
+
+Date: 2026-06-20
+
+Branch: `feature/google-login` (from `origin/main`)
+
+GitHub status: Pushed; PR opened to `main`.
+
+Deploy status: Inactive until `GOOGLE_CLIENT_ID/SECRET` + `GOOGLE_REDIRECT_URI` are
+set in the server `.env` (GitHub login keeps working regardless).
+
+Summary:
+
+- Backend Google OAuth (`/auth/google/login` + `/auth/google/callback`) mirroring the
+  GitHub flow; same session cookie + identity + rate-limit infrastructure.
+- Owner check now also matches `OWNER_EMAILS`, so a Google login can be an owner.
+- Google users stored as `USER#google_<sub>/AUTH`; per-account daily limits apply
+  (login = email).
+- Frontend: header shows GitHub + Google login buttons; `startLogin(provider)`.
+
+Files changed:
+
+- `apps/api/app/config.py`, `app/api/deps.py`, `app/db/repositories.py`, `app/api/routes/auth.py`
+- `apps/web/lib/auth.ts`, `apps/web/components/auth-button.tsx`
+- `docs/change-log.md`
+
+Tests run:
+
+- `apps/api` `smoke_test` passed (Google routes load).
+- `apps/web` `tsc --noEmit` + `build` passed.
+
+Known issues:
+
+- Inactive until a Google OAuth client is created and the 3 env vars added.
+
+Next step:
+
+1. Create a Google OAuth client (Web app), redirect URI
+   `https://enapi.jinxxx.de/api/v1/auth/google/callback`.
+2. Add `GOOGLE_CLIENT_ID/SECRET`, `GOOGLE_REDIRECT_URI`, `OWNER_EMAILS` to `.env`;
+   `docker compose up -d --force-recreate api`.
+3. Verify on the Preview / live: the Google button signs you in.
