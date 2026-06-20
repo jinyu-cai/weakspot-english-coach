@@ -1,9 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { Menu, UserRound } from "lucide-react"
+import { Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { AuthButton } from "@/components/auth-button"
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { LLMProviderSettings } from "@/components/llm-provider-settings"
 import { NavSidebar } from "@/components/nav-sidebar"
@@ -41,10 +41,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           <div className="flex items-center gap-2 sm:gap-3">
             <LLMProviderSettings />
-            <Badge variant="secondary" className="gap-1.5 py-1.5 pl-2 pr-3 font-normal">
-              <UserRound className="size-3.5" />
-              Demo learner
-            </Badge>
+            <AuthButton />
             <ThemeToggle />
           </div>
         </header>

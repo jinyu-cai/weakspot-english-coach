@@ -58,6 +58,9 @@ async function getErrorMessage(res: Response, path: string) {
         })
         .join("; ")
     }
+    if (detail && typeof detail === "object" && !Array.isArray(detail) && typeof detail.message === "string") {
+      return detail.message
+    }
     if (typeof detail === "string") return detail
     if (payload?.message) return String(payload.message)
   } catch {
@@ -68,6 +71,7 @@ async function getErrorMessage(res: Response, path: string) {
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE_URL}/api/v1${path}`, {
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...getLLMProviderHeaders(),
@@ -76,7 +80,11 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   })
   if (!res.ok) {
-    throw new Error(await getErrorMessage(res, path))
+    const message = await getErrorMessage(res, path)
+    if (res.status === 429 && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("weakspot:needauth", { detail: { message } }))
+    }
+    throw new Error(message)
   }
   return (await res.json()) as T
 }
@@ -87,7 +95,7 @@ const exerciseCache = new Map<string, PracticeExercise>()
 export async function diagnose(
   userId: string,
   text: string,
-  diagnosisMode: DiagnosisMode = "deep",
+  diagnosisMode: DiagnosisMode = "fast",
 ): Promise<DiagnoseResponse> {
   if (USE_MOCK) {
     await delay(diagnosisMode === "fast" ? 700 : 1400)

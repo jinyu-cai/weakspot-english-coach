@@ -5,6 +5,7 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AppShell } from "@/components/app-shell"
 import { Toaster } from "@/components/ui/sonner"
+import { LoginGate } from "@/components/login-gate"
 
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"] })
 const geistMono = Geist_Mono({
@@ -41,6 +42,7 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           <AppShell>{children}</AppShell>
+          <LoginGate />
           <Toaster richColors position="top-center" />
         </ThemeProvider>
         {process.env.NODE_ENV === "production" && <Analytics />}
