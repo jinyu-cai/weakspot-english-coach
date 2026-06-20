@@ -24,12 +24,14 @@ def main() -> None:
         print("   ", p)
 
     # 2. JSON schema generation for every AI response model.
+    from app.models.chat_import import ChatImportAIResult
     from app.models.diagnostic import DiagnosticAIResult
     from app.models.plan import LearningPlanAIResult
     from app.models.practice import PracticeExerciseAIResult, PracticeGradeAIResult
 
     for model in (
         DiagnosticAIResult,
+        ChatImportAIResult,
         LearningPlanAIResult,
         PracticeExerciseAIResult,
         PracticeGradeAIResult,

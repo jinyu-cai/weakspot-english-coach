@@ -2,6 +2,7 @@ export type CEFRLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2"
 export type Severity = "low" | "medium" | "high"
 export type PracticeType = "fix_sentence" | "fill_blank" | "rewrite_sentence"
 export type DiagnosisMode = "fast" | "deep"
+export type ChatImportEvidenceType = "user_error" | "expression_gap" | "assistant_correction" | "assistant_advice"
 
 export interface LearnerProfile {
   userId: string
@@ -40,6 +41,49 @@ export interface EnglishError {
   microLessonZh: string
   practiceGoal: string
   createdAt: string
+}
+
+export interface ChatImportMessage {
+  role: "user" | "assistant"
+  text: string
+  createdAt?: string | null
+}
+
+export interface ChatImportConversation {
+  id?: string | null
+  title?: string | null
+  messages: ChatImportMessage[]
+}
+
+export interface ChatWeakness {
+  code: string
+  category: string
+  severity: Severity
+  evidenceType: ChatImportEvidenceType
+  evidenceQuote: string
+  suggestedBetterEnglish: string
+  explanationZh: string
+  microLessonZh: string
+  practiceGoal: string
+  confidence: number
+}
+
+export interface ChatImportAnalysis {
+  cefrEstimate: CEFRLevel
+  overallScore: number
+  summaryZh: string
+  strengthsZh: string[]
+  topBlindSpotsZh: string[]
+  weaknesses: ChatWeakness[]
+  assistantConfirmedWeaknessesZh: string[]
+  recommendedNextActionsZh: string[]
+}
+
+export interface ChatImportStats {
+  conversationCount: number
+  messageCount: number
+  userMessageCount: number
+  assistantMessageCount: number
 }
 
 export interface SkillUpdate {
@@ -125,6 +169,15 @@ export interface DiagnoseResponse {
   diagnostic: DiagnosticResult
   updatedSkills: SkillState[]
   profile: LearnerProfile
+}
+
+export interface ChatImportAnalyzeResponse {
+  submission: Submission
+  analysis: ChatImportAnalysis
+  savedErrors: EnglishError[]
+  updatedSkills: SkillState[]
+  profile: LearnerProfile
+  importStats: ChatImportStats
 }
 
 export interface ProfileResponse {

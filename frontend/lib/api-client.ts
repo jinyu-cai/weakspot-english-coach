@@ -17,6 +17,8 @@
  */
 
 import type {
+  ChatImportAnalyzeResponse,
+  ChatImportConversation,
   DiagnoseResponse,
   DiagnosisMode,
   HistoryResponse,
@@ -118,6 +120,83 @@ export async function diagnose(
   return apiFetch<DiagnoseResponse>("/diagnose", {
     method: "POST",
     body: JSON.stringify({ userId, text, diagnosisMode }),
+  })
+}
+
+export async function analyzeChatImport(
+  userId: string,
+  conversations: ChatImportConversation[],
+  sourceName?: string,
+  analysisMode: DiagnosisMode = "fast",
+): Promise<ChatImportAnalyzeResponse> {
+  if (USE_MOCK) {
+    await delay(900)
+    return {
+      submission: {
+        id: `chat-${Date.now()}`,
+        userId,
+        mode: "chat",
+        originalText: conversations
+          .flatMap((conversation) => conversation.messages.map((msg) => `${msg.role}: ${msg.text}`))
+          .join("\n")
+          .slice(0, 2200),
+        correctedText: "对话显示你有清晰的学习动机，但自然表达、过去时和词汇选择需要集中练习。",
+        cefrEstimate: "B1",
+        summaryZh: "对话显示你有清晰的学习动机，但自然表达、过去时和词汇选择需要集中练习。",
+        createdAt: new Date().toISOString(),
+      },
+      analysis: {
+        cefrEstimate: "B1",
+        overallScore: 66,
+        summaryZh: "你能主动用 ChatGPT 练习英文，但经常需要 AI 帮你把中文想法转成自然英文。",
+        strengthsZh: ["会主动请求改写", "能围绕真实任务练习"],
+        topBlindSpotsZh: ["表达盲区", "过去时", "自然搭配"],
+        weaknesses: [
+          {
+            code: "clarity.expression",
+            category: "Expression gap",
+            severity: "high",
+            evidenceType: "expression_gap",
+            evidenceQuote: "这个怎么说 / how can I say this",
+            suggestedBetterEnglish: "How can I phrase this more naturally?",
+            explanationZh: "这说明你有明确想法，但缺少可直接调用的英文表达块。",
+            microLessonZh: "把常见中文意图整理成英文句型块，比逐词翻译更稳定。",
+            practiceGoal: "积累 10 个求助与改写句型。",
+            confidence: 0.88,
+          },
+          {
+            code: "grammar.verb_tense",
+            category: "Verb tense",
+            severity: "high",
+            evidenceType: "assistant_correction",
+            evidenceQuote: "Assistant corrected: I go -> I went",
+            suggestedBetterEnglish: "Yesterday I went...",
+            explanationZh: "AI 已纠正过过去时，说明这是已确认弱点。",
+            microLessonZh: "有 yesterday、last week 等过去时间时，主要动词要用过去式。",
+            practiceGoal: "用一般过去时复述 5 个昨天做过的动作。",
+            confidence: 0.92,
+          },
+        ],
+        assistantConfirmedWeaknessesZh: ["过去时错误已被 AI 明确纠正", "自然表达/改写需求反复出现"],
+        recommendedNextActionsZh: ["整理 expression gap 句型卡片", "练习过去时复述", "保存 AI 给出的自然改写"],
+      },
+      savedErrors: [],
+      updatedSkills: mockSkills,
+      profile: { ...mockProfile, totalSubmissions: mockProfile.totalSubmissions + 1 },
+      importStats: {
+        conversationCount: conversations.length,
+        messageCount: conversations.reduce((sum, c) => sum + c.messages.length, 0),
+        userMessageCount: conversations.reduce((sum, c) => sum + c.messages.filter((m) => m.role === "user").length, 0),
+        assistantMessageCount: conversations.reduce(
+          (sum, c) => sum + c.messages.filter((m) => m.role === "assistant").length,
+          0,
+        ),
+      },
+    }
+  }
+  return apiFetch<ChatImportAnalyzeResponse>("/chat-import/analyze", {
+    method: "POST",
+    body: JSON.stringify({ userId, sourceName, analysisMode, conversations }),
   })
 }
 
