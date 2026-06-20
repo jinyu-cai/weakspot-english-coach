@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useRef, useState } from "react"
-import { FileArchive, FileJson, Inbox, Loader2, MessagesSquare, Sparkles, Upload } from "lucide-react"
+import { FileArchive, FileJson, Inbox, ListChecks, Loader2, MessagesSquare, Sparkles, Upload } from "lucide-react"
 import { toast } from "sonner"
 import { analyzeChatImport } from "@/lib/api-client"
 import {
@@ -122,6 +122,25 @@ export default function ImportPage() {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
         <div className="flex flex-col gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ListChecks className="size-5 text-primary" />
+                How to import your ChatGPT history
+              </CardTitle>
+              <CardDescription>A one-time export from ChatGPT, then upload it here.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm text-muted-foreground">
+                <li>In ChatGPT, open <span className="font-medium text-foreground">Settings &rarr; Data controls &rarr; Export data</span> and confirm.</li>
+                <li>ChatGPT emails you a download link (it can take a few minutes).</li>
+                <li>Download the <span className="font-medium text-foreground">.zip</span> &mdash; it contains <code>conversations.json</code>.</li>
+                <li>Click <span className="font-medium text-foreground">Upload export</span> below and choose that ZIP (or the JSON).</li>
+                <li>We auto-rank your English-practice chats (translation, correction). Adjust the slider, then <span className="font-medium text-foreground">Analyze</span>.</li>
+                <li>No export handy? Paste a chat as <code>User:</code> / <code>Assistant:</code> lines instead.</li>
+              </ol>
+            </CardContent>
+          </Card>
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
