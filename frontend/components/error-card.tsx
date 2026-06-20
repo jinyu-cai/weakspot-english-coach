@@ -8,9 +8,9 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
 const SEVERITY_STYLES: Record<Severity, { chip: string; label: string }> = {
-  low: { chip: "border-success/30 bg-success/10 text-success", label: "轻微" },
-  medium: { chip: "border-warning/40 bg-warning/15 text-warning", label: "中等" },
-  high: { chip: "border-danger/30 bg-danger/10 text-danger", label: "严重" },
+  low: { chip: "border-success/30 bg-success/10 text-success", label: "Minor" },
+  medium: { chip: "border-warning/40 bg-warning/15 text-warning", label: "Moderate" },
+  high: { chip: "border-danger/30 bg-danger/10 text-danger", label: "Serious" },
 }
 
 export function ErrorCard({ error }: { error: EnglishError }) {
@@ -45,7 +45,7 @@ export function ErrorCard({ error }: { error: EnglishError }) {
           >
             <span className="flex items-center gap-2 text-foreground">
               <BookOpen className="size-4 text-primary" />
-              微课堂 Micro-lesson
+              Micro-lesson
             </span>
             <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", open && "rotate-180")} />
           </CollapsibleTrigger>
@@ -59,7 +59,7 @@ export function ErrorCard({ error }: { error: EnglishError }) {
         <div className="flex items-center gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
           <Target className="size-3.5 text-primary" />
           <span>
-            练习目标：<span className="text-foreground">{error.practiceGoal}</span>
+            Practice goal: <span className="text-foreground">{error.practiceGoal}</span>
           </span>
         </div>
       </CardContent>

@@ -58,7 +58,7 @@ export function DiagnosticInput({
               data-active={diagnosisMode === "fast"}
             >
               <Zap className="size-4" />
-              快速
+              Quick
             </button>
             <button
               type="button"
@@ -70,7 +70,7 @@ export function DiagnosticInput({
               data-active={diagnosisMode === "deep"}
             >
               <Microscope className="size-4" />
-              深度
+              Deep
             </button>
           </div>
           <Button onClick={onAnalyze} disabled={loading || value.trim().length < MIN_DIAGNOSE_CHARACTERS} size="lg">

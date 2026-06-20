@@ -140,28 +140,33 @@ export async function analyzeChatImport(
           .flatMap((conversation) => conversation.messages.map((msg) => `${msg.role}: ${msg.text}`))
           .join("\n")
           .slice(0, 2200),
-        correctedText: "对话显示你有清晰的学习动机，但自然表达、过去时和词汇选择需要集中练习。",
+        correctedText:
+          "The conversations show clear motivation to learn, but natural phrasing, the past tense, and word choice need focused practice.",
         cefrEstimate: "B1",
-        summaryZh: "对话显示你有清晰的学习动机，但自然表达、过去时和词汇选择需要集中练习。",
+        summaryZh:
+          "The conversations show clear motivation to learn, but natural phrasing, the past tense, and word choice need focused practice.",
         createdAt: new Date().toISOString(),
       },
       analysis: {
         cefrEstimate: "B1",
         overallScore: 66,
-        summaryZh: "你能主动用 ChatGPT 练习英文，但经常需要 AI 帮你把中文想法转成自然英文。",
-        strengthsZh: ["会主动请求改写", "能围绕真实任务练习"],
-        topBlindSpotsZh: ["表达盲区", "过去时", "自然搭配"],
+        summaryZh:
+          "You actively use ChatGPT to practice English, but you often need the AI to turn your ideas into natural English for you.",
+        strengthsZh: ["You actively ask for rewrites", "You practice around real tasks"],
+        topBlindSpotsZh: ["Expression gaps", "Past tense", "Natural collocations"],
         weaknesses: [
           {
             code: "clarity.expression",
             category: "Expression gap",
             severity: "high",
             evidenceType: "expression_gap",
-            evidenceQuote: "这个怎么说 / how can I say this",
+            evidenceQuote: "how can I say this",
             suggestedBetterEnglish: "How can I phrase this more naturally?",
-            explanationZh: "这说明你有明确想法，但缺少可直接调用的英文表达块。",
-            microLessonZh: "把常见中文意图整理成英文句型块，比逐词翻译更稳定。",
-            practiceGoal: "积累 10 个求助与改写句型。",
+            explanationZh:
+              "This shows you have a clear idea but lack ready-made English phrase chunks you can reach for.",
+            microLessonZh:
+              "Turn common intentions into reusable English sentence patterns instead of translating word by word.",
+            practiceGoal: "Collect 10 phrases for asking for help and requesting rewrites.",
             confidence: 0.88,
           },
           {
@@ -171,14 +176,22 @@ export async function analyzeChatImport(
             evidenceType: "assistant_correction",
             evidenceQuote: "Assistant corrected: I go -> I went",
             suggestedBetterEnglish: "Yesterday I went...",
-            explanationZh: "AI 已纠正过过去时，说明这是已确认弱点。",
-            microLessonZh: "有 yesterday、last week 等过去时间时，主要动词要用过去式。",
-            practiceGoal: "用一般过去时复述 5 个昨天做过的动作。",
+            explanationZh: "The AI already corrected the past tense, which confirms this is a known weakness.",
+            microLessonZh:
+              "When there is a past time word like yesterday or last week, the main verb must be in the past tense.",
+            practiceGoal: "Retell 5 things you did yesterday using the simple past.",
             confidence: 0.92,
           },
         ],
-        assistantConfirmedWeaknessesZh: ["过去时错误已被 AI 明确纠正", "自然表达/改写需求反复出现"],
-        recommendedNextActionsZh: ["整理 expression gap 句型卡片", "练习过去时复述", "保存 AI 给出的自然改写"],
+        assistantConfirmedWeaknessesZh: [
+          "Past-tense errors were explicitly corrected by the AI",
+          "Requests for natural phrasing/rewrites appear repeatedly",
+        ],
+        recommendedNextActionsZh: [
+          "Build expression-gap phrase flashcards",
+          "Practice retelling events in the past tense",
+          "Save the natural rewrites the AI gives you",
+        ],
       },
       savedErrors: [],
       updatedSkills: mockSkills,

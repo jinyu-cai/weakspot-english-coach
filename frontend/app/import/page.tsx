@@ -67,12 +67,12 @@ export default function ImportPage() {
       setSourceName(file.name)
       setAllConversations(conversations)
       setResult(null)
-      toast.success("导入完成", {
-        description: `找到 ${conversations.length} 段可分析对话。`,
+      toast.success("Import complete", {
+        description: `Found ${conversations.length} analyzable conversations.`,
       })
     } catch (error) {
-      toast.error("导入失败", {
-        description: error instanceof Error ? error.message : "无法读取这个文件。",
+      toast.error("Import failed", {
+        description: error instanceof Error ? error.message : "Couldn't read this file.",
       })
     }
   }
@@ -82,12 +82,12 @@ export default function ImportPage() {
     setSourceName("pasted-transcript")
     setAllConversations(conversations)
     setResult(null)
-    toast.success("文本已载入")
+    toast.success("Text loaded")
   }
 
   async function handleAnalyze() {
     if (!selectedConversations.length) {
-      toast.error("没有可分析的对话")
+      toast.error("No conversations to analyze")
       return
     }
     setLoading(true)
@@ -95,12 +95,12 @@ export default function ImportPage() {
     try {
       const response = await analyzeChatImport(DEMO_USER_ID, selectedConversations, sourceName, analysisMode)
       setResult(response)
-      toast.success("对话分析完成", {
-        description: `画像更新了 ${response.updatedSkills.length} 个技能。`,
+      toast.success("Conversation analysis complete", {
+        description: `Updated ${response.updatedSkills.length} skills in your profile.`,
       })
     } catch (error) {
-      toast.error("分析失败", {
-        description: error instanceof Error ? error.message : "请稍后重试。",
+      toast.error("Analysis failed", {
+        description: error instanceof Error ? error.message : "Please try again shortly.",
       })
     } finally {
       setLoading(false)
@@ -115,7 +115,8 @@ export default function ImportPage() {
         </span>
         <h1 className="font-heading text-3xl font-bold tracking-tight">Import ChatGPT conversations</h1>
         <p className="max-w-3xl text-muted-foreground">
-          从用户消息、求助表达和 AI 已经给过的纠正里提取弱点，并写入你的学习画像。
+          Extract weaknesses from your messages, your requests for help, and the corrections the AI already gave you,
+          then write them into your learning profile.
         </p>
       </header>
 

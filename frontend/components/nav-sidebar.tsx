@@ -48,7 +48,7 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
       </nav>
 
       <div className="rounded-xl bg-sidebar-accent/50 p-3 text-xs leading-relaxed text-muted-foreground">
-        {"它发现你需要练习的内容，而不是问你想练习什么。"}
+        {"It finds what you need to practice instead of asking what you want to practice."}
       </div>
     </div>
   )

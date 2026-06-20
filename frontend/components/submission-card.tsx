@@ -6,13 +6,13 @@ import { CefrBadge } from "@/components/cefr-badge"
 import { Card, CardContent } from "@/components/ui/card"
 
 const MODE_META: Record<Submission["mode"], { label: string; icon: typeof PenLine }> = {
-  writing: { label: "写作", icon: PenLine },
-  chat: { label: "对话", icon: MessageSquare },
-  practice: { label: "练习", icon: Dumbbell },
+  writing: { label: "Writing", icon: PenLine },
+  chat: { label: "Chat", icon: MessageSquare },
+  practice: { label: "Practice", icon: Dumbbell },
 }
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("zh-CN", { year: "numeric", month: "short", day: "numeric" })
+  return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
 }
 
 export function SubmissionCard({ submission }: { submission: Submission }) {
