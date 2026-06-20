@@ -18,6 +18,62 @@ Known issues:
 Next step:
 ```
 
+## 2026-06-20 — Move repo to apps monorepo layout
+
+Date: 2026-06-20
+
+Branch: current local branch
+
+GitHub status: Not pushed.
+
+Deploy status: Not deployed. Vercel Project Settings still need Root Directory
+set to `apps/web` before the next production deployment.
+
+Summary:
+
+- Moved the effective Git root from the nested local `frontend/` folder to the
+  project root.
+- Moved the FastAPI service from `backend/` to `apps/api`.
+- Moved the Next.js app from `frontend/` to `apps/web`.
+- Kept Vercel config with the web app at `apps/web/vercel.json`.
+- Updated docs, local testing commands, ignore rules, and deploy notes for the
+  new paths.
+
+Files changed:
+
+- `.gitignore`
+- `README.md`
+- `LOCAL_TESTING.md`
+- `docs/project-structure-plan.md`
+- `apps/api/README.md`
+- `apps/api/DEPLOY.md`
+- `apps/api/deploy/start_backend.sh`
+- `apps/web/README.md`
+- `apps/web/V0_PROMPT.md`
+
+Tests run:
+
+- `git rev-parse --show-toplevel` points to the project root.
+- `test ! -d frontend && test ! -d backend && test -d apps/web && test -d apps/api`
+  passed.
+- `cd apps/web && pnpm exec tsc --noEmit` passed.
+- `cd apps/web && pnpm build` passed after allowing network access for Google
+  Fonts used by `next/font`.
+- `cd apps/api && UV_CACHE_DIR=.uv-cache uv run python -m scripts.smoke_test`
+  passed after allowing network access for PyPI dependency install.
+- `cd apps/api && UV_CACHE_DIR=.uv-cache uv run python -m scripts.integration_test`
+  passed.
+- `curl -s https://enapi.jinxxx.de/api/v1/health` returned `{"status":"ok"}`.
+
+Known issues:
+
+- Vercel dashboard settings must be changed manually to use `apps/web`.
+
+Next step:
+
+1. Run backend and frontend validation from the new paths.
+2. Push the branch and verify the Vercel Preview.
+
 ## 2026-06-20 — Daily Wins stats, Vercel structure, and testing docs
 
 Date: 2026-06-20

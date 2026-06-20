@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 if [[ ! -f ".env" ]]; then
-  echo "Missing backend/.env. Copy .env.example to .env and fill production values first." >&2
+  echo "Missing apps/api/.env. Copy .env.example to .env and fill production values first." >&2
   exit 1
 fi
 

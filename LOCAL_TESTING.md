@@ -16,16 +16,15 @@ All paths below assume the Git repo root:
 
 ```text
 repo-root/
-  backend/
-  frontend/
+  apps/
+    api/
+    web/
   docs/
   README.md
   LOCAL_TESTING.md
 ```
 
-If your absolute path contains `.../AWS-V0-EnglishLearningAgent/frontend/frontend`,
-the first `frontend` is just the outer downloaded folder / Git repo folder, and
-the second `frontend` is the actual Next.js app. Do not move `.git`.
+Backend commands run from `apps/api`; frontend commands run from `apps/web`.
 
 ## Node and pnpm
 
@@ -64,15 +63,15 @@ work directly on `main`.
 Use this when you are changing UI and do not need the backend yet.
 
 ```bash
-cd frontend
+cd apps/web
 pnpm install --frozen-lockfile
 pnpm exec tsc --noEmit
 pnpm build
 pnpm dev
 ```
 
-Do not set `NEXT_PUBLIC_API_BASE_URL`. The app will use `frontend/lib/mock-data.ts`.
-If your `frontend/.env.local` points at `http://localhost:8000`, temporarily
+Do not set `NEXT_PUBLIC_API_BASE_URL`. The app will use `apps/web/lib/mock-data.ts`.
+If your `apps/web/.env.local` points at `http://localhost:8000`, temporarily
 override it for a mock-only run:
 
 ```bash
@@ -97,7 +96,7 @@ Daily Wins should load at `/stats` with mock 7-day stats.
 These tests do not need real AWS, Docker, or an LLM key.
 
 ```bash
-cd backend
+cd apps/api
 uv run python -m scripts.smoke_test
 uv run python -m scripts.integration_test
 ```
@@ -111,14 +110,14 @@ that fixed UTC timestamps group into the expected local day for a timezone.
 Terminal A:
 
 ```bash
-cd backend
+cd apps/api
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
 Terminal B:
 
 ```bash
-cd frontend
+cd apps/web
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm dev
 ```
 
@@ -143,9 +142,9 @@ must also be HTTPS in production.
 5. Confirm Vercel Project Settings:
 
 ```text
-Root Directory:  frontend
-Install Command: pnpm install --frozen-lockfile
-Build Command:   pnpm build
+Root Directory:  apps/web
+Install Command: corepack enable && corepack prepare pnpm@9.6.0 --activate && pnpm install --frozen-lockfile
+Build Command:   corepack enable && corepack prepare pnpm@9.6.0 --activate && pnpm build
 Output:          .next
 ```
 
@@ -163,10 +162,10 @@ are calling the real backend from Preview.
 Before merging:
 
 ```bash
-cd backend && uv run python -m scripts.smoke_test
-cd backend && uv run python -m scripts.integration_test
-cd frontend && pnpm exec tsc --noEmit
-cd frontend && pnpm build
+cd apps/api && uv run python -m scripts.smoke_test
+cd apps/api && uv run python -m scripts.integration_test
+cd apps/web && pnpm exec tsc --noEmit
+cd apps/web && pnpm build
 ```
 
 Then verify the PR's Vercel Preview:

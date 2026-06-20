@@ -20,14 +20,15 @@ Point a DNS A record for `api.your-domain.com` at the server's public IP.
 
 ## 1. Get the code onto the server
 
-Either `scp -r backend/ user@server:~/weakspot-backend`, or push `backend/` to a
-git repo and clone it. You need the `backend/` directory (with `pyproject.toml`,
-`uv.lock`, `Dockerfile`, `docker-compose.yml`, `app/`, `scripts/`).
+Either `scp -r apps/api/ user@server:~/weakspot-backend`, or push the repo and
+copy/checkout `apps/api` on the server. You need the API app directory with
+`pyproject.toml`, `uv.lock`, `Dockerfile`, `docker-compose.yml`, `app/`, and
+`scripts/`.
 
 ## 2. Create the production `.env`
 
 ```bash
-cd ~/weakspot-backend       # wherever backend/ landed
+cd ~/weakspot-backend       # wherever apps/api landed
 cp .env.example .env
 nano .env
 ```
@@ -121,7 +122,7 @@ shows new items — that's also your required submission screenshot).
 ## Updating after changes
 
 ```bash
-git pull            # or re-scp the backend/ dir
+git pull            # or re-scp the apps/api dir
 docker compose up -d --build
 ```
 

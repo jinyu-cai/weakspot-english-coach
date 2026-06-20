@@ -10,7 +10,7 @@ Dependencies are managed with [uv](https://docs.astral.sh/uv/) via
 ## Local setup
 
 ```bash
-cd backend
+cd apps/api
 uv sync                       # creates .venv (Python 3.11) + installs from the lockfile
 cp .env.example .env          # then fill in real keys
 ```

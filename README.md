@@ -39,18 +39,16 @@ just `NEXT_PUBLIC_API_BASE_URL` + `NEXT_PUBLIC_DEMO_USER_ID`.
 
 ```
 repo-root/
-  backend/          FastAPI service: AI, DynamoDB, profile, plan, practice, stats
-  frontend/         Next.js app generated with v0 + integration kit
+  apps/
+    api/            FastAPI service: AI, DynamoDB, profile, plan, practice, stats
+    web/            Next.js app generated with v0 + integration kit
   docs/             project notes and deployment structure
   README.md
   LOCAL_TESTING.md
 ```
 
-This Git repo already starts at the canonical monorepo root. If your local Finder
-path looks like `AWS-V0-EnglishLearningAgent/frontend/frontend`, that is only
-because the outer downloaded folder is also named `frontend`. Do not move `.git`;
-run backend commands from `repo-root/backend` and frontend commands from
-`repo-root/frontend`.
+This Git repo starts at the canonical monorepo root. Backend commands run from
+`repo-root/apps/api`; frontend commands run from `repo-root/apps/web`.
 
 ## Tech stack
 
@@ -63,9 +61,9 @@ run backend commands from `repo-root/backend` and frontend commands from
 
 ## Quickstart
 
-**Backend** (managed with [uv](https://docs.astral.sh/uv/); details in [`backend/README.md`](backend/README.md)):
+**Backend** (managed with [uv](https://docs.astral.sh/uv/); details in [`apps/api/README.md`](apps/api/README.md)):
 ```bash
-cd backend
+cd apps/api
 uv sync                                   # .venv (Python 3.11) + deps from lockfile
 uv run python -m scripts.smoke_test       # offline: imports + schemas + validation
 cp .env.example .env                       # fill in DeepSeek + AWS keys
@@ -73,28 +71,28 @@ uv run python -m scripts.create_table      # create the DynamoDB table
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
-**Frontend** (details in [`frontend/README.md`](frontend/README.md)):
-1. Generate the UI on **v0.dev** with [`frontend/V0_PROMPT.md`](frontend/V0_PROMPT.md).
-2. Keep frontend source in `frontend/app`, `frontend/components`, and `frontend/lib`.
-3. `cd frontend && pnpm install && pnpm dev` (point `NEXT_PUBLIC_API_BASE_URL` at the backend).
+**Frontend** (details in [`apps/web/README.md`](apps/web/README.md)):
+1. Generate the UI on **v0.dev** with [`apps/web/V0_PROMPT.md`](apps/web/V0_PROMPT.md).
+2. Keep frontend source in `apps/web/app`, `apps/web/components`, and `apps/web/lib`.
+3. `cd apps/web && pnpm install && pnpm dev` (point `NEXT_PUBLIC_API_BASE_URL` at the backend).
 
 ## Vercel deployment
 
 In Vercel Project Settings, set **Root Directory** to:
 
 ```text
-frontend
+apps/web
 ```
 
 Then use the frontend defaults:
 
 ```text
-Install Command: pnpm install --frozen-lockfile
-Build Command:   pnpm build
+Install Command: corepack enable && corepack prepare pnpm@9.6.0 --activate && pnpm install --frozen-lockfile
+Build Command:   corepack enable && corepack prepare pnpm@9.6.0 --activate && pnpm build
 Output:          .next
 ```
 
-The tracked Vercel config lives in `frontend/vercel.json`, because Vercel reads
+The tracked Vercel config lives in `apps/web/vercel.json`, because Vercel reads
 that file after entering the configured Root Directory.
 
 ## Testing locally (before deploying)
@@ -102,7 +100,7 @@ that file after entering the configured Root Directory.
 See **[LOCAL_TESTING.md](LOCAL_TESTING.md)**. The fastest check needs no Docker, no
 AWS, and no DeepSeek key — it runs the whole loop in-process (moto + fake AI):
 ```bash
-cd backend && uv run python -m scripts.integration_test
+cd apps/api && uv run python -m scripts.integration_test
 ```
 You can then run a live backend (real AWS DynamoDB or DynamoDB Local) and the v0
 frontend on `localhost` to test the full front+back integration before shipping.

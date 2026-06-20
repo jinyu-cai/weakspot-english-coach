@@ -4,7 +4,7 @@ Verifies the whole backend imports, every AI response model produces a valid
 JSON schema, a realistic diagnostic payload validates, and the mastery +
 Decimal round-trip works.
 
-Run from the backend/ directory:
+Run from the apps/api directory:
 
     python -m scripts.smoke_test
 """
