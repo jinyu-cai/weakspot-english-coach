@@ -12,7 +12,7 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
     <div className="flex h-full flex-col gap-6 p-4">
       <Link href="/" onClick={onNavigate} className="flex items-center gap-3 px-2 py-1">
         <span className="flex size-9 items-center justify-center rounded-2xl bg-primary/15">
-          <span className="text-xl" aria-hidden="true">🦉</span>
+          <span className="text-xl" aria-hidden="true">🌿</span>
         </span>
         <span className="flex flex-col leading-tight">
           <span className="font-heading text-base font-semibold text-sidebar-foreground">WeakSpot</span>

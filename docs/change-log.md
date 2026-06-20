@@ -200,3 +200,43 @@ Next step:
 
 - Add project-level filtering or manual conversation selection in the Import UI
   if full ChatGPT Project import becomes a product requirement.
+
+## 2026-06-20 — Ghibli-style warm UI theme
+
+Date: 2026-06-20
+
+Branch: `feature/ghibli-ui` (from `origin/main`)
+
+GitHub status: Pushed; PR opened to `main`.
+
+Deploy status: Not in production until merged (Vercel auto-deploys the frontend on
+merge to `main`).
+
+Summary:
+
+- Reworked the design tokens into a cozy Ghibli palette: soft sky-blue primary,
+  meadow-green success/accents, warm parchment background, terracotta danger, and
+  dusk-lavender + sun-honey chart hues. Dark mode is a warm dusk sky (deep teal-navy
+  + cream).
+- Organic radius (1.1 -> 1.25rem), a softer sky+meadow+sun background glow, and a
+  leaf brand mascot (was an owl). Fredoka heading font already in place.
+- Theme-token only — no component/structure changes, so it's fully reversible.
+
+Files changed:
+
+- `apps/web/app/globals.css`
+- `apps/web/components/nav-sidebar.tsx`
+- `docs/change-log.md`
+
+Tests run:
+
+- `apps/web` `pnpm build` passed (8 routes).
+
+Known issues:
+
+- Tuned blind (no local browser preview here); colors/contrast should be eyeballed
+  on the PR's Vercel Preview and iterated.
+
+Next step:
+
+- Review the Preview; adjust primary/accent oklch values to taste, then merge.
