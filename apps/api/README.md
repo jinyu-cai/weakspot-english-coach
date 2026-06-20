@@ -10,7 +10,7 @@ Dependencies are managed with [uv](https://docs.astral.sh/uv/) via
 ## Local setup
 
 ```bash
-cd backend
+cd apps/api
 uv sync                       # creates .venv (Python 3.11) + installs from the lockfile
 cp .env.example .env          # then fill in real keys
 ```
@@ -58,6 +58,7 @@ GET  /plan/{user_id}
 POST /practice/generate        { userId, targetSkillCode? }
 POST /practice/submit          { userId, exerciseId, userAnswer }
 GET  /history/{user_id}
+GET  /stats/daily/{user_id}?timezone=<IANA timezone>&days=7
 ```
 
 ## Deploy (Linux)

@@ -16,18 +16,23 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# OS / local tools
+.DS_Store
+.claude/
+.pnpm-store/
+
 # env files
 .env*
-!backend/.env.example
-!backend/deploy/.env.production.example
+!apps/api/.env.example
+!apps/api/deploy/.env.production.example
 
 # backend local/runtime files
-backend/.venv/
-backend/.uv-cache/
-backend/__pycache__/
-backend/**/__pycache__/
-backend/**/*.pyc
-backend/.pytest_cache/
+apps/api/.venv/
+apps/api/.uv-cache/
+apps/api/__pycache__/
+apps/api/**/__pycache__/
+apps/api/**/*.pyc
+apps/api/.pytest_cache/
 
 # vercel
 .vercel/

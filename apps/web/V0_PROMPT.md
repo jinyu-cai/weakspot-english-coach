@@ -1,8 +1,8 @@
 # v0.dev Prompt — WeakSpot English Coach (frontend)
 
 Paste everything in the **PROMPT** block below into v0.dev to generate the UI.
-After v0 generates it, export/download the project into `frontend/`, then drop in
-the integration kit from `frontend/src/lib/` (see `frontend/README.md`) and switch
+After v0 generates it, export/download the project into `apps/web/`, then drop in
+the integration kit from `apps/web/lib/` (see `apps/web/README.md`) and switch
 the pages from mock data to the real `api-client.ts` calls.
 
 > Why v0: the hackathon **requires** the frontend to be built with Vercel v0 and

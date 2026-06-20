@@ -140,7 +140,27 @@ def main() -> int:
             f"{len(h['errors'])} errors"
         )
 
-        # 7. ChatGPT conversation import analysis
+        # 7. daily stats
+        r = client.get(f"/api/v1/stats/daily/{user}?timezone=America/Los_Angeles&days=7")
+        assert r.status_code == 200, r.text
+        stats = r.json()
+        assert stats["timezone"] == "America/Los_Angeles", stats
+        assert len(stats["weekly"]) == 7, stats
+        assert stats["summary"]["totalCheckins"] >= 1, stats
+        assert stats["summary"]["totalPracticeAttempts"] >= 1, stats
+        assert stats["achievements"], stats
+        print(
+            "7. GET  /stats/daily       -> "
+            f"{stats['summary']['activeDays']} active days, streak {stats['summary']['streakDays']}"
+        )
+
+        from app.services.stats_service import local_date_for
+
+        assert local_date_for("2026-06-20T06:30:00+00:00", "America/Los_Angeles") == "2026-06-19"
+        assert local_date_for("2026-06-20T06:30:00+00:00", "UTC") == "2026-06-20"
+        print("   timezone day boundary    -> UTC evening maps to prior LA day")
+
+        # 8. ChatGPT conversation import analysis
         r = client.post(
             "/api/v1/chat-import/analyze",
             json={
@@ -168,7 +188,7 @@ def main() -> int:
         assert imported["updatedSkills"], imported
         assert imported["importStats"]["conversationCount"] == 1, imported["importStats"]
         print(
-            "7. POST /chat-import/analyze -> "
+            "8. POST /chat-import/analyze -> "
             f"{len(imported['analysis']['weaknesses'])} weaknesses, "
             f"{len(imported['updatedSkills'])} skills updated"
         )
@@ -179,7 +199,7 @@ def main() -> int:
             guest = TestClient(app)
             me = guest.get("/api/v1/auth/me")
             assert me.status_code == 200 and me.json().get("authenticated") is False, me.text
-            print("8. GET  /auth/me (no cookie)   -> authenticated: false")
+            print("9. GET  /auth/me (no cookie)   -> authenticated: false")
             spoofed_scope = {
                 "type": "http",
                 "method": "GET",
@@ -194,16 +214,16 @@ def main() -> int:
                 "query_string": b"",
             }
             assert _client_ip(Request(spoofed_scope)) == "203.0.113.8"
-            print("9. proxy IP resolution       -> X-Real-IP wins over spoofed XFF")
+            print("10. proxy IP resolution      -> X-Real-IP wins over spoofed XFF")
             gtext = "I has many problem with my english grammar and I want to improve it very fast."
             codes = [guest.post("/api/v1/diagnose", json={"userId": "g", "text": gtext}).status_code for _ in range(4)]
             assert codes == [200, 200, 200, 429], codes
             blocked = guest.post("/api/v1/diagnose", json={"userId": "g", "text": gtext})
             assert blocked.json()["detail"]["code"] == "rate_limited", blocked.text
-            print(f"10. guest diagnose x4          -> {codes}  (4th = 429: login required)")
+            print(f"11. guest diagnose x4         -> {codes}  (4th = 429: login required)")
             ocodes = [client.post("/api/v1/diagnose", json={"userId": "o", "text": gtext}).status_code for _ in range(5)]
             assert all(c == 200 for c in ocodes), ocodes
-            print(f"11. owner diagnose x5 (bypass) -> {ocodes}  (never blocked)")
+            print(f"12. owner diagnose x5 (bypass)-> {ocodes}  (never blocked)")
 
         return 0
     finally:

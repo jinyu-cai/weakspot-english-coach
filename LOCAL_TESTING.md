@@ -1,96 +1,183 @@
 # Local Testing Guide
 
-You can test everything locally **before** deploying — including the full
-front + back integration. Tiers go from "zero setup" to "production parity".
-All backend commands run from `backend/`.
+You do not need to merge to `main` to test the frontend. The safe loop is:
 
-| Tier | What it proves | Needs |
-|------|----------------|-------|
-| 0 Smoke | code imports, AI schemas, validation | nothing |
-| 1 Full loop | the entire API + data model end-to-end | nothing (moto + fake AI) |
-| 2 Live server | a real HTTP server + a real DB | DeepSeek key and/or AWS or Docker |
-| 3 Front+back | the browser → backend integration | Tier 2 + the frontend |
-| 4 Docker parity | the container you'll ship | Docker |
-
----
-
-## Tier 0 — Offline smoke (no services)
-```bash
-cd backend
-uv run python -m scripts.smoke_test
+```text
+new branch from latest origin/main
+  -> test frontend locally with mocks
+  -> test backend locally
+  -> test frontend + backend together
+  -> push branch and open PR
+  -> verify Vercel Preview
+  -> merge to main only after checks pass
 ```
-Imports the whole app, generates the 4 AI JSON schemas, validates a sample payload,
-checks the mastery + Decimal round-trip.
 
-## Tier 1 — Full backend loop, zero external deps ✅ (recommended first)
+All paths below assume the Git repo root:
+
+```text
+repo-root/
+  apps/
+    api/
+    web/
+  docs/
+  README.md
+  LOCAL_TESTING.md
+```
+
+Backend commands run from `apps/api`; frontend commands run from `apps/web`.
+
+## Node and pnpm
+
+This frontend uses Next 16 and pnpm 9. Use Node 24 locally:
+
 ```bash
-cd backend
+nvm install 24
+nvm use 24
+nvm alias default 24
+corepack enable
+corepack prepare pnpm@9.6.0 --activate
+```
+
+Your earlier Node `v17.9.1` is too old for this pnpm version. After setting the
+default, open a new terminal and confirm:
+
+```bash
+node -v
+pnpm -v
+```
+
+## Branch workflow
+
+Create a new branch for every feature or deployment-risky change:
+
+```bash
+git fetch origin
+git switch -c feature/daily-wins-stats origin/main
+```
+
+Use naming like `feature/...`, `fix/...`, or `chore/...`. Do not develop feature
+work directly on `main`.
+
+## Frontend-only mock testing
+
+Use this when you are changing UI and do not need the backend yet.
+
+```bash
+cd apps/web
+pnpm install --frozen-lockfile
+pnpm exec tsc --noEmit
+pnpm build
+pnpm dev
+```
+
+Do not set `NEXT_PUBLIC_API_BASE_URL`. The app will use `apps/web/lib/mock-data.ts`.
+If your `apps/web/.env.local` points at `http://localhost:8000`, temporarily
+override it for a mock-only run:
+
+```bash
+NEXT_PUBLIC_API_BASE_URL= pnpm dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) and check:
+
+```text
+Diagnose
+Daily Wins
+Dashboard
+Plan
+Practice
+History
+```
+
+Daily Wins should load at `/stats` with mock 7-day stats.
+
+## Backend smoke and integration tests
+
+These tests do not need real AWS, Docker, or an LLM key.
+
+```bash
+cd apps/api
+uv run python -m scripts.smoke_test
 uv run python -m scripts.integration_test
 ```
-Runs **diagnose → profile → plan → practice/generate → practice/submit → history**
-in-process using **moto** (mock AWS) + **fake AI**. No Docker, no AWS, no DeepSeek key.
-You'll see the weakness profile accumulate and mastery change. This is your fast
-"did I break the loop?" check.
 
-## Tier 2 — Live backend server
-Run a real Uvicorn server and hit it with curl or the Swagger UI at
-`http://localhost:8000/docs`. Pick a database:
+The integration test covers diagnose, profile, plan, practice generation,
+practice submit, history, and `GET /api/v1/stats/daily/{userId}`. It also checks
+that fixed UTC timestamps group into the expected local day for a timezone.
 
-**2a — No Docker: real AWS DynamoDB** (you have an AWS account; DynamoDB free tier
-covers this). Set real values in `backend/.env` (`DEEPSEEK_API_KEY`, AWS creds,
-`DYNAMODB_TABLE`). To skip DeepSeek spend while wiring UI, set `USE_FAKE_AI=true`.
+## Full local frontend + backend
+
+Terminal A:
+
 ```bash
-cd backend
-uv run python -m scripts.create_table          # one-time
-uv run uvicorn app.main:app --reload --port 8000
-curl -s localhost:8000/api/v1/health
-curl -s -X POST localhost:8000/api/v1/diagnose \
-  -H 'content-type: application/json' \
-  -d '{"userId":"demo-user-001","text":"Yesterday I go to school and I meet my friend. I always use simple words."}' | jq .
-```
-
-**2b — Docker: DynamoDB Local** (no AWS at all):
-```bash
-cd backend
-docker compose -f docker-compose.local.yml up -d        # DynamoDB Local on :8001
-export DYNAMODB_ENDPOINT_URL=http://localhost:8001
-export AWS_ACCESS_KEY_ID=local AWS_SECRET_ACCESS_KEY=local
-uv run python -m scripts.create_table
+cd apps/api
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
-> **Validate DeepSeek once** (real key, `USE_FAKE_AI` unset/false): the first real
-> `/diagnose` call confirms your `LLM_MODEL=deepseek-v4-pro` + `DEEPSEEK_BASE_URL`
-> work. If it 404s, try `DEEPSEEK_BASE_URL=https://api.deepseek.com/v1`.
+Terminal B:
 
-## Tier 3 — Front + back integration (the real pre-deploy test)
-Terminal A: run the backend (Tier 2). Terminal B: run the frontend.
 ```bash
-cd frontend
-# .env.local:
-#   NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-#   NEXT_PUBLIC_DEMO_USER_ID=demo-user-001
-npm install
-npm run dev            # http://localhost:3000
+cd apps/web
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm dev
 ```
-Open `http://localhost:3000` and click through Diagnose → Dashboard → Plan → Practice.
-This mirrors production exactly **except** there's no HTTPS/domain — and locally that's
-fine because `http://localhost:3000 → http://localhost:8000` is not mixed content.
-CORS already allows `http://localhost:3000` (see `CORS_ORIGINS`).
 
-## Tier 4 — Docker parity (optional, before shipping to the Linux box)
+Open [http://localhost:3000](http://localhost:3000), then verify:
+
+```text
+Diagnose creates records
+Practice submit creates attempts
+Daily Wins shows real backend stats
+Dashboard and History still load
+```
+
+Local HTTP is fine for local testing. Production Vercel is HTTPS, so the backend
+must also be HTTPS in production.
+
+## Vercel Preview PR workflow
+
+1. Push your feature branch.
+2. Open a GitHub PR.
+3. Let Vercel create a Preview Deployment for that PR.
+4. Open the Preview URL and test the changed pages.
+5. Confirm Vercel Project Settings:
+
+```text
+Root Directory:  apps/web
+Install Command: corepack enable && corepack prepare pnpm@9.6.0 --activate && pnpm install --frozen-lockfile
+Build Command:   corepack enable && corepack prepare pnpm@9.6.0 --activate && pnpm build
+Output:          .next
+```
+
+6. If testing against the real backend, set Preview environment variable:
+
+```text
+NEXT_PUBLIC_API_BASE_URL=https://<your-backend-domain>
+```
+
+7. Ensure the backend `CORS_ORIGINS` includes the Vercel Preview origin if you
+are calling the real backend from Preview.
+
+## Production deploy checklist
+
+Before merging:
+
 ```bash
-cd backend
-docker compose up -d --build        # builds the prod image, runs on :8000
-curl -s localhost:8000/api/v1/health
+cd apps/api && uv run python -m scripts.smoke_test
+cd apps/api && uv run python -m scripts.integration_test
+cd apps/web && pnpm exec tsc --noEmit
+cd apps/web && pnpm build
 ```
-Confirms the uv-based Dockerfile builds and runs before you push it to the server.
 
----
+Then verify the PR's Vercel Preview:
 
-## What changes when you actually deploy
-Only two things that local testing can't fully cover:
-1. **HTTPS** — the Vercel frontend is HTTPS, so the backend must be HTTPS too
-   (Nginx + Certbot). Browsers block HTTPS → HTTP "mixed content".
-2. **CORS origins** — add your real Vercel domain to `CORS_ORIGINS`, and set
-   `NEXT_PUBLIC_API_BASE_URL` to the HTTPS backend domain on Vercel (then redeploy).
+```text
+Daily Wins /stats
+Diagnose /
+Practice /practice
+Dashboard /dashboard
+History /history
+Backend CORS and HTTPS
+```
+
+Merge to `main` only after local tests and Preview pass. Vercel will deploy
+production from `main`.

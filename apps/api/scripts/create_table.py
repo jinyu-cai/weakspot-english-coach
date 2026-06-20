@@ -1,6 +1,6 @@
 """Create the DynamoDB single table (idempotent).
 
-Run from the backend/ directory (so `app` is importable):
+Run from the apps/api directory (so `app` is importable):
 
     python -m scripts.create_table
 
