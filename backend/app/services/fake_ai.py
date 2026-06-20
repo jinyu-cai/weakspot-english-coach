@@ -7,6 +7,7 @@ verb_tense + vocab.repetition so the weakness profile populates predictably.
 
 from typing import Type
 
+from app.models.chat_import import ChatImportAIResult, ChatWeaknessAI
 from app.models.common import CEFRLevel, PracticeType, Severity
 from app.models.diagnostic import DiagnosticAIResult, DiagnosticErrorAI, SkillUpdateAI
 from app.models.plan import LearningPlanAIResult, LearningPlanDayAI, LearningPlanTaskAI
@@ -51,6 +52,56 @@ def _fake_diagnostic() -> DiagnosticAIResult:
     )
 
 
+def _fake_chat_import() -> ChatImportAIResult:
+    return ChatImportAIResult(
+        cefrEstimate=CEFRLevel.B1,
+        overallScore=66,
+        summaryZh="对话显示你能持续用英语练习，但时态、自然表达和求助型表达盲区比较明显。",
+        strengthsZh=["会主动请求改写和解释", "能围绕真实任务持续练习"],
+        topBlindSpotsZh=["不知道如何自然表达中文想法", "过去时和介词仍反复出现", "容易依赖简单词"],
+        weaknesses=[
+            ChatWeaknessAI(
+                code="clarity.expression",
+                category="Expression gap",
+                severity=Severity.high,
+                evidenceType="expression_gap",
+                evidenceQuote="这个怎么说 / how can I say this",
+                suggestedBetterEnglish="How can I phrase this more naturally?",
+                explanationZh="频繁询问“怎么说”说明你有想法，但缺少可直接调用的英文表达块。",
+                microLessonZh="把常见中文意图整理成英文句型块，比临时逐词翻译更稳定。",
+                practiceGoal="积累 10 个求助与改写句型。",
+                confidence=0.88,
+            ),
+            ChatWeaknessAI(
+                code="grammar.verb_tense",
+                category="Verb tense",
+                severity=Severity.high,
+                evidenceType="assistant_correction",
+                evidenceQuote="Assistant corrected: I go -> I went",
+                suggestedBetterEnglish="Yesterday I went...",
+                explanationZh="AI 已纠正过过去时，说明这是已确认弱点。",
+                microLessonZh="有 yesterday、last week 等过去时间时，主要动词要切到过去式。",
+                practiceGoal="用一般过去时复述 5 个昨天做过的动作。",
+                confidence=0.92,
+            ),
+            ChatWeaknessAI(
+                code="vocab.word_choice",
+                category="Word choice",
+                severity=Severity.medium,
+                evidenceType="assistant_advice",
+                evidenceQuote="Assistant suggested more natural wording",
+                suggestedBetterEnglish="more natural alternatives for simple words",
+                explanationZh="助手多次给自然改写，说明词汇选择和搭配需要系统积累。",
+                microLessonZh="不要只背单词，要按场景记搭配和整句。",
+                practiceGoal="从聊天中整理 8 个高频替换表达。",
+                confidence=0.8,
+            ),
+        ],
+        assistantConfirmedWeaknessesZh=["过去时错误已被 AI 明确纠正", "自然表达/改写需求反复出现"],
+        recommendedNextActionsZh=["把 expression gap 做成句型卡片", "优先练过去时复述", "每次聊天后保存 AI 给出的自然改写"],
+    )
+
+
 def _fake_plan() -> LearningPlanAIResult:
     days = [
         LearningPlanDayAI(
@@ -89,6 +140,7 @@ def _fake_grade() -> PracticeGradeAIResult:
 
 
 _BUILDERS = {
+    ChatImportAIResult: _fake_chat_import,
     DiagnosticAIResult: _fake_diagnostic,
     LearningPlanAIResult: _fake_plan,
     PracticeExerciseAIResult: _fake_exercise,
