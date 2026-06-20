@@ -2,7 +2,6 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { NAV_ITEMS } from "@/lib/nav"
 
@@ -12,11 +11,11 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col gap-6 p-4">
       <Link href="/" onClick={onNavigate} className="flex items-center gap-3 px-2 py-1">
-        <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-          <Sparkles className="size-5" />
+        <span className="flex size-9 items-center justify-center rounded-2xl bg-primary/15">
+          <span className="text-xl" aria-hidden="true">🦉</span>
         </span>
         <span className="flex flex-col leading-tight">
-          <span className="text-sm font-semibold text-sidebar-foreground">WeakSpot</span>
+          <span className="font-heading text-base font-semibold text-sidebar-foreground">WeakSpot</span>
           <span className="text-xs text-muted-foreground">English Coach</span>
         </span>
       </Link>
