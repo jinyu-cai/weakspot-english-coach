@@ -59,7 +59,9 @@ def main() -> int:
     try:
         # Import AFTER env + moto are active (the module-level boto3 resource binds here).
         from fastapi.testclient import TestClient
+        from starlette.requests import Request
 
+        from app.api.deps import _client_ip
         from app.config import settings
         from app.main import app
         from scripts.create_table import create_table
@@ -145,15 +147,30 @@ def main() -> int:
             me = guest.get("/api/v1/auth/me")
             assert me.status_code == 200 and me.json().get("authenticated") is False, me.text
             print("7. GET  /auth/me (no cookie)   -> authenticated: false")
+            spoofed_scope = {
+                "type": "http",
+                "method": "GET",
+                "path": "/",
+                "headers": [
+                    (b"x-forwarded-for", b"1.2.3.4, 203.0.113.8"),
+                    (b"x-real-ip", b"203.0.113.8"),
+                ],
+                "client": ("127.0.0.1", 12345),
+                "server": ("testserver", 80),
+                "scheme": "http",
+                "query_string": b"",
+            }
+            assert _client_ip(Request(spoofed_scope)) == "203.0.113.8"
+            print("8. proxy IP resolution       -> X-Real-IP wins over spoofed XFF")
             gtext = "I has many problem with my english grammar and I want to improve it very fast."
             codes = [guest.post("/api/v1/diagnose", json={"userId": "g", "text": gtext}).status_code for _ in range(4)]
             assert codes == [200, 200, 200, 429], codes
             blocked = guest.post("/api/v1/diagnose", json={"userId": "g", "text": gtext})
             assert blocked.json()["detail"]["code"] == "rate_limited", blocked.text
-            print(f"8. guest diagnose x4           -> {codes}  (4th = 429: login required)")
+            print(f"9. guest diagnose x4           -> {codes}  (4th = 429: login required)")
             ocodes = [client.post("/api/v1/diagnose", json={"userId": "o", "text": gtext}).status_code for _ in range(5)]
             assert all(c == 200 for c in ocodes), ocodes
-            print(f"9. owner diagnose x5 (bypass)  -> {ocodes}  (never blocked)")
+            print(f"10. owner diagnose x5 (bypass) -> {ocodes}  (never blocked)")
 
         return 0
     finally:

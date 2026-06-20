@@ -90,9 +90,13 @@ def read_state_jwt(state: str) -> Optional[dict]:
 
 
 def _client_ip(request: Request) -> str:
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.split(",")[0].strip()
+
     xff = request.headers.get("x-forwarded-for")
     if xff:
-        return xff.split(",")[0].strip()
+        return xff.split(",")[-1].strip()
     return request.client.host if request.client else "unknown"
 
 
