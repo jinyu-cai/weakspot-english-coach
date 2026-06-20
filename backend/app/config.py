@@ -45,6 +45,18 @@ class Settings(BaseSettings):
     # response snippets that may contain user text.
     llm_debug_log_content: bool = False
 
+    # --- Auth (GitHub OAuth) + rate limiting ---
+    github_client_id: str = ""
+    github_client_secret: str = ""
+    session_secret: str = ""
+    oauth_redirect_uri: str = ""
+    frontend_url: str = "http://localhost:3000"
+    cookie_domain: str = ""
+    owner_github_logins: str = ""
+    owner_bypass_token: str = ""
+    guest_daily_limit: int = 3
+    user_daily_limit: int = 20
+
     @property
     def cors_origin_list(self) -> List[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
@@ -64,6 +76,14 @@ class Settings(BaseSettings):
     @property
     def default_llm_fast_model(self) -> str:
         return self.openai_compat_fast_model or self.llm_model_fast
+
+    @property
+    def owner_login_set(self) -> set:
+        return {x.strip().lower() for x in self.owner_github_logins.split(",") if x.strip()}
+
+    @property
+    def auth_enabled(self) -> bool:
+        return bool(self.github_client_id and self.github_client_secret and self.session_secret)
 
 
 settings = Settings()

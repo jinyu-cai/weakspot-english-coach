@@ -179,3 +179,42 @@ def save_practice_attempt(attempt: dict) -> None:
         "entityType": "ATTEMPT",
     }
     _put(item)
+
+
+# ----- Auth users + rate-limit counters -----
+
+def upsert_github_user(gh_id, login, name, avatar_url) -> dict:
+    user_id = f"gh_{gh_id}"
+    now = now_iso()
+    existing = table.get_item(Key={"PK": user_pk(user_id), "SK": "AUTH"}).get("Item")
+    item = {
+        "PK": user_pk(user_id),
+        "SK": "AUTH",
+        "entityType": "AUTH",
+        "userId": user_id,
+        "githubId": str(gh_id),
+        "login": login,
+        "name": name,
+        "avatarUrl": avatar_url,
+        "createdAt": (existing or {}).get("createdAt", now),
+        "lastLoginAt": now,
+    }
+    _put(item)
+    return clean(item)
+
+
+def get_github_user(gh_id) -> Optional[dict]:
+    res = table.get_item(Key={"PK": user_pk(f"gh_{gh_id}"), "SK": "AUTH"})
+    item = res.get("Item")
+    return clean(item) if item else None
+
+
+def incr_rate_counter(rate_key: str, feature: str, day: str, ttl_epoch: int) -> int:
+    res = table.update_item(
+        Key={"PK": f"RL#{rate_key}", "SK": f"{feature}#{day}"},
+        UpdateExpression="ADD #c :one SET #t = if_not_exists(#t, :ttl), entityType = if_not_exists(entityType, :et)",
+        ExpressionAttributeNames={"#c": "count", "#t": "ttl"},
+        ExpressionAttributeValues={":one": 1, ":ttl": int(ttl_epoch), ":et": "RATELIMIT"},
+        ReturnValues="UPDATED_NEW",
+    )
+    return int(res["Attributes"]["count"])

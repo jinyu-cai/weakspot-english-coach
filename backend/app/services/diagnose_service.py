@@ -30,17 +30,20 @@ Important requirements:
    Put the chosen code in the `code` field, and a short human label in `category`.
 5. For each error provide: the original text span, a corrected version, a Chinese
    explanation, one micro lesson, and one practice goal.
-6. In `skillUpdates`, list the skills touched by this text with a masteryDelta
-   (negative for weaknesses, slightly positive for demonstrated strengths) and
-   short Chinese evidence.
 7. Estimate the CEFR level (A1-C2) and an overall score 0-100 based on the text.
 8. Always include every field required by the schema; use empty arrays when nothing applies.
+
+Keep the output COMPACT — this directly controls latency:
+- Report at most 4 errors: only the highest-impact, recurring ones.
+- explanationZh and microLessonZh: ONE short sentence each. practiceGoal: a short phrase.
+- strengthsZh, weaknessesZh, recommendedNextActionsZh: at most 3 short items each.
+- correctedText: rewrite ONLY the sentences that contain errors, not the entire text.
 """.strip()
 
 FAST_PROMPT_APPENDIX = """
-Fast diagnosis mode:
-- Identify only the 1-3 highest-impact recurring issues.
-- Keep explanations and micro lessons concise.
+Fast diagnosis mode (be extra brief):
+- Report at most 2 errors — the single most important recurring pattern.
+- Keep every explanation to one short sentence.
 - Still return every field required by the schema.
 """.strip()
 
@@ -65,10 +68,10 @@ def diagnose_english_text(
     user_prompt = f'Student text:\n"""\n{input_text}\n"""'
     selected_model = select_diagnose_model(diagnosis_mode, llm_provider=llm_provider)
     system_prompt = SYSTEM_PROMPT
-    max_tokens = 4000
+    max_tokens = 3200
     if diagnosis_mode == "fast":
         system_prompt = f"{SYSTEM_PROMPT}\n\n{FAST_PROMPT_APPENDIX}"
-        max_tokens = 2200
+        max_tokens = 2600
 
     return parse_with_model(
         messages=[

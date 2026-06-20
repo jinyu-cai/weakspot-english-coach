@@ -11,7 +11,7 @@ DiagnosisMode = Literal["fast", "deep"]
 class DiagnoseRequest(BaseModel):
     userId: str
     text: str = Field(min_length=20, max_length=4000)
-    diagnosisMode: DiagnosisMode = "deep"
+    diagnosisMode: DiagnosisMode = "fast"
 
 
 class DiagnosticErrorAI(BaseModel):
@@ -41,5 +41,4 @@ class DiagnosticAIResult(BaseModel):
     weaknessesZh: List[str]
     correctedText: str
     errors: List[DiagnosticErrorAI]
-    skillUpdates: List[SkillUpdateAI]
     recommendedNextActionsZh: List[str]

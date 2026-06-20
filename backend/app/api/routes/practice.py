@@ -2,7 +2,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.api.deps import get_llm_provider
+from app.api.deps import Identity, get_llm_provider, rate_limited
 from app.core.mastery import DEFAULT_MASTERY, update_skill_from_practice
 from app.core.taxonomy import ERROR_TAXONOMY
 from app.db.repositories import (
@@ -27,7 +27,12 @@ DEFAULT_SKILL = "grammar.verb_tense"
 
 
 @router.post("/practice/generate")
-def generate(req: GeneratePracticeRequest, llm_provider: LLMProviderConfig | None = Depends(get_llm_provider)):
+def generate(
+    req: GeneratePracticeRequest,
+    llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
+    identity: Identity = Depends(rate_limited("practice_generate")),
+):
+    req.userId = identity.user_id
     try:
         now = now_iso()
         profile = get_or_create_profile(req.userId)
@@ -71,7 +76,12 @@ def generate(req: GeneratePracticeRequest, llm_provider: LLMProviderConfig | Non
 
 
 @router.post("/practice/submit")
-def submit(req: SubmitPracticeRequest, llm_provider: LLMProviderConfig | None = Depends(get_llm_provider)):
+def submit(
+    req: SubmitPracticeRequest,
+    llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
+    identity: Identity = Depends(rate_limited("practice_submit")),
+):
+    req.userId = identity.user_id
     try:
         now = now_iso()
         exercise = get_exercise(req.userId, req.exerciseId)

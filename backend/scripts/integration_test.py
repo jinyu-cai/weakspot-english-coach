@@ -37,6 +37,10 @@ def main() -> int:
         os.environ.setdefault("AWS_REGION", "us-east-1")
         os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
         os.environ.setdefault("USE_FAKE_AI", "true")
+        os.environ.setdefault("OWNER_BYPASS_TOKEN", "itest-owner-token")
+        os.environ.setdefault("GUEST_DAILY_LIMIT", "3")
+        os.environ.setdefault("USER_DAILY_LIMIT", "20")
+        os.environ.setdefault("SESSION_SECRET", "itest-session-secret")
         try:
             import moto
         except ImportError:
@@ -67,7 +71,7 @@ def main() -> int:
 
         create_table()  # idempotent
 
-        client = TestClient(app)
+        client = TestClient(app, headers={"X-Owner-Token": "itest-owner-token"})
         user = f"test-{uuid.uuid4().hex[:8]}"
 
         # 1. diagnose
@@ -135,6 +139,22 @@ def main() -> int:
         )
 
         print(f"\nFULL LOOP PASSED ✅  (test user {user})")
+        if use_moto:
+            print("\n--- auth + rate limiting ---")
+            guest = TestClient(app)
+            me = guest.get("/api/v1/auth/me")
+            assert me.status_code == 200 and me.json().get("authenticated") is False, me.text
+            print("7. GET  /auth/me (no cookie)   -> authenticated: false")
+            gtext = "I has many problem with my english grammar and I want to improve it very fast."
+            codes = [guest.post("/api/v1/diagnose", json={"userId": "g", "text": gtext}).status_code for _ in range(4)]
+            assert codes == [200, 200, 200, 429], codes
+            blocked = guest.post("/api/v1/diagnose", json={"userId": "g", "text": gtext})
+            assert blocked.json()["detail"]["code"] == "rate_limited", blocked.text
+            print(f"8. guest diagnose x4           -> {codes}  (4th = 429: login required)")
+            ocodes = [client.post("/api/v1/diagnose", json={"userId": "o", "text": gtext}).status_code for _ in range(5)]
+            assert all(c == 200 for c in ocodes), ocodes
+            print(f"9. owner diagnose x5 (bypass)  -> {ocodes}  (never blocked)")
+
         return 0
     finally:
         if mock is not None:

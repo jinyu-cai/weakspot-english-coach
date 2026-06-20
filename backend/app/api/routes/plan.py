@@ -2,7 +2,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.api.deps import get_llm_provider
+from app.api.deps import Identity, get_llm_provider, rate_limited, resolve_identity
 from app.db.repositories import (
     get_active_plan,
     get_or_create_profile,
@@ -19,7 +19,12 @@ router = APIRouter()
 
 
 @router.post("/plan")
-def create_plan(req: GeneratePlanRequest, llm_provider: LLMProviderConfig | None = Depends(get_llm_provider)):
+def create_plan(
+    req: GeneratePlanRequest,
+    llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
+    identity: Identity = Depends(rate_limited("plan")),
+):
+    req.userId = identity.user_id
     try:
         now = now_iso()
         profile = get_or_create_profile(req.userId)
@@ -68,5 +73,5 @@ def create_plan(req: GeneratePlanRequest, llm_provider: LLMProviderConfig | None
 
 
 @router.get("/plan/{user_id}")
-def read_plan(user_id: str):
-    return {"plan": get_active_plan(user_id)}
+def read_plan(user_id: str, identity: Identity = Depends(resolve_identity)):
+    return {"plan": get_active_plan(identity.user_id)}

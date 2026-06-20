@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 
-from app.api.deps import get_llm_provider
+from app.api.deps import Identity, get_llm_provider, rate_limited
 from app.core.mastery import update_skill_from_error
 from app.core.taxonomy import ERROR_TAXONOMY
 from app.db.repositories import (
@@ -33,8 +33,10 @@ def diagnose(
     req: DiagnoseRequest,
     response: Response,
     llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
+    identity: Identity = Depends(rate_limited("diagnose")),
 ):
     """Diagnose a piece of writing, persist everything, and update the learner profile."""
+    req.userId = identity.user_id
     request_id = uuid4().hex[:10]
     started = time.perf_counter()
     diagnosis_mode = req.diagnosisMode
