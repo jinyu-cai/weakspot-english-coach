@@ -140,12 +140,37 @@ export async function parseChatGPTImportFile(file: File): Promise<ChatImportConv
   return conversations
 }
 
+// Signals that a conversation is an English-practice chat (translation, correction,
+// grammar help, etc.) — these are the highest-value imports to analyze.
+const PRACTICE_SIGNAL =
+  /\b(translate|translation|correct|grammar|english|rewrite|paraphrase|pronunc\w*|vocabulary|essay|writing|ielts|toefl)\b|翻译|纠错|改错|语法|改写|润色|英语|口语/i
+
+function englishRatio(text: string): number {
+  const letters = (text.match(/[a-zA-Z]/g) ?? []).length
+  const cjk = (text.match(/[\u4e00-\u9fff]/g) ?? []).length
+  const total = letters + cjk
+  return total === 0 ? 0 : letters / total
+}
+
+function conversationScore(conversation: ChatImportConversation): number {
+  const userMessages = conversation.messages.filter((msg) => msg.role === "user")
+  const userText = userMessages.map((msg) => msg.text).join(" ")
+  const haystack = `${conversation.title ?? ""} ${conversation.messages.map((m) => m.text).join(" ")}`
+  let score = Math.min(userMessages.length, 30) * 1.5 // substance: how much the user wrote
+  if (PRACTICE_SIGNAL.test(haystack)) score += 40 // a dedicated English-practice project
+  score += englishRatio(userText) * 25 // English-heavy chats are practice, not casual Q&A
+  return score
+}
+
+// Rank by English-learning relevance (not just length) so dedicated practice
+// projects — translation, correction — surface ahead of casual chats.
 export function selectImportConversations(conversations: ChatImportConversation[], maxConversations = 12) {
   return conversations
     .filter((conversation) => conversation.messages.some((msg) => msg.role === "user"))
-    .sort((a, b) => b.messages.length - a.messages.length)
+    .map((conversation) => ({ conversation, score: conversationScore(conversation) }))
+    .sort((a, b) => b.score - a.score)
     .slice(0, maxConversations)
-    .map((conversation) => ({
+    .map(({ conversation }) => ({
       ...conversation,
       messages: conversation.messages.slice(-80),
     }))

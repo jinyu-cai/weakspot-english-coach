@@ -201,6 +201,29 @@ Next step:
 - Add project-level filtering or manual conversation selection in the Import UI
   if full ChatGPT Project import becomes a product requirement.
 
+## 2026-06-20 — Import: relevance-ranked selection + how-to guide
+
+Date: 2026-06-20
+
+Branch: `feature/import-improvements` (based on `codex-apps-monorepo-restructure`)
+
+GitHub status: Pushed; PR opened against `codex-apps-monorepo-restructure`.
+
+Deploy status: Not in production. Verify on the PR's Vercel Preview first.
+
+Summary:
+
+- `selectImportConversations` now ranks conversations by English-learning relevance
+  (practice keywords translate/correct/grammar + English-text ratio + user-message
+  substance) instead of raw length, so dedicated practice projects (translation,
+  correction) surface ahead of casual chats within the analysis cap.
+- Added an English step-by-step "How to import your ChatGPT history" guide card to
+  the import page (ChatGPT Settings -> Data controls -> Export data -> upload).
+
+Files changed:
+
+- `apps/web/lib/chatgpt-import.ts`
+- `apps/web/app/import/page.tsx`
 ## 2026-06-20 — Add Google (email) login
 
 Date: 2026-06-20
@@ -252,6 +275,18 @@ Files changed:
 
 Tests run:
 
+- `cd apps/web && pnpm exec tsc --noEmit` passed.
+- `cd apps/web && pnpm build` passed (8 routes).
+
+Known issues:
+
+- AI feedback (summary/explanations) is still Simplified Chinese; full English-first
+  feedback is a separate product decision.
+
+Next step:
+
+1. Verify the import page on the PR's Vercel Preview (upload a real export).
+2. Merge after Preview passes.
 - `apps/api` `smoke_test` passed (Google routes load).
 - `apps/web` `tsc --noEmit` + `build` passed.
 
