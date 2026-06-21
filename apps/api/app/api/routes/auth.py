@@ -1,4 +1,5 @@
 from typing import Optional
+from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -14,13 +15,17 @@ from app.api.deps import (
     resolve_identity,
 )
 from app.config import settings
-from app.db.repositories import upsert_github_user
+from app.db.repositories import upsert_github_user, upsert_google_user
 
 router = APIRouter()
 
 GITHUB_AUTHORIZE = "https://github.com/login/oauth/authorize"
 GITHUB_TOKEN = "https://github.com/login/oauth/access_token"
 GITHUB_USER = "https://api.github.com/user"
+
+GOOGLE_AUTHORIZE = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 
 def _safe_redirect(redirect: Optional[str]) -> str:
@@ -97,6 +102,68 @@ def github_callback(code: Optional[str] = None, state: Optional[str] = None):
     return resp
 
 
+@router.get("/auth/google/login")
+def google_login(redirect: Optional[str] = None):
+    if not settings.google_auth_enabled:
+        raise HTTPException(status_code=503, detail="Google auth is not configured on the server.")
+    state = make_state_jwt(_safe_redirect(redirect))
+    params = urlencode(
+        {
+            "client_id": settings.google_client_id,
+            "redirect_uri": settings.google_redirect_uri,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "state": state,
+            "access_type": "online",
+            "prompt": "select_account",
+        }
+    )
+    return RedirectResponse(f"{GOOGLE_AUTHORIZE}?{params}", status_code=302)
+
+
+@router.get("/auth/google/callback")
+def google_callback(code: Optional[str] = None, state: Optional[str] = None):
+    if not settings.google_auth_enabled:
+        raise HTTPException(status_code=503, detail="Google auth is not configured on the server.")
+    st = read_state_jwt(state or "")
+    if not st:
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state.")
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing authorization code.")
+
+    with httpx.Client(timeout=15) as client:
+        tok = client.post(
+            GOOGLE_TOKEN,
+            data={
+                "client_id": settings.google_client_id,
+                "client_secret": settings.google_client_secret,
+                "code": code,
+                "redirect_uri": settings.google_redirect_uri,
+                "grant_type": "authorization_code",
+            },
+        ).json()
+        access = tok.get("access_token")
+        if not access:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Google token exchange failed: {tok.get('error_description') or tok}",
+            )
+        info = client.get(GOOGLE_USERINFO, headers={"Authorization": f"Bearer {access}"}).json()
+
+    sub = info.get("sub")
+    email = info.get("email")
+    if not sub:
+        raise HTTPException(status_code=400, detail="Could not fetch Google profile.")
+
+    upsert_google_user(sub, email, info.get("name"), info.get("picture"))
+    token = make_session_jwt(
+        {"sub": f"google_{sub}", "login": email, "name": info.get("name"), "avatar": info.get("picture")}
+    )
+    resp = RedirectResponse(_safe_redirect(st.get("redirect")), status_code=302)
+    resp.set_cookie(SESSION_COOKIE, token, max_age=30 * 86400, **cookie_kwargs())
+    return resp
+
+
 @router.get("/auth/me")
 def me(request: Request, response: Response):
     claims = read_session(request)
@@ -108,7 +175,7 @@ def me(request: Request, response: Response):
             "login": login,
             "name": claims.get("name"),
             "avatarUrl": claims.get("avatar"),
-            "isOwner": login.lower() in settings.owner_login_set,
+            "isOwner": login.lower() in settings.owner_login_set or login.lower() in settings.owner_email_set,
         }
     resolve_identity(request, response)  # establish a guest cookie
     return {"authenticated": False, "guestLimit": settings.guest_daily_limit}

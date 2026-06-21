@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { LogIn, LogOut } from "lucide-react"
+import { Code2, LogOut, Mail } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getMe, startLogin, logout, type Me } from "@/lib/auth"
 
@@ -14,11 +14,16 @@ export function AuthButton() {
 
   if (!me || !me.authenticated) {
     return (
-      <Button variant="outline" size="sm" className="gap-1.5" onClick={() => startLogin()}>
-        <LogIn className="size-4" />
-        <span className="hidden sm:inline">Login with GitHub</span>
-        <span className="sm:hidden">Login</span>
-      </Button>
+      <div className="flex items-center gap-1.5">
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => startLogin("github")}>
+          <Code2 className="size-4" />
+          <span className="hidden sm:inline">GitHub</span>
+        </Button>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => startLogin("google")}>
+          <Mail className="size-4" />
+          <span className="hidden sm:inline">Google</span>
+        </Button>
+      </div>
     )
   }
 
