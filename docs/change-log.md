@@ -364,8 +364,10 @@ Summary:
   soft parchment neutral base and differing mainly by accent hue.
 - Selection persists in `localStorage` (`weakspot-palette`) and is applied
   before first paint via a small inline script in the layout (no theme flash).
-- The header shows four color swatches (English labels: Cream / Light Green /
-  Sky / Blossom) to switch instantly.
+- The header shows a palette-icon dropdown (base-ui menu, single-select radio)
+  listing the four themes (English labels: Cream / Light Green / Sky / Blossom)
+  with a swatch per item and a check on the active one. A single compact icon
+  button, so it shows on mobile too.
 
 Files changed:
 
@@ -385,8 +387,6 @@ Known issues:
 
 - Palette colors tuned without a local browser preview here; fine-tune on the
   Vercel Preview if any swatch needs adjusting.
-- Swatches are hidden below the `sm` breakpoint to avoid crowding the mobile
-  header.
 
 Next step: verify on the Vercel Preview, then merge to `main` (frontend-only; no
 backend redeploy needed).
