@@ -94,7 +94,7 @@ export default function DashboardPage() {
                     <div key={skill.skillCode} className="flex flex-col gap-2">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex flex-col">
-                          <span className="text-sm font-medium">{skill.zhLabel}</span>
+                          <span className="text-sm font-medium">{skill.label}</span>
                           <span className="text-xs text-muted-foreground">
                             {skill.errorCount} errors · {skill.correctCount} correct
                           </span>

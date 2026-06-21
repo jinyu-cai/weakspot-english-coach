@@ -200,3 +200,73 @@ Next step:
 
 - Add project-level filtering or manual conversation selection in the Import UI
   if full ChatGPT Project import becomes a product requirement.
+
+## 2026-06-20 — English-first AI feedback
+
+Date: 2026-06-20
+
+Branch: `feature/english-feedback` (from `origin/main`)
+
+GitHub status: Pushed; PR opened to `main`.
+
+Deploy status: Not in production. Restart backend after merge for English feedback.
+
+Summary:
+
+- Flipped all LLM feedback to clear, simple English (diagnose, plan, practice, and
+  chat-import system prompts). Audience note ("for Chinese native speakers") kept.
+- Translated the fake-AI canned data to English for dev/mock + integration-test
+  consistency.
+- Field names keep the `*Zh` suffix (they now hold English) to avoid a large
+  model+frontend rename; internal tech-debt only.
+
+Files changed:
+
+- `apps/api/app/services/{diagnose,plan,practice,chat_import}_service.py`
+- `apps/api/app/services/fake_ai.py`
+- `docs/change-log.md`
+
+Tests run:
+
+- `apps/api` `smoke_test` + `integration_test` passed.
+
+Known issues:
+
+- Dashboard skill labels still use Chinese taxonomy `zhLabel`; UI chrome strings are
+  mixed. Broader UI English-ification is a separate task.
+
+Next step:
+
+- Merge; restart the backend so production feedback is English.
+
+## 2026-06-20 — English-first: dashboard skill labels (extends PR #5)
+
+Date: 2026-06-20
+
+Branch: `feature/english-feedback` (updates PR #5)
+
+GitHub status: Pushed.
+
+Deploy status: Frontend via Vercel on merge; backend redeploy needed for the prompts.
+
+Summary:
+
+- Frontend now renders the English skill `label` instead of the Chinese taxonomy
+  `zhLabel` (dashboard skill list, skill-bar-chart, weakness-radar). A full scan
+  found NO other hardcoded Chinese in `apps/web` — the rest of the UI was already
+  English. So "all frontend English-first" = this flip + the PR #5 prompt change.
+
+Files changed:
+
+- `apps/web/app/dashboard/page.tsx`
+- `apps/web/components/weakness-radar.tsx`
+- `apps/web/components/skill-bar-chart.tsx`
+- `docs/change-log.md`
+
+Tests run:
+
+- `apps/web` `tsc --noEmit` + `build` passed; `apps/api` `integration_test` passed.
+
+Known issues: none.
+
+Next step: local test, then merge PR #5.

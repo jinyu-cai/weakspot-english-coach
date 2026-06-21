@@ -10,7 +10,7 @@ const chartConfig = {
 
 export function WeaknessRadar({ skills }: { skills: SkillState[] }) {
   const data = skills.map((s) => ({
-    skill: s.zhLabel,
+    skill: s.label,
     mastery: s.mastery,
   }))
 
