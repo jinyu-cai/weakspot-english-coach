@@ -11,6 +11,7 @@ from app.db.keys import (
     exercise_sk,
     profile_sk,
     skill_sk,
+    submission_hash_sk,
     submission_sk,
     user_pk,
 )
@@ -23,6 +24,10 @@ def now_iso() -> str:
 
 def _put(item: dict) -> None:
     table.put_item(Item=to_dynamo(item))
+
+
+def _delete(pk: str, sk: str) -> None:
+    table.delete_item(Key={"PK": pk, "SK": sk})
 
 
 # ----- Profile -----
@@ -91,6 +96,10 @@ def put_skill(skill: dict) -> None:
     _put(item)
 
 
+def delete_skill(user_id: str, skill_code: str) -> None:
+    _delete(user_pk(user_id), skill_sk(skill_code))
+
+
 # ----- Submissions -----
 
 def save_submission(submission: dict) -> None:
@@ -112,6 +121,16 @@ def list_recent_submissions(user_id: str, limit: int = 10) -> list:
     return [clean(i) for i in res.get("Items", [])]
 
 
+def get_submission(user_id: str, created_at: str, submission_id: str) -> Optional[dict]:
+    res = table.get_item(Key={"PK": user_pk(user_id), "SK": submission_sk(created_at, submission_id)})
+    item = res.get("Item")
+    return clean(item) if item else None
+
+
+def delete_submission(user_id: str, created_at: str, submission_id: str) -> None:
+    _delete(user_pk(user_id), submission_sk(created_at, submission_id))
+
+
 # ----- Errors -----
 
 def save_error(error: dict) -> None:
@@ -131,6 +150,46 @@ def list_recent_errors(user_id: str, limit: int = 20) -> list:
         Limit=limit,
     )
     return [clean(i) for i in res.get("Items", [])]
+
+
+def list_errors_for_submission(user_id: str, created_at: str, submission_id: str) -> list:
+    # Errors share their submission's createdAt timestamp in the SK, so a
+    # begins_with on ERROR#<created_at># pulls exactly that submission's errors.
+    res = table.query(
+        KeyConditionExpression=Key("PK").eq(user_pk(user_id))
+        & Key("SK").begins_with(f"ERROR#{created_at}#")
+    )
+    items = [clean(i) for i in res.get("Items", [])]
+    return [e for e in items if e.get("submissionId") == submission_id]
+
+
+def delete_error(user_id: str, created_at: str, error_id: str) -> None:
+    _delete(user_pk(user_id), error_sk(created_at, error_id))
+
+
+# ----- Submission de-dup markers -----
+
+def get_submission_hash(user_id: str, text_hash: str) -> Optional[dict]:
+    res = table.get_item(Key={"PK": user_pk(user_id), "SK": submission_hash_sk(text_hash)})
+    item = res.get("Item")
+    return clean(item) if item else None
+
+
+def put_submission_hash(user_id: str, text_hash: str, submission_id: str, submission_created_at: str) -> None:
+    _put({
+        "PK": user_pk(user_id),
+        "SK": submission_hash_sk(text_hash),
+        "entityType": "SUBHASH",
+        "userId": user_id,
+        "textHash": text_hash,
+        "submissionId": submission_id,
+        "submissionCreatedAt": submission_created_at,
+        "createdAt": now_iso(),
+    })
+
+
+def delete_submission_hash(user_id: str, text_hash: str) -> None:
+    _delete(user_pk(user_id), submission_hash_sk(text_hash))
 
 
 # ----- Plan -----

@@ -391,3 +391,60 @@ Known issues:
 
 Next step: verify on the Vercel Preview, then merge to `main` (frontend-only; no
 backend redeploy needed).
+
+## 2026-06-21 — De-dup diagnoses + manual history delete (weakness-model safe)
+
+Date: 2026-06-21
+
+Branch: feature/dedup-history
+
+GitHub status: Pushed; PR open.
+
+Deploy status: Backend + frontend. Frontend auto-deploys on merge; the backend
+needs a manual redeploy for the new de-dup + delete logic to go live.
+
+Summary:
+
+- Problem: accidentally submitting the SAME text multiple times re-recorded the
+  same errors, inflating skill error counts and corrupting the weakness model.
+  (Different inputs that merely share an error type are a genuine recurring
+  weakness and must still be counted — only identical text is a false duplicate.)
+- Auto de-dup (system): every diagnosis stores a normalized text-hash marker
+  (`SUBHASH#<hash>`, whitespace/case-insensitive). Re-submitting identical text
+  returns the prior result with `duplicate: true` and does NOT re-record errors,
+  move skill mastery, or bump `totalSubmissions`; no LLM call is made. Different
+  text hashes differently and is still counted.
+- Manual delete (user): `DELETE /history/{submissionId}?createdAt=...` removes a
+  submission, deletes its errors, and reverses each error's skill penalty
+  (mastery restored, errorCount decremented, pristine skills dropped), decrements
+  `totalSubmissions`, and clears the de-dup marker so the text can be diagnosed
+  fresh later. Identity is server-resolved, so a caller can only delete own data.
+- Frontend: history submission cards get a delete control (trash → confirm
+  dropdown) that rolls back the weakness profile and revalidates the dashboard;
+  the diagnose page shows a banner + info toast when a result is a duplicate.
+
+Files changed:
+
+- `apps/api/app/core/text_hash.py` (new), `apps/api/app/core/mastery.py`
+- `apps/api/app/db/keys.py`, `apps/api/app/db/repositories.py`
+- `apps/api/app/api/routes/diagnose.py`, `apps/api/app/api/routes/history.py`
+- `apps/api/scripts/dedup_test.py` (new regression test)
+- `apps/web/lib/types.ts`, `apps/web/lib/api-client.ts`
+- `apps/web/components/submission-card.tsx`, `apps/web/app/history/page.tsx`
+- `apps/web/app/page.tsx`, `docs/change-log.md`
+
+Tests run:
+
+- `apps/api`: `smoke_test` ✅, `integration_test` ✅, `dedup_test` ✅ (de-dup +
+  delete + skill reversal asserted in-process with moto + fake AI).
+- `apps/web`: `tsc --noEmit` ✅, `pnpm build` ✅.
+
+Known issues:
+
+- Skill-mastery reversal is clamped, so a skill that had bottomed out at 0 may not
+  restore to its exact pre-error value; it self-corrects over later diagnoses.
+- De-dup markers are forward-looking: submissions made before this ships have no
+  marker, so an identical resubmission of a pre-existing entry is de-duped only
+  after it has been diagnosed once under the new code.
+
+Next step: verify on the Vercel Preview, merge, then redeploy the backend.

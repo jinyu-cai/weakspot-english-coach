@@ -207,6 +207,17 @@ export interface DiagnoseResponse {
   diagnostic: DiagnosticResult
   updatedSkills: SkillState[]
   profile: LearnerProfile
+  /** True when this exact text was already diagnosed; it was shown but not re-recorded. */
+  duplicate?: boolean
+  duplicateOf?: string | null
+}
+
+export interface DeleteSubmissionResponse {
+  deleted: boolean
+  submissionId: string
+  removedErrors: number
+  updatedSkills: SkillState[]
+  profile: LearnerProfile | null
 }
 
 export interface ChatImportAnalyzeResponse {

@@ -49,6 +49,25 @@ def update_skill_from_error(
     }
 
 
+def reverse_skill_from_error(existing: dict, severity: str, now: str) -> dict:
+    """Undo one previously-applied error penalty.
+
+    Used when a submission is deleted from history: each of its errors that
+    pushed a skill's mastery down (and bumped its error count) is rolled back so
+    the weakness profile reflects only the writing the learner actually kept.
+    Clamped to 0-100, so a skill that had hit the floor self-corrects over time.
+    """
+    old_mastery = float(existing.get("mastery", DEFAULT_MASTERY))
+    old_error_count = int(existing.get("errorCount", 0))
+    return {
+        **existing,
+        # severity_penalty is negative, so subtracting it adds the mastery back.
+        "mastery": clamp(old_mastery - severity_penalty(severity)),
+        "errorCount": max(0, old_error_count - 1),
+        "updatedAt": now,
+    }
+
+
 def update_skill_from_practice(
     existing: dict,
     is_correct: bool,

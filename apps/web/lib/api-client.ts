@@ -21,6 +21,7 @@ import type {
   ChatImportAnalyzeResponse,
   ChatImportConversation,
   DailyStatsResponse,
+  DeleteSubmissionResponse,
   DiagnoseResponse,
   DiagnosisMode,
   HistoryResponse,
@@ -289,6 +290,20 @@ export async function getHistory(userId: string = DEMO_USER_ID): Promise<History
     return { submissions: mockSubmissions, errors: mockErrors }
   }
   return apiFetch<HistoryResponse>(`/history/${userId}`)
+}
+
+export async function deleteSubmission(
+  submissionId: string,
+  createdAt: string,
+): Promise<DeleteSubmissionResponse> {
+  if (USE_MOCK) {
+    await delay(400)
+    return { deleted: true, submissionId, removedErrors: 0, updatedSkills: [], profile: null }
+  }
+  const params = new URLSearchParams({ createdAt })
+  return apiFetch<DeleteSubmissionResponse>(`/history/${submissionId}?${params.toString()}`, {
+    method: "DELETE",
+  })
 }
 
 export async function getDailyStats(

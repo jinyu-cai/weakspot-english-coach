@@ -7,11 +7,16 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from app.api.deps import Identity, get_llm_provider, rate_limited
 from app.core.mastery import update_skill_from_error
 from app.core.taxonomy import ERROR_TAXONOMY
+from app.core.text_hash import normalized_text_hash
 from app.db.repositories import (
     get_or_create_profile,
+    get_submission,
+    get_submission_hash,
+    list_errors_for_submission,
     list_skills,
     now_iso,
     put_skill,
+    put_submission_hash,
     save_error,
     save_profile,
     save_submission,
@@ -62,6 +67,51 @@ def diagnose(
         profile = get_or_create_profile(req.userId)
         profile_load_ms = elapsed_ms(stage_started)
 
+        # --- De-dup: if this exact text was already diagnosed, return that
+        # result and do NOT re-record it, so accidental resubmissions cannot
+        # inflate the weakness profile. (Different text with the same error type
+        # hashes differently and is still counted — that is a real weakness.)
+        text_hash = normalized_text_hash(req.text)
+        existing_hash = get_submission_hash(req.userId, text_hash)
+        if existing_hash:
+            prior = get_submission(
+                req.userId,
+                existing_hash.get("submissionCreatedAt", ""),
+                existing_hash.get("submissionId", ""),
+            )
+            if prior:
+                prior_errors = list_errors_for_submission(
+                    req.userId,
+                    existing_hash.get("submissionCreatedAt", ""),
+                    existing_hash.get("submissionId", ""),
+                )
+                logger.info(
+                    "diagnose[%s] duplicate of %s — returned prior result, skipped persistence",
+                    request_id,
+                    prior.get("id"),
+                )
+                reconstructed = {
+                    "cefrEstimate": prior.get("cefrEstimate"),
+                    "overallScore": int(prior.get("overallScore", 0) or 0),
+                    "summaryZh": prior.get("summaryZh", ""),
+                    "strengthsZh": prior.get("strengthsZh") or [],
+                    "weaknessesZh": prior.get("weaknessesZh") or [],
+                    "correctedText": prior.get("correctedText", ""),
+                    "errors": prior_errors,
+                    "skillUpdates": [],
+                    "recommendedNextActionsZh": prior.get("recommendedNextActionsZh") or [],
+                }
+                return {
+                    "submission": prior,
+                    "diagnostic": reconstructed,
+                    "updatedSkills": [],
+                    "profile": profile,
+                    "duplicate": True,
+                    "duplicateOf": prior.get("id"),
+                }
+            # Prior submission was deleted but the marker lingered — fall through
+            # and treat this as fresh (the marker is overwritten below).
+
         stage_started = time.perf_counter()
         diagnostic = diagnose_english_text(
             req.text,
@@ -88,7 +138,12 @@ def diagnose(
             "originalText": req.text,
             "correctedText": diagnostic.correctedText,
             "cefrEstimate": diagnostic.cefrEstimate.value,
+            "overallScore": diagnostic.overallScore,
             "summaryZh": diagnostic.summaryZh,
+            "strengthsZh": diagnostic.strengthsZh,
+            "weaknessesZh": diagnostic.weaknessesZh,
+            "recommendedNextActionsZh": diagnostic.recommendedNextActionsZh,
+            "textHash": text_hash,
             "createdAt": now,
         }
         save_submission(submission)
@@ -136,6 +191,7 @@ def diagnose(
         profile["totalSubmissions"] = int(profile.get("totalSubmissions", 0)) + 1
         profile["updatedAt"] = now
         save_profile(profile)
+        put_submission_hash(req.userId, text_hash, submission_id, now)
         persist_ms = elapsed_ms(stage_started)
 
         logger.info(
@@ -154,6 +210,7 @@ def diagnose(
             "diagnostic": {**diagnostic.model_dump(mode="json"), "errors": saved_errors},
             "updatedSkills": updated_skills,
             "profile": profile,
+            "duplicate": False,
         }
 
     except ValueError as e:
