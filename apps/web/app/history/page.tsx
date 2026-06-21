@@ -1,8 +1,10 @@
 "use client"
 
-import useSWR from "swr"
+import useSWR, { mutate } from "swr"
+import { toast } from "sonner"
 import { FileText, History as HistoryIcon, AlertCircle } from "lucide-react"
-import { getHistory } from "@/lib/api-client"
+import { deleteSubmission, getHistory } from "@/lib/api-client"
+import type { Submission } from "@/lib/types"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
@@ -15,6 +17,25 @@ export default function HistoryPage() {
 
   const submissions = data?.submissions ?? []
   const errors = data?.errors ?? []
+
+  async function handleDelete(submission: Submission) {
+    try {
+      const res = await deleteSubmission(submission.id, submission.createdAt)
+      toast.success("Entry deleted", {
+        description:
+          res.removedErrors > 0
+            ? `Rolled back ${res.removedErrors} error${res.removedErrors === 1 ? "" : "s"} from your weakness profile.`
+            : "Removed from your history.",
+      })
+      // Refresh history (submissions + error log) and the dashboard profile/skills.
+      mutate("history")
+      mutate("profile")
+    } catch (error) {
+      toast.error("Could not delete entry", {
+        description: error instanceof Error ? error.message : "Please try again shortly.",
+      })
+    }
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
@@ -50,7 +71,7 @@ export default function HistoryPage() {
 
           <TabsContent value="submissions" className="mt-6 flex flex-col gap-4">
             {submissions.length ? (
-              submissions.map((s) => <SubmissionCard key={s.id} submission={s} />)
+              submissions.map((s) => <SubmissionCard key={s.id} submission={s} onDelete={handleDelete} />)
             ) : (
               <EmptyState icon={HistoryIcon} title="No submissions yet" description="Once you run a diagnosis, your submissions will appear here." />
             )}

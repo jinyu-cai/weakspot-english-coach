@@ -18,6 +18,10 @@ def error_sk(created_at: str, error_id: str) -> str:
     return f"ERROR#{created_at}#{error_id}"
 
 
+def submission_hash_sk(text_hash: str) -> str:
+    return f"SUBHASH#{text_hash}"
+
+
 def active_plan_sk() -> str:
     return "PLAN#ACTIVE"
 

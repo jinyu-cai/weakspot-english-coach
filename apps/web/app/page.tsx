@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { toast } from "sonner"
+import { Info } from "lucide-react"
 import { diagnose } from "@/lib/api-client"
 import { DEMO_USER_ID, SAMPLE_PARAGRAPH } from "@/lib/mock-data"
 import type { DiagnosticResult, DiagnosisMode } from "@/lib/types"
@@ -14,19 +15,30 @@ export default function DiagnosePage() {
   const [diagnosisMode, setDiagnosisMode] = useState<DiagnosisMode>("fast")
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<DiagnosticResult | null>(null)
+  const [isDuplicate, setIsDuplicate] = useState(false)
 
   async function handleAnalyze() {
     setLoading(true)
     setResult(null)
+    setIsDuplicate(false)
     try {
       const res = await diagnose(DEMO_USER_ID, text, diagnosisMode)
       setResult(res.diagnostic)
-      toast.success("Diagnosis complete", {
-        description:
-          diagnosisMode === "fast"
-            ? "Your quick English weakness report is ready."
-            : "Your deep English weakness report is ready.",
-      })
+      const duplicate = Boolean(res.duplicate)
+      setIsDuplicate(duplicate)
+      if (duplicate) {
+        toast.info("Already diagnosed", {
+          description:
+            "This exact text was analyzed before — showing your previous result. It wasn't counted again, so your weakness profile stays accurate.",
+        })
+      } else {
+        toast.success("Diagnosis complete", {
+          description:
+            diagnosisMode === "fast"
+              ? "Your quick English weakness report is ready."
+              : "Your deep English weakness report is ready.",
+        })
+      }
     } catch (error) {
       toast.error("Analysis failed", {
         description: error instanceof Error ? error.message : "Please try again shortly.",
@@ -62,7 +74,20 @@ export default function DiagnosePage() {
       />
 
       {loading && <DiagnosticLoading />}
-      {!loading && result && <DiagnosticReport result={result} />}
+      {!loading && result && (
+        <div className="flex flex-col gap-4">
+          {isDuplicate ? (
+            <div className="flex items-start gap-2.5 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
+              <Info className="mt-0.5 size-4 shrink-0 text-warning" />
+              <p className="leading-relaxed text-foreground">
+                This is identical to a previous submission, so it wasn&apos;t recorded again — your weakness
+                profile stays accurate. Edit the text to analyze something new.
+              </p>
+            </div>
+          ) : null}
+          <DiagnosticReport result={result} />
+        </div>
+      )}
     </div>
   )
 }
