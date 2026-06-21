@@ -238,3 +238,35 @@ Known issues:
 Next step:
 
 - Merge; restart the backend so production feedback is English.
+
+## 2026-06-20 — English-first: dashboard skill labels (extends PR #5)
+
+Date: 2026-06-20
+
+Branch: `feature/english-feedback` (updates PR #5)
+
+GitHub status: Pushed.
+
+Deploy status: Frontend via Vercel on merge; backend redeploy needed for the prompts.
+
+Summary:
+
+- Frontend now renders the English skill `label` instead of the Chinese taxonomy
+  `zhLabel` (dashboard skill list, skill-bar-chart, weakness-radar). A full scan
+  found NO other hardcoded Chinese in `apps/web` — the rest of the UI was already
+  English. So "all frontend English-first" = this flip + the PR #5 prompt change.
+
+Files changed:
+
+- `apps/web/app/dashboard/page.tsx`
+- `apps/web/components/weakness-radar.tsx`
+- `apps/web/components/skill-bar-chart.tsx`
+- `docs/change-log.md`
+
+Tests run:
+
+- `apps/web` `tsc --noEmit` + `build` passed; `apps/api` `integration_test` passed.
+
+Known issues: none.
+
+Next step: local test, then merge PR #5.
