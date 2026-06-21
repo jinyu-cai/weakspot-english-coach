@@ -343,3 +343,51 @@ Tests run:
 Known issues: none.
 
 Next step: local test, then merge PR #5.
+
+## 2026-06-21 — Theme switcher: selectable color palettes
+
+Date: 2026-06-21
+
+Branch: feature/theme-switcher
+
+GitHub status: Pushed; PR open.
+
+Deploy status: Frontend-only. Vercel Preview per PR; not in production until merged.
+
+Summary:
+
+- Added a user-selectable color theme system layered on top of light/dark mode.
+- Four palettes: Cream (default — the existing warm honey/custard look), Light
+  Green (the Ghibli-style nature palette), Sky, and Blossom.
+- Cream stays the default in `:root`/`.dark`. The other three are scoped by a
+  `data-palette` attribute on `<html>` (light + `.dark` variants), sharing a
+  soft parchment neutral base and differing mainly by accent hue.
+- Selection persists in `localStorage` (`weakspot-palette`) and is applied
+  before first paint via a small inline script in the layout (no theme flash).
+- The header shows a palette-icon dropdown (base-ui menu). Items are visual
+  preview chips — each renders the theme's background plus a primary dot and an
+  accent bar, with no text label (the name is a hover tooltip / aria-label only);
+  the active chip is ringed. A single compact icon button, so it shows on mobile
+  too.
+
+Files changed:
+
+- `apps/web/app/globals.css` (themed `[data-palette]` blocks)
+- `apps/web/lib/palette.ts` (new)
+- `apps/web/components/palette-switcher.tsx` (new)
+- `apps/web/components/app-shell.tsx` (mount switcher in header)
+- `apps/web/app/layout.tsx` (no-flash init script)
+- `docs/change-log.md`
+
+Tests run:
+
+- `apps/web` `tsc --noEmit` passed; `pnpm build` passed; themed `data-palette`
+  selectors confirmed present in the compiled production CSS.
+
+Known issues:
+
+- Palette colors tuned without a local browser preview here; fine-tune on the
+  Vercel Preview if any swatch needs adjusting.
+
+Next step: verify on the Vercel Preview, then merge to `main` (frontend-only; no
+backend redeploy needed).

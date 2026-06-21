@@ -8,6 +8,7 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/s
 import { LLMProviderSettings } from "@/components/llm-provider-settings"
 import { NavSidebar } from "@/components/nav-sidebar"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { PaletteSwitcher } from "@/components/palette-switcher"
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
@@ -42,6 +43,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-2 sm:gap-3">
             <LLMProviderSettings />
             <AuthButton />
+            <PaletteSwitcher />
             <ThemeToggle />
           </div>
         </header>

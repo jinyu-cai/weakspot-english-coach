@@ -46,6 +46,12 @@ export default function RootLayout({
       className={`${inter.variable} ${geistMono.variable} ${fredoka.variable} bg-background`}
     >
       <body className="font-sans antialiased">
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{var p=localStorage.getItem('weakspot-palette');if(p&&p!=='cream'){document.documentElement.setAttribute('data-palette',p)}}catch(e){}",
+          }}
+        />
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           <AppShell>{children}</AppShell>
           <LoginGate />
