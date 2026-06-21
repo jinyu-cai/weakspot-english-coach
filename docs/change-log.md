@@ -448,3 +448,41 @@ Known issues:
   after it has been diagnosed once under the new code.
 
 Next step: verify on the Vercel Preview, merge, then redeploy the backend.
+
+## 2026-06-21 — Backend redeployed to oracle-us-west (English + Google + dedup)
+
+Date: 2026-06-21
+
+Branch: deployed from `main` @ `cbb2864` (after merging #9).
+
+GitHub status: `main` has #5 + #6 + #9 merged.
+
+Deploy status: LIVE. Backend rebuilt and running on oracle-us-west.
+
+Summary:
+
+- Merged PR #9, then redeployed the backend so the server runs current `main`:
+  English AI feedback (#5), Google login routes (#6), and de-dup + manual history
+  delete (#9). (The container had been ~21h old, i.e. pre-#5, so this shipped all
+  three at once.)
+- Server: oracle-us-west (ARM / aarch64), Docker. Code lives at
+  `/home/ubuntu/weakspot-backend` and is NOT a git repo, so it is updated by
+  `git archive origin/main:apps/api | ssh oracle-us-west tar -x` (tracked files
+  only — no local `.uv-cache`/`.venv`; the server `.env` is excluded/preserved and
+  was backed up to `.env.bak`).
+- Rebuilt the arm64 image with `docker compose up -d --build`; container
+  `weakspot-api` is healthy on `127.0.0.1:8000` (Nginx fronts HTTPS).
+- Verified: `GET /api/v1/health` → ok; OpenAPI now exposes
+  `DELETE /api/v1/history/{submission_id}` (the new delete route) alongside
+  `GET /api/v1/history/{user_id}`.
+
+Known issues / follow-ups:
+
+- Google login (#6) is deployed but inactive: the server `.env` has no
+  `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` /
+  `OWNER_EMAILS`. Add those and register the Google OAuth client to enable it;
+  GitHub login is unaffected.
+
+Next step: confirm on the live site — run a diagnosis (English feedback), resubmit
+the same text (duplicate banner), delete a history entry (weakness profile rolls
+back).
