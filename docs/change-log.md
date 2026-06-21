@@ -364,10 +364,11 @@ Summary:
   soft parchment neutral base and differing mainly by accent hue.
 - Selection persists in `localStorage` (`weakspot-palette`) and is applied
   before first paint via a small inline script in the layout (no theme flash).
-- The header shows a palette-icon dropdown (base-ui menu, single-select radio)
-  listing the four themes (English labels: Cream / Light Green / Sky / Blossom)
-  with a swatch per item and a check on the active one. A single compact icon
-  button, so it shows on mobile too.
+- The header shows a palette-icon dropdown (base-ui menu). Items are visual
+  preview chips — each renders the theme's background plus a primary dot and an
+  accent bar, with no text label (the name is a hover tooltip / aria-label only);
+  the active chip is ringed. A single compact icon button, so it shows on mobile
+  too.
 
 Files changed:
 
