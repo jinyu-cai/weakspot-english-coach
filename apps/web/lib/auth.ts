@@ -21,14 +21,16 @@ export async function getMe(): Promise<Me> {
   }
 }
 
-export function loginUrl(redirect?: string): string {
+export type AuthProvider = "github" | "google"
+
+export function loginUrl(provider: AuthProvider = "github", redirect?: string): string {
   const r = redirect ?? (typeof window !== "undefined" ? window.location.href : "")
-  return `${API_BASE_URL}/api/v1/auth/github/login?redirect=${encodeURIComponent(r)}`
+  return `${API_BASE_URL}/api/v1/auth/${provider}/login?redirect=${encodeURIComponent(r)}`
 }
 
-export function startLogin(redirect?: string) {
+export function startLogin(provider: AuthProvider = "github", redirect?: string) {
   if (!API_BASE_URL) return
-  window.location.href = loginUrl(redirect)
+  window.location.href = loginUrl(provider, redirect)
 }
 
 export async function logout(): Promise<void> {

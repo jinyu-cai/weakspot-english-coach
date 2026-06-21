@@ -224,6 +224,53 @@ Files changed:
 
 - `apps/web/lib/chatgpt-import.ts`
 - `apps/web/app/import/page.tsx`
+## 2026-06-20 — Add Google (email) login
+
+Date: 2026-06-20
+
+Branch: `feature/google-login` (from `origin/main`)
+
+GitHub status: Pushed; PR opened to `main`.
+
+Deploy status: Inactive until `GOOGLE_CLIENT_ID/SECRET` + `GOOGLE_REDIRECT_URI` are
+set in the server `.env` (GitHub login keeps working regardless).
+
+Summary:
+
+- Backend Google OAuth (`/auth/google/login` + `/auth/google/callback`) mirroring the
+  GitHub flow; same session cookie + identity + rate-limit infrastructure.
+- Owner check now also matches `OWNER_EMAILS`, so a Google login can be an owner.
+- Google users stored as `USER#google_<sub>/AUTH`; per-account daily limits apply
+  (login = email).
+- Frontend: header shows GitHub + Google login buttons; `startLogin(provider)`.
+
+Files changed:
+
+- `apps/api/app/config.py`, `app/api/deps.py`, `app/db/repositories.py`, `app/api/routes/auth.py`
+- `apps/web/lib/auth.ts`, `apps/web/components/auth-button.tsx`
+## 2026-06-20 — English-first AI feedback
+
+Date: 2026-06-20
+
+Branch: `feature/english-feedback` (from `origin/main`)
+
+GitHub status: Pushed; PR opened to `main`.
+
+Deploy status: Not in production. Restart backend after merge for English feedback.
+
+Summary:
+
+- Flipped all LLM feedback to clear, simple English (diagnose, plan, practice, and
+  chat-import system prompts). Audience note ("for Chinese native speakers") kept.
+- Translated the fake-AI canned data to English for dev/mock + integration-test
+  consistency.
+- Field names keep the `*Zh` suffix (they now hold English) to avoid a large
+  model+frontend rename; internal tech-debt only.
+
+Files changed:
+
+- `apps/api/app/services/{diagnose,plan,practice,chat_import}_service.py`
+- `apps/api/app/services/fake_ai.py`
 - `docs/change-log.md`
 
 Tests run:
@@ -240,3 +287,59 @@ Next step:
 
 1. Verify the import page on the PR's Vercel Preview (upload a real export).
 2. Merge after Preview passes.
+- `apps/api` `smoke_test` passed (Google routes load).
+- `apps/web` `tsc --noEmit` + `build` passed.
+
+Known issues:
+
+- Inactive until a Google OAuth client is created and the 3 env vars added.
+
+Next step:
+
+1. Create a Google OAuth client (Web app), redirect URI
+   `https://enapi.jinxxx.de/api/v1/auth/google/callback`.
+2. Add `GOOGLE_CLIENT_ID/SECRET`, `GOOGLE_REDIRECT_URI`, `OWNER_EMAILS` to `.env`;
+   `docker compose up -d --force-recreate api`.
+3. Verify on the Preview / live: the Google button signs you in.
+- `apps/api` `smoke_test` + `integration_test` passed.
+
+Known issues:
+
+- Dashboard skill labels still use Chinese taxonomy `zhLabel`; UI chrome strings are
+  mixed. Broader UI English-ification is a separate task.
+
+Next step:
+
+- Merge; restart the backend so production feedback is English.
+
+## 2026-06-20 — English-first: dashboard skill labels (extends PR #5)
+
+Date: 2026-06-20
+
+Branch: `feature/english-feedback` (updates PR #5)
+
+GitHub status: Pushed.
+
+Deploy status: Frontend via Vercel on merge; backend redeploy needed for the prompts.
+
+Summary:
+
+- Frontend now renders the English skill `label` instead of the Chinese taxonomy
+  `zhLabel` (dashboard skill list, skill-bar-chart, weakness-radar). A full scan
+  found NO other hardcoded Chinese in `apps/web` — the rest of the UI was already
+  English. So "all frontend English-first" = this flip + the PR #5 prompt change.
+
+Files changed:
+
+- `apps/web/app/dashboard/page.tsx`
+- `apps/web/components/weakness-radar.tsx`
+- `apps/web/components/skill-bar-chart.tsx`
+- `docs/change-log.md`
+
+Tests run:
+
+- `apps/web` `tsc --noEmit` + `build` passed; `apps/api` `integration_test` passed.
+
+Known issues: none.
+
+Next step: local test, then merge PR #5.

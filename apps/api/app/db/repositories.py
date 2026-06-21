@@ -227,3 +227,25 @@ def incr_rate_counter(rate_key: str, feature: str, day: str, ttl_epoch: int) -> 
         ReturnValues="UPDATED_NEW",
     )
     return int(res["Attributes"]["count"])
+
+
+def upsert_google_user(sub, email, name, avatar_url) -> dict:
+    user_id = f"google_{sub}"
+    now = now_iso()
+    existing = table.get_item(Key={"PK": user_pk(user_id), "SK": "AUTH"}).get("Item")
+    item = {
+        "PK": user_pk(user_id),
+        "SK": "AUTH",
+        "entityType": "AUTH",
+        "userId": user_id,
+        "provider": "google",
+        "googleSub": str(sub),
+        "email": email,
+        "login": email,
+        "name": name,
+        "avatarUrl": avatar_url,
+        "createdAt": (existing or {}).get("createdAt", now),
+        "lastLoginAt": now,
+    }
+    _put(item)
+    return clean(item)

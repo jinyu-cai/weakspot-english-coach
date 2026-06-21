@@ -8,7 +8,7 @@ Create a 7-day personalized learning plan for this learner, derived from their
 actual weaknesses (lowest-mastery skills and recent errors).
 
 Requirements:
-1. Output learning goals and task descriptions in Simplified Chinese.
+1. Output learning goals and task descriptions in clear, simple English.
 2. Each day should have 2 or 3 tasks.
 3. Each task must target one or more weak skill codes (use targetSkillCodes).
 4. Prefer short, focused practice over generic lessons.
