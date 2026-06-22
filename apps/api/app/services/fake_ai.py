@@ -8,6 +8,16 @@ Feedback strings are English-first, matching production prompts.
 
 from typing import Type
 
+from app.models.chat import (
+    BetterExpressionAI,
+    ChatPredictionAI,
+    ChatReplyAI,
+    CorrectionAI,
+    SessionAnalysisAI,
+    SessionCorrectionAI,
+    SessionNaturalExpressionAI,
+    SessionWeaknessAI,
+)
 from app.models.chat_import import ChatImportAIResult, ChatWeaknessAI
 from app.models.common import CEFRLevel, PracticeType, Severity
 from app.models.diagnostic import DiagnosticAIResult, DiagnosticErrorAI, LearningNoteAI, SkillUpdateAI
@@ -160,7 +170,80 @@ def _fake_grade() -> PracticeGradeAIResult:
     )
 
 
+def _fake_chat_reply() -> ChatReplyAI:
+    return ChatReplyAI(
+        reply="That sounds interesting! Tell me more about what happened after that. Did you enjoy the experience?",
+        corrections=[
+            CorrectionAI(
+                original="I go to the park yesterday",
+                corrected="I went to the park yesterday",
+                explanationZh="描述过去发生的事情要用过去式，go 的过去式是 went。",
+            ),
+        ],
+        betterExpression=BetterExpressionAI(
+            original="The weather was very good",
+            natural="The weather was gorgeous / It was a beautiful day",
+            explanationZh="用更生动的形容词如 gorgeous 或 beautiful 比 very good 更自然地道。",
+        ),
+    )
+
+
+def _fake_prediction() -> ChatPredictionAI:
+    return ChatPredictionAI(
+        predictions=[
+            "...if you could recommend a good restaurant nearby?",
+            "...whether we should go to the park this weekend.",
+            "...what you think about this idea?",
+        ],
+    )
+
+
+def _fake_session_analysis() -> SessionAnalysisAI:
+    return SessionAnalysisAI(
+        summaryZh="你在这次对话中表达积极，主要需要注意过去时态和更自然的描述方式。",
+        corrections=[
+            SessionCorrectionAI(
+                code="grammar.verb_tense",
+                category="Verb tense",
+                severity=Severity.high,
+                original="I go to the park yesterday",
+                corrected="I went to the park yesterday",
+                explanationZh="描述昨天发生的事情要用过去式，go 的过去式是 went。",
+                microLessonZh="看到 yesterday、last week 这类过去时间词时，句子的主要动词通常要用过去式。",
+                practiceGoal="用过去式复述 5 件你昨天做过的事情。",
+            )
+        ],
+        naturalExpressions=[
+            SessionNaturalExpressionAI(
+                original="The weather was very good",
+                natural="The weather was gorgeous.",
+                explanationZh="gorgeous 比 very good 更自然、更生动，适合描述天气很好。",
+                context="Casual conversation about weather or travel experiences.",
+                examples=[
+                    "The weather was gorgeous, so we walked by the river.",
+                    "It was a gorgeous day for a picnic.",
+                ],
+            )
+        ],
+        weaknesses=[
+            SessionWeaknessAI(
+                code="grammar.verb_tense",
+                category="Verb tense",
+                severity="high",
+                evidenceQuote="I go to the park yesterday",
+                explanationZh="你在描述过去事件时容易忘记把动词改成过去式。",
+                practiceGoal="每天用过去式讲 3 句昨天发生的事情。",
+            )
+        ],
+        strengthsZh=["愿意主动展开对话", "能用完整句表达基本意思"],
+        recommendedNextActionsZh=["集中练习一般过去时", "积累描述天气和体验的自然表达"],
+    )
+
+
 _BUILDERS = {
+    ChatReplyAI: _fake_chat_reply,
+    ChatPredictionAI: _fake_prediction,
+    SessionAnalysisAI: _fake_session_analysis,
     ChatImportAIResult: _fake_chat_import,
     DiagnosticAIResult: _fake_diagnostic,
     LearningPlanAIResult: _fake_plan,

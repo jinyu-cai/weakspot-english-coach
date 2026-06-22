@@ -5,6 +5,7 @@ import {
   History,
   Inbox,
   LayoutDashboard,
+  MessageCircle,
   Stethoscope,
   Trophy,
   type LucideIcon,
@@ -19,6 +20,7 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Diagnose", description: "Analyze your writing", icon: Stethoscope },
+  { href: "/chat", label: "Chat", description: "Practice conversations", icon: MessageCircle },
   { href: "/import", label: "Import", description: "ChatGPT conversations", icon: Inbox },
   { href: "/dashboard", label: "Dashboard", description: "Your weakness model", icon: LayoutDashboard },
   { href: "/notebook", label: "Notebook", description: "Auto-collected notes", icon: BookOpen },

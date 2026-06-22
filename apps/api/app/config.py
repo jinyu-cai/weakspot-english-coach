@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     openai_compat_base_url: str = ""
     openai_compat_model: str = ""
     openai_compat_fast_model: str = ""
+    openai_api_key: str = ""
+    openai_realtime_model: str = "gpt-realtime-mini-2025-12-15"
+
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
     llm_model: str = "deepseek-v4-pro"

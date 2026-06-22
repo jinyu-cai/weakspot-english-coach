@@ -216,6 +216,134 @@ export interface LearningNote {
   createdAt: string
 }
 
+/* ---- Chat types ---- */
+
+export interface ChatSession {
+  id: string
+  userId: string
+  topic?: string | null
+  scenarioPrompt?: string | null
+  messageCount: number
+  summary?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ChatCorrection {
+  original: string
+  corrected: string
+  explanationZh: string
+}
+
+export interface ChatBetterExpression {
+  original: string
+  natural: string
+  explanationZh: string
+}
+
+export interface ChatMessage {
+  id: string
+  userId: string
+  sessionId: string
+  role: "user" | "assistant"
+  content: string
+  corrections?: ChatCorrection[] | null
+  betterExpression?: ChatBetterExpression | null
+  createdAt: string
+}
+
+export interface ChatSendResponse {
+  userMessage: ChatMessage
+  assistantMessage: ChatMessage
+}
+
+export interface ChatPredictResponse {
+  predictions: string[]
+}
+
+export interface ChatSessionsResponse {
+  sessions: ChatSession[]
+}
+
+export interface ChatMessagesResponse {
+  session: ChatSession
+  messages: ChatMessage[]
+}
+
+/* ---- Voice / Realtime types ---- */
+
+export interface VoiceCorrection {
+  original: string
+  corrected: string
+  explanationZh: string
+}
+
+export interface VoiceCompletion {
+  partialText: string
+  suggestions: string[]
+  hintZh: string
+}
+
+export interface VoiceBetterExpression {
+  original: string
+  natural: string
+  explanationZh: string
+}
+
+export interface RealtimeSessionResponse {
+  clientSecret: string
+  sessionId: string
+  model: string
+}
+
+/* ---- Session analysis types ---- */
+
+export interface SessionCorrection {
+  code: string
+  category: string
+  severity: Severity
+  original: string
+  corrected: string
+  explanationZh: string
+  microLessonZh: string
+  practiceGoal: string
+}
+
+export interface SessionNaturalExpression {
+  original: string
+  natural: string
+  explanationZh: string
+  context: string
+  examples: string[]
+}
+
+export interface SessionWeakness {
+  code: string
+  category: string
+  severity: string
+  evidenceQuote: string
+  explanationZh: string
+  practiceGoal: string
+}
+
+export interface SessionAnalysis {
+  summaryZh: string
+  corrections: SessionCorrection[]
+  naturalExpressions: SessionNaturalExpression[]
+  weaknesses: SessionWeakness[]
+  strengthsZh: string[]
+  recommendedNextActionsZh: string[]
+}
+
+export interface SessionAnalysisResponse {
+  analysis: SessionAnalysis
+  savedNotes: LearningNote[]
+  savedErrors?: EnglishError[]
+  updatedSkills: SkillState[]
+  sessionId: string
+  duplicate?: boolean
+}
+
 /* ---- Composite API response shapes ---- */
 
 export interface DiagnoseResponse {

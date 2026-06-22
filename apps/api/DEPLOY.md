@@ -4,6 +4,10 @@ Deploys the FastAPI backend on your Linux server, behind Nginx with a real HTTPS
 certificate, talking to **real DeepSeek + real AWS DynamoDB**. Assumes Ubuntu/Debian
 (`apt`). The frontend is on Vercel and calls this over HTTPS.
 
+Text diagnosis/chat/analysis uses DeepSeek by default. Realtime voice uses the
+official OpenAI Realtime API, so production also needs an OpenAI API key on the
+backend server.
+
 ## 0. Prerequisites (once)
 
 ```bash
@@ -45,9 +49,14 @@ provider-neutral `OPENAI_COMPAT_*` variables are preferred for new deployments;
 the original `DEEPSEEK_*` names are still supported.
 
 ```bash
-DEEPSEEK_API_KEY=sk-...real...
+DEEPSEEK_API_KEY=<deepseek-api-key>
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 LLM_MODEL=deepseek-v4-pro
+LLM_MODEL_FAST=deepseek-v4-flash
+
+# Realtime voice only; keep this server-side.
+OPENAI_API_KEY=<openai-api-key>
+OPENAI_REALTIME_MODEL=gpt-realtime-mini-2025-12-15
 
 AWS_REGION=us-east-1
 AWS_ACCESS_KEY_ID=...real...

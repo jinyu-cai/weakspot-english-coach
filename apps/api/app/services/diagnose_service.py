@@ -5,6 +5,7 @@ from app.models.diagnostic import DiagnosticAIResult
 from app.services.ai_client import LLMProviderConfig, parse_with_model
 
 DiagnosisMode = Literal["fast", "deep"]
+DEEPSEEK_MAX_OUTPUT_TOKENS = 384_000
 
 SYSTEM_PROMPT = """
 You are an expert English tutor for Chinese native speakers.
@@ -14,7 +15,8 @@ Analyze the student's English writing and return a structured diagnostic report.
 Important requirements:
 1. Give all feedback (explanations, summary, strengths, weaknesses) in clear, simple English.
 2. Do not be overly harsh; be encouraging but honest.
-3. Focus on recurring patterns, not only isolated typos.
+3. Find every learner error you can identify. Include recurring patterns and
+   isolated issues; do not cap the number of errors.
 4. Classify each error using one of these category codes when possible:
    - grammar.verb_tense
    - grammar.article
@@ -42,11 +44,12 @@ Important requirements:
 """.strip()
 
 FAST_PROMPT_APPENDIX = """
-Fast diagnosis mode — keep output COMPACT (this directly controls latency):
-- Report at most 2 errors — the single most important recurring pattern.
+Fast diagnosis mode — keep output concise but complete:
+- Report ALL errors you find, not just the top ones. Cover every grammar,
+  vocabulary, expression, clarity, and style issue.
 - Keep every explanation to one short sentence.
 - strengthsZh, weaknessesZh, recommendedNextActionsZh: at most 3 short items each.
-- correctedText: rewrite ONLY the sentences that contain errors, not the entire text.
+- correctedText: rewrite all sentences that contain errors.
 - learningNotes: at most 2 notes; keep explanation and context to one sentence each.
 - Still return every field required by the schema.
 """.strip()
@@ -86,10 +89,10 @@ def diagnose_english_text(
     selected_model = select_diagnose_model(diagnosis_mode, llm_provider=llm_provider)
     if diagnosis_mode == "fast":
         system_prompt = f"{SYSTEM_PROMPT}\n\n{FAST_PROMPT_APPENDIX}"
-        max_tokens = 16384
+        max_tokens = DEEPSEEK_MAX_OUTPUT_TOKENS
     else:
         system_prompt = f"{SYSTEM_PROMPT}\n\n{DEEP_PROMPT_APPENDIX}"
-        max_tokens = 16384
+        max_tokens = DEEPSEEK_MAX_OUTPUT_TOKENS
 
     return parse_with_model(
         messages=[
