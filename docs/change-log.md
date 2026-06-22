@@ -486,3 +486,51 @@ Known issues / follow-ups:
 Next step: confirm on the live site — run a diagnosis (English feedback), resubmit
 the same text (duplicate banner), delete a history entry (weakness profile rolls
 back).
+
+## 2026-06-22 — History fallback shipped and backend redeployed
+
+Date: 2026-06-22
+
+Branch: backend deployed from `main` @ `f64f106`.
+
+GitHub status: pushed to `origin/main`.
+
+Deploy status: LIVE. Backend rebuilt and healthy on oracle-us-west; frontend
+deploy is triggered from `main`.
+
+Summary:
+
+- Shipped the history-page resilience fix: failed history loads now show a retry
+  state, deletes optimistically remove the entry and roll back on failure, and
+  older malformed `mode`/`severity` values no longer crash the page.
+- Fixed `apps/api/deploy/start_backend.sh` so the post-deploy health check works
+  on Ubuntu hosts that provide `python3` but no `python` command.
+- Updated oracle-us-west from `origin/main:apps/api` via `git archive`, preserving
+  the server `.env`, then rebuilt and recreated `weakspot-api`.
+
+Files changed:
+
+- `apps/web/app/history/page.tsx`
+- `apps/web/components/submission-card.tsx`
+- `apps/web/components/error-card.tsx`
+- `apps/api/deploy/start_backend.sh`
+
+Tests run:
+
+- Backend local: `smoke_test` ✅, `integration_test` ✅, `dedup_test` ✅.
+- Frontend local: `pnpm exec tsc --noEmit` ✅, `pnpm build` ✅.
+- Local front/back production smoke: health, CORS, diagnose, history, delete,
+  delete-after-refresh, and `/history` HTML ✅.
+- oracle-us-west deploy: `bash deploy/start_backend.sh` ✅; Docker reports
+  `weakspot-api` healthy on `127.0.0.1:8000`; local health returns
+  `{"status":"ok"}`; OpenAPI exposes `DELETE /api/v1/history/{submission_id}`.
+- Public backend: `https://enapi.jinxxx.de/api/v1/health` returns
+  `{"status":"ok"}`; CORS preflight allows `https://englearning.jinxxx.de`.
+
+Known issues:
+
+- No live diagnosis was run against production during this deploy, to avoid
+  creating real DynamoDB learner records or spending LLM tokens unnecessarily.
+
+Next step: verify the Vercel production deployment UI after it finishes building
+from `main`.
