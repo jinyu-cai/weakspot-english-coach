@@ -11,7 +11,7 @@ EvidenceType = Literal["user_error", "expression_gap", "assistant_correction", "
 
 class ImportedChatMessage(BaseModel):
     role: ChatRole
-    text: str = Field(min_length=1, max_length=5000)
+    text: str = Field(min_length=1)
     createdAt: Optional[str] = None
 
 
