@@ -94,7 +94,7 @@ def parse_with_model(
                 response_format={"type": "json_object"},
                 temperature=0.2,
                 max_tokens=max_tokens,
-                timeout=75,
+                timeout=180 if max_tokens > 5000 else 75,
             )
         except OpenAIError as e:
             elapsed_ms = int((time.perf_counter() - attempt_started) * 1000)

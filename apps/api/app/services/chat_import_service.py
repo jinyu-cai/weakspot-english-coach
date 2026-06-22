@@ -37,10 +37,10 @@ For each weakness:
 - suggestedBetterEnglish should be a better English phrasing when applicable, or a short skill target.
 - Focus on recurring or high-signal patterns, not random one-off typos.
 
-Keep the output compact:
-- fast mode: 3-5 weaknesses.
-- deep mode: 5-8 weaknesses.
-- strengthsZh, topBlindSpotsZh, assistantConfirmedWeaknessesZh, recommendedNextActionsZh: at most 4 items each.
+Output depth depends on analysis mode:
+- fast mode: 3-5 weaknesses. Keep items concise (at most 4 items per list).
+- deep mode: report ALL weaknesses you find (up to 12). Give detailed explanations,
+  rich examples, and comprehensive lists. Think step by step and analyze thoroughly.
 """.strip()
 
 
@@ -105,7 +105,7 @@ def analyze_imported_chat(
             {"role": "user", "content": user_prompt},
         ],
         response_model=ChatImportAIResult,
-        max_tokens=3600 if analysis_mode == "fast" else 5200,
+        max_tokens=3600 if analysis_mode == "fast" else 8192,
         model=selected_model,
         provider=llm_provider,
         trace_id=trace_id,

@@ -32,27 +32,36 @@ Important requirements:
    explanation, one micro lesson, and one practice goal.
 7. Estimate the CEFR level (A1-C2) and an overall score 0-100 based on the text.
 8. Always include every field required by the schema; use empty arrays when nothing applies.
-9. Generate learningNotes: extract 1-3 reusable takeaways from the text. Each note is one of:
+9. Generate learningNotes: extract reusable takeaways from the text. Each note is one of:
    - "expression": a more natural way to phrase something the student wrote.
    - "vocabulary": a word or phrase worth learning, with tone/register and usage context.
    - "grammar": a grammar pattern illustrated by the student's text.
    For each note provide: a short topic title, the student's original phrasing, the natural
    version, a one-sentence explanation, context (when/tone/register to use it), and 2 example
    sentences showing it in use.
-
-Keep the output COMPACT — this directly controls latency:
-- Report at most 4 errors: only the highest-impact, recurring ones.
-- explanationZh and microLessonZh: ONE short sentence each. practiceGoal: a short phrase.
-- strengthsZh, weaknessesZh, recommendedNextActionsZh: at most 3 short items each.
-- correctedText: rewrite ONLY the sentences that contain errors, not the entire text.
-- learningNotes: at most 3 notes; keep explanation and context to one sentence each.
 """.strip()
 
 FAST_PROMPT_APPENDIX = """
-Fast diagnosis mode (be extra brief):
+Fast diagnosis mode — keep output COMPACT (this directly controls latency):
 - Report at most 2 errors — the single most important recurring pattern.
 - Keep every explanation to one short sentence.
+- strengthsZh, weaknessesZh, recommendedNextActionsZh: at most 3 short items each.
+- correctedText: rewrite ONLY the sentences that contain errors, not the entire text.
+- learningNotes: at most 2 notes; keep explanation and context to one sentence each.
 - Still return every field required by the schema.
+""".strip()
+
+DEEP_PROMPT_APPENDIX = """
+Deep diagnosis mode — be thorough and detailed:
+- Report ALL errors you find, not just the top ones. Cover every grammar, vocabulary,
+  expression, and style issue.
+- Provide detailed explanations and micro lessons — multiple sentences are fine.
+- correctedText: rewrite the ENTIRE text with all improvements applied, showing the
+  student what polished English looks like.
+- learningNotes: extract as many useful notes as the text supports (up to 5).
+  Give rich explanations, context, and examples.
+- strengthsZh, weaknessesZh, recommendedNextActionsZh: be comprehensive.
+- Think step by step. Take your time to analyze deeply.
 """.strip()
 
 
@@ -75,11 +84,12 @@ def diagnose_english_text(
 ) -> DiagnosticAIResult:
     user_prompt = f'Student text:\n"""\n{input_text}\n"""'
     selected_model = select_diagnose_model(diagnosis_mode, llm_provider=llm_provider)
-    system_prompt = SYSTEM_PROMPT
-    max_tokens = 3200
     if diagnosis_mode == "fast":
         system_prompt = f"{SYSTEM_PROMPT}\n\n{FAST_PROMPT_APPENDIX}"
         max_tokens = 2600
+    else:
+        system_prompt = f"{SYSTEM_PROMPT}\n\n{DEEP_PROMPT_APPENDIX}"
+        max_tokens = 8192
 
     return parse_with_model(
         messages=[
