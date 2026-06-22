@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { ArrowRight, MessageSquare, PenLine, Dumbbell, Trash2 } from "lucide-react"
+import { ArrowRight, Dumbbell, FileText, MessageSquare, PenLine, Trash2 } from "lucide-react"
 import type { Submission } from "@/lib/types"
 import { CefrBadge } from "@/components/cefr-badge"
 import { Button } from "@/components/ui/button"
@@ -22,7 +22,9 @@ const MODE_META: Record<Submission["mode"], { label: string; icon: typeof PenLin
 }
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return "Unknown date"
+  return date.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
 }
 
 export function SubmissionCard({
@@ -32,7 +34,7 @@ export function SubmissionCard({
   submission: Submission
   onDelete?: (submission: Submission) => void | Promise<void>
 }) {
-  const mode = MODE_META[submission.mode]
+  const mode = MODE_META[submission.mode] ?? { label: "Entry", icon: FileText }
   const ModeIcon = mode.icon
   const changed = submission.correctedText && submission.correctedText !== submission.originalText
   const [deleting, setDeleting] = useState(false)

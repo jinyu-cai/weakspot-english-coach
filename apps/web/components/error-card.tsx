@@ -15,7 +15,10 @@ const SEVERITY_STYLES: Record<Severity, { chip: string; label: string }> = {
 
 export function ErrorCard({ error }: { error: EnglishError }) {
   const [open, setOpen] = useState(false)
-  const severity = SEVERITY_STYLES[error.severity]
+  const severity = SEVERITY_STYLES[error.severity] ?? {
+    chip: "border-border bg-muted text-muted-foreground",
+    label: "Unknown",
+  }
 
   return (
     <Card className="overflow-hidden">

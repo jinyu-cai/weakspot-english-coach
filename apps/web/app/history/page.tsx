@@ -2,34 +2,79 @@
 
 import useSWR, { mutate } from "swr"
 import { toast } from "sonner"
-import { FileText, History as HistoryIcon, AlertCircle } from "lucide-react"
+import { AlertCircle, FileText, History as HistoryIcon, RefreshCcw } from "lucide-react"
 import { deleteSubmission, getHistory } from "@/lib/api-client"
-import type { Submission } from "@/lib/types"
+import type { HistoryResponse, Submission } from "@/lib/types"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/empty-state"
 import { SubmissionCard } from "@/components/submission-card"
 import { ErrorCard } from "@/components/error-card"
 
+const EMPTY_HISTORY: HistoryResponse = { submissions: [], errors: [] }
+
+function removeSubmissionFromHistory(
+  history: HistoryResponse | undefined,
+  submissionId: string,
+): HistoryResponse {
+  if (!history) return EMPTY_HISTORY
+
+  return {
+    submissions: history.submissions.filter((submission) => submission.id !== submissionId),
+    errors: history.errors.filter((error) => error.submissionId !== submissionId),
+  }
+}
+
 export default function HistoryPage() {
-  const { data, isLoading } = useSWR("history", () => getHistory())
+  const {
+    data,
+    error,
+    isLoading,
+    mutate: refreshHistory,
+  } = useSWR<HistoryResponse>("history", () => getHistory(), {
+    keepPreviousData: true,
+  })
 
   const submissions = data?.submissions ?? []
   const errors = data?.errors ?? []
+  const errorMessage = error instanceof Error ? error.message : "Please try again shortly."
 
   async function handleDelete(submission: Submission) {
+    if (!submission.createdAt) {
+      toast.error("Could not delete entry", {
+        description: "This entry is missing its timestamp, so it cannot be safely deleted.",
+      })
+      return
+    }
+
+    let removedErrors = 0
+
     try {
-      const res = await deleteSubmission(submission.id, submission.createdAt)
+      await refreshHistory(
+        async (currentHistory) => {
+          const res = await deleteSubmission(submission.id, submission.createdAt)
+          removedErrors = res.removedErrors
+          return removeSubmissionFromHistory(currentHistory, submission.id)
+        },
+        {
+          optimisticData: (currentHistory) => removeSubmissionFromHistory(currentHistory, submission.id),
+          populateCache: true,
+          rollbackOnError: true,
+          revalidate: false,
+        },
+      )
+
       toast.success("Entry deleted", {
         description:
-          res.removedErrors > 0
-            ? `Rolled back ${res.removedErrors} error${res.removedErrors === 1 ? "" : "s"} from your weakness profile.`
+          removedErrors > 0
+            ? `Rolled back ${removedErrors} error${removedErrors === 1 ? "" : "s"} from your weakness profile.`
             : "Removed from your history.",
       })
       // Refresh history (submissions + error log) and the dashboard profile/skills.
-      mutate("history")
-      mutate("profile")
+      void refreshHistory()
+      void mutate("profile")
     } catch (error) {
       toast.error("Could not delete entry", {
         description: error instanceof Error ? error.message : "Please try again shortly.",
@@ -44,7 +89,14 @@ export default function HistoryPage() {
         <p className="text-muted-foreground">Review all your submissions and flagged errors to track your progress.</p>
       </header>
 
-      {isLoading ? (
+      {error && !data ? (
+        <EmptyState icon={AlertCircle} title="History could not load" description={errorMessage}>
+          <Button variant="outline" onClick={() => void refreshHistory()}>
+            <RefreshCcw data-icon="inline-start" />
+            Try again
+          </Button>
+        </EmptyState>
+      ) : isLoading ? (
         <div className="flex flex-col gap-4">
           <Skeleton className="h-10 w-64 rounded-lg" />
           <Skeleton className="h-36 w-full rounded-xl" />
@@ -52,6 +104,13 @@ export default function HistoryPage() {
         </div>
       ) : (
         <Tabs defaultValue="submissions">
+          {error ? (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+          ) : null}
+
           <TabsList>
             <TabsTrigger value="submissions">
               <FileText data-icon="inline-start" />
