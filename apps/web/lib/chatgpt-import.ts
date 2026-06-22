@@ -121,21 +121,40 @@ export function parseTranscript(text: string): ChatImportConversation[] {
 
 export async function parseChatGPTImportFile(file: File): Promise<ChatImportConversation[]> {
   const lowerName = file.name.toLowerCase()
-  let text: string
+  let conversations: ChatImportConversation[]
 
   if (lowerName.endsWith(".zip")) {
     const zip = await JSZip.loadAsync(file)
-    const entry =
+    const bundled =
       zip.file("conversations.json") ??
       zip.file(/(^|\/)conversations\.json$/i)[0]
-    if (!entry) throw new Error("Couldn't find conversations.json inside the ZIP.")
-    text = await entry.async("string")
+
+    if (bundled) {
+      const raw = JSON.parse(await bundled.async("string"))
+      conversations = normalizeChatGPTExport(raw)
+    } else {
+      // ChatGPT Exporter plugin: individual JSON files per conversation
+      const jsonFiles = zip.file(/\.json$/i)
+      if (!jsonFiles.length) throw new Error("No JSON files found inside the ZIP.")
+      const parsed = await Promise.all(
+        jsonFiles.map(async (entry, i) => {
+          try {
+            const raw = JSON.parse(await entry.async("string"))
+            return normalizeConversation(raw as RawExportConversation, i)
+          } catch {
+            return null
+          }
+        }),
+      )
+      conversations = parsed.filter(Boolean) as ChatImportConversation[]
+    }
   } else {
-    text = await file.text()
+    const raw = JSON.parse(await file.text())
+    conversations = Array.isArray(raw)
+      ? normalizeChatGPTExport(raw)
+      : [normalizeConversation(raw as RawExportConversation, 0)].filter(Boolean) as ChatImportConversation[]
   }
 
-  const raw = JSON.parse(text)
-  const conversations = normalizeChatGPTExport(raw)
   if (!conversations.length) throw new Error("No analyzable user/assistant conversations were found.")
   return conversations
 }

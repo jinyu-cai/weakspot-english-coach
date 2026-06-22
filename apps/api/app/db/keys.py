@@ -32,3 +32,7 @@ def exercise_sk(exercise_id: str) -> str:
 
 def attempt_sk(created_at: str, attempt_id: str) -> str:
     return f"ATTEMPT#{created_at}#{attempt_id}"
+
+
+def note_sk(created_at: str, note_id: str) -> str:
+    return f"NOTE#{created_at}#{note_id}"

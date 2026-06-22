@@ -6,6 +6,7 @@ from app.models.common import CEFRLevel, Severity
 
 
 DiagnosisMode = Literal["fast", "deep"]
+NoteType = Literal["expression", "vocabulary", "grammar"]
 
 
 class DiagnoseRequest(BaseModel):
@@ -33,6 +34,16 @@ class SkillUpdateAI(BaseModel):
     evidenceZh: str
 
 
+class LearningNoteAI(BaseModel):
+    type: NoteType
+    topic: str
+    original: str
+    natural: str
+    explanation: str
+    context: str
+    examples: List[str]
+
+
 class DiagnosticAIResult(BaseModel):
     cefrEstimate: CEFRLevel
     overallScore: int = Field(ge=0, le=100)
@@ -42,3 +53,4 @@ class DiagnosticAIResult(BaseModel):
     correctedText: str
     errors: List[DiagnosticErrorAI]
     recommendedNextActionsZh: List[str]
+    learningNotes: List[LearningNoteAI] = []

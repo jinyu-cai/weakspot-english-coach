@@ -32,12 +32,20 @@ Important requirements:
    explanation, one micro lesson, and one practice goal.
 7. Estimate the CEFR level (A1-C2) and an overall score 0-100 based on the text.
 8. Always include every field required by the schema; use empty arrays when nothing applies.
+9. Generate learningNotes: extract 1-3 reusable takeaways from the text. Each note is one of:
+   - "expression": a more natural way to phrase something the student wrote.
+   - "vocabulary": a word or phrase worth learning, with tone/register and usage context.
+   - "grammar": a grammar pattern illustrated by the student's text.
+   For each note provide: a short topic title, the student's original phrasing, the natural
+   version, a one-sentence explanation, context (when/tone/register to use it), and 2 example
+   sentences showing it in use.
 
 Keep the output COMPACT — this directly controls latency:
 - Report at most 4 errors: only the highest-impact, recurring ones.
 - explanationZh and microLessonZh: ONE short sentence each. practiceGoal: a short phrase.
 - strengthsZh, weaknessesZh, recommendedNextActionsZh: at most 3 short items each.
 - correctedText: rewrite ONLY the sentences that contain errors, not the entire text.
+- learningNotes: at most 3 notes; keep explanation and context to one sentence each.
 """.strip()
 
 FAST_PROMPT_APPENDIX = """

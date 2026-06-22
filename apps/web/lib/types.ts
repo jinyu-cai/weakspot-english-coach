@@ -200,6 +200,22 @@ export interface NextBestAction {
   href: string
 }
 
+export type NoteType = "expression" | "vocabulary" | "grammar"
+
+export interface LearningNote {
+  id: string
+  userId: string
+  submissionId: string
+  type: NoteType
+  topic: string
+  original: string
+  natural: string
+  explanation: string
+  context: string
+  examples: string[]
+  createdAt: string
+}
+
 /* ---- Composite API response shapes ---- */
 
 export interface DiagnoseResponse {
@@ -210,6 +226,11 @@ export interface DiagnoseResponse {
   /** True when this exact text was already diagnosed; it was shown but not re-recorded. */
   duplicate?: boolean
   duplicateOf?: string | null
+  notes?: LearningNote[]
+}
+
+export interface NotesResponse {
+  notes: LearningNote[]
 }
 
 export interface DeleteSubmissionResponse {
