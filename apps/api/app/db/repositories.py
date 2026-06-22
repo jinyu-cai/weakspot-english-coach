@@ -20,7 +20,7 @@ from app.db.serialization import clean, to_dynamo
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _put(item: dict) -> None:

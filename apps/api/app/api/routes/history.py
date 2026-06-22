@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import Identity, resolve_identity
@@ -22,6 +24,14 @@ from app.db.repositories import (
 router = APIRouter()
 
 
+_BROKEN_TZ = re.compile(r" (\d{2}:\d{2})$")
+
+
+def _fix_tz(value: str) -> str:
+    """URL query parsers decode '+' as space; restore '+00:00' from ' 00:00'."""
+    return _BROKEN_TZ.sub(r"+\1", value)
+
+
 @router.get("/history/{user_id}")
 def get_history(user_id: str, identity: Identity = Depends(resolve_identity)):
     return {
@@ -44,6 +54,7 @@ def delete_history_entry(
     Identity is server-resolved, so a caller can only delete their own data.
     """
     user_id = identity.user_id
+    createdAt = _fix_tz(createdAt)
     submission = get_submission(user_id, createdAt, submission_id)
     if not submission:
         raise HTTPException(status_code=404, detail="Submission not found")
