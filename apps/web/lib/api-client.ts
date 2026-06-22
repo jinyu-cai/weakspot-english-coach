@@ -26,6 +26,7 @@ import type {
   DiagnosisMode,
   HistoryResponse,
   LearningPlan,
+  NotesResponse,
   PlanResponse,
   PracticeExercise,
   PracticeGenerateResponse,
@@ -40,6 +41,7 @@ import {
   mockDiagnostic,
   mockDailyStats,
   mockErrors,
+  mockNotes,
   mockPlan,
   mockProfile,
   mockSkills,
@@ -302,6 +304,25 @@ export async function deleteSubmission(
   }
   const params = new URLSearchParams({ createdAt })
   return apiFetch<DeleteSubmissionResponse>(`/history/${submissionId}?${params.toString()}`, {
+    method: "DELETE",
+  })
+}
+
+export async function getNotes(): Promise<NotesResponse> {
+  if (USE_MOCK) {
+    await delay(400)
+    return { notes: mockNotes }
+  }
+  return apiFetch<NotesResponse>("/notes")
+}
+
+export async function deleteNote(noteId: string, createdAt: string): Promise<{ deleted: boolean; noteId: string }> {
+  if (USE_MOCK) {
+    await delay(300)
+    return { deleted: true, noteId }
+  }
+  const params = new URLSearchParams({ createdAt })
+  return apiFetch<{ deleted: boolean; noteId: string }>(`/notes/${noteId}?${params.toString()}`, {
     method: "DELETE",
   })
 }

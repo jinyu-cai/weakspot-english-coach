@@ -3,6 +3,7 @@ import type {
   DailyStatsResponse,
   EnglishError,
   LearnerProfile,
+  LearningNote,
   LearningPlan,
   PracticeExercise,
   PracticeGrade,
@@ -673,3 +674,45 @@ export function gradeMockAnswer(exercise: PracticeExercise, userAnswer: string):
     skillMasteryDelta: isCorrect ? 5 : partial ? 1 : -2,
   }
 }
+
+export const mockNotes: LearningNote[] = [
+  {
+    id: "note-1",
+    userId: DEMO_USER_ID,
+    submissionId: "sub-1",
+    type: "expression",
+    topic: "Talking about past activities",
+    original: "Yesterday I go to my university",
+    natural: "Yesterday I went to my university",
+    explanation: "When telling a story about the past, use past-tense verbs to sound natural.",
+    context: "Casual conversation or writing about past events; any register.",
+    examples: ["I went to the gym after work yesterday.", "We visited our grandparents last weekend."],
+    createdAt: "2026-06-20T10:00:00.000Z",
+  },
+  {
+    id: "note-2",
+    userId: DEMO_USER_ID,
+    submissionId: "sub-1",
+    type: "vocabulary",
+    topic: "Alternatives for 'good'",
+    original: "good",
+    natural: "great / solid / effective / impressive",
+    explanation: "English has many synonyms for 'good' that carry different shades of meaning.",
+    context: "Use 'great' for enthusiasm, 'solid' for reliability, 'effective' for results, 'impressive' for admiration.",
+    examples: ["That was a solid presentation.", "The results were impressive."],
+    createdAt: "2026-06-20T10:00:00.000Z",
+  },
+  {
+    id: "note-3",
+    userId: DEMO_USER_ID,
+    submissionId: "sub-2",
+    type: "grammar",
+    topic: "Subject-verb agreement with 'there is/are'",
+    original: "there is many problems",
+    natural: "there are many problems",
+    explanation: "'Many problems' is plural, so you need 'are' instead of 'is'.",
+    context: "Formal and informal writing; especially common in academic and business English.",
+    examples: ["There are several options to consider.", "There is only one solution left."],
+    createdAt: "2026-06-19T14:30:00.000Z",
+  },
+]

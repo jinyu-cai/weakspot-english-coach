@@ -18,6 +18,7 @@ from app.db.repositories import (
     put_skill,
     put_submission_hash,
     save_error,
+    save_note,
     save_profile,
     save_submission,
 )
@@ -187,6 +188,25 @@ def diagnose(
             existing_skills[err.code] = skill
             updated_skills.append(skill)
 
+        saved_notes = []
+        for note_ai in diagnostic.learningNotes:
+            note_id = f"note_{uuid4().hex[:12]}"
+            note = {
+                "id": note_id,
+                "userId": req.userId,
+                "submissionId": submission_id,
+                "type": note_ai.type,
+                "topic": note_ai.topic,
+                "original": note_ai.original,
+                "natural": note_ai.natural,
+                "explanation": note_ai.explanation,
+                "context": note_ai.context,
+                "examples": note_ai.examples,
+                "createdAt": now,
+            }
+            save_note(note)
+            saved_notes.append(note)
+
         profile["estimatedLevel"] = diagnostic.cefrEstimate.value
         profile["totalSubmissions"] = int(profile.get("totalSubmissions", 0)) + 1
         profile["updatedAt"] = now
@@ -195,7 +215,7 @@ def diagnose(
         persist_ms = elapsed_ms(stage_started)
 
         logger.info(
-            "diagnose[%s] complete total_ms=%d profile_load_ms=%d llm_ms=%d persist_ms=%d saved_errors=%d updated_skills=%d",
+            "diagnose[%s] complete total_ms=%d profile_load_ms=%d llm_ms=%d persist_ms=%d saved_errors=%d updated_skills=%d notes=%d",
             request_id,
             elapsed_ms(started),
             profile_load_ms,
@@ -203,6 +223,7 @@ def diagnose(
             persist_ms,
             len(saved_errors),
             len(updated_skills),
+            len(saved_notes),
         )
 
         return {
@@ -211,6 +232,7 @@ def diagnose(
             "updatedSkills": updated_skills,
             "profile": profile,
             "duplicate": False,
+            "notes": saved_notes,
         }
 
     except ValueError as e:

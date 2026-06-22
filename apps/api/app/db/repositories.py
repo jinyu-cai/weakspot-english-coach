@@ -9,6 +9,7 @@ from app.db.keys import (
     attempt_sk,
     error_sk,
     exercise_sk,
+    note_sk,
     profile_sk,
     skill_sk,
     submission_hash_sk,
@@ -190,6 +191,37 @@ def put_submission_hash(user_id: str, text_hash: str, submission_id: str, submis
 
 def delete_submission_hash(user_id: str, text_hash: str) -> None:
     _delete(user_pk(user_id), submission_hash_sk(text_hash))
+
+
+# ----- Learning notes -----
+
+def save_note(note: dict) -> None:
+    item = {
+        **note,
+        "PK": user_pk(note["userId"]),
+        "SK": note_sk(note["createdAt"], note["id"]),
+        "entityType": "NOTE",
+    }
+    _put(item)
+
+
+def list_notes(user_id: str, limit: int = 50) -> list:
+    res = table.query(
+        KeyConditionExpression=Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("NOTE#"),
+        ScanIndexForward=False,
+        Limit=limit,
+    )
+    return [clean(i) for i in res.get("Items", [])]
+
+
+def get_note(user_id: str, created_at: str, note_id: str) -> Optional[dict]:
+    res = table.get_item(Key={"PK": user_pk(user_id), "SK": note_sk(created_at, note_id)})
+    item = res.get("Item")
+    return clean(item) if item else None
+
+
+def delete_note(user_id: str, created_at: str, note_id: str) -> None:
+    _delete(user_pk(user_id), note_sk(created_at, note_id))
 
 
 # ----- Plan -----

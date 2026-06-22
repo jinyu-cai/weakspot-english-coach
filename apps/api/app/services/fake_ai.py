@@ -10,7 +10,7 @@ from typing import Type
 
 from app.models.chat_import import ChatImportAIResult, ChatWeaknessAI
 from app.models.common import CEFRLevel, PracticeType, Severity
-from app.models.diagnostic import DiagnosticAIResult, DiagnosticErrorAI, SkillUpdateAI
+from app.models.diagnostic import DiagnosticAIResult, DiagnosticErrorAI, LearningNoteAI, SkillUpdateAI
 from app.models.plan import LearningPlanAIResult, LearningPlanDayAI, LearningPlanTaskAI
 from app.models.practice import PracticeExerciseAIResult, PracticeGradeAIResult
 
@@ -50,6 +50,26 @@ def _fake_diagnostic() -> DiagnosticAIResult:
             SkillUpdateAI(skillCode="vocab.repetition", label="Repetitive vocabulary", zhLabel="Repetitive vocabulary", masteryDelta=-7, evidenceZh="'good' repeated many times"),
         ],
         recommendedNextActionsZh=["Do 3 simple-past rewrite drills", "Collect and use 5 replacements for 'good'"],
+        learningNotes=[
+            LearningNoteAI(
+                type="expression",
+                topic="Talking about past activities",
+                original="Yesterday I go to my university",
+                natural="Yesterday I went to my university",
+                explanation="When telling a story about the past, use past-tense verbs to sound natural.",
+                context="Casual conversation or writing about past events; any register.",
+                examples=["I went to the gym after work yesterday.", "We visited our grandparents last weekend."],
+            ),
+            LearningNoteAI(
+                type="vocabulary",
+                topic="Alternatives for 'good'",
+                original="good",
+                natural="great / solid / effective / impressive",
+                explanation="English has many synonyms for 'good' that carry different shades of meaning.",
+                context="Use 'great' for enthusiasm, 'solid' for reliability, 'effective' for results, 'impressive' for admiration.",
+                examples=["That was a solid presentation.", "The results were impressive."],
+            ),
+        ],
     )
 
 
