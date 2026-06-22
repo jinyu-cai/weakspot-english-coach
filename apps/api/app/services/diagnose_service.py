@@ -86,10 +86,10 @@ def diagnose_english_text(
     selected_model = select_diagnose_model(diagnosis_mode, llm_provider=llm_provider)
     if diagnosis_mode == "fast":
         system_prompt = f"{SYSTEM_PROMPT}\n\n{FAST_PROMPT_APPENDIX}"
-        max_tokens = 2600
+        max_tokens = 16384
     else:
         system_prompt = f"{SYSTEM_PROMPT}\n\n{DEEP_PROMPT_APPENDIX}"
-        max_tokens = 8192
+        max_tokens = 16384
 
     return parse_with_model(
         messages=[

@@ -11,7 +11,7 @@ NoteType = Literal["expression", "vocabulary", "grammar"]
 
 class DiagnoseRequest(BaseModel):
     userId: str
-    text: str = Field(min_length=20, max_length=4000)
+    text: str = Field(min_length=20)
     diagnosisMode: DiagnosisMode = "fast"
 
 
