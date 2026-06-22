@@ -6,7 +6,7 @@ from app.services.ai_client import LLMProviderConfig, parse_with_model
 
 AnalysisMode = Literal["fast", "deep"]
 
-MAX_TRANSCRIPT_CHARS = 18000
+MAX_TRANSCRIPT_CHARS = 64000
 
 SYSTEM_PROMPT = """
 You are an expert English learning analyst for Chinese native speakers.
@@ -105,7 +105,7 @@ def analyze_imported_chat(
             {"role": "user", "content": user_prompt},
         ],
         response_model=ChatImportAIResult,
-        max_tokens=3600 if analysis_mode == "fast" else 8192,
+        max_tokens=16384,
         model=selected_model,
         provider=llm_provider,
         trace_id=trace_id,
