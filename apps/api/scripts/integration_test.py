@@ -193,13 +193,53 @@ def main() -> int:
             f"{len(imported['updatedSkills'])} skills updated"
         )
 
+        # 9. End-of-session chat analysis
+        r = client.post("/api/v1/chat/sessions", json={"userId": user, "topic": "Free conversation"})
+        assert r.status_code == 200, r.text
+        chat_session = r.json()["session"]
+        for text in [
+            "I go to the park yesterday and the weather was very good.",
+            "I want explain my idea more natural.",
+        ]:
+            r = client.post(
+                "/api/v1/chat/send",
+                json={"userId": user, "sessionId": chat_session["id"], "text": text},
+            )
+            assert r.status_code == 200, r.text
+
+        r = client.post(f"/api/v1/chat/sessions/{chat_session['id']}/analyze")
+        assert r.status_code == 200, r.text
+        chat_analysis = r.json()
+        assert chat_analysis["analysis"]["corrections"], chat_analysis
+        assert chat_analysis["savedErrors"], chat_analysis
+        assert chat_analysis["savedNotes"], chat_analysis
+        assert chat_analysis["updatedSkills"], chat_analysis
+
+        r = client.get(f"/api/v1/history/{user}")
+        assert r.status_code == 200, r.text
+        errors_after_first_analysis = len(r.json()["errors"])
+
+        r = client.post(f"/api/v1/chat/sessions/{chat_session['id']}/analyze")
+        assert r.status_code == 200, r.text
+        duplicate_analysis = r.json()
+        assert duplicate_analysis.get("duplicate") is True, duplicate_analysis
+
+        r = client.get(f"/api/v1/history/{user}")
+        assert r.status_code == 200, r.text
+        assert len(r.json()["errors"]) == errors_after_first_analysis, "duplicate analysis should not add errors"
+        print(
+            "9. POST /chat/sessions/{id}/analyze -> "
+            f"{len(chat_analysis['savedErrors'])} errors, "
+            f"{len(chat_analysis['savedNotes'])} notes, duplicate-safe"
+        )
+
         print(f"\nFULL LOOP PASSED ✅  (test user {user})")
         if use_moto:
             print("\n--- auth + rate limiting ---")
             guest = TestClient(app)
             me = guest.get("/api/v1/auth/me")
             assert me.status_code == 200 and me.json().get("authenticated") is False, me.text
-            print("9. GET  /auth/me (no cookie)   -> authenticated: false")
+            print("10. GET /auth/me (no cookie)   -> authenticated: false")
             spoofed_scope = {
                 "type": "http",
                 "method": "GET",
@@ -214,16 +254,16 @@ def main() -> int:
                 "query_string": b"",
             }
             assert _client_ip(Request(spoofed_scope)) == "203.0.113.8"
-            print("10. proxy IP resolution      -> X-Real-IP wins over spoofed XFF")
+            print("11. proxy IP resolution      -> X-Real-IP wins over spoofed XFF")
             gtext = "I has many problem with my english grammar and I want to improve it very fast."
             codes = [guest.post("/api/v1/diagnose", json={"userId": "g", "text": gtext}).status_code for _ in range(4)]
             assert codes == [200, 200, 200, 429], codes
             blocked = guest.post("/api/v1/diagnose", json={"userId": "g", "text": gtext})
             assert blocked.json()["detail"]["code"] == "rate_limited", blocked.text
-            print(f"11. guest diagnose x4         -> {codes}  (4th = 429: login required)")
+            print(f"12. guest diagnose x4         -> {codes}  (4th = 429: login required)")
             ocodes = [client.post("/api/v1/diagnose", json={"userId": "o", "text": gtext}).status_code for _ in range(5)]
             assert all(c == 200 for c in ocodes), ocodes
-            print(f"12. owner diagnose x5 (bypass)-> {ocodes}  (never blocked)")
+            print(f"13. owner diagnose x5 (bypass)-> {ocodes}  (never blocked)")
 
         return 0
     finally:

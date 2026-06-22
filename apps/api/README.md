@@ -1,6 +1,6 @@
 # WeakSpot English Coach — Backend (FastAPI)
 
-FastAPI service that owns all AI (DeepSeek), DynamoDB access, the learner
+FastAPI service that owns AI calls, DynamoDB access, the learner
 profile, plan generation, and practice grading. Deployed on a Linux server
 behind Nginx/HTTPS. The Vercel frontend talks to it over `/api/v1`.
 
@@ -15,8 +15,10 @@ uv sync                       # creates .venv (Python 3.11) + installs from the 
 cp .env.example .env          # then fill in real keys
 ```
 
-Required `.env` values: `DEEPSEEK_API_KEY`, AWS creds + `DYNAMODB_TABLE`,
-and `CORS_ORIGINS` (include your Vercel URL). See `.env.example`.
+Required `.env` values: text-model provider config (`DEEPSEEK_API_KEY` or
+`OPENAI_COMPAT_*`), `OPENAI_API_KEY` for realtime voice, AWS creds +
+`DYNAMODB_TABLE`, and `CORS_ORIGINS` (include your Vercel URL). See
+`.env.example`.
 
 Managing dependencies: `uv add <pkg>` / `uv remove <pkg>` (updates the lockfile);
 `uv lock --upgrade` to bump. Need a `requirements.txt`? `uv export -o requirements.txt`.
@@ -59,6 +61,11 @@ POST /practice/generate        { userId, targetSkillCode? }
 POST /practice/submit          { userId, exerciseId, userAnswer }
 GET  /history/{user_id}
 GET  /stats/daily/{user_id}?timezone=<IANA timezone>&days=7
+POST /chat/sessions
+POST /chat/send
+POST /chat/predict
+POST /chat/sessions/{session_id}/analyze
+POST /chat/realtime/session
 ```
 
 ## Deploy (Linux)
@@ -98,6 +105,11 @@ The request-scoped key is used only for that API call and is not stored in
 DynamoDB. The client uses JSON mode (`response_format={"type":"json_object"}`) +
 Pydantic validation + one retry, which works across providers that support the
 OpenAI-compatible chat completions shape.
+
+Realtime voice is separate from the text provider. Configure
+`OPENAI_API_KEY` and optionally `OPENAI_REALTIME_MODEL`; the backend exchanges
+the server key for short-lived Realtime client secrets so the browser never sees
+the real OpenAI key.
 
 ## Diagnose request debugging
 

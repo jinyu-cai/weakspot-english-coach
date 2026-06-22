@@ -7,6 +7,8 @@ from app.db.dynamodb import table
 from app.db.keys import (
     active_plan_sk,
     attempt_sk,
+    chat_message_sk,
+    chat_session_sk,
     error_sk,
     exercise_sk,
     note_sk,
@@ -318,6 +320,93 @@ def incr_rate_counter(rate_key: str, feature: str, day: str, ttl_epoch: int) -> 
         ReturnValues="UPDATED_NEW",
     )
     return int(res["Attributes"]["count"])
+
+
+# ----- Chat sessions & messages -----
+
+def save_chat_session(session: dict) -> None:
+    item = {
+        **session,
+        "PK": user_pk(session["userId"]),
+        "SK": chat_session_sk(session["id"]),
+        "entityType": "CHAT_SESSION",
+    }
+    _put(item)
+
+
+def get_chat_session(user_id: str, session_id: str) -> Optional[dict]:
+    res = table.get_item(Key={"PK": user_pk(user_id), "SK": chat_session_sk(session_id)})
+    item = res.get("Item")
+    return clean(item) if item else None
+
+
+def list_chat_sessions(user_id: str, limit: int = 20) -> list:
+    res = table.query(
+        KeyConditionExpression=Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("CHAT#"),
+        ScanIndexForward=False,
+        Limit=limit,
+    )
+    return [clean(i) for i in res.get("Items", [])]
+
+
+def save_chat_message(message: dict) -> None:
+    item = {
+        **message,
+        "PK": user_pk(message["userId"]),
+        "SK": chat_message_sk(message["createdAt"], message["id"]),
+        "entityType": "CHAT_MESSAGE",
+    }
+    _put(item)
+
+
+def list_chat_messages(user_id: str, session_id: str, limit: int = 50) -> list:
+    res = table.query(
+        KeyConditionExpression=Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("CHATMSG#"),
+        ScanIndexForward=True,
+        Limit=limit,
+    )
+    items = [clean(i) for i in res.get("Items", [])]
+    return [m for m in items if m.get("sessionId") == session_id]
+
+
+def update_chat_session_summary(user_id: str, session_id: str, summary: str, message_count: int) -> None:
+    table.update_item(
+        Key={"PK": user_pk(user_id), "SK": chat_session_sk(session_id)},
+        UpdateExpression="SET summary = :s, messageCount = :c, updatedAt = :u",
+        ExpressionAttributeValues={
+            ":s": summary,
+            ":c": message_count,
+            ":u": now_iso(),
+        },
+    )
+
+
+def update_chat_session_analysis(
+    user_id: str,
+    session_id: str,
+    analysis: dict,
+    saved_notes: list,
+    saved_errors: list,
+    updated_skills: list,
+    analyzed_at: str,
+) -> None:
+    table.update_item(
+        Key={"PK": user_pk(user_id), "SK": chat_session_sk(session_id)},
+        UpdateExpression=(
+            "SET analysis = :a, analysisCreatedAt = :t, analysisSavedNotes = :n, "
+            "analysisSavedErrors = :e, analysisUpdatedSkills = :s, updatedAt = :u"
+        ),
+        ExpressionAttributeValues=to_dynamo(
+            {
+                ":a": analysis,
+                ":t": analyzed_at,
+                ":n": saved_notes,
+                ":e": saved_errors,
+                ":s": updated_skills,
+                ":u": analyzed_at,
+            }
+        ),
+    )
 
 
 def upsert_google_user(sub, email, name, avatar_url) -> dict:

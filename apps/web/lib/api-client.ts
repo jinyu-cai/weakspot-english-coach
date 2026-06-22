@@ -20,6 +20,12 @@
 import type {
   ChatImportAnalyzeResponse,
   ChatImportConversation,
+  ChatMessage,
+  ChatMessagesResponse,
+  ChatPredictResponse,
+  ChatSendResponse,
+  ChatSession,
+  ChatSessionsResponse,
   DailyStatsResponse,
   DeleteSubmissionResponse,
   DiagnoseResponse,
@@ -33,6 +39,8 @@ import type {
   PracticeGrade,
   PracticeSubmitResponse,
   ProfileResponse,
+  RealtimeSessionResponse,
+  SessionAnalysisResponse,
 } from "./types"
 import {
   DEMO_USER_ID,
@@ -324,6 +332,224 @@ export async function deleteNote(noteId: string, createdAt: string): Promise<{ d
   const params = new URLSearchParams({ createdAt })
   return apiFetch<{ deleted: boolean; noteId: string }>(`/notes/${noteId}?${params.toString()}`, {
     method: "DELETE",
+  })
+}
+
+/* ---- Chat ---- */
+
+export async function createChatSession(
+  userId: string = DEMO_USER_ID,
+  topic?: string,
+): Promise<ChatSession> {
+  if (USE_MOCK) {
+    await delay(300)
+    return {
+      id: `cs-${Date.now()}`,
+      userId,
+      topic: topic ?? null,
+      scenarioPrompt: null,
+      messageCount: 0,
+      summary: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+  }
+  const { session } = await apiFetch<{ session: ChatSession }>("/chat/sessions", {
+    method: "POST",
+    body: JSON.stringify({ userId, topic }),
+  })
+  return session
+}
+
+export async function getChatSessions(
+  userId: string = DEMO_USER_ID,
+): Promise<ChatSession[]> {
+  if (USE_MOCK) {
+    await delay(300)
+    return []
+  }
+  const { sessions } = await apiFetch<ChatSessionsResponse>("/chat/sessions")
+  return sessions
+}
+
+export async function getChatMessages(
+  sessionId: string,
+  userId: string = DEMO_USER_ID,
+): Promise<ChatMessagesResponse> {
+  if (USE_MOCK) {
+    await delay(300)
+    return {
+      session: {
+        id: sessionId,
+        userId,
+        topic: null,
+        scenarioPrompt: null,
+        messageCount: 0,
+        summary: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      messages: [],
+    }
+  }
+  return apiFetch<ChatMessagesResponse>(`/chat/sessions/${sessionId}/messages`)
+}
+
+export async function sendChatMessage(
+  userId: string = DEMO_USER_ID,
+  sessionId: string,
+  text: string,
+): Promise<ChatSendResponse> {
+  if (USE_MOCK) {
+    await delay(1200)
+    const now = new Date().toISOString()
+    return {
+      userMessage: {
+        id: `cm-${Date.now()}-u`,
+        userId,
+        sessionId,
+        role: "user",
+        content: text,
+        corrections: null,
+        betterExpression: null,
+        createdAt: now,
+      },
+      assistantMessage: {
+        id: `cm-${Date.now()}-a`,
+        userId,
+        sessionId,
+        role: "assistant",
+        content: "That sounds interesting! Could you tell me more about it? I'd love to hear the details.",
+        corrections: [
+          {
+            original: "I go there yesterday",
+            corrected: "I went there yesterday",
+            explanationZh: "描述过去的事情要用过去式，go 的过去式是 went。",
+          },
+        ],
+        betterExpression: {
+          original: "The food was very good",
+          natural: "The food was amazing / The food was absolutely delicious",
+          explanationZh: "用更具体生动的形容词比 very good 更地道自然。",
+        },
+        createdAt: now,
+      },
+    }
+  }
+  return apiFetch<ChatSendResponse>("/chat/send", {
+    method: "POST",
+    body: JSON.stringify({ userId, sessionId, text }),
+  })
+}
+
+export async function predictChatCompletion(
+  userId: string = DEMO_USER_ID,
+  sessionId: string,
+  partialText: string,
+): Promise<string[]> {
+  if (USE_MOCK) {
+    await delay(800)
+    return [
+      "...if you could help me with this?",
+      "...what the best way to do this is?",
+      "...whether we should try something different.",
+    ]
+  }
+  const { predictions } = await apiFetch<ChatPredictResponse>("/chat/predict", {
+    method: "POST",
+    body: JSON.stringify({ userId, sessionId, partialText }),
+  })
+  return predictions
+}
+
+/* ---- Session Analysis ---- */
+
+export async function analyzeSession(
+  sessionId: string,
+): Promise<SessionAnalysisResponse> {
+  if (USE_MOCK) {
+    await delay(2000)
+    return {
+      analysis: {
+        summaryZh: "你在这次对话中表现积极，主动使用英语交流。主要需要注意动词时态的使用和更自然的表达方式。",
+        corrections: [
+          {
+            code: "grammar.verb_tense",
+            category: "Verb tense",
+            severity: "high",
+            original: "I go there yesterday",
+            corrected: "I went there yesterday",
+            explanationZh: "描述过去的事情要用过去式，go 的过去式是 went。",
+            microLessonZh: "看到 yesterday、last week 等过去时间词时，主要动词要变成过去式。",
+            practiceGoal: "用过去式复述 5 件昨天做过的事情。",
+          },
+          {
+            code: "grammar.verb_tense",
+            category: "Verb tense",
+            severity: "medium",
+            original: "The food is very good",
+            corrected: "The food was very good",
+            explanationZh: "描述过去的体验用过去式 was，而不是现在式 is。",
+            microLessonZh: "过去经历中的 be 动词通常用 was/were。",
+            practiceGoal: "用 was/were 描述 5 个过去的体验。",
+          },
+        ],
+        naturalExpressions: [
+          {
+            original: "The food was very good",
+            natural: "The food was absolutely delicious",
+            explanationZh: "用更具体生动的形容词比 very good 更地道自然。",
+            context: "描述食物、体验等正面感受时使用",
+            examples: [
+              "The pasta was absolutely delicious — I'd definitely order it again.",
+              "Have you tried their coffee? It's absolutely delicious.",
+            ],
+          },
+        ],
+        weaknesses: [
+          {
+            code: "grammar.verb_tense",
+            category: "Verb tense",
+            severity: "high",
+            evidenceQuote: "I go there yesterday",
+            explanationZh: "多次在描述过去事件时使用现在时态，需要加强过去时态的练习。",
+            practiceGoal: "用过去式复述5件昨天做的事情。",
+          },
+        ],
+        strengthsZh: ["积极主动地使用英语交流", "词汇量基本满足日常对话需求"],
+        recommendedNextActionsZh: ["练习过去时态的使用", "积累更多地道表达替换 very + adj 的模式"],
+      },
+      savedNotes: [],
+      savedErrors: [],
+      updatedSkills: [],
+      sessionId,
+    }
+  }
+  return apiFetch<SessionAnalysisResponse>(`/chat/sessions/${sessionId}/analyze`, {
+    method: "POST",
+  })
+}
+
+/* ---- Voice / Realtime ---- */
+
+export async function createRealtimeSession(
+  userId: string = DEMO_USER_ID,
+  topic?: string,
+): Promise<RealtimeSessionResponse> {
+  return apiFetch<RealtimeSessionResponse>("/chat/realtime/session", {
+    method: "POST",
+    body: JSON.stringify({ userId, topic }),
+  })
+}
+
+export async function saveVoiceTranscript(
+  userId: string = DEMO_USER_ID,
+  sessionId: string,
+  messages: { role: string; content: string }[],
+): Promise<{ saved: number }> {
+  return apiFetch<{ saved: number }>(`/chat/sessions/${sessionId}/transcript`, {
+    method: "POST",
+    body: JSON.stringify({ userId, messages }),
   })
 }
 
