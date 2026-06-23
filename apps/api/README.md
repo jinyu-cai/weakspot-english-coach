@@ -107,9 +107,14 @@ Pydantic validation + one retry, which works across providers that support the
 OpenAI-compatible chat completions shape.
 
 Realtime voice is separate from the text provider. Configure
-`OPENAI_API_KEY` and optionally `OPENAI_REALTIME_MODEL`; the backend exchanges
-the server key for short-lived Realtime client secrets so the browser never sees
-the real OpenAI key.
+`OPENAI_API_KEY`, optionally `OPENAI_REALTIME_MODEL`, and
+`OPENAI_REALTIME_MODELS` for the allowed voice-model selector; the backend
+exchanges the server key for short-lived Realtime client secrets so the browser
+never sees the real OpenAI key.
+
+Text chat uses `LLM_MODEL_FAST` (`deepseek-v4-flash`) by default and can opt into
+`LLM_MODEL` (`deepseek-v4-pro`) per chat session. Prediction remains on the fast
+model and session analysis remains on the pro model.
 
 ## Diagnose request debugging
 

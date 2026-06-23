@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   Lightbulb,
   Mic,
@@ -12,9 +12,11 @@ import {
 } from "lucide-react"
 import { useRealtimeChat } from "@/hooks/use-realtime-chat"
 import { DEMO_USER_ID } from "@/lib/mock-data"
+import type { RealtimeVoiceModel } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { cn } from "@/lib/utils"
 
 interface VoiceChatPanelProps {
@@ -23,6 +25,7 @@ interface VoiceChatPanelProps {
 }
 
 export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
+  const [voiceModel, setVoiceModel] = useState<RealtimeVoiceModel>("gpt-realtime-mini-2025-12-15")
   const {
     status,
     error,
@@ -44,7 +47,7 @@ export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
   }, [transcript])
 
   async function handleConnect() {
-    await connect(topic)
+    await connect(topic, voiceModel)
   }
 
   async function handleEnd() {
@@ -69,6 +72,18 @@ export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
             <p className="mt-1 text-sm text-destructive">{error}</p>
           )}
         </div>
+        <ToggleGroup
+          value={[voiceModel]}
+          onValueChange={(v) => v[0] && setVoiceModel(v[0] as RealtimeVoiceModel)}
+          className="rounded-lg border border-border p-0.5"
+        >
+          <ToggleGroupItem value="gpt-realtime-mini-2025-12-15" className="h-8 rounded-md px-3 text-xs">
+            Mini
+          </ToggleGroupItem>
+          <ToggleGroupItem value="gpt-realtime-2" className="h-8 rounded-md px-3 text-xs">
+            Realtime 2
+          </ToggleGroupItem>
+        </ToggleGroup>
         <Button size="lg" onClick={handleConnect} className="gap-2">
           <Phone className="size-5" />
           Start Voice Chat
@@ -202,6 +217,9 @@ export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
         <div className="mt-2 flex items-center justify-center gap-3">
           <Badge variant="secondary" className="gap-1 text-[10px]">
             {isMicOn ? "Listening" : "Muted"}
+          </Badge>
+          <Badge variant="outline" className="text-[10px]">
+            {voiceModel === "gpt-realtime-2" ? "Realtime 2" : "Mini"}
           </Badge>
         </div>
       </div>

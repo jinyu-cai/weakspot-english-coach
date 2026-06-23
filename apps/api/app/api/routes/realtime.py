@@ -1,5 +1,5 @@
-import logging
 import hashlib
+import logging
 from typing import List, Optional
 from uuid import uuid4
 
@@ -25,6 +25,7 @@ logger = logging.getLogger("uvicorn.error")
 class RealtimeSessionRequest(BaseModel):
     userId: str
     topic: Optional[str] = None
+    model: Optional[str] = None
 
 
 class TranscriptMessage(BaseModel):
@@ -38,12 +39,32 @@ class SaveTranscriptRequest(BaseModel):
     messages: List[TranscriptMessage]
 
 
+def _allowed_realtime_models() -> set[str]:
+    return set(settings.openai_realtime_model_list) | {settings.openai_realtime_model}
+
+
+def _validate_realtime_model(model: str | None) -> str:
+    selected = (model or settings.openai_realtime_model).strip()
+    allowed = _allowed_realtime_models()
+    if selected not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "invalid_realtime_model",
+                "message": "Unsupported realtime voice model.",
+                "allowed": sorted(allowed),
+            },
+        )
+    return selected
+
+
 @router.post("/realtime/session")
 def create_realtime_session(
     req: RealtimeSessionRequest,
     identity: Identity = Depends(rate_limited("chat")),
 ):
     req.userId = identity.user_id
+    realtime_model = _validate_realtime_model(req.model)
 
     if not settings.openai_api_key:
         raise HTTPException(
@@ -59,6 +80,7 @@ def create_realtime_session(
         "topic": req.topic,
         "scenarioPrompt": None,
         "mode": "voice",
+        "voiceModel": realtime_model,
         "messageCount": 0,
         "summary": None,
         "createdAt": now,
@@ -81,7 +103,7 @@ def create_realtime_session(
             json={
                 "session": {
                     "type": "realtime",
-                    "model": settings.openai_realtime_model,
+                    "model": realtime_model,
                     "instructions": instructions,
                     "output_modalities": ["audio"],
                     "tools": REALTIME_FUNCTION_TOOLS,
@@ -125,13 +147,13 @@ def create_realtime_session(
 
     logger.info(
         "realtime session created user_id=%s session=%s model=%s",
-        req.userId, session_id, settings.openai_realtime_model,
+        req.userId, session_id, realtime_model,
     )
 
     return {
         "clientSecret": client_secret,
         "sessionId": session_id,
-        "model": settings.openai_realtime_model,
+        "model": realtime_model,
     }
 
 

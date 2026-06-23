@@ -59,6 +59,7 @@ def chat_reply(
     user_text: str,
     topic: Optional[str] = None,
     llm_provider: Optional[LLMProviderConfig] = None,
+    model: Optional[str] = None,
     trace_id: Optional[str] = None,
 ) -> ChatReplyAI:
     messages = build_chat_messages(history, user_text, topic)
@@ -66,6 +67,7 @@ def chat_reply(
         messages=messages,
         response_model=ChatReplyAI,
         max_tokens=2000,
+        model=model,
         provider=llm_provider,
         trace_id=trace_id,
     )

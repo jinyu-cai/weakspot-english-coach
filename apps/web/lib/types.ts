@@ -3,6 +3,8 @@ export type Severity = "low" | "medium" | "high"
 export type PracticeType = "fix_sentence" | "fill_blank" | "rewrite_sentence"
 export type DiagnosisMode = "fast" | "deep"
 export type ChatImportEvidenceType = "user_error" | "expression_gap" | "assistant_correction" | "assistant_advice"
+export type TextChatModel = "deepseek-v4-flash" | "deepseek-v4-pro"
+export type RealtimeVoiceModel = "gpt-realtime-mini-2025-12-15" | "gpt-realtime-2"
 
 export interface LearnerProfile {
   userId: string
@@ -223,6 +225,8 @@ export interface ChatSession {
   userId: string
   topic?: string | null
   scenarioPrompt?: string | null
+  textModel?: TextChatModel | null
+  voiceModel?: RealtimeVoiceModel | null
   messageCount: number
   summary?: string | null
   createdAt: string
@@ -293,7 +297,7 @@ export interface VoiceBetterExpression {
 export interface RealtimeSessionResponse {
   clientSecret: string
   sessionId: string
-  model: string
+  model: RealtimeVoiceModel
 }
 
 /* ---- Session analysis types ---- */

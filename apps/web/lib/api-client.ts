@@ -25,6 +25,8 @@ import type {
   ChatPredictResponse,
   ChatSendResponse,
   ChatSession,
+  RealtimeVoiceModel,
+  TextChatModel,
   ChatSessionsResponse,
   DailyStatsResponse,
   DeleteSubmissionResponse,
@@ -340,6 +342,7 @@ export async function deleteNote(noteId: string, createdAt: string): Promise<{ d
 export async function createChatSession(
   userId: string = DEMO_USER_ID,
   topic?: string,
+  textModel: TextChatModel = "deepseek-v4-flash",
 ): Promise<ChatSession> {
   if (USE_MOCK) {
     await delay(300)
@@ -348,6 +351,7 @@ export async function createChatSession(
       userId,
       topic: topic ?? null,
       scenarioPrompt: null,
+      textModel,
       messageCount: 0,
       summary: null,
       createdAt: new Date().toISOString(),
@@ -356,7 +360,7 @@ export async function createChatSession(
   }
   const { session } = await apiFetch<{ session: ChatSession }>("/chat/sessions", {
     method: "POST",
-    body: JSON.stringify({ userId, topic }),
+    body: JSON.stringify({ userId, topic, textModel }),
   })
   return session
 }
@@ -384,6 +388,7 @@ export async function getChatMessages(
         userId,
         topic: null,
         scenarioPrompt: null,
+        textModel: "deepseek-v4-flash",
         messageCount: 0,
         summary: null,
         createdAt: new Date().toISOString(),
@@ -535,10 +540,11 @@ export async function analyzeSession(
 export async function createRealtimeSession(
   userId: string = DEMO_USER_ID,
   topic?: string,
+  model: RealtimeVoiceModel = "gpt-realtime-mini-2025-12-15",
 ): Promise<RealtimeSessionResponse> {
   return apiFetch<RealtimeSessionResponse>("/chat/realtime/session", {
     method: "POST",
-    body: JSON.stringify({ userId, topic }),
+    body: JSON.stringify({ userId, topic, model }),
   })
 }
 
