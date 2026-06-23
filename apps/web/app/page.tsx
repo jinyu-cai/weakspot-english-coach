@@ -4,14 +4,14 @@ import { useState } from "react"
 import { toast } from "sonner"
 import { Info } from "lucide-react"
 import { diagnose } from "@/lib/api-client"
-import { DEMO_USER_ID, SAMPLE_PARAGRAPH } from "@/lib/mock-data"
+import { DEMO_USER_ID } from "@/lib/mock-data"
 import type { DiagnosticResult, DiagnosisMode } from "@/lib/types"
 import { DiagnosticInput } from "@/components/diagnostic-input"
 import { DiagnosticReport } from "@/components/diagnostic-report"
 import { DiagnosticLoading } from "@/components/loading-state"
 
 export default function DiagnosePage() {
-  const [text, setText] = useState(SAMPLE_PARAGRAPH)
+  const [text, setText] = useState("")
   const [diagnosisMode, setDiagnosisMode] = useState<DiagnosisMode>("fast")
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<DiagnosticResult | null>(null)
