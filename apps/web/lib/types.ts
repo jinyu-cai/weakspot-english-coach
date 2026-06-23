@@ -298,6 +298,8 @@ export interface RealtimeSessionResponse {
   clientSecret: string
   sessionId: string
   model: RealtimeVoiceModel
+  maxDurationSeconds?: number | null
+  expiresAt?: number | null
 }
 
 /* ---- Session analysis types ---- */

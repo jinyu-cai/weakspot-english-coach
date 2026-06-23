@@ -550,6 +550,32 @@ export async function createRealtimeSession(
   })
 }
 
+export async function attachRealtimeSideband(
+  sessionId: string,
+  callId: string,
+): Promise<{ sessionId: string; callId: string; sidebandStatus: string; activeSideband: boolean }> {
+  return apiFetch<{ sessionId: string; callId: string; sidebandStatus: string; activeSideband: boolean }>(
+    `/chat/realtime/${sessionId}/sideband`,
+    {
+      method: "POST",
+      body: JSON.stringify({ callId }),
+    },
+  )
+}
+
+export async function kickRealtimeSession(
+  sessionId: string,
+  reason = "manual",
+): Promise<{ sessionId: string; kickRequested: boolean; activeSideband: boolean; kickSent: boolean }> {
+  return apiFetch<{ sessionId: string; kickRequested: boolean; activeSideband: boolean; kickSent: boolean }>(
+    `/chat/realtime/${sessionId}/kick`,
+    {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    },
+  )
+}
+
 export async function saveVoiceTranscript(
   userId: string = DEMO_USER_ID,
   sessionId: string,

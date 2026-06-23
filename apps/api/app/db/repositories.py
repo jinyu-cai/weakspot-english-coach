@@ -340,6 +340,35 @@ def get_chat_session(user_id: str, session_id: str) -> Optional[dict]:
     return clean(item) if item else None
 
 
+def update_chat_session_fields(user_id: str, session_id: str, fields: dict) -> None:
+    clean_fields = {k: v for k, v in fields.items() if k not in {"PK", "SK"}}
+    if not clean_fields:
+        return
+    clean_fields.setdefault("updatedAt", now_iso())
+    names = {f"#f{i}": key for i, key in enumerate(clean_fields)}
+    values = {f":v{i}": value for i, value in enumerate(clean_fields.values())}
+    table.update_item(
+        Key={"PK": user_pk(user_id), "SK": chat_session_sk(session_id)},
+        UpdateExpression="SET " + ", ".join(f"{name} = {value}" for name, value in zip(names, values)),
+        ExpressionAttributeNames=names,
+        ExpressionAttributeValues=to_dynamo(values),
+    )
+
+
+def request_chat_session_realtime_kick(user_id: str, session_id: str, reason: str) -> None:
+    now = now_iso()
+    update_chat_session_fields(
+        user_id,
+        session_id,
+        {
+            "realtimeStatus": "kick_requested",
+            "realtimeKickRequestedAt": now,
+            "realtimeKickReason": reason,
+            "updatedAt": now,
+        },
+    )
+
+
 def list_chat_sessions(user_id: str, limit: int = 20) -> list:
     res = table.query(
         KeyConditionExpression=Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("CHAT#"),

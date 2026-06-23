@@ -8,7 +8,7 @@ import jwt
 from fastapi import Header, HTTPException, Request, Response
 
 from app.config import settings
-from app.db.repositories import incr_rate_counter
+from app.db.repositories import get_access_role, incr_rate_counter
 from app.services.ai_client import LLMProviderConfig
 
 
@@ -103,28 +103,43 @@ def _client_ip(request: Request) -> str:
 @dataclass
 class Identity:
     user_id: str
-    kind: str  # "owner" | "user" | "guest"
+    kind: str  # "owner" | "member" | "user" | "guest"
     is_owner: bool
+    is_member: bool
     rate_key: str
     daily_limit: int
+    max_output_tokens: Optional[int]
+    max_realtime_seconds: Optional[int]
     login: Optional[str] = None
+
+    @property
+    def is_unlimited(self) -> bool:
+        return self.is_owner or self.is_member
 
 
 def resolve_identity(request: Request, response: Response) -> Identity:
     bypass = request.headers.get("x-owner-token")
     if settings.owner_bypass_token and bypass == settings.owner_bypass_token:
-        return Identity("owner", "owner", True, "owner", 10**9, None)
+        return Identity("owner", "owner", True, False, "owner", 10**9, None, None, None)
 
     claims = read_session(request)
     if claims and claims.get("sub"):
         login = (claims.get("login") or "").lower()
-        is_owner = login in settings.owner_login_set or login in settings.owner_email_set
+        access = get_access_role(login) if login else None
+        db_role = (access or {}).get("role")
+        is_owner = db_role == "owner" or login in settings.owner_login_set or login in settings.owner_email_set
+        is_member = not is_owner and (
+            db_role == "member" or login in settings.member_login_set or login in settings.member_email_set
+        )
         return Identity(
             user_id=claims["sub"],
-            kind="owner" if is_owner else "user",
+            kind="owner" if is_owner else "member" if is_member else "user",
             is_owner=is_owner,
+            is_member=is_member,
             rate_key=claims["sub"],
-            daily_limit=10**9 if is_owner else settings.user_daily_limit,
+            daily_limit=10**9 if is_owner or is_member else settings.user_daily_limit,
+            max_output_tokens=None if is_owner or is_member else settings.user_max_output_tokens,
+            max_realtime_seconds=None if is_owner or is_member else settings.user_realtime_max_seconds,
             login=claims.get("login"),
         )
 
@@ -136,15 +151,18 @@ def resolve_identity(request: Request, response: Response) -> Identity:
         user_id=f"guest_{guest_id}",
         kind="guest",
         is_owner=False,
+        is_member=False,
         rate_key=f"ip_{_client_ip(request)}",
         daily_limit=settings.guest_daily_limit,
+        max_output_tokens=settings.guest_max_output_tokens,
+        max_realtime_seconds=settings.guest_realtime_max_seconds,
     )
 
 
 def rate_limited(feature: str):
     def _dep(request: Request, response: Response) -> Identity:
         identity = resolve_identity(request, response)
-        if identity.is_owner:
+        if identity.is_unlimited:
             return identity
         day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         ttl = int(time.time()) + 2 * 86400

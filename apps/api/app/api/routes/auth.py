@@ -168,18 +168,27 @@ def google_callback(code: Optional[str] = None, state: Optional[str] = None):
 def me(request: Request, response: Response):
     bypass = request.headers.get("x-owner-token")
     if settings.owner_bypass_token and bypass == settings.owner_bypass_token:
-        return {"authenticated": True, "userId": "owner", "login": "owner", "isOwner": True}
+        return {
+            "authenticated": True,
+            "userId": "owner",
+            "login": "owner",
+            "isOwner": True,
+            "isMember": False,
+            "accessTier": "owner",
+        }
 
     claims = read_session(request)
     if claims and claims.get("sub"):
-        login = claims.get("login") or ""
+        identity = resolve_identity(request, response)
         return {
             "authenticated": True,
-            "userId": claims["sub"],
-            "login": login,
+            "userId": identity.user_id,
+            "login": identity.login or "",
             "name": claims.get("name"),
             "avatarUrl": claims.get("avatar"),
-            "isOwner": login.lower() in settings.owner_login_set or login.lower() in settings.owner_email_set,
+            "isOwner": identity.is_owner,
+            "isMember": identity.is_member,
+            "accessTier": identity.kind,
         }
     resolve_identity(request, response)  # establish a guest cookie
     return {"authenticated": False, "guestLimit": settings.guest_daily_limit}

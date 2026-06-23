@@ -8,6 +8,8 @@ export type Me = {
   name?: string | null
   avatarUrl?: string | null
   isOwner?: boolean
+  isMember?: boolean
+  accessTier?: "owner" | "member" | "user" | "guest"
   guestLimit?: number
 }
 

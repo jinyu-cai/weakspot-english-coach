@@ -60,10 +60,16 @@ class Settings(BaseSettings):
     owner_bypass_token: str = ""
     guest_daily_limit: int = 3
     user_daily_limit: int = 20
+    guest_max_output_tokens: int = 8192
+    user_max_output_tokens: int = 16384
+    guest_realtime_max_seconds: int = 120
+    user_realtime_max_seconds: int = 300
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = ""
     owner_emails: str = ""
+    member_github_logins: str = ""
+    member_emails: str = ""
 
     @property
     def cors_origin_list(self) -> List[str]:
@@ -100,6 +106,14 @@ class Settings(BaseSettings):
     @property
     def owner_email_set(self) -> set:
         return {x.strip().lower() for x in self.owner_emails.split(",") if x.strip()}
+
+    @property
+    def member_login_set(self) -> set:
+        return {x.strip().lower() for x in self.member_github_logins.split(",") if x.strip()}
+
+    @property
+    def member_email_set(self) -> set:
+        return {x.strip().lower() for x in self.member_emails.split(",") if x.strip()}
 
     @property
     def google_auth_enabled(self) -> bool:

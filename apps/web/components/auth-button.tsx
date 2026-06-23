@@ -35,7 +35,7 @@ export function AuthButton() {
       ) : null}
       <span className="hidden max-w-[8rem] truncate text-sm font-medium sm:inline">
         {me.name || me.login}
-        {me.isOwner ? " · owner" : ""}
+        {me.isOwner ? " · owner" : me.isMember ? " · member" : ""}
       </span>
       <Button
         variant="ghost"
