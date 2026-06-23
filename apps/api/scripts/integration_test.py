@@ -193,7 +193,96 @@ def main() -> int:
             f"{len(imported['updatedSkills'])} skills updated"
         )
 
-        # 9. End-of-session chat analysis
+        # 9. Text and voice model selection
+        from app.api.routes import chat as chat_routes
+        from app.api.routes import realtime as realtime_routes
+        from app.models.chat import ChatReplyAI
+
+        original_chat_reply = chat_routes.chat_reply
+        selected_text_models = []
+
+        def fake_chat_reply(*, model=None, **kwargs):
+            selected_text_models.append(model)
+            return ChatReplyAI(reply="Model routing test reply.", corrections=[], betterExpression=None)
+
+        chat_routes.chat_reply = fake_chat_reply
+        try:
+            r = client.post("/api/v1/chat/sessions", json={"userId": user, "topic": "Default text model"})
+            assert r.status_code == 200, r.text
+            default_model_session = r.json()["session"]
+            assert default_model_session["textModel"] == "deepseek-v4-flash", default_model_session
+            r = client.post(
+                "/api/v1/chat/send",
+                json={"userId": user, "sessionId": default_model_session["id"], "text": "Hello from Flash."},
+            )
+            assert r.status_code == 200, r.text
+            assert selected_text_models[-1] == "deepseek-v4-flash", selected_text_models
+
+            r = client.post(
+                "/api/v1/chat/sessions",
+                json={"userId": user, "topic": "Pro text model", "textModel": "deepseek-v4-pro"},
+            )
+            assert r.status_code == 200, r.text
+            pro_model_session = r.json()["session"]
+            assert pro_model_session["textModel"] == "deepseek-v4-pro", pro_model_session
+            r = client.post(
+                "/api/v1/chat/send",
+                json={"userId": user, "sessionId": pro_model_session["id"], "text": "Hello from Pro."},
+            )
+            assert r.status_code == 200, r.text
+            assert selected_text_models[-1] == "deepseek-v4-pro", selected_text_models
+
+            r = client.post(
+                "/api/v1/chat/sessions",
+                json={"userId": user, "topic": "Bad model", "textModel": "deepseek-v4-bad"},
+            )
+            assert r.status_code == 400, r.text
+        finally:
+            chat_routes.chat_reply = original_chat_reply
+
+        original_openai_key = settings.openai_api_key
+        original_realtime_post = realtime_routes.httpx.post
+        selected_voice_models = []
+
+        class FakeRealtimeResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"value": "ephemeral-test-secret"}
+
+        def fake_realtime_post(url, *, headers, json, timeout):
+            selected_voice_models.append(json["session"]["model"])
+            return FakeRealtimeResponse()
+
+        settings.openai_api_key = "test-openai-key"
+        realtime_routes.httpx.post = fake_realtime_post
+        try:
+            for voice_model in ["gpt-realtime-mini-2025-12-15", "gpt-realtime-2"]:
+                r = client.post(
+                    "/api/v1/chat/realtime/session",
+                    json={"userId": user, "topic": "Voice model test", "model": voice_model},
+                )
+                assert r.status_code == 200, r.text
+                realtime_session = r.json()
+                assert realtime_session["clientSecret"] == "ephemeral-test-secret", realtime_session
+                assert realtime_session["model"] == voice_model, realtime_session
+
+            r = client.post(
+                "/api/v1/chat/realtime/session",
+                json={"userId": user, "topic": "Bad voice model", "model": "gpt-realtime-bad"},
+            )
+            assert r.status_code == 400, r.text
+        finally:
+            settings.openai_api_key = original_openai_key
+            realtime_routes.httpx.post = original_realtime_post
+
+        assert selected_voice_models == ["gpt-realtime-mini-2025-12-15", "gpt-realtime-2"], selected_voice_models
+        print(
+            "9. POST /chat model routing -> text default/pro + voice mini/realtime-2 validated"
+        )
+
+        # 10. End-of-session chat analysis
         r = client.post("/api/v1/chat/sessions", json={"userId": user, "topic": "Free conversation"})
         assert r.status_code == 200, r.text
         chat_session = r.json()["session"]
@@ -228,7 +317,7 @@ def main() -> int:
         assert r.status_code == 200, r.text
         assert len(r.json()["errors"]) == errors_after_first_analysis, "duplicate analysis should not add errors"
         print(
-            "9. POST /chat/sessions/{id}/analyze -> "
+            "10. POST /chat/sessions/{id}/analyze -> "
             f"{len(chat_analysis['savedErrors'])} errors, "
             f"{len(chat_analysis['savedNotes'])} notes, duplicate-safe"
         )

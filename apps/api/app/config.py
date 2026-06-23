@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     openai_compat_fast_model: str = ""
     openai_api_key: str = ""
     openai_realtime_model: str = "gpt-realtime-mini-2025-12-15"
+    openai_realtime_models: str = "gpt-realtime-mini-2025-12-15,gpt-realtime-2"
 
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
@@ -83,6 +84,10 @@ class Settings(BaseSettings):
     @property
     def default_llm_fast_model(self) -> str:
         return self.openai_compat_fast_model or self.llm_model_fast
+
+    @property
+    def openai_realtime_model_list(self) -> List[str]:
+        return [model.strip() for model in self.openai_realtime_models.split(",") if model.strip()]
 
     @property
     def owner_login_set(self) -> set:

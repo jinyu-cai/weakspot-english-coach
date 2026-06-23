@@ -22,7 +22,7 @@ import {
   sendChatMessage,
 } from "@/lib/api-client"
 import { DEMO_USER_ID } from "@/lib/mock-data"
-import type { ChatMessage, ChatSession, SessionAnalysis } from "@/lib/types"
+import type { ChatMessage, ChatSession, SessionAnalysis, TextChatModel } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -34,6 +34,11 @@ import { cn } from "@/lib/utils"
 
 type ChatMode = "text" | "voice"
 type ViewState = "chat" | "analyzing" | "summary"
+
+const TEXT_MODEL_LABELS: Record<TextChatModel, string> = {
+  "deepseek-v4-flash": "Flash",
+  "deepseek-v4-pro": "Pro",
+}
 
 const SCENARIOS = [
   { label: "Free Chat", topic: undefined, emoji: "💬", desc: "Talk about anything" },
@@ -56,6 +61,7 @@ export default function ChatPage() {
   const [loadingSessions, setLoadingSessions] = useState(true)
   const [creatingSession, setCreatingSession] = useState(false)
   const [mode, setMode] = useState<ChatMode>("voice")
+  const [selectedTextModel, setSelectedTextModel] = useState<TextChatModel>("deepseek-v4-flash")
   const [viewState, setViewState] = useState<ViewState>("chat")
   const [analysis, setAnalysis] = useState<SessionAnalysis | null>(null)
 
@@ -101,9 +107,10 @@ export default function ChatPage() {
   async function handleNewSession(topic?: string) {
     setCreatingSession(true)
     try {
-      const session = await createChatSession(DEMO_USER_ID, topic)
+      const session = await createChatSession(DEMO_USER_ID, topic, selectedTextModel)
       setSessions((prev) => [session, ...prev])
       setActiveSession(session)
+      setSelectedTextModel(session.textModel ?? selectedTextModel)
       setMessages([])
       setInput("")
       setPredictions([])
@@ -118,6 +125,7 @@ export default function ChatPage() {
 
   async function handleSelectSession(session: ChatSession) {
     setActiveSession(session)
+    setSelectedTextModel(session.textModel ?? "deepseek-v4-flash")
     setMessages([])
     setInput("")
     setPredictions([])
@@ -232,11 +240,25 @@ export default function ChatPage() {
   if (!activeSession) {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-        <header className="flex flex-col gap-2">
-          <h1 className="font-heading text-3xl font-bold tracking-tight">Chat Practice</h1>
-          <p className="text-muted-foreground">
-            Practice real conversations in English. Your expressions are analyzed after each session.
-          </p>
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex flex-col gap-2">
+            <h1 className="font-heading text-3xl font-bold tracking-tight">Chat Practice</h1>
+            <p className="text-muted-foreground">
+              Practice real conversations in English. Your expressions are analyzed after each session.
+            </p>
+          </div>
+          <ToggleGroup
+            value={[selectedTextModel]}
+            onValueChange={(v) => v[0] && setSelectedTextModel(v[0] as TextChatModel)}
+            className="w-fit rounded-lg border border-border p-0.5"
+          >
+            <ToggleGroupItem value="deepseek-v4-flash" className="h-7 rounded-md px-2.5 text-xs">
+              Flash
+            </ToggleGroupItem>
+            <ToggleGroupItem value="deepseek-v4-pro" className="h-7 rounded-md px-2.5 text-xs">
+              Pro
+            </ToggleGroupItem>
+          </ToggleGroup>
         </header>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -336,6 +358,11 @@ export default function ChatPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {viewState === "chat" && mode === "text" && (
+            <Badge variant="secondary" className="h-7 rounded-md px-2.5 text-xs">
+              {TEXT_MODEL_LABELS[activeSession.textModel ?? selectedTextModel]}
+            </Badge>
+          )}
           {viewState === "chat" && (
             <ToggleGroup
               value={[mode]}

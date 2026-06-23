@@ -57,6 +57,7 @@ LLM_MODEL_FAST=deepseek-v4-flash
 # Realtime voice only; keep this server-side.
 OPENAI_API_KEY=<openai-api-key>
 OPENAI_REALTIME_MODEL=gpt-realtime-mini-2025-12-15
+OPENAI_REALTIME_MODELS=gpt-realtime-mini-2025-12-15,gpt-realtime-2
 
 AWS_REGION=us-east-1
 AWS_ACCESS_KEY_ID=...real...
@@ -132,7 +133,7 @@ shows new items — that's also your required submission screenshot).
 
 ```bash
 git pull            # or re-scp the apps/api dir
-docker compose up -d --build
+docker compose up -d --build --force-recreate api
 ```
 
 ## Logs / restart

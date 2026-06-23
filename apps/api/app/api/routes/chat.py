@@ -29,9 +29,26 @@ from app.services.session_analysis_service import analyze_session
 router = APIRouter(prefix="/chat")
 logger = logging.getLogger("uvicorn.error")
 
+TEXT_CHAT_MODELS = {"deepseek-v4-flash", "deepseek-v4-pro"}
+DEFAULT_TEXT_CHAT_MODEL = "deepseek-v4-flash"
+
 
 def _elapsed_ms(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
+
+
+def _validate_text_model(model: str | None) -> str:
+    selected = (model or DEFAULT_TEXT_CHAT_MODEL).strip()
+    if selected not in TEXT_CHAT_MODELS:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "invalid_text_model",
+                "message": "Unsupported text chat model.",
+                "allowed": sorted(TEXT_CHAT_MODELS),
+            },
+        )
+    return selected
 
 
 @router.post("/sessions")
@@ -41,6 +58,7 @@ def create_session(
     identity: Identity = Depends(rate_limited("chat")),
 ):
     req.userId = identity.user_id
+    text_model = _validate_text_model(req.textModel)
     now = now_iso()
     session_id = f"cs_{uuid4().hex[:12]}"
     session = {
@@ -48,6 +66,7 @@ def create_session(
         "userId": req.userId,
         "topic": req.topic,
         "scenarioPrompt": req.scenarioPrompt,
+        "textModel": text_model,
         "messageCount": 0,
         "summary": None,
         "createdAt": now,
@@ -90,11 +109,14 @@ def send_message(
     session = get_chat_session(req.userId, req.sessionId)
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found.")
+    text_model = session.get("textModel") or DEFAULT_TEXT_CHAT_MODEL
+    if text_model not in TEXT_CHAT_MODELS:
+        text_model = DEFAULT_TEXT_CHAT_MODEL
 
     try:
         logger.info(
-            "chat[%s] start user_id=%s session=%s chars=%d",
-            request_id, req.userId, req.sessionId, len(req.text),
+            "chat[%s] start user_id=%s session=%s model=%s chars=%d",
+            request_id, req.userId, req.sessionId, text_model, len(req.text),
         )
 
         history = list_chat_messages(req.userId, req.sessionId)
@@ -122,6 +144,7 @@ def send_message(
             user_text=req.text,
             topic=session.get("topic"),
             llm_provider=llm_provider,
+            model=None if llm_provider else text_model,
             trace_id=request_id,
         )
 

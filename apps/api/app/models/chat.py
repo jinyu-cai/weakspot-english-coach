@@ -1,14 +1,18 @@
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
 from app.models.common import Severity
 
 
+RealtimeVoiceModel = Literal["gpt-realtime-mini-2025-12-15", "gpt-realtime-2"]
+
+
 class ChatCreateSessionRequest(BaseModel):
     userId: str
     topic: Optional[str] = None
     scenarioPrompt: Optional[str] = None
+    textModel: Optional[str] = None
 
 
 class ChatSendRequest(BaseModel):

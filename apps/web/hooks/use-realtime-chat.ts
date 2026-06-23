@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { createRealtimeSession, saveVoiceTranscript } from "@/lib/api-client"
-import type { VoiceCompletion } from "@/lib/types"
+import type { RealtimeVoiceModel, VoiceCompletion } from "@/lib/types"
 
 export type ConnectionStatus = "idle" | "connecting" | "connected" | "error"
 
@@ -114,7 +114,7 @@ export function useRealtimeChat(userId: string) {
   }, [])
 
   const connect = useCallback(
-    async (topic?: string) => {
+    async (topic?: string, realtimeModel: RealtimeVoiceModel = "gpt-realtime-mini-2025-12-15") => {
       if (status === "connecting" || status === "connected") return
       setStatus("connecting")
       setError(null)
@@ -122,7 +122,7 @@ export function useRealtimeChat(userId: string) {
       setCompletions(null)
 
       try {
-        const { clientSecret, sessionId, model } = await createRealtimeSession(userId, topic)
+        const { clientSecret, sessionId, model } = await createRealtimeSession(userId, topic, realtimeModel)
         sessionIdRef.current = sessionId
         modelRef.current = model
 
