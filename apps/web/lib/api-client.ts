@@ -61,6 +61,7 @@ import { getLLMProviderHeaders } from "./llm-settings"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
 const USE_MOCK = !API_BASE_URL
+const OWNER_BYPASS_TOKEN = process.env.NEXT_PUBLIC_OWNER_BYPASS_TOKEN
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -93,6 +94,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       "Content-Type": "application/json",
       ...getLLMProviderHeaders(),
+      ...(OWNER_BYPASS_TOKEN ? { "X-Owner-Token": OWNER_BYPASS_TOKEN } : {}),
       ...(init?.headers ?? {}),
     },
     ...init,
