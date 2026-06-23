@@ -6,6 +6,7 @@ import {
   Inbox,
   LayoutDashboard,
   MessageCircle,
+  Shield,
   Stethoscope,
   Trophy,
   type LucideIcon,
@@ -16,6 +17,7 @@ export interface NavItem {
   label: string
   description: string
   icon: LucideIcon
+  ownerOnly?: boolean
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -28,4 +30,5 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/plan", label: "Plan", description: "7-day study plan", icon: CalendarRange },
   { href: "/practice", label: "Practice", description: "Targeted exercises", icon: Dumbbell },
   { href: "/history", label: "History", description: "Past submissions", icon: History },
+  { href: "/admin", label: "Admin", description: "Manage members", icon: Shield, ownerOnly: true },
 ]

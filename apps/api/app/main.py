@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.api.routes import auth, chat, chat_import, diagnose, health, history, notes, plan, practice, profile, realtime, stats
+from app.api.routes import admin, auth, chat, chat_import, diagnose, health, history, notes, plan, practice, profile, realtime, stats
 
 app = FastAPI(title=settings.app_name)
 
@@ -16,6 +16,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
+app.include_router(admin.router, prefix="/api/v1", tags=["admin"])
 app.include_router(auth.router, prefix="/api/v1", tags=["auth"])
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 app.include_router(realtime.router, prefix="/api/v1", tags=["realtime"])

@@ -1,12 +1,21 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { NAV_ITEMS } from "@/lib/nav"
+import { getMe } from "@/lib/auth"
 
 export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
+  const [isOwner, setIsOwner] = useState(false)
+
+  useEffect(() => {
+    getMe().then((me) => setIsOwner(!!me.isOwner))
+  }, [])
+
+  const visibleItems = NAV_ITEMS.filter((item) => !item.ownerOnly || isOwner)
 
   return (
     <div className="flex h-full flex-col gap-6 p-4">
@@ -21,7 +30,7 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
       </Link>
 
       <nav className="flex flex-1 flex-col gap-1" aria-label="Main navigation">
-        {NAV_ITEMS.map((item) => {
+        {visibleItems.map((item) => {
           const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)
           const Icon = item.icon
           return (

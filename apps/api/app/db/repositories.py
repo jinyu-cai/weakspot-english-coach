@@ -409,6 +409,54 @@ def update_chat_session_analysis(
     )
 
 
+# ----- Access roles -----
+
+def _normalize_access_identifier(identifier: str) -> str:
+    return " ".join((identifier or "").strip().lower().split())
+
+
+def get_access_role(identifier: str) -> Optional[dict]:
+    normalized = _normalize_access_identifier(identifier)
+    if not normalized:
+        return None
+    res = table.get_item(Key={"PK": "ACCESS_ROLE", "SK": normalized})
+    item = res.get("Item")
+    return clean(item) if item else None
+
+
+def list_access_roles() -> list:
+    res = table.query(KeyConditionExpression=Key("PK").eq("ACCESS_ROLE"))
+    return [clean(i) for i in res.get("Items", [])]
+
+
+def set_access_role(identifier: str, role: str, updated_by: str) -> dict:
+    normalized = _normalize_access_identifier(identifier)
+    if not normalized:
+        raise ValueError("identifier is required")
+    if role not in {"owner", "member"}:
+        raise ValueError("role must be owner or member")
+    now = now_iso()
+    existing = get_access_role(normalized)
+    item = {
+        "PK": "ACCESS_ROLE",
+        "SK": normalized,
+        "entityType": "ACCESS_ROLE",
+        "identifier": normalized,
+        "role": role,
+        "createdAt": (existing or {}).get("createdAt", now),
+        "updatedAt": now,
+        "updatedBy": updated_by,
+    }
+    _put(item)
+    return clean(item)
+
+
+def delete_access_role(identifier: str) -> None:
+    normalized = _normalize_access_identifier(identifier)
+    if normalized:
+        _delete("ACCESS_ROLE", normalized)
+
+
 def upsert_google_user(sub, email, name, avatar_url) -> dict:
     user_id = f"google_{sub}"
     now = now_iso()

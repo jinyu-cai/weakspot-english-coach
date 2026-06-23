@@ -559,6 +559,37 @@ export async function saveVoiceTranscript(
   })
 }
 
+/* ---- Admin (owner-only) ---- */
+
+export interface AccessRole {
+  identifier: string
+  role: "owner" | "member"
+  createdAt: string
+  updatedAt: string
+  updatedBy: string
+}
+
+export async function listAccessRoles(): Promise<AccessRole[]> {
+  const { accessRoles } = await apiFetch<{ accessRoles: AccessRole[] }>("/admin/access-roles")
+  return accessRoles
+}
+
+export async function upsertAccessRole(identifier: string, role: "owner" | "member"): Promise<AccessRole> {
+  const { accessRole } = await apiFetch<{ accessRole: AccessRole }>("/admin/access-roles", {
+    method: "POST",
+    body: JSON.stringify({ identifier, role }),
+  })
+  return accessRole
+}
+
+export async function deleteAccessRole(identifier: string): Promise<{ deleted: boolean; identifier: string }> {
+  return apiFetch<{ deleted: boolean; identifier: string }>(`/admin/access-roles/${encodeURIComponent(identifier)}`, {
+    method: "DELETE",
+  })
+}
+
+/* ---- Stats ---- */
+
 export async function getDailyStats(
   userId: string = DEMO_USER_ID,
   timezone?: string,
