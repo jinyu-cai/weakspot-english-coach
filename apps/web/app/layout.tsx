@@ -4,6 +4,7 @@ import { Inter, Geist_Mono, Fredoka } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AppShell } from "@/components/app-shell"
+import { DiagnoseProvider } from "@/components/diagnose-provider"
 import { Toaster } from "@/components/ui/sonner"
 import { LoginGate } from "@/components/login-gate"
 
@@ -53,7 +54,9 @@ export default function RootLayout({
           }}
         />
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-          <AppShell>{children}</AppShell>
+          <AppShell>
+            <DiagnoseProvider>{children}</DiagnoseProvider>
+          </AppShell>
           <LoginGate />
           <Toaster richColors position="top-center" />
         </ThemeProvider>
