@@ -1,52 +1,13 @@
 "use client"
 
-import { useState } from "react"
-import { toast } from "sonner"
 import { Info } from "lucide-react"
-import { diagnose } from "@/lib/api-client"
-import { DEMO_USER_ID } from "@/lib/mock-data"
-import type { DiagnosticResult, DiagnosisMode } from "@/lib/types"
+import { useDiagnose } from "@/components/diagnose-provider"
 import { DiagnosticInput } from "@/components/diagnostic-input"
 import { DiagnosticReport } from "@/components/diagnostic-report"
 import { DiagnosticLoading } from "@/components/loading-state"
 
 export default function DiagnosePage() {
-  const [text, setText] = useState("")
-  const [diagnosisMode, setDiagnosisMode] = useState<DiagnosisMode>("fast")
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<DiagnosticResult | null>(null)
-  const [isDuplicate, setIsDuplicate] = useState(false)
-
-  async function handleAnalyze() {
-    setLoading(true)
-    setResult(null)
-    setIsDuplicate(false)
-    try {
-      const res = await diagnose(DEMO_USER_ID, text, diagnosisMode)
-      setResult(res.diagnostic)
-      const duplicate = Boolean(res.duplicate)
-      setIsDuplicate(duplicate)
-      if (duplicate) {
-        toast.info("Already diagnosed", {
-          description:
-            "This exact text was analyzed before — showing your previous result. It wasn't counted again, so your weakness profile stays accurate.",
-        })
-      } else {
-        toast.success("Diagnosis complete", {
-          description:
-            diagnosisMode === "fast"
-              ? "Your quick English weakness report is ready."
-              : "Your deep English weakness report is ready.",
-        })
-      }
-    } catch (error) {
-      toast.error("Analysis failed", {
-        description: error instanceof Error ? error.message : "Please try again shortly.",
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
+  const { text, setText, diagnosisMode, setDiagnosisMode, loading, result, isDuplicate, handleAnalyze } = useDiagnose()
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
