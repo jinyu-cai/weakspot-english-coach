@@ -713,7 +713,7 @@ export const mockNotes: LearningNote[] = [
   {
     id: "note-1",
     userId: DEMO_USER_ID,
-    submissionId: "sub-1",
+    submissionId: "sub-latest",
     type: "expression",
     topic: "Talking about past activities",
     original: "Yesterday I go to my university",
@@ -726,7 +726,7 @@ export const mockNotes: LearningNote[] = [
   {
     id: "note-2",
     userId: DEMO_USER_ID,
-    submissionId: "sub-1",
+    submissionId: "sub-latest",
     type: "vocabulary",
     topic: "Alternatives for 'good'",
     original: "good",
