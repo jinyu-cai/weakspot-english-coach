@@ -4,7 +4,7 @@ import useSWR, { mutate } from "swr"
 import { toast } from "sonner"
 import { AlertCircle, FileText, History as HistoryIcon, RefreshCcw } from "lucide-react"
 import { deleteSubmission, getHistory } from "@/lib/api-client"
-import type { HistoryResponse, Submission } from "@/lib/types"
+import type { HistoryResponse, LearningNote, Submission } from "@/lib/types"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
@@ -13,7 +13,7 @@ import { EmptyState } from "@/components/empty-state"
 import { SubmissionCard } from "@/components/submission-card"
 import { ErrorCard } from "@/components/error-card"
 
-const EMPTY_HISTORY: HistoryResponse = { submissions: [], errors: [] }
+const EMPTY_HISTORY: HistoryResponse = { submissions: [], errors: [], notes: [] }
 
 function removeSubmissionFromHistory(
   history: HistoryResponse | undefined,
@@ -24,6 +24,7 @@ function removeSubmissionFromHistory(
   return {
     submissions: history.submissions.filter((submission) => submission.id !== submissionId),
     errors: history.errors.filter((error) => error.submissionId !== submissionId),
+    notes: (history.notes ?? []).filter((note) => note.submissionId !== submissionId),
   }
 }
 
@@ -39,6 +40,7 @@ export default function HistoryPage() {
 
   const submissions = data?.submissions ?? []
   const errors = data?.errors ?? []
+  const notes = data?.notes ?? []
   const errorMessage = error instanceof Error ? error.message : "Please try again shortly."
 
   async function handleDelete(submission: Submission) {
@@ -130,7 +132,15 @@ export default function HistoryPage() {
 
           <TabsContent value="submissions" className="mt-6 flex flex-col gap-4">
             {submissions.length ? (
-              submissions.map((s) => <SubmissionCard key={s.id} submission={s} onDelete={handleDelete} />)
+              submissions.map((s) => (
+                <SubmissionCard
+                  key={s.id}
+                  submission={s}
+                  errors={errors.filter((e) => e.submissionId === s.id)}
+                  notes={notes.filter((n) => n.submissionId === s.id)}
+                  onDelete={handleDelete}
+                />
+              ))
             ) : (
               <EmptyState icon={HistoryIcon} title="No submissions yet" description="Once you run a diagnosis, your submissions will appear here." />
             )}
