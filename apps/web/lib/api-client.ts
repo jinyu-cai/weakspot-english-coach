@@ -105,7 +105,17 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new Error(message)
   }
-  return (await res.json()) as T
+  const payload = await res.json()
+  if (payload && typeof payload === "object" && !Array.isArray(payload) && "error" in payload && payload.error) {
+    const detail = "detail" in payload ? payload.detail : undefined
+    const message = typeof detail === "string"
+      ? detail
+      : "message" in payload
+        ? String(payload.message)
+        : `Request failed: ${path}`
+    throw new Error(message)
+  }
+  return payload as T
 }
 
 /* In-memory exercise cache so submit() can grade against the generated item. */

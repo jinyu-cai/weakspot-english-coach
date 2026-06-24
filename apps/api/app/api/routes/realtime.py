@@ -1,22 +1,29 @@
 import hashlib
 import logging
+import time
 from typing import List, Optional
 from uuid import uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
-from app.api.deps import Identity, rate_limited
+from app.api.deps import Identity, rate_limited, resolve_identity
 from app.config import settings
 from app.db.repositories import (
     get_chat_session,
+    list_chat_messages,
     now_iso,
     save_chat_message,
     save_chat_session,
     update_chat_session_summary,
 )
 from app.services.realtime_prompts import REALTIME_FUNCTION_TOOLS, REALTIME_SYSTEM_PROMPT
+from app.services.realtime_sideband import (
+    has_active_realtime_sideband,
+    kick_realtime_session,
+    start_realtime_sideband,
+)
 
 router = APIRouter(prefix="/chat")
 logger = logging.getLogger("uvicorn.error")
@@ -39,6 +46,42 @@ class SaveTranscriptRequest(BaseModel):
     messages: List[TranscriptMessage]
 
 
+class RealtimeSidebandAttachRequest(BaseModel):
+    callId: str = Field(min_length=6, max_length=160)
+
+
+class RealtimeKickRequest(BaseModel):
+    reason: Optional[str] = Field(default="manual", max_length=120)
+
+
+REALTIME_AUDIT_KEYS = [
+    "realtimeStatus",
+    "realtimeCallId",
+    "realtimeSidebandRequestedAt",
+    "realtimeSidebandStartedAt",
+    "realtimeSidebandStartedAtEpoch",
+    "realtimeLastEventAt",
+    "realtimeLastEventType",
+    "realtimeEventCount",
+    "realtimeResponseCount",
+    "realtimeUsageEventCount",
+    "realtimeTranscriptCount",
+    "realtimeAssistantTranscriptCount",
+    "realtimeTranscriptSavedCount",
+    "realtimeLastUserTranscript",
+    "realtimeLastAssistantTranscript",
+    "realtimeLastUsage",
+    "realtimeUsage",
+    "realtimeLastError",
+    "realtimeKickRequestedAt",
+    "realtimeKickSentAt",
+    "realtimeKickReason",
+    "realtimeForcedExpiresAt",
+    "realtimeElapsedSeconds",
+    "realtimeEndedAt",
+]
+
+
 def _allowed_realtime_models() -> set[str]:
     return set(settings.openai_realtime_model_list) | {settings.openai_realtime_model}
 
@@ -58,6 +101,31 @@ def _validate_realtime_model(model: str | None) -> str:
     return selected
 
 
+def _resolve_realtime_session_user(identity: Identity, requested_user_id: str | None = None) -> str:
+    if requested_user_id and requested_user_id != identity.user_id:
+        if not identity.is_owner:
+            raise HTTPException(status_code=403, detail="Owner access required for this session.")
+        return requested_user_id
+    return identity.user_id
+
+
+def _realtime_audit_payload(session: dict, active_sideband: bool) -> dict:
+    return {
+        "sessionId": session["id"],
+        "userId": session["userId"],
+        "mode": session.get("mode"),
+        "voiceModel": session.get("voiceModel"),
+        "maxDurationSeconds": session.get("maxDurationSeconds"),
+        "expiresAt": session.get("expiresAt"),
+        "activeSideband": active_sideband,
+        "audit": {key: session.get(key) for key in REALTIME_AUDIT_KEYS if key in session},
+    }
+
+
+def _message_dedupe_key(role: str, content: str) -> tuple[str, str]:
+    return role, " ".join(content.strip().split())
+
+
 @router.post("/realtime/session")
 def create_realtime_session(
     req: RealtimeSessionRequest,
@@ -72,6 +140,7 @@ def create_realtime_session(
             detail="OpenAI Realtime API key not configured on the server.",
         )
 
+    expires_at = int(time.time()) + identity.max_realtime_seconds if identity.max_realtime_seconds else None
     now = now_iso()
     session_id = f"cs_{uuid4().hex[:12]}"
     session = {
@@ -81,6 +150,20 @@ def create_realtime_session(
         "scenarioPrompt": None,
         "mode": "voice",
         "voiceModel": realtime_model,
+        "maxDurationSeconds": identity.max_realtime_seconds,
+        "expiresAt": expires_at,
+        "realtimeStatus": "created",
+        "realtimeUsage": {
+            "totalTokens": 0,
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "inputTextTokens": 0,
+            "inputAudioTokens": 0,
+            "inputCachedTokens": 0,
+            "outputTextTokens": 0,
+            "outputAudioTokens": 0,
+            "responses": 0,
+        },
         "messageCount": 0,
         "summary": None,
         "createdAt": now,
@@ -93,6 +176,36 @@ def create_realtime_session(
 
     try:
         safety_identifier = hashlib.sha256(req.userId.encode("utf-8")).hexdigest()
+        realtime_session_config = {
+            "type": "realtime",
+            "model": realtime_model,
+            "instructions": instructions,
+            "output_modalities": ["audio"],
+            "tools": REALTIME_FUNCTION_TOOLS,
+            "tool_choice": "auto",
+            "audio": {
+                "input": {
+                    "turn_detection": {
+                        "type": "server_vad",
+                        "threshold": 0.5,
+                        "prefix_padding_ms": 300,
+                        "silence_duration_ms": 800,
+                        "create_response": True,
+                        "interrupt_response": True,
+                    },
+                    "transcription": {
+                        "model": "gpt-4o-mini-transcribe",
+                        "language": "en",
+                    },
+                },
+                "output": {
+                    "voice": "marin",
+                },
+            },
+        }
+        if expires_at is not None:
+            realtime_session_config["expires_at"] = expires_at
+
         resp = httpx.post(
             "https://api.openai.com/v1/realtime/client_secrets",
             headers={
@@ -101,33 +214,7 @@ def create_realtime_session(
                 "OpenAI-Safety-Identifier": safety_identifier,
             },
             json={
-                "session": {
-                    "type": "realtime",
-                    "model": realtime_model,
-                    "instructions": instructions,
-                    "output_modalities": ["audio"],
-                    "tools": REALTIME_FUNCTION_TOOLS,
-                    "tool_choice": "auto",
-                    "audio": {
-                        "input": {
-                            "turn_detection": {
-                                "type": "server_vad",
-                                "threshold": 0.5,
-                                "prefix_padding_ms": 300,
-                                "silence_duration_ms": 800,
-                                "create_response": True,
-                                "interrupt_response": True,
-                            },
-                            "transcription": {
-                                "model": "gpt-4o-mini-transcribe",
-                                "language": "en",
-                            },
-                        },
-                        "output": {
-                            "voice": "marin",
-                        },
-                    },
-                },
+                "session": realtime_session_config,
             },
             timeout=15,
         )
@@ -154,6 +241,73 @@ def create_realtime_session(
         "clientSecret": client_secret,
         "sessionId": session_id,
         "model": realtime_model,
+        "maxDurationSeconds": identity.max_realtime_seconds,
+        "expiresAt": expires_at,
+    }
+
+
+@router.post("/realtime/{session_id}/sideband")
+async def attach_realtime_sideband(
+    session_id: str,
+    req: RealtimeSidebandAttachRequest,
+    identity: Identity = Depends(resolve_identity),
+):
+    user_id = _resolve_realtime_session_user(identity)
+    session = get_chat_session(user_id, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Realtime session not found.")
+    if session.get("mode") != "voice":
+        raise HTTPException(status_code=400, detail="Session is not a realtime voice session.")
+    if not settings.openai_api_key:
+        raise HTTPException(status_code=503, detail="OpenAI Realtime API key not configured on the server.")
+
+    result = await start_realtime_sideband(
+        user_id=user_id,
+        session_id=session_id,
+        call_id=req.callId,
+        max_duration_seconds=session.get("maxDurationSeconds"),
+    )
+    return {"sessionId": session_id, "callId": req.callId, **result}
+
+
+@router.get("/realtime/{session_id}/audit")
+def get_realtime_audit(
+    session_id: str,
+    user_id: Optional[str] = Query(default=None, alias="userId"),
+    identity: Identity = Depends(resolve_identity),
+):
+    target_user_id = _resolve_realtime_session_user(identity, user_id)
+    session = get_chat_session(target_user_id, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Realtime session not found.")
+    return _realtime_audit_payload(
+        session,
+        active_sideband=has_active_realtime_sideband(target_user_id, session_id),
+    )
+
+
+@router.post("/realtime/{session_id}/kick")
+async def kick_realtime_voice_session(
+    session_id: str,
+    req: RealtimeKickRequest | None = None,
+    user_id: Optional[str] = Query(default=None, alias="userId"),
+    identity: Identity = Depends(resolve_identity),
+):
+    target_user_id = _resolve_realtime_session_user(identity, user_id)
+    session = get_chat_session(target_user_id, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Realtime session not found.")
+    if session.get("mode") != "voice":
+        raise HTTPException(status_code=400, detail="Session is not a realtime voice session.")
+
+    reason = (req.reason if req and req.reason else "manual").strip() or "manual"
+    result = await kick_realtime_session(user_id=target_user_id, session_id=session_id, reason=reason)
+    updated = get_chat_session(target_user_id, session_id) or session
+    return {
+        "sessionId": session_id,
+        "userId": target_user_id,
+        **result,
+        "realtimeStatus": updated.get("realtimeStatus"),
     }
 
 
@@ -169,27 +323,47 @@ def save_transcript(
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found.")
 
+    existing_messages = list_chat_messages(req.userId, session_id, limit=500)
+    existing_keys = {
+        _message_dedupe_key(str(msg.get("role") or ""), str(msg.get("content") or ""))
+        for msg in existing_messages
+        if str(msg.get("content") or "").strip()
+    }
     saved = 0
+    skipped_duplicates = 0
     for msg in req.messages:
-        if not msg.content.strip():
+        content = msg.content.strip()
+        if not content:
             continue
+        dedupe_key = _message_dedupe_key(msg.role, content)
+        if dedupe_key in existing_keys:
+            skipped_duplicates += 1
+            continue
+        existing_keys.add(dedupe_key)
         msg_id = f"cm_{uuid4().hex[:12]}"
         message = {
             "id": msg_id,
             "userId": req.userId,
             "sessionId": session_id,
             "role": msg.role,
-            "content": msg.content,
+            "content": content,
             "corrections": None,
             "betterExpression": None,
+            "source": "client_transcript",
             "createdAt": msg.createdAt or now_iso(),
         }
         save_chat_message(message)
         saved += 1
 
     if saved > 0:
-        summary = req.messages[0].content[:80] if req.messages else None
-        update_chat_session_summary(req.userId, session_id, summary, saved)
+        first_text = next((msg.content.strip() for msg in req.messages if msg.content.strip()), "")
+        summary = session.get("summary") or first_text[:80] or None
+        update_chat_session_summary(req.userId, session_id, summary, len(existing_messages) + saved)
 
-    logger.info("transcript saved session=%s messages=%d", session_id, saved)
-    return {"saved": saved, "sessionId": session_id}
+    logger.info(
+        "transcript saved session=%s messages=%d skipped_duplicates=%d",
+        session_id,
+        saved,
+        skipped_duplicates,
+    )
+    return {"saved": saved, "skippedDuplicates": skipped_duplicates, "sessionId": session_id}
