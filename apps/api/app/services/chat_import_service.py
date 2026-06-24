@@ -46,9 +46,11 @@ version, a one-sentence explanation, context (when/tone/register to use it), and
 sentences showing it in use.
 
 Output depth depends on analysis mode:
-- fast mode: 3-5 weaknesses, 2-3 learningNotes. Keep items concise (at most 4 items per list).
-- deep mode: report ALL weaknesses you find (up to 12), 4-8 learningNotes. Give detailed explanations,
+- fast mode: 3-5 weaknesses. Keep items concise (at most 4 items per list).
+  learningNotes: extract all useful notes you find; keep explanation and context to one sentence each.
+- deep mode: report ALL weaknesses you find (up to 12). Give detailed explanations,
   rich examples, and comprehensive lists. Think step by step and analyze thoroughly.
+  learningNotes: extract all useful notes the conversations support. Give rich explanations, context, and examples.
 """.strip()
 
 
