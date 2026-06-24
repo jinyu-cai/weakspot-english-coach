@@ -50,7 +50,7 @@ Fast diagnosis mode — keep output concise but complete:
 - Keep every explanation to one short sentence.
 - strengthsZh, weaknessesZh, recommendedNextActionsZh: at most 3 short items each.
 - correctedText: rewrite all sentences that contain errors.
-- learningNotes: at most 2 notes; keep explanation and context to one sentence each.
+- learningNotes: extract all useful notes you find; keep explanation and context to one sentence each.
 - Still return every field required by the schema.
 """.strip()
 
@@ -61,7 +61,7 @@ Deep diagnosis mode — be thorough and detailed:
 - Provide detailed explanations and micro lessons — multiple sentences are fine.
 - correctedText: rewrite the ENTIRE text with all improvements applied, showing the
   student what polished English looks like.
-- learningNotes: extract as many useful notes as the text supports (up to 5).
+- learningNotes: extract all useful notes the text supports.
   Give rich explanations, context, and examples.
 - strengthsZh, weaknessesZh, recommendedNextActionsZh: be comprehensive.
 - Think step by step. Take your time to analyze deeply.
