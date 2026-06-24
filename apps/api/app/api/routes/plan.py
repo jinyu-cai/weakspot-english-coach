@@ -31,7 +31,11 @@ def create_plan(
         skills = list_skills(req.userId)
         recent_errors = list_recent_errors(req.userId, limit=20)
 
-        ai_plan = generate_learning_plan(profile, skills, recent_errors, llm_provider=llm_provider)
+        ai_plan = generate_learning_plan(
+            profile, skills, recent_errors,
+            llm_provider=llm_provider,
+            max_output_tokens=identity.max_output_tokens,
+        )
 
         days = []
         for day in ai_plan.days:
