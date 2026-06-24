@@ -8,6 +8,7 @@ from app.db.repositories import (
     get_or_create_profile,
     list_recent_errors,
     list_skills,
+    list_weekly_errors,
     now_iso,
     save_active_plan,
 )
@@ -29,7 +30,10 @@ def create_plan(
         now = now_iso()
         profile = get_or_create_profile(req.userId)
         skills = list_skills(req.userId)
-        recent_errors = list_recent_errors(req.userId, limit=20)
+        if req.errorScope == "weekly":
+            recent_errors = list_weekly_errors(req.userId)
+        else:
+            recent_errors = list_recent_errors(req.userId, limit=50)
 
         ai_plan = generate_learning_plan(
             profile, skills, recent_errors,

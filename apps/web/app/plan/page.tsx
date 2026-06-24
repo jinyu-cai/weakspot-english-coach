@@ -4,6 +4,7 @@ import { useState } from "react"
 import useSWR from "swr"
 import { toast } from "sonner"
 import { CalendarRange, Sparkles } from "lucide-react"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { generatePlan, getPlan } from "@/lib/api-client"
 import type { LearningPlan } from "@/lib/types"
 import { Button } from "@/components/ui/button"
@@ -16,13 +17,14 @@ export default function PlanPage() {
   const { data, isLoading, mutate } = useSWR("plan", () => getPlan())
   const [plan, setPlan] = useState<LearningPlan | null>(null)
   const [generating, setGenerating] = useState(false)
+  const [errorScope, setErrorScope] = useState<"weekly" | "all">("weekly")
 
   const activePlan = plan ?? data?.plan ?? null
 
   async function handleGenerate() {
     setGenerating(true)
     try {
-      const newPlan = await generatePlan()
+      const newPlan = await generatePlan(undefined, errorScope)
       setPlan(newPlan)
       mutate({ plan: newPlan }, { revalidate: false })
       toast.success("7-day plan generated", { description: "Tailored to your weakest skills." })
@@ -51,6 +53,17 @@ export default function PlanPage() {
       <header className="flex flex-col gap-2">
         <h1 className="font-heading text-3xl font-bold tracking-tight">7-Day Plan</h1>
         <p className="text-muted-foreground">A personalized study plan built from your weakness profile.</p>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">错误范围：</span>
+          <ToggleGroup
+            value={[errorScope]}
+            onValueChange={(v) => { const picked = v.find((x) => x !== errorScope); if (picked) setErrorScope(picked as "weekly" | "all") }}
+            size="sm"
+          >
+            <ToggleGroupItem value="weekly">本周</ToggleGroupItem>
+            <ToggleGroupItem value="all">全部</ToggleGroupItem>
+          </ToggleGroup>
+        </div>
       </header>
 
       {isLoading ? (

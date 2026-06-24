@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from boto3.dynamodb.conditions import Key
@@ -149,6 +149,17 @@ def save_error(error: dict) -> None:
 def list_recent_errors(user_id: str, limit: int = 20) -> list:
     res = table.query(
         KeyConditionExpression=Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("ERROR#"),
+        ScanIndexForward=False,
+        Limit=limit,
+    )
+    return [clean(i) for i in res.get("Items", [])]
+
+
+def list_weekly_errors(user_id: str, limit: int = 100) -> list:
+    week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    res = table.query(
+        KeyConditionExpression=Key("PK").eq(user_pk(user_id))
+        & Key("SK").between(f"ERROR#{week_ago}", "ERROR#￿"),
         ScanIndexForward=False,
         Limit=limit,
     )
