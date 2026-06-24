@@ -10,15 +10,12 @@ import {
   MessageCircle,
   Mic,
   Plus,
-  Sparkles,
-  X,
 } from "lucide-react"
 import {
   analyzeSession,
   createChatSession,
   getChatMessages,
   getChatSessions,
-  predictChatCompletion,
   sendChatMessage,
 } from "@/lib/api-client"
 import { DEMO_USER_ID } from "@/lib/mock-data"
@@ -55,9 +52,6 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState("")
   const [sending, setSending] = useState(false)
-  const [predicting, setPredicting] = useState(false)
-  const [predictions, setPredictions] = useState<string[]>([])
-  const [showPredictions, setShowPredictions] = useState(false)
   const [loadingSessions, setLoadingSessions] = useState(true)
   const [creatingSession, setCreatingSession] = useState(false)
   const [mode, setMode] = useState<ChatMode>("voice")
@@ -67,7 +61,6 @@ export default function ChatPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const predictTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -113,7 +106,6 @@ export default function ChatPage() {
       setSelectedTextModel(session.textModel ?? selectedTextModel)
       setMessages([])
       setInput("")
-      setPredictions([])
       setViewState("chat")
       setAnalysis(null)
     } catch {
@@ -128,7 +120,6 @@ export default function ChatPage() {
     setSelectedTextModel(session.textModel ?? "deepseek-v4-flash")
     setMessages([])
     setInput("")
-    setPredictions([])
     setViewState("chat")
     setAnalysis(null)
     try {
@@ -143,8 +134,6 @@ export default function ChatPage() {
     if (!input.trim() || !activeSession || sending) return
     const text = input.trim()
     setInput("")
-    setPredictions([])
-    setShowPredictions(false)
     setSending(true)
 
     const optimisticUser: ChatMessage = {
@@ -178,48 +167,10 @@ export default function ChatPage() {
     }
   }
 
-  function handleInputChange(value: string) {
-    setInput(value)
-
-    if (predictTimerRef.current) clearTimeout(predictTimerRef.current)
-    setPredictions([])
-    setShowPredictions(false)
-
-    if (!activeSession || value.trim().length < 5) return
-
-    predictTimerRef.current = setTimeout(async () => {
-      setPredicting(true)
-      try {
-        const preds = await predictChatCompletion(
-          DEMO_USER_ID,
-          activeSession.id,
-          value.trim(),
-        )
-        setPredictions(preds)
-        setShowPredictions(true)
-      } catch {
-        // silent
-      } finally {
-        setPredicting(false)
-      }
-    }, 2000)
-  }
-
-  function acceptPrediction(prediction: string) {
-    setInput((prev) => prev.trimEnd() + " " + prediction.replace(/^\.{2,3}\s*/, ""))
-    setPredictions([])
-    setShowPredictions(false)
-    textareaRef.current?.focus()
-  }
-
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleSend()
-    }
-    if (e.key === "Tab" && predictions.length > 0 && showPredictions) {
-      e.preventDefault()
-      acceptPrediction(predictions[0])
     }
   }
 
@@ -449,35 +400,6 @@ export default function ChatPage() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Prediction suggestions */}
-          {showPredictions && predictions.length > 0 && (
-            <div className="flex flex-col gap-1.5 border-t border-border bg-muted/30 px-3 py-2">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Sparkles className="size-3" />
-                <span>Maybe you want to say...</span>
-                <button
-                  onClick={() => { setShowPredictions(false); setPredictions([]) }}
-                  className="ml-auto rounded p-0.5 hover:bg-muted"
-                >
-                  <X className="size-3" />
-                </button>
-              </div>
-              {predictions.map((p, i) => (
-                <button
-                  key={i}
-                  onClick={() => acceptPrediction(p)}
-                  className="rounded-lg border border-border bg-background px-3 py-1.5 text-left text-sm transition-colors hover:border-primary/40 hover:bg-primary/5"
-                >
-                  <span className="text-muted-foreground">{input.trim()}</span>
-                  <span className="font-medium text-primary">{" "}{p.replace(/^\.{2,3}\s*/, "")}</span>
-                  {i === 0 && (
-                    <span className="ml-2 text-xs text-muted-foreground">Tab</span>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-
           {/* Input area */}
           <div className="border-t border-border pt-3">
             <div className="relative flex items-end gap-2">
@@ -485,7 +407,7 @@ export default function ChatPage() {
                 <textarea
                   ref={textareaRef}
                   value={input}
-                  onChange={(e) => handleInputChange(e.target.value)}
+                  onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="Type your message in English..."
                   rows={1}
@@ -502,11 +424,6 @@ export default function ChatPage() {
                   }}
                   disabled={sending}
                 />
-                {predicting && (
-                  <div className="absolute bottom-3 right-12 text-muted-foreground">
-                    <Spinner className="size-4" />
-                  </div>
-                )}
               </div>
               <Button
                 size="icon"
@@ -517,10 +434,7 @@ export default function ChatPage() {
                 <ArrowUp className="size-5" />
               </Button>
             </div>
-            <div className="mt-1.5 flex items-center justify-between px-1">
-              <p className="text-xs text-muted-foreground">
-                Pause typing for 2s to get AI completion suggestions
-              </p>
+            <div className="mt-1.5 flex items-center justify-end px-1">
               {messages.filter((m) => m.role === "user").length >= 2 && (
                 <Button
                   variant="outline"

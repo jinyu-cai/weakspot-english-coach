@@ -22,7 +22,6 @@ import type {
   ChatImportConversation,
   ChatMessage,
   ChatMessagesResponse,
-  ChatPredictResponse,
   ChatSendResponse,
   ChatSession,
   RealtimeVoiceModel,
@@ -447,26 +446,6 @@ export async function sendChatMessage(
     method: "POST",
     body: JSON.stringify({ userId, sessionId, text }),
   })
-}
-
-export async function predictChatCompletion(
-  userId: string = DEMO_USER_ID,
-  sessionId: string,
-  partialText: string,
-): Promise<string[]> {
-  if (USE_MOCK) {
-    await delay(800)
-    return [
-      "...if you could help me with this?",
-      "...what the best way to do this is?",
-      "...whether we should try something different.",
-    ]
-  }
-  const { predictions } = await apiFetch<ChatPredictResponse>("/chat/predict", {
-    method: "POST",
-    body: JSON.stringify({ userId, sessionId, partialText }),
-  })
-  return predictions
 }
 
 /* ---- Session Analysis ---- */

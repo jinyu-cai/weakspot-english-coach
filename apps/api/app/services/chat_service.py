@@ -44,7 +44,7 @@ def build_chat_messages(
             "content": f"The conversation topic/scenario: {topic}",
         })
 
-    for msg in history[-20:]:
+    for msg in history:
         role = msg.get("role", "user")
         content = msg.get("content", "")
         if role in ("user", "assistant") and content:
