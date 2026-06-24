@@ -1,11 +1,13 @@
 "use client"
 
 import { useState } from "react"
-import { ArrowRight, Dumbbell, FileText, MessageSquare, PenLine, Trash2 } from "lucide-react"
-import type { Submission } from "@/lib/types"
+import { ArrowRight, ChevronDown, Dumbbell, FileText, Lightbulb, MessageSquare, PenLine, Trash2 } from "lucide-react"
+import { cn } from "@/lib/utils"
+import type { EnglishError, LearningNote, Submission } from "@/lib/types"
 import { CefrBadge } from "@/components/cefr-badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +16,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { ErrorCard } from "@/components/error-card"
+import { NoteCard } from "@/components/note-card"
 
 const MODE_META: Record<Submission["mode"], { label: string; icon: typeof PenLine }> = {
   writing: { label: "Writing", icon: PenLine },
@@ -29,15 +33,24 @@ function formatDate(iso: string) {
 
 export function SubmissionCard({
   submission,
+  errors,
+  notes,
   onDelete,
 }: {
   submission: Submission
+  errors?: EnglishError[]
+  notes?: LearningNote[]
   onDelete?: (submission: Submission) => void | Promise<void>
 }) {
   const mode = MODE_META[submission.mode] ?? { label: "Entry", icon: FileText }
   const ModeIcon = mode.icon
   const changed = submission.correctedText && submission.correctedText !== submission.originalText
   const [deleting, setDeleting] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+
+  const errorCount = errors?.length ?? 0
+  const noteCount = notes?.length ?? 0
+  const hasDetails = errorCount > 0 || noteCount > 0
 
   async function handleDelete() {
     if (!onDelete) return
@@ -48,6 +61,10 @@ export function SubmissionCard({
       setDeleting(false)
     }
   }
+
+  const detailParts: string[] = []
+  if (errorCount > 0) detailParts.push(`${errorCount} correction${errorCount === 1 ? "" : "s"}`)
+  if (noteCount > 0) detailParts.push(`${noteCount} note${noteCount === 1 ? "" : "s"}`)
 
   return (
     <Card>
@@ -103,6 +120,42 @@ export function SubmissionCard({
 
         {submission.summaryZh ? (
           <p className="text-sm leading-relaxed text-muted-foreground">{submission.summaryZh}</p>
+        ) : null}
+
+        {hasDetails ? (
+          <Collapsible open={expanded} onOpenChange={setExpanded}>
+            <CollapsibleTrigger
+              className={cn(
+                "flex w-full items-center justify-between rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-muted",
+              )}
+            >
+              <span className="flex items-center gap-2 text-foreground">
+                <Lightbulb className="size-4 text-primary" />
+                {detailParts.join(" · ")}
+              </span>
+              <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", expanded && "rotate-180")} />
+            </CollapsibleTrigger>
+            <CollapsibleContent className="overflow-hidden data-ending-style:h-0 data-starting-style:h-0">
+              <div className="mt-3 flex flex-col gap-3">
+                {errorCount > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <span className="text-xs font-medium text-muted-foreground">Corrections</span>
+                    {errors!.map((e) => (
+                      <ErrorCard key={e.id} error={e} />
+                    ))}
+                  </div>
+                )}
+                {noteCount > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <span className="text-xs font-medium text-muted-foreground">Notes</span>
+                    {notes!.map((n) => (
+                      <NoteCard key={n.id} note={n} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
         ) : null}
       </CardContent>
     </Card>

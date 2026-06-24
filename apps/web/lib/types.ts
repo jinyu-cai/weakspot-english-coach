@@ -418,6 +418,7 @@ export interface PracticeSubmitResponse {
 export interface HistoryResponse {
   submissions: Submission[]
   errors: EnglishError[]
+  notes?: LearningNote[]
 }
 
 export interface DailyStatsResponse {

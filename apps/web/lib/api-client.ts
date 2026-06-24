@@ -310,7 +310,7 @@ export async function submitPractice(
 export async function getHistory(userId: string = DEMO_USER_ID): Promise<HistoryResponse> {
   if (USE_MOCK) {
     await delay(600)
-    return { submissions: mockSubmissions, errors: mockErrors }
+    return { submissions: mockSubmissions, errors: mockErrors, notes: mockNotes }
   }
   return apiFetch<HistoryResponse>(`/history/${userId}`)
 }
