@@ -48,7 +48,7 @@ def get_client(provider: Optional[LLMProviderConfig] = None) -> OpenAI:
 def parse_with_model(
     messages: list,
     response_model: Type[T],
-    max_tokens: int = 4000,
+    max_tokens: Optional[int] = None,
     model: Optional[str] = None,
     provider: Optional[LLMProviderConfig] = None,
     trace_id: Optional[str] = None,
@@ -88,14 +88,16 @@ def parse_with_model(
     for attempt in range(1, 3):  # one retry
         attempt_started = time.perf_counter()
         try:
-            resp = get_client(provider).chat.completions.create(
+            create_kwargs: dict = dict(
                 model=selected_model,
                 messages=messages,
                 response_format={"type": "json_object"},
                 temperature=0.2,
-                max_tokens=max_tokens,
                 timeout=600,
             )
+            if max_tokens is not None:
+                create_kwargs["max_tokens"] = max_tokens
+            resp = get_client(provider).chat.completions.create(**create_kwargs)
         except OpenAIError as e:
             elapsed_ms = int((time.perf_counter() - attempt_started) * 1000)
             status_code = getattr(e, "status_code", None)

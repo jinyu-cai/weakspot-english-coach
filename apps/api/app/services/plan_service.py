@@ -1,3 +1,5 @@
+from typing import Optional
+
 from app.models.plan import LearningPlanAIResult
 from app.services.ai_client import LLMProviderConfig, parse_with_model
 
@@ -33,6 +35,7 @@ def generate_learning_plan(
     skills: list,
     recent_errors: list,
     llm_provider: LLMProviderConfig | None = None,
+    max_output_tokens: Optional[int] = None,
 ) -> LearningPlanAIResult:
     user_prompt = (
         f"Learner profile:\n{profile}\n\n"
@@ -45,6 +48,6 @@ def generate_learning_plan(
             {"role": "user", "content": user_prompt},
         ],
         response_model=LearningPlanAIResult,
-        max_tokens=16000,
+        max_tokens=max_output_tokens,
         provider=llm_provider,
     )
