@@ -261,14 +261,17 @@ export async function getPlan(userId: string = DEMO_USER_ID): Promise<PlanRespon
   return apiFetch<PlanResponse>(`/plan/${userId}`)
 }
 
-export async function generatePlan(userId: string = DEMO_USER_ID): Promise<LearningPlan> {
+export async function generatePlan(
+  userId: string = DEMO_USER_ID,
+  errorScope: "weekly" | "all" = "weekly",
+): Promise<LearningPlan> {
   if (USE_MOCK) {
     await delay(1600)
     return mockPlan
   }
   const { plan } = await apiFetch<{ plan: LearningPlan }>("/plan", {
     method: "POST",
-    body: JSON.stringify({ userId }),
+    body: JSON.stringify({ userId, errorScope }),
   })
   return plan
 }
