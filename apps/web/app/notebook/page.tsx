@@ -3,7 +3,7 @@
 import { useState } from "react"
 import useSWR, { mutate } from "swr"
 import { toast } from "sonner"
-import { BookOpen, Lightbulb, BookA, GraduationCap, Trash2 } from "lucide-react"
+import { BookOpen, Lightbulb, BookA, GraduationCap, Trash2, Download } from "lucide-react"
 import { deleteNote, getNotes } from "@/lib/api-client"
 import type { LearningNote, NoteType } from "@/lib/types"
 import { Badge } from "@/components/ui/badge"
@@ -107,6 +107,46 @@ export default function NotebookPage() {
   const vocabularyNotes = notes.filter((n) => n.type === "vocabulary")
   const grammarNotes = notes.filter((n) => n.type === "grammar")
 
+  function exportNotes() {
+    if (!notes.length) return
+
+    const sections: [string, LearningNote[]][] = [
+      ["Expression", expressionNotes],
+      ["Vocabulary", vocabularyNotes],
+      ["Grammar", grammarNotes],
+    ]
+
+    let md = `# WeakSpot Notebook Export\n\n`
+    md += `> Exported on ${new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })} · ${notes.length} notes total\n\n---\n\n`
+
+    for (const [title, items] of sections) {
+      if (!items.length) continue
+      md += `## ${title} (${items.length})\n\n`
+      for (const note of items) {
+        md += `### ${note.topic}\n\n`
+        md += `- **Original:** ${note.original}\n`
+        md += `- **Natural:** ${note.natural}\n`
+        md += `- **Explanation:** ${note.explanation}\n`
+        if (note.context) md += `- **Context:** ${note.context}\n`
+        if (note.examples.length) {
+          md += `- **Examples:**\n`
+          for (const ex of note.examples) md += `  - _${ex}_\n`
+        }
+        md += `\n`
+      }
+      md += `---\n\n`
+    }
+
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `weakspot-notebook-${new Date().toISOString().slice(0, 10)}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success("Notebook exported", { description: `${notes.length} notes saved as Markdown.` })
+  }
+
   async function handleDelete(note: LearningNote) {
     try {
       await deleteNote(note.id, note.createdAt)
@@ -135,7 +175,15 @@ export default function NotebookPage() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
       <header className="flex flex-col gap-2">
-        <h1 className="font-heading text-3xl font-bold tracking-tight">Notebook</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="font-heading text-3xl font-bold tracking-tight">Notebook</h1>
+          {notes.length > 0 && (
+            <Button variant="outline" size="sm" onClick={exportNotes}>
+              <Download data-icon="inline-start" />
+              Export
+            </Button>
+          )}
+        </div>
         <p className="text-muted-foreground">
           Natural expressions, vocabulary, and grammar patterns collected from your diagnoses.
         </p>
