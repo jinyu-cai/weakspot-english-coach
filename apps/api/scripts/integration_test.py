@@ -18,6 +18,8 @@ USE_FAKE_AI / your DeepSeek key):
 
 import os
 import sys
+import time
+import asyncio
 import uuid
 
 SAMPLE = (
@@ -61,9 +63,11 @@ def main() -> int:
         from fastapi.testclient import TestClient
         from starlette.requests import Request
 
-        from app.api.deps import _client_ip
+        from app.api.deps import _client_ip, make_session_jwt
         from app.config import settings
+        from app.db.repositories import list_chat_messages, update_chat_session_fields
         from app.main import app
+        from app.services.realtime_sideband import RealtimeSidebandState, _handle_realtime_event
         from scripts.create_table import create_table
 
         print(
@@ -242,7 +246,13 @@ def main() -> int:
 
         original_openai_key = settings.openai_api_key
         original_realtime_post = realtime_routes.httpx.post
+        original_start_sideband = realtime_routes.start_realtime_sideband
+        original_kick_realtime = realtime_routes.kick_realtime_session
         selected_voice_models = []
+        session_expires_at = []
+        owner_voice_session_id = None
+        sideband_calls = []
+        kick_calls = []
 
         class FakeRealtimeResponse:
             def raise_for_status(self):
@@ -253,10 +263,51 @@ def main() -> int:
 
         def fake_realtime_post(url, *, headers, json, timeout):
             selected_voice_models.append(json["session"]["model"])
+            session_expires_at.append(json["session"].get("expires_at"))
             return FakeRealtimeResponse()
+
+        async def fake_start_sideband(*, user_id, session_id, call_id, max_duration_seconds):
+            sideband_calls.append((user_id, session_id, call_id, max_duration_seconds))
+            update_chat_session_fields(
+                user_id,
+                session_id,
+                {
+                    "realtimeCallId": call_id,
+                    "realtimeStatus": "monitoring",
+                    "realtimeEventCount": 2,
+                    "realtimeResponseCount": 1,
+                    "realtimeUsageEventCount": 1,
+                    "realtimeUsage": {
+                        "totalTokens": 42,
+                        "inputTokens": 30,
+                        "outputTokens": 12,
+                        "inputTextTokens": 8,
+                        "inputAudioTokens": 22,
+                        "inputCachedTokens": 0,
+                        "outputTextTokens": 5,
+                        "outputAudioTokens": 7,
+                        "responses": 1,
+                    },
+                },
+            )
+            return {"sidebandStatus": "starting", "activeSideband": True}
+
+        async def fake_kick_realtime(*, user_id, session_id, reason="manual"):
+            kick_calls.append((user_id, session_id, reason))
+            update_chat_session_fields(
+                user_id,
+                session_id,
+                {
+                    "realtimeStatus": "kick_sent",
+                    "realtimeKickReason": reason,
+                },
+            )
+            return {"kickRequested": True, "activeSideband": True, "kickSent": True}
 
         settings.openai_api_key = "test-openai-key"
         realtime_routes.httpx.post = fake_realtime_post
+        realtime_routes.start_realtime_sideband = fake_start_sideband
+        realtime_routes.kick_realtime_session = fake_kick_realtime
         try:
             for voice_model in ["gpt-realtime-mini-2025-12-15", "gpt-realtime-2"]:
                 r = client.post(
@@ -267,6 +318,108 @@ def main() -> int:
                 realtime_session = r.json()
                 assert realtime_session["clientSecret"] == "ephemeral-test-secret", realtime_session
                 assert realtime_session["model"] == voice_model, realtime_session
+                assert realtime_session["maxDurationSeconds"] is None, realtime_session
+                owner_voice_session_id = realtime_session["sessionId"]
+
+            r = client.post(
+                f"/api/v1/chat/realtime/{owner_voice_session_id}/sideband",
+                json={"callId": "rtc_integration_test"},
+            )
+            assert r.status_code == 200, r.text
+            sideband_attached = r.json()
+            assert sideband_attached["sidebandStatus"] == "starting", sideband_attached
+
+            r = client.get(f"/api/v1/chat/realtime/{owner_voice_session_id}/audit")
+            assert r.status_code == 200, r.text
+            audit = r.json()
+            assert audit["audit"]["realtimeCallId"] == "rtc_integration_test", audit
+            assert audit["audit"]["realtimeUsage"]["totalTokens"] == 42, audit
+
+            transcript_state = RealtimeSidebandState(
+                user_id="owner",
+                session_id=owner_voice_session_id,
+                call_id="rtc_integration_test",
+                max_duration_seconds=None,
+            )
+            asyncio.run(
+                _handle_realtime_event(
+                    transcript_state,
+                    {
+                        "type": "conversation.item.input_audio_transcription.completed",
+                        "item_id": "input_item_1",
+                        "transcript": "I go to school yesterday.",
+                    },
+                )
+            )
+            asyncio.run(
+                _handle_realtime_event(
+                    transcript_state,
+                    {
+                        "type": "response.audio_transcript.delta",
+                        "response_id": "resp_1",
+                        "item_id": "output_item_1",
+                        "delta": "You went",
+                    },
+                )
+            )
+            asyncio.run(
+                _handle_realtime_event(
+                    transcript_state,
+                    {
+                        "type": "response.audio_transcript.delta",
+                        "response_id": "resp_1",
+                        "item_id": "output_item_1",
+                        "delta": " to school yesterday.",
+                    },
+                )
+            )
+            asyncio.run(
+                _handle_realtime_event(
+                    transcript_state,
+                    {
+                        "type": "response.audio_transcript.done",
+                        "response_id": "resp_1",
+                        "item_id": "output_item_1",
+                    },
+                )
+            )
+            voice_messages = list_chat_messages("owner", owner_voice_session_id)
+            assert [msg["role"] for msg in voice_messages] == ["user", "assistant"], voice_messages
+            assert voice_messages[0]["content"] == "I go to school yesterday.", voice_messages
+            assert voice_messages[1]["content"] == "You went to school yesterday.", voice_messages
+
+            r = client.post(
+                f"/api/v1/chat/sessions/{owner_voice_session_id}/transcript",
+                json={
+                    "userId": "owner",
+                    "messages": [
+                        {"role": "user", "content": "I go to school yesterday."},
+                        {"role": "assistant", "content": "You went to school yesterday."},
+                    ],
+                },
+            )
+            assert r.status_code == 200, r.text
+            transcript_save = r.json()
+            assert transcript_save["saved"] == 0 and transcript_save["skippedDuplicates"] == 2, transcript_save
+
+            r = client.post(
+                f"/api/v1/chat/realtime/{owner_voice_session_id}/kick",
+                json={"reason": "integration_test"},
+            )
+            assert r.status_code == 200, r.text
+            kicked = r.json()
+            assert kicked["kickRequested"] is True and kicked["kickSent"] is True, kicked
+
+            guest_voice = TestClient(app)
+            before_guest_voice = int(time.time())
+            r = guest_voice.post(
+                "/api/v1/chat/realtime/session",
+                json={"userId": "guest-voice", "topic": "Guest voice model test"},
+            )
+            assert r.status_code == 200, r.text
+            guest_voice_session = r.json()
+            assert guest_voice_session["maxDurationSeconds"] == settings.guest_realtime_max_seconds
+            assert before_guest_voice < guest_voice_session["expiresAt"] <= int(time.time()) + settings.guest_realtime_max_seconds + 2
 
             r = client.post(
                 "/api/v1/chat/realtime/session",
@@ -276,10 +429,20 @@ def main() -> int:
         finally:
             settings.openai_api_key = original_openai_key
             realtime_routes.httpx.post = original_realtime_post
+            realtime_routes.start_realtime_sideband = original_start_sideband
+            realtime_routes.kick_realtime_session = original_kick_realtime
 
-        assert selected_voice_models == ["gpt-realtime-mini-2025-12-15", "gpt-realtime-2"], selected_voice_models
+        assert selected_voice_models == [
+            "gpt-realtime-mini-2025-12-15",
+            "gpt-realtime-2",
+            "gpt-realtime-mini-2025-12-15",
+        ], selected_voice_models
+        assert session_expires_at[0:2] == [None, None], session_expires_at
+        assert isinstance(session_expires_at[2], int), session_expires_at
+        assert sideband_calls and sideband_calls[0][2] == "rtc_integration_test", sideband_calls
+        assert kick_calls and kick_calls[0][2] == "integration_test", kick_calls
         print(
-            "9. POST /chat model routing -> text default/pro + voice mini/realtime-2 validated"
+            "9. POST /chat model routing -> text/pro + realtime expiry + sideband transcript/audit/kick validated"
         )
 
         # 10. End-of-session chat analysis
@@ -353,6 +516,27 @@ def main() -> int:
             ocodes = [client.post("/api/v1/diagnose", json={"userId": "o", "text": gtext}).status_code for _ in range(5)]
             assert all(c == 200 for c in ocodes), ocodes
             print(f"13. owner diagnose x5 (bypass)-> {ocodes}  (never blocked)")
+
+            denied = guest.post("/api/v1/admin/access-roles", json={"identifier": "member@example.com", "role": "member"})
+            assert denied.status_code == 403, denied.text
+
+            grant = client.post(
+                "/api/v1/admin/access-roles",
+                json={"identifier": "member@example.com", "role": "member"},
+            )
+            assert grant.status_code == 200, grant.text
+            assert grant.json()["accessRole"]["role"] == "member", grant.text
+
+            member = TestClient(app)
+            member.cookies.set(
+                "session",
+                make_session_jwt({"sub": "google_member", "login": "member@example.com"}),
+            )
+            member_me = member.get("/api/v1/auth/me")
+            assert member_me.status_code == 200 and member_me.json()["accessTier"] == "member", member_me.text
+            mcodes = [member.post("/api/v1/diagnose", json={"userId": "m", "text": gtext}).status_code for _ in range(5)]
+            assert all(c == 200 for c in mcodes), mcodes
+            print("14. DB member role          -> accessTier=member, never blocked")
 
         return 0
     finally:
