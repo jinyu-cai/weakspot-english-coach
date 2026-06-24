@@ -92,7 +92,8 @@ def get_messages(
     session = get_chat_session(identity.user_id, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found.")
-    messages = list_chat_messages(identity.user_id, session_id)
+    messages = list_chat_messages(identity.user_id, session_id, limit=None)
+    session["messageCount"] = len(messages)
     return {"session": session, "messages": messages}
 
 
@@ -119,7 +120,7 @@ def send_message(
             request_id, req.userId, req.sessionId, text_model, len(req.text),
         )
 
-        history = list_chat_messages(req.userId, req.sessionId)
+        history = list_chat_messages(req.userId, req.sessionId, limit=None)
         history_for_ai = [
             {"role": m["role"], "content": m["content"]}
             for m in history
@@ -163,9 +164,8 @@ def send_message(
         save_chat_message(assistant_msg)
 
         msg_count = len(history) + 2
-        summary_text = req.text[:80] if msg_count <= 2 else None
-        if summary_text:
-            update_chat_session_summary(req.userId, req.sessionId, summary_text, msg_count)
+        summary_text = session.get("summary") or req.text[:80]
+        update_chat_session_summary(req.userId, req.sessionId, summary_text, msg_count)
 
         logger.info(
             "chat[%s] complete total_ms=%d corrections=%d",
@@ -262,7 +262,7 @@ def analyze_chat_session(
             "duplicate": True,
         }
 
-    messages = list_chat_messages(user_id, session_id)
+    messages = list_chat_messages(user_id, session_id, limit=None)
     user_messages = [m for m in messages if m.get("role") == "user"]
     if not user_messages:
         raise HTTPException(status_code=400, detail="No user messages to analyze.")

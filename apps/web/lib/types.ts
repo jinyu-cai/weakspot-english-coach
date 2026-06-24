@@ -261,10 +261,6 @@ export interface ChatSendResponse {
   assistantMessage: ChatMessage
 }
 
-export interface ChatPredictResponse {
-  predictions: string[]
-}
-
 export interface ChatSessionsResponse {
   sessions: ChatSession[]
 }

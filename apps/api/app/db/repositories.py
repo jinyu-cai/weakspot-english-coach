@@ -369,13 +369,40 @@ def request_chat_session_realtime_kick(user_id: str, session_id: str, reason: st
     )
 
 
+def _count_chat_messages_by_session(user_id: str, session_ids: set[str]) -> dict[str, int]:
+    if not session_ids:
+        return {}
+
+    counts = {session_id: 0 for session_id in session_ids}
+    query_kwargs = {
+        "KeyConditionExpression": Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("CHATMSG#"),
+        "ScanIndexForward": True,
+    }
+
+    while True:
+        res = table.query(**query_kwargs)
+        for item in res.get("Items", []):
+            session_id = item.get("sessionId")
+            if session_id in counts:
+                counts[session_id] += 1
+
+        last_key = res.get("LastEvaluatedKey")
+        if not last_key:
+            return counts
+        query_kwargs["ExclusiveStartKey"] = last_key
+
+
 def list_chat_sessions(user_id: str, limit: int = 20) -> list:
     res = table.query(
         KeyConditionExpression=Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("CHAT#"),
         ScanIndexForward=False,
         Limit=limit,
     )
-    return [clean(i) for i in res.get("Items", [])]
+    sessions = [clean(i) for i in res.get("Items", [])]
+    counts = _count_chat_messages_by_session(user_id, {s["id"] for s in sessions if s.get("id")})
+    for session in sessions:
+        session["messageCount"] = counts.get(session.get("id"), 0)
+    return sessions
 
 
 def save_chat_message(message: dict) -> None:
@@ -388,14 +415,31 @@ def save_chat_message(message: dict) -> None:
     _put(item)
 
 
-def list_chat_messages(user_id: str, session_id: str, limit: int = 50) -> list:
-    res = table.query(
-        KeyConditionExpression=Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("CHATMSG#"),
-        ScanIndexForward=True,
-        Limit=limit,
-    )
-    items = [clean(i) for i in res.get("Items", [])]
-    return [m for m in items if m.get("sessionId") == session_id]
+def list_chat_messages(user_id: str, session_id: str, limit: Optional[int] = None) -> list:
+    if limit is not None and limit <= 0:
+        return []
+
+    messages = []
+    query_kwargs = {
+        "KeyConditionExpression": Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("CHATMSG#"),
+        "ScanIndexForward": True,
+    }
+    if limit is not None:
+        query_kwargs["Limit"] = limit
+
+    while True:
+        res = table.query(**query_kwargs)
+        for item in res.get("Items", []):
+            message = clean(item)
+            if message.get("sessionId") == session_id:
+                messages.append(message)
+                if limit is not None and len(messages) >= limit:
+                    return messages[:limit]
+
+        last_key = res.get("LastEvaluatedKey")
+        if not last_key:
+            return messages
+        query_kwargs["ExclusiveStartKey"] = last_key
 
 
 def update_chat_session_summary(user_id: str, session_id: str, summary: str, message_count: int) -> None:
