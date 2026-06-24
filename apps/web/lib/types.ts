@@ -119,6 +119,14 @@ export interface DiagnosticResult {
   recommendedNextActionsZh: string[]
 }
 
+export interface PlanExercise {
+  id: string
+  promptZh: string
+  question: string
+  answer: string
+  explanationZh: string
+}
+
 export interface LearningPlanTask {
   id: string
   titleZh: string
@@ -126,6 +134,7 @@ export interface LearningPlanTask {
   practiceType: PracticeType
   estimatedMinutes: number
   completed: boolean
+  exercises: PlanExercise[]
 }
 
 export interface LearningPlanDay {

@@ -60,8 +60,12 @@ export default function PlanPage() {
         </div>
       ) : activePlan ? (
         <>
-          <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+          <div className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 p-4">
             <p className="font-heading text-sm font-semibold text-primary">{activePlan.title}</p>
+            <Button variant="outline" size="sm" onClick={handleGenerate} disabled={generating}>
+              {generating ? <Spinner /> : <Sparkles data-icon="inline-start" />}
+              {generating ? "Regenerating..." : "Regenerate"}
+            </Button>
           </div>
           <div className="flex flex-col">
             {activePlan.days.map((day) => (

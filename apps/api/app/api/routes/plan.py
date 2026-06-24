@@ -43,6 +43,16 @@ def create_plan(
                     "practiceType": t.practiceType.value,
                     "estimatedMinutes": t.estimatedMinutes,
                     "completed": False,
+                    "exercises": [
+                        {
+                            "id": f"pex_{uuid4().hex[:8]}",
+                            "promptZh": ex.promptZh,
+                            "question": ex.question,
+                            "answer": ex.answer,
+                            "explanationZh": ex.explanationZh,
+                        }
+                        for ex in t.exercises
+                    ],
                 }
                 for t in day.tasks
             ]
