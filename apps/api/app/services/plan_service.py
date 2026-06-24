@@ -45,5 +45,6 @@ def generate_learning_plan(
             {"role": "user", "content": user_prompt},
         ],
         response_model=LearningPlanAIResult,
+        max_tokens=16000,
         provider=llm_provider,
     )
