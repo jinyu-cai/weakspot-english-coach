@@ -13,6 +13,7 @@ from app.db.repositories import (
     now_iso,
     put_skill,
     save_error,
+    save_note,
     save_profile,
     save_submission,
 )
@@ -125,17 +126,37 @@ def analyze_chat_import(
             existing_skills[weakness.code] = skill
             updated_skills.append(skill)
 
+        saved_notes = []
+        for note_ai in analysis.learningNotes:
+            note_id = f"note_{uuid4().hex[:12]}"
+            note = {
+                "id": note_id,
+                "userId": req.userId,
+                "submissionId": submission_id,
+                "type": note_ai.type,
+                "topic": note_ai.topic,
+                "original": note_ai.original,
+                "natural": note_ai.natural,
+                "explanation": note_ai.explanation,
+                "context": note_ai.context,
+                "examples": note_ai.examples,
+                "createdAt": now,
+            }
+            save_note(note)
+            saved_notes.append(note)
+
         profile["estimatedLevel"] = analysis.cefrEstimate.value
         profile["totalSubmissions"] = int(profile.get("totalSubmissions", 0)) + 1
         profile["updatedAt"] = now
         save_profile(profile)
 
         logger.info(
-            "chat_import[%s] complete total_ms=%d weaknesses=%d updated_skills=%d",
+            "chat_import[%s] complete total_ms=%d weaknesses=%d updated_skills=%d notes=%d",
             request_id,
             elapsed_ms(started),
             len(saved_errors),
             len(updated_skills),
+            len(saved_notes),
         )
 
         return {
@@ -143,6 +164,7 @@ def analyze_chat_import(
             "analysis": analysis.model_dump(mode="json"),
             "savedErrors": saved_errors,
             "updatedSkills": updated_skills,
+            "notes": saved_notes,
             "profile": profile,
             "importStats": {
                 "conversationCount": len(req.conversations),

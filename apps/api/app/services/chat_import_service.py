@@ -37,9 +37,17 @@ For each weakness:
 - suggestedBetterEnglish should be a better English phrasing when applicable, or a short skill target.
 - Focus on recurring or high-signal patterns, not random one-off typos.
 
+Generate learningNotes: extract reusable takeaways from the conversations. Each note is one of:
+- "expression": a more natural way to phrase something the user wrote.
+- "vocabulary": a word or phrase worth learning, with tone/register and usage context.
+- "grammar": a grammar pattern illustrated by the user's messages.
+For each note provide: a short topic title, the user's original phrasing, the natural
+version, a one-sentence explanation, context (when/tone/register to use it), and 2 example
+sentences showing it in use.
+
 Output depth depends on analysis mode:
-- fast mode: 3-5 weaknesses. Keep items concise (at most 4 items per list).
-- deep mode: report ALL weaknesses you find (up to 12). Give detailed explanations,
+- fast mode: 3-5 weaknesses, 2-3 learningNotes. Keep items concise (at most 4 items per list).
+- deep mode: report ALL weaknesses you find (up to 12), 4-8 learningNotes. Give detailed explanations,
   rich examples, and comprehensive lists. Think step by step and analyze thoroughly.
 """.strip()
 

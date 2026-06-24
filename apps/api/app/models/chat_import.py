@@ -3,6 +3,7 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 from app.models.common import CEFRLevel, Severity
+from app.models.diagnostic import LearningNoteAI
 
 
 ChatRole = Literal["user", "assistant"]
@@ -50,6 +51,7 @@ class ChatImportAIResult(BaseModel):
     weaknesses: List[ChatWeaknessAI]
     assistantConfirmedWeaknessesZh: List[str]
     recommendedNextActionsZh: List[str]
+    learningNotes: List[LearningNoteAI] = []
 
 
 class ChatImportAnalyzeResponse(BaseModel):
