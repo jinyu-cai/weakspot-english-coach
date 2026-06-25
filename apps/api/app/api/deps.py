@@ -43,6 +43,12 @@ def get_llm_provider(
     return LLMProviderConfig(api_key=api_key, base_url=base_url, model=model, fast_model=fast_model or None)
 
 
+def request_uses_own_llm_provider(request: Request) -> bool:
+    return bool(
+        request.headers.get("x-llm-api-key", "").strip()
+        and request.headers.get("x-llm-model", "").strip()
+    )
+
 
 # ----- Auth / identity / rate limiting -----
 
@@ -111,16 +117,33 @@ class Identity:
     max_output_tokens: Optional[int]
     max_realtime_seconds: Optional[int]
     login: Optional[str] = None
+    uses_own_llm_provider: bool = False
 
     @property
     def is_unlimited(self) -> bool:
         return self.is_owner or self.is_member
 
+    @property
+    def has_unlimited_llm_quota(self) -> bool:
+        return self.is_unlimited or self.uses_own_llm_provider
+
 
 def resolve_identity(request: Request, response: Response) -> Identity:
+    uses_own_llm_provider = request_uses_own_llm_provider(request)
     bypass = request.headers.get("x-owner-token")
     if settings.owner_bypass_token and bypass == settings.owner_bypass_token:
-        return Identity("owner", "owner", True, False, "owner", 10**9, None, None, None)
+        return Identity(
+            "owner",
+            "owner",
+            True,
+            False,
+            "owner",
+            10**9,
+            None,
+            None,
+            None,
+            uses_own_llm_provider=uses_own_llm_provider,
+        )
 
     claims = read_session(request)
     if claims and claims.get("sub"):
@@ -138,9 +161,10 @@ def resolve_identity(request: Request, response: Response) -> Identity:
             is_member=is_member,
             rate_key=claims["sub"],
             daily_limit=10**9 if is_owner or is_member else settings.user_daily_limit,
-            max_output_tokens=None if is_owner or is_member else settings.user_max_output_tokens,
+            max_output_tokens=None if is_owner or is_member or uses_own_llm_provider else settings.user_max_output_tokens,
             max_realtime_seconds=None if is_owner or is_member else settings.user_realtime_max_seconds,
             login=claims.get("login"),
+            uses_own_llm_provider=uses_own_llm_provider,
         )
 
     guest_id = request.cookies.get(GUEST_COOKIE)
@@ -154,15 +178,16 @@ def resolve_identity(request: Request, response: Response) -> Identity:
         is_member=False,
         rate_key=f"ip_{_client_ip(request)}",
         daily_limit=settings.guest_daily_limit,
-        max_output_tokens=settings.guest_max_output_tokens,
+        max_output_tokens=None if uses_own_llm_provider else settings.guest_max_output_tokens,
         max_realtime_seconds=settings.guest_realtime_max_seconds,
+        uses_own_llm_provider=uses_own_llm_provider,
     )
 
 
-def rate_limited(feature: str):
+def rate_limited(feature: str, allow_byok_unlimited: bool = False):
     def _dep(request: Request, response: Response) -> Identity:
         identity = resolve_identity(request, response)
-        if identity.is_unlimited:
+        if identity.is_unlimited or (allow_byok_unlimited and identity.uses_own_llm_provider):
             return identity
         day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         ttl = int(time.time()) + 2 * 86400

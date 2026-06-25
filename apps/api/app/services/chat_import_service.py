@@ -7,6 +7,7 @@ from app.services.ai_client import LLMProviderConfig, parse_with_model
 AnalysisMode = Literal["fast", "deep"]
 
 MAX_TRANSCRIPT_CHARS = 64000
+MAX_MESSAGE_CHARS = 1600
 
 SYSTEM_PROMPT = """
 You are an expert English learning analyst for Chinese native speakers.
@@ -33,9 +34,9 @@ Use these codes when possible:
 
 For each weakness:
 - evidenceType must be one of: user_error, expression_gap, assistant_correction, assistant_advice.
-- evidenceQuote should be short and relevant, at most one sentence or phrase.
+- evidenceQuote should be relevant and include enough context to justify the weakness.
 - suggestedBetterEnglish should be a better English phrasing when applicable, or a short skill target.
-- Focus on recurring or high-signal patterns, not random one-off typos.
+- Include recurring patterns and clear one-off mistakes. Do not dismiss a learner error as a typo unless it is clearly accidental and not useful for learning.
 
 Generate learningNotes: extract reusable takeaways from the conversations. Each note is one of:
 - "expression": a more natural way to phrase something the user wrote.
@@ -45,38 +46,43 @@ For each note provide: a short topic title, the user's original phrasing, the na
 version, a one-sentence explanation, context (when/tone/register to use it), and 2 example
 sentences showing it in use.
 
-Output depth depends on analysis mode:
-- fast mode: 3-5 weaknesses. Keep items concise (at most 4 items per list).
-  learningNotes: extract all useful notes you find; keep explanation and context to one sentence each.
-- deep mode: report ALL weaknesses you find (up to 12). Give detailed explanations,
-  rich examples, and comprehensive lists. Think step by step and analyze thoroughly.
-  learningNotes: extract all useful notes the conversations support. Give rich explanations, context, and examples.
+Output depth depends on the evidence, not on a fixed cap:
+- Report ALL weaknesses and learner errors you find, including expression gaps, confirmed corrections, grammar, vocabulary, clarity, style, and discourse issues.
+- Do not cap the number of weaknesses, blind spots, recommended actions, or learning notes.
+- Give detailed explanations, rich examples, and comprehensive lists when the conversations support them. Think step by step and analyze thoroughly.
+- learningNotes: extract every useful note the conversations support. Give rich explanations, context, and examples.
 """.strip()
 
 
-def _clean_text(text: str, limit: int = 1600) -> str:
+def _clean_text(text: str, limit: int | None = MAX_MESSAGE_CHARS) -> str:
     compact = " ".join(text.split())
+    if limit is None:
+        return compact
     if len(compact) <= limit:
         return compact
     return compact[: limit - 1].rstrip() + "…"
 
 
-def build_chat_transcript(conversations: list[ImportedChatConversation], char_budget: int = MAX_TRANSCRIPT_CHARS) -> str:
+def build_chat_transcript(
+    conversations: list[ImportedChatConversation],
+    char_budget: int | None = MAX_TRANSCRIPT_CHARS,
+    message_char_limit: int | None = MAX_MESSAGE_CHARS,
+) -> str:
     lines: list[str] = []
     used = 0
 
     for index, convo in enumerate(conversations, start=1):
         title = _clean_text(convo.title or f"Conversation {index}", 160)
         header = f"\n[Conversation {index}: {title}]"
-        if used + len(header) > char_budget:
+        if char_budget is not None and used + len(header) > char_budget:
             break
         lines.append(header)
         used += len(header)
 
         for msg in convo.messages:
-            text = _clean_text(msg.text)
+            text = _clean_text(msg.text, message_char_limit)
             line = f"{msg.role.upper()}: {text}"
-            if used + len(line) + 1 > char_budget:
+            if char_budget is not None and used + len(line) + 1 > char_budget:
                 lines.append("[Transcript truncated for analysis budget]")
                 return "\n".join(lines)
             lines.append(line)
@@ -100,9 +106,16 @@ def analyze_imported_chat(
     conversations: list[ImportedChatConversation],
     analysis_mode: AnalysisMode = "fast",
     llm_provider: LLMProviderConfig | None = None,
+    max_tokens: int | None = 16384,
+    transcript_char_budget: int | None = MAX_TRANSCRIPT_CHARS,
+    message_char_limit: int | None = MAX_MESSAGE_CHARS,
     trace_id: str | None = None,
 ) -> ChatImportAIResult:
-    transcript = build_chat_transcript(conversations)
+    transcript = build_chat_transcript(
+        conversations,
+        char_budget=transcript_char_budget,
+        message_char_limit=message_char_limit,
+    )
     if not transcript:
         raise ValueError("No analyzable chat text found.")
 
@@ -115,7 +128,7 @@ def analyze_imported_chat(
             {"role": "user", "content": user_prompt},
         ],
         response_model=ChatImportAIResult,
-        max_tokens=16384,
+        max_tokens=max_tokens,
         model=selected_model,
         provider=llm_provider,
         trace_id=trace_id,

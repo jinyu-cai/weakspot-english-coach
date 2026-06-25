@@ -5,6 +5,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import Identity, get_llm_provider, rate_limited
+from app.config import settings
 from app.core.mastery import update_skill_from_error
 from app.core.taxonomy import ERROR_TAXONOMY
 from app.db.repositories import (
@@ -29,23 +30,51 @@ from app.services.session_analysis_service import analyze_session
 router = APIRouter(prefix="/chat")
 logger = logging.getLogger("uvicorn.error")
 
-TEXT_CHAT_MODELS = {"deepseek-v4-flash", "deepseek-v4-pro"}
-DEFAULT_TEXT_CHAT_MODEL = "deepseek-v4-flash"
+FALLBACK_TEXT_CHAT_MODELS = {"deepseek-v4-flash", "deepseek-v4-pro"}
+FALLBACK_DEFAULT_TEXT_CHAT_MODEL = "deepseek-v4-flash"
+
+
+def _default_text_model() -> str:
+    return (
+        settings.default_llm_fast_model
+        or settings.default_llm_model
+        or FALLBACK_DEFAULT_TEXT_CHAT_MODEL
+    ).strip()
+
+
+def _allowed_text_models() -> set[str]:
+    configured = {
+        settings.default_llm_fast_model.strip() if settings.default_llm_fast_model else "",
+        settings.default_llm_model.strip() if settings.default_llm_model else "",
+    }
+    return {model for model in FALLBACK_TEXT_CHAT_MODELS | configured if model}
 
 
 def _elapsed_ms(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
 
 
-def _validate_text_model(model: str | None) -> str:
-    selected = (model or DEFAULT_TEXT_CHAT_MODEL).strip()
-    if selected not in TEXT_CHAT_MODELS:
+def _unlimited_llm_output(identity: Identity, llm_provider: LLMProviderConfig | None) -> bool:
+    return identity.is_unlimited or llm_provider is not None
+
+
+def _validate_text_model(
+    model: str | None,
+    identity: Identity,
+    llm_provider: LLMProviderConfig | None = None,
+) -> str:
+    selected = (model or _default_text_model()).strip() or _default_text_model()
+    if identity.is_unlimited or llm_provider is not None:
+        return selected
+
+    allowed = _allowed_text_models()
+    if selected not in allowed:
         raise HTTPException(
             status_code=400,
             detail={
                 "code": "invalid_text_model",
                 "message": "Unsupported text chat model.",
-                "allowed": sorted(TEXT_CHAT_MODELS),
+                "allowed": sorted(allowed),
             },
         )
     return selected
@@ -55,10 +84,10 @@ def _validate_text_model(model: str | None) -> str:
 def create_session(
     req: ChatCreateSessionRequest,
     llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
-    identity: Identity = Depends(rate_limited("chat")),
+    identity: Identity = Depends(rate_limited("chat", allow_byok_unlimited=True)),
 ):
     req.userId = identity.user_id
-    text_model = _validate_text_model(req.textModel)
+    text_model = _validate_text_model(req.textModel, identity, llm_provider)
     now = now_iso()
     session_id = f"cs_{uuid4().hex[:12]}"
     session = {
@@ -78,7 +107,7 @@ def create_session(
 
 @router.get("/sessions")
 def get_sessions(
-    identity: Identity = Depends(rate_limited("chat")),
+    identity: Identity = Depends(rate_limited("chat", allow_byok_unlimited=True)),
 ):
     sessions = list_chat_sessions(identity.user_id)
     return {"sessions": sessions}
@@ -87,7 +116,7 @@ def get_sessions(
 @router.get("/sessions/{session_id}/messages")
 def get_messages(
     session_id: str,
-    identity: Identity = Depends(rate_limited("chat")),
+    identity: Identity = Depends(rate_limited("chat", allow_byok_unlimited=True)),
 ):
     session = get_chat_session(identity.user_id, session_id)
     if not session:
@@ -101,7 +130,7 @@ def get_messages(
 def send_message(
     req: ChatSendRequest,
     llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
-    identity: Identity = Depends(rate_limited("chat")),
+    identity: Identity = Depends(rate_limited("chat", allow_byok_unlimited=True)),
 ):
     req.userId = identity.user_id
     request_id = uuid4().hex[:10]
@@ -110,9 +139,9 @@ def send_message(
     session = get_chat_session(req.userId, req.sessionId)
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found.")
-    text_model = session.get("textModel") or DEFAULT_TEXT_CHAT_MODEL
-    if text_model not in TEXT_CHAT_MODELS:
-        text_model = DEFAULT_TEXT_CHAT_MODEL
+    text_model = session.get("textModel") or _default_text_model()
+    if not identity.is_unlimited and text_model not in _allowed_text_models():
+        text_model = _default_text_model()
 
     try:
         logger.info(
@@ -146,6 +175,7 @@ def send_message(
             topic=session.get("topic"),
             llm_provider=llm_provider,
             model=None if llm_provider else text_model,
+            max_tokens=None if _unlimited_llm_output(identity, llm_provider) else 2000,
             trace_id=request_id,
         )
 
@@ -191,7 +221,7 @@ def send_message(
 def predict(
     req: ChatPredictRequest,
     llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
-    identity: Identity = Depends(rate_limited("chat")),
+    identity: Identity = Depends(rate_limited("chat", allow_byok_unlimited=True)),
 ):
     req.userId = identity.user_id
     request_id = uuid4().hex[:10]
@@ -218,6 +248,7 @@ def predict(
             partial_text=req.partialText,
             topic=session.get("topic"),
             llm_provider=llm_provider,
+            max_tokens=None if _unlimited_llm_output(identity, llm_provider) else 500,
             trace_id=request_id,
         )
 
@@ -242,7 +273,7 @@ def predict(
 def analyze_chat_session(
     session_id: str,
     llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
-    identity: Identity = Depends(rate_limited("chat")),
+    identity: Identity = Depends(rate_limited("chat", allow_byok_unlimited=True)),
 ):
     """Analyze an entire chat session for corrections, natural expressions, and weaknesses."""
     user_id = identity.user_id
@@ -282,6 +313,7 @@ def analyze_chat_session(
             messages=messages_for_ai,
             topic=session.get("topic"),
             llm_provider=llm_provider,
+            max_tokens=None if _unlimited_llm_output(identity, llm_provider) else identity.max_output_tokens,
             trace_id=request_id,
         )
 

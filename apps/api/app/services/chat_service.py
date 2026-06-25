@@ -8,7 +8,7 @@ CHAT_SYSTEM_PROMPT = """\
 You are a friendly, patient English conversation partner for Chinese-speaking learners.
 
 Your job:
-1. Have a natural, engaging conversation in English. Keep your reply concise (2-4 sentences). Match the learner's apparent level — don't overwhelm beginners with complex language, but gently push intermediate learners.
+1. Have a natural, engaging conversation in English. Match the learner's apparent level — don't overwhelm beginners with complex language, but gently push intermediate learners.
 2. Do NOT correct errors during the conversation. Just model correct usage naturally in your own responses. Errors will be analyzed after the session ends.
 3. Ask follow-up questions to keep the conversation going. Be warm and encouraging — like a supportive friend, not a teacher.
 
@@ -60,13 +60,14 @@ def chat_reply(
     topic: Optional[str] = None,
     llm_provider: Optional[LLMProviderConfig] = None,
     model: Optional[str] = None,
+    max_tokens: Optional[int] = 2000,
     trace_id: Optional[str] = None,
 ) -> ChatReplyAI:
     messages = build_chat_messages(history, user_text, topic)
     return parse_with_model(
         messages=messages,
         response_model=ChatReplyAI,
-        max_tokens=2000,
+        max_tokens=max_tokens,
         model=model,
         provider=llm_provider,
         trace_id=trace_id,
@@ -104,6 +105,7 @@ def predict_completion(
     partial_text: str,
     topic: Optional[str] = None,
     llm_provider: Optional[LLMProviderConfig] = None,
+    max_tokens: Optional[int] = 500,
     trace_id: Optional[str] = None,
 ) -> ChatPredictionAI:
     messages = build_predict_messages(history, partial_text, topic)
@@ -117,7 +119,7 @@ def predict_completion(
     return parse_with_model(
         messages=messages,
         response_model=ChatPredictionAI,
-        max_tokens=500,
+        max_tokens=max_tokens,
         model=fast_model,
         provider=llm_provider,
         trace_id=trace_id,

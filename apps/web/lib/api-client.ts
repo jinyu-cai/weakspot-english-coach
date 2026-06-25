@@ -9,7 +9,7 @@
  * Contract:
  *  POST /diagnose          { userId, text }                  -> DiagnoseResponse
  *  GET  /profile/{userId}                                    -> ProfileResponse
- *  POST /plan              { userId }                         -> { plan }
+ *  POST /plan              { userId, errorScope? }             -> { plan }
  *  GET  /plan/{userId}                                        -> { plan|null }
  *  POST /practice/generate { userId, targetSkillCode? }      -> { exercise }
  *  POST /practice/submit   { userId, exerciseId, userAnswer } -> PracticeSubmitResponse
@@ -34,6 +34,7 @@ import type {
   HistoryResponse,
   LearningPlan,
   NotesResponse,
+  PlanErrorScope,
   PlanResponse,
   PracticeExercise,
   PracticeGenerateResponse,
@@ -261,14 +262,17 @@ export async function getPlan(userId: string = DEMO_USER_ID): Promise<PlanRespon
   return apiFetch<PlanResponse>(`/plan/${userId}`)
 }
 
-export async function generatePlan(userId: string = DEMO_USER_ID): Promise<LearningPlan> {
+export async function generatePlan(
+  userId: string = DEMO_USER_ID,
+  errorScope: PlanErrorScope = "weekly",
+): Promise<LearningPlan> {
   if (USE_MOCK) {
     await delay(1600)
     return mockPlan
   }
   const { plan } = await apiFetch<{ plan: LearningPlan }>("/plan", {
     method: "POST",
-    body: JSON.stringify({ userId }),
+    body: JSON.stringify({ userId, errorScope }),
   })
   return plan
 }

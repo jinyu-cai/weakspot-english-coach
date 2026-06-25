@@ -19,14 +19,14 @@ class ImportedChatMessage(BaseModel):
 class ImportedChatConversation(BaseModel):
     id: Optional[str] = None
     title: Optional[str] = None
-    messages: List[ImportedChatMessage] = Field(min_length=1, max_length=120)
+    messages: List[ImportedChatMessage] = Field(min_length=1)
 
 
 class ChatImportAnalyzeRequest(BaseModel):
     userId: str
     sourceName: Optional[str] = Field(default=None, max_length=180)
     analysisMode: Literal["fast", "deep"] = "fast"
-    conversations: List[ImportedChatConversation] = Field(min_length=1, max_length=20)
+    conversations: List[ImportedChatConversation] = Field(min_length=1)
 
 
 class ChatWeaknessAI(BaseModel):

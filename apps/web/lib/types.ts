@@ -3,8 +3,9 @@ export type Severity = "low" | "medium" | "high"
 export type PracticeType = "fix_sentence" | "fill_blank" | "rewrite_sentence"
 export type DiagnosisMode = "fast" | "deep"
 export type ChatImportEvidenceType = "user_error" | "expression_gap" | "assistant_correction" | "assistant_advice"
-export type TextChatModel = "deepseek-v4-flash" | "deepseek-v4-pro"
-export type RealtimeVoiceModel = "gpt-realtime-mini-2025-12-15" | "gpt-realtime-2"
+export type PlanErrorScope = "weekly" | "all"
+export type TextChatModel = string
+export type RealtimeVoiceModel = string
 
 export interface LearnerProfile {
   userId: string

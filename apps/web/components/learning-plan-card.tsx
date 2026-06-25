@@ -113,7 +113,7 @@ export function LearningPlanCard({
                     </span>
                     <span className="text-xs leading-relaxed text-muted-foreground">{task.descriptionZh}</span>
                     <div className="flex items-center gap-2 pt-1">
-                      <Badge variant="outline">{PRACTICE_TYPE_META[task.practiceType].zhLabel}</Badge>
+                      <Badge variant="outline">{PRACTICE_TYPE_META[task.practiceType].label}</Badge>
                       <span className="flex items-center gap-1 text-xs text-muted-foreground">
                         <Clock className="size-3" />~{task.estimatedMinutes} min
                       </span>

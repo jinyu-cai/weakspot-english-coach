@@ -21,6 +21,7 @@ T = TypeVar("T", bound=BaseModel)
 
 _client: Optional[OpenAI] = None
 logger = logging.getLogger("uvicorn.error")
+HIGH_REASONING_EFFORT = "high"
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,17 @@ def get_client(provider: Optional[LLMProviderConfig] = None) -> OpenAI:
             base_url=settings.default_llm_base_url,
         )
     return _client
+
+
+def _is_unsupported_reasoning_effort(error: OpenAIError) -> bool:
+    text = str(error).lower()
+    code = str(getattr(error, "code", "") or "").lower()
+    return (
+        "reasoning_effort" in text
+        or "reasoning effort" in text
+        or ("unsupported" in text and "reasoning" in text)
+        or code in {"unsupported_parameter", "unknown_parameter", "invalid_parameter"}
+    )
 
 
 def parse_with_model(
@@ -77,14 +89,16 @@ def parse_with_model(
     last_error: Optional[Exception] = None
     trace = trace_id or "-"
     logger.info(
-        "llm[%s] start model=%s response_model=%s schema_bytes=%d max_tokens=%d",
+        "llm[%s] start model=%s response_model=%s schema_bytes=%d max_tokens=%s reasoning_effort=%s",
         trace,
         selected_model,
         response_model.__name__,
         len(schema.encode("utf-8")),
-        max_tokens,
+        max_tokens if max_tokens is not None else "unlimited",
+        HIGH_REASONING_EFFORT,
     )
 
+    use_reasoning_effort = True
     for attempt in range(1, 3):  # one retry
         attempt_started = time.perf_counter()
         try:
@@ -97,7 +111,24 @@ def parse_with_model(
             )
             if max_tokens is not None:
                 create_kwargs["max_tokens"] = max_tokens
-            resp = get_client(provider).chat.completions.create(**create_kwargs)
+            while True:
+                if use_reasoning_effort:
+                    create_kwargs["reasoning_effort"] = HIGH_REASONING_EFFORT
+                else:
+                    create_kwargs.pop("reasoning_effort", None)
+                try:
+                    resp = get_client(provider).chat.completions.create(**create_kwargs)
+                    break
+                except OpenAIError as e:
+                    if use_reasoning_effort and _is_unsupported_reasoning_effort(e):
+                        use_reasoning_effort = False
+                        logger.info(
+                            "llm[%s] reasoning_effort_unsupported model=%s fallback=omit_param",
+                            trace,
+                            selected_model,
+                        )
+                        continue
+                    raise
         except OpenAIError as e:
             elapsed_ms = int((time.perf_counter() - attempt_started) * 1000)
             status_code = getattr(e, "status_code", None)

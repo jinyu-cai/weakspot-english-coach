@@ -44,13 +44,12 @@ Important requirements:
 """.strip()
 
 FAST_PROMPT_APPENDIX = """
-Fast diagnosis mode — keep output concise but complete:
+Fast diagnosis mode:
 - Report ALL errors you find, not just the top ones. Cover every grammar,
   vocabulary, expression, clarity, and style issue.
-- Keep every explanation to one short sentence.
-- strengthsZh, weaknessesZh, recommendedNextActionsZh: at most 3 short items each.
-- correctedText: rewrite all sentences that contain errors.
-- learningNotes: extract all useful notes you find; keep explanation and context to one sentence each.
+- Do not cap the number of errors, weaknesses, recommended actions, or learning notes.
+- correctedText: rewrite the entire text with all necessary corrections and improvements.
+- learningNotes: extract every useful reusable takeaway the text supports.
 - Still return every field required by the schema.
 """.strip()
 
@@ -83,16 +82,17 @@ def diagnose_english_text(
     input_text: str,
     diagnosis_mode: DiagnosisMode = "deep",
     llm_provider: LLMProviderConfig | None = None,
+    max_output_tokens: int | None = DEEPSEEK_MAX_OUTPUT_TOKENS,
     trace_id: str | None = None,
 ) -> DiagnosticAIResult:
     user_prompt = f'Student text:\n"""\n{input_text}\n"""'
     selected_model = select_diagnose_model(diagnosis_mode, llm_provider=llm_provider)
     if diagnosis_mode == "fast":
         system_prompt = f"{SYSTEM_PROMPT}\n\n{FAST_PROMPT_APPENDIX}"
-        max_tokens = DEEPSEEK_MAX_OUTPUT_TOKENS
+        max_tokens = max_output_tokens
     else:
         system_prompt = f"{SYSTEM_PROMPT}\n\n{DEEP_PROMPT_APPENDIX}"
-        max_tokens = DEEPSEEK_MAX_OUTPUT_TOKENS
+        max_tokens = max_output_tokens
 
     return parse_with_model(
         messages=[

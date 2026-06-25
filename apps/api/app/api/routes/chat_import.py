@@ -19,10 +19,33 @@ from app.db.repositories import (
 )
 from app.models.chat_import import ChatImportAnalyzeRequest
 from app.services.ai_client import LLMProviderConfig
-from app.services.chat_import_service import analyze_imported_chat, build_chat_transcript, select_chat_import_model
+from app.services.chat_import_service import (
+    MAX_MESSAGE_CHARS,
+    MAX_TRANSCRIPT_CHARS,
+    analyze_imported_chat,
+    build_chat_transcript,
+    select_chat_import_model,
+)
 
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
+PLATFORM_IMPORT_CONVERSATION_LIMIT = 20
+PLATFORM_IMPORT_MESSAGE_LIMIT = 120
+
+
+def _enforce_platform_import_limits(req: ChatImportAnalyzeRequest, identity: Identity) -> None:
+    if identity.has_unlimited_llm_quota:
+        return
+    if len(req.conversations) > PLATFORM_IMPORT_CONVERSATION_LIMIT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Chat import is limited to {PLATFORM_IMPORT_CONVERSATION_LIMIT} conversations unless you use your own LLM API key.",
+        )
+    if any(len(conversation.messages) > PLATFORM_IMPORT_MESSAGE_LIMIT for conversation in req.conversations):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Each imported conversation is limited to {PLATFORM_IMPORT_MESSAGE_LIMIT} messages unless you use your own LLM API key.",
+        )
 
 
 def elapsed_ms(started: float) -> int:
@@ -34,7 +57,7 @@ def analyze_chat_import(
     req: ChatImportAnalyzeRequest,
     response: Response,
     llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
-    identity: Identity = Depends(rate_limited("chat_import")),
+    identity: Identity = Depends(rate_limited("chat_import", allow_byok_unlimited=True)),
 ):
     req.userId = identity.user_id
     request_id = uuid4().hex[:10]
@@ -46,6 +69,7 @@ def analyze_chat_import(
     response.headers["X-LLM-Model"] = selected_model or "unconfigured"
 
     try:
+        _enforce_platform_import_limits(req, identity)
         message_count = sum(len(c.messages) for c in req.conversations)
         user_message_count = sum(1 for c in req.conversations for m in c.messages if m.role == "user")
         assistant_message_count = sum(1 for c in req.conversations for m in c.messages if m.role == "assistant")
@@ -66,6 +90,9 @@ def analyze_chat_import(
             req.conversations,
             analysis_mode=req.analysisMode,
             llm_provider=llm_provider,
+            max_tokens=None if identity.has_unlimited_llm_quota else identity.max_output_tokens,
+            transcript_char_budget=None if identity.has_unlimited_llm_quota else MAX_TRANSCRIPT_CHARS,
+            message_char_limit=None if identity.has_unlimited_llm_quota else MAX_MESSAGE_CHARS,
             trace_id=request_id,
         )
 
@@ -174,6 +201,8 @@ def analyze_chat_import(
             },
         }
 
+    except HTTPException:
+        raise
     except ValueError as e:
         logger.exception("chat_import[%s] ai_error total_ms=%d", request_id, elapsed_ms(started))
         raise HTTPException(status_code=502, detail=f"AI error [{request_id}]: {e}") from e

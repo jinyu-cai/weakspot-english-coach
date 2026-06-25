@@ -22,7 +22,7 @@ class PracticeExerciseAIResult(BaseModel):
 class SubmitPracticeRequest(BaseModel):
     userId: str
     exerciseId: str
-    userAnswer: str = Field(min_length=1, max_length=2000)
+    userAnswer: str = Field(min_length=1)
 
 
 class PracticeGradeAIResult(BaseModel):

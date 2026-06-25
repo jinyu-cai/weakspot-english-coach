@@ -30,7 +30,7 @@ Your analysis must cover:
        wanted to convey as `original` (their Chinese or rough attempt) and the natural English
        as `natural` (use the coach's suggestion when one was given in the conversation).
    For each: original, natural version, Chinese explanation, usage context, and 2 example sentences.
-   Focus on expressions that would be most useful for the learner to acquire.
+   Include every expression that would be useful for the learner to acquire.
 
 3. **weaknesses** — Recurring patterns or skill gaps you observe across the conversation.
    Count repeated expression gaps — asking how to say things, or falling back on Chinese
@@ -43,13 +43,13 @@ Your analysis must cover:
    For each: code, category label, severity (low/medium/high), evidence quote, Chinese explanation,
    and a practice goal.
 
-4. **strengthsZh** — What the learner does well (in Chinese, 2-3 items).
+4. **strengthsZh** — What the learner does well (in Chinese).
 
-5. **summaryZh** — A brief Chinese summary of the learner's overall performance in this conversation.
+5. **summaryZh** — A Chinese summary of the learner's overall performance in this conversation.
 
-6. **recommendedNextActionsZh** — 2-3 recommended next steps (in Chinese).
+6. **recommendedNextActionsZh** — Recommended next steps (in Chinese).
 
-Be encouraging but honest. Focus on patterns, not isolated slips.
+Be encouraging but honest. Include both recurring patterns and isolated slips.
 """
 
 
@@ -57,6 +57,7 @@ def analyze_session(
     messages: List[dict],
     topic: Optional[str] = None,
     llm_provider: Optional[LLMProviderConfig] = None,
+    max_tokens: Optional[int] = 16384,
     trace_id: Optional[str] = None,
 ) -> SessionAnalysisAI:
     transcript_lines = []
@@ -87,7 +88,7 @@ def analyze_session(
             {"role": "user", "content": user_prompt},
         ],
         response_model=SessionAnalysisAI,
-        max_tokens=16384,
+        max_tokens=max_tokens,
         model=model,
         provider=llm_provider,
         trace_id=trace_id,

@@ -24,13 +24,14 @@ from app.services.profile_service import weakest_skill_code
 router = APIRouter()
 
 DEFAULT_SKILL = "grammar.verb_tense"
+PLATFORM_PRACTICE_ANSWER_CHAR_LIMIT = 2000
 
 
 @router.post("/practice/generate")
 def generate(
     req: GeneratePracticeRequest,
     llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
-    identity: Identity = Depends(rate_limited("practice_generate")),
+    identity: Identity = Depends(rate_limited("practice_generate", allow_byok_unlimited=True)),
 ):
     req.userId = identity.user_id
     try:
@@ -40,12 +41,16 @@ def generate(
         skill_code = req.targetSkillCode or weakest_skill_code(req.userId) or DEFAULT_SKILL
         taxonomy = ERROR_TAXONOMY.get(skill_code, {"label": skill_code, "zhLabel": skill_code})
 
-        recent_errors = list_recent_errors(req.userId, limit=20)
-        examples = [
+        recent_errors = list_recent_errors(
+            req.userId,
+            limit=500 if identity.has_unlimited_llm_quota else 20,
+        )
+        matching_examples = [
             {"originalText": e.get("originalText"), "correctedText": e.get("correctedText")}
             for e in recent_errors
             if e.get("code") == skill_code
-        ][:5]
+        ]
+        examples = matching_examples if identity.has_unlimited_llm_quota else matching_examples[:5]
 
         ai_ex = generate_practice_exercise(
             skill_code=skill_code,
@@ -79,11 +84,19 @@ def generate(
 def submit(
     req: SubmitPracticeRequest,
     llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
-    identity: Identity = Depends(rate_limited("practice_submit")),
+    identity: Identity = Depends(rate_limited("practice_submit", allow_byok_unlimited=True)),
 ):
     req.userId = identity.user_id
     try:
         now = now_iso()
+        if (
+            not identity.has_unlimited_llm_quota
+            and len(req.userAnswer) > PLATFORM_PRACTICE_ANSWER_CHAR_LIMIT
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Practice answers are limited to {PLATFORM_PRACTICE_ANSWER_CHAR_LIMIT} characters unless you use your own LLM API key.",
+            )
         exercise = get_exercise(req.userId, req.exerciseId)
         if not exercise:
             raise HTTPException(status_code=404, detail="Exercise not found")

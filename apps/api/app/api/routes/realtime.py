@@ -86,8 +86,11 @@ def _allowed_realtime_models() -> set[str]:
     return set(settings.openai_realtime_model_list) | {settings.openai_realtime_model}
 
 
-def _validate_realtime_model(model: str | None) -> str:
-    selected = (model or settings.openai_realtime_model).strip()
+def _validate_realtime_model(model: str | None, identity: Identity) -> str:
+    selected = (model or settings.openai_realtime_model).strip() or settings.openai_realtime_model
+    if identity.is_unlimited:
+        return selected
+
     allowed = _allowed_realtime_models()
     if selected not in allowed:
         raise HTTPException(
@@ -132,7 +135,7 @@ def create_realtime_session(
     identity: Identity = Depends(rate_limited("chat")),
 ):
     req.userId = identity.user_id
-    realtime_model = _validate_realtime_model(req.model)
+    realtime_model = _validate_realtime_model(req.model, identity)
 
     if not settings.openai_api_key:
         raise HTTPException(

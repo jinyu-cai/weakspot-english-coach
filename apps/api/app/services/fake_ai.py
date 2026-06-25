@@ -21,7 +21,7 @@ from app.models.chat import (
 from app.models.chat_import import ChatImportAIResult, ChatWeaknessAI
 from app.models.common import CEFRLevel, PracticeType, Severity
 from app.models.diagnostic import DiagnosticAIResult, DiagnosticErrorAI, LearningNoteAI, SkillUpdateAI
-from app.models.plan import LearningPlanAIResult, LearningPlanDayAI, LearningPlanTaskAI
+from app.models.plan import LearningPlanAIResult, LearningPlanDayAI, LearningPlanTaskAI, PlanExerciseAI
 from app.models.practice import PracticeExerciseAIResult, PracticeGradeAIResult
 
 
@@ -133,6 +133,29 @@ def _fake_chat_import() -> ChatImportAIResult:
     )
 
 
+def _fake_plan_exercises(kind: str) -> list[PlanExerciseAI]:
+    if kind == "tense":
+        return [
+            PlanExerciseAI(
+                promptZh="Rewrite the sentence in the simple past tense.",
+                question=f"Yesterday I go to practice session {i}.",
+                answer=f"Yesterday I went to practice session {i}.",
+                explanationZh="'Yesterday' signals past time, so use went instead of go.",
+            )
+            for i in range(1, 9)
+        ]
+
+    return [
+        PlanExerciseAI(
+            promptZh="Replace 'good' with a more specific adjective.",
+            question=f"The presentation was good because point {i} was clear.",
+            answer=f"The presentation was effective because point {i} was clear.",
+            explanationZh="'Effective' is more specific than 'good' when talking about results.",
+        )
+        for i in range(1, 9)
+    ]
+
+
 def _fake_plan() -> LearningPlanAIResult:
     days = [
         LearningPlanDayAI(
@@ -140,8 +163,20 @@ def _fake_plan() -> LearningPlanAIResult:
             goalZh=f"Day {d}: reinforce verb tense and grow vocabulary variety",
             targetSkillCodes=["grammar.verb_tense", "vocab.repetition"],
             tasks=[
-                LearningPlanTaskAI(titleZh="Past-tense rewrite", descriptionZh="Rewrite 5 present-tense sentences into the simple past.", practiceType=PracticeType.fix_sentence, estimatedMinutes=10),
-                LearningPlanTaskAI(titleZh="Synonym swap", descriptionZh="Find 2 replacements for each of 3 frequent words and use them in sentences.", practiceType=PracticeType.rewrite_sentence, estimatedMinutes=10),
+                LearningPlanTaskAI(
+                    titleZh="Past-tense rewrite",
+                    descriptionZh="Rewrite present-tense sentences into the simple past.",
+                    practiceType=PracticeType.fix_sentence,
+                    estimatedMinutes=15,
+                    exercises=_fake_plan_exercises("tense"),
+                ),
+                LearningPlanTaskAI(
+                    titleZh="Synonym swap",
+                    descriptionZh="Replace simple adjectives with more precise alternatives.",
+                    practiceType=PracticeType.rewrite_sentence,
+                    estimatedMinutes=15,
+                    exercises=_fake_plan_exercises("vocab"),
+                ),
             ],
         )
         for d in range(1, 8)

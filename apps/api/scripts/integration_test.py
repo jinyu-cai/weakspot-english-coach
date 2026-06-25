@@ -110,6 +110,68 @@ def main() -> int:
         assert plan["days"], "expected plan days"
         print(f"3. POST /plan              -> '{plan['title']}', {len(plan['days'])} days")
 
+        from app.api.routes import plan as plan_route
+        from app.models.common import PracticeType
+        from app.models.plan import LearningPlanAIResult, LearningPlanDayAI, LearningPlanTaskAI, PlanExerciseAI
+
+        original_weekly_errors = plan_route.list_weekly_errors
+        original_recent_errors = plan_route.list_recent_errors
+        original_generate_plan = plan_route.generate_learning_plan
+        captured_error_sets = []
+
+        def scoped_plan(*, recent_errors):
+            return LearningPlanAIResult(
+                title=f"Scope test: {recent_errors[0]['scope']}",
+                days=[
+                    LearningPlanDayAI(
+                        day=1,
+                        goalZh="Verify error scope selection",
+                        targetSkillCodes=["grammar.verb_tense"],
+                        tasks=[
+                            LearningPlanTaskAI(
+                                titleZh="Scope verification task",
+                                descriptionZh="Confirm that the selected error source reaches plan generation.",
+                                practiceType=PracticeType.fix_sentence,
+                                estimatedMinutes=30,
+                                exercises=[
+                                    PlanExerciseAI(
+                                        promptZh="Correct the sentence.",
+                                        question=f"Yesterday I go to class {i}.",
+                                        answer=f"Yesterday I went to class {i}.",
+                                        explanationZh="Yesterday signals past time, so go becomes went.",
+                                    )
+                                    for i in range(1, 9)
+                                ],
+                            )
+                        ],
+                    )
+                ],
+            )
+
+        def capture_generate_plan(profile, skills, recent_errors, **kwargs):
+            captured_error_sets.append(recent_errors)
+            return scoped_plan(recent_errors=recent_errors)
+
+        try:
+            plan_route.list_weekly_errors = lambda user_id, limit=100: [{"scope": "weekly"}]
+            plan_route.list_recent_errors = lambda user_id, limit=20: [{"scope": "all", "limit": limit}]
+            plan_route.generate_learning_plan = capture_generate_plan
+
+            r = client.post("/api/v1/plan", json={"userId": user})
+            assert r.status_code == 200, r.text
+            assert captured_error_sets[-1][0]["scope"] == "weekly", captured_error_sets
+
+            r = client.post("/api/v1/plan", json={"userId": user, "errorScope": "all"})
+            assert r.status_code == 200, r.text
+            assert captured_error_sets[-1][0]["scope"] == "all", captured_error_sets
+            assert captured_error_sets[-1][0]["limit"] == 500, captured_error_sets
+        finally:
+            plan_route.list_weekly_errors = original_weekly_errors
+            plan_route.list_recent_errors = original_recent_errors
+            plan_route.generate_learning_plan = original_generate_plan
+
+        print("   plan error scope         -> default weekly, explicit all")
+
         r = client.get(f"/api/v1/plan/{user}")
         assert r.json()["plan"], "expected active plan"
         print("   GET  /plan/{user}       -> active plan present")
@@ -204,9 +266,11 @@ def main() -> int:
 
         original_chat_reply = chat_routes.chat_reply
         selected_text_models = []
+        selected_text_max_tokens = []
 
-        def fake_chat_reply(*, model=None, **kwargs):
-            selected_text_models.append(model)
+        def fake_chat_reply(*, model=None, llm_provider=None, max_tokens=None, **kwargs):
+            selected_text_models.append(llm_provider.model if llm_provider else model)
+            selected_text_max_tokens.append(max_tokens)
             return ChatReplyAI(reply="Model routing test reply.", corrections=[], betterExpression=None)
 
         chat_routes.chat_reply = fake_chat_reply
@@ -238,9 +302,47 @@ def main() -> int:
 
             r = client.post(
                 "/api/v1/chat/sessions",
-                json={"userId": user, "topic": "Bad model", "textModel": "deepseek-v4-bad"},
+                json={"userId": user, "topic": "Owner custom model", "textModel": "owner-custom-text-model"},
+            )
+            assert r.status_code == 200, r.text
+            custom_model_session = r.json()["session"]
+            assert custom_model_session["textModel"] == "owner-custom-text-model", custom_model_session
+            r = client.post(
+                "/api/v1/chat/send",
+                json={"userId": user, "sessionId": custom_model_session["id"], "text": "Hello from custom model."},
+            )
+            assert r.status_code == 200, r.text
+            assert selected_text_models[-1] == "owner-custom-text-model", selected_text_models
+
+            guest = TestClient(app)
+            r = guest.post(
+                "/api/v1/chat/sessions",
+                json={"userId": "guest-text", "topic": "Bad model", "textModel": "deepseek-v4-bad"},
             )
             assert r.status_code == 400, r.text
+
+            byok_guest = TestClient(
+                app,
+                headers={
+                    "X-LLM-API-Key": "guest-byok-key",
+                    "X-LLM-Model": "guest-byok-pro-model",
+                    "X-LLM-Fast-Model": "guest-byok-fast-model",
+                },
+            )
+            r = byok_guest.post(
+                "/api/v1/chat/sessions",
+                json={"userId": "guest-byok", "topic": "BYOK custom model", "textModel": "any-text-model"},
+            )
+            assert r.status_code == 200, r.text
+            byok_session = r.json()["session"]
+            assert byok_session["textModel"] == "any-text-model", byok_session
+            r = byok_guest.post(
+                "/api/v1/chat/send",
+                json={"userId": "guest-byok", "sessionId": byok_session["id"], "text": "Hello from BYOK."},
+            )
+            assert r.status_code == 200, r.text
+            assert selected_text_models[-1] == "guest-byok-pro-model", selected_text_models
+            assert selected_text_max_tokens[-1] is None, selected_text_max_tokens
         finally:
             chat_routes.chat_reply = original_chat_reply
 
@@ -320,6 +422,15 @@ def main() -> int:
                 assert realtime_session["model"] == voice_model, realtime_session
                 assert realtime_session["maxDurationSeconds"] is None, realtime_session
                 owner_voice_session_id = realtime_session["sessionId"]
+
+            r = client.post(
+                "/api/v1/chat/realtime/session",
+                json={"userId": user, "topic": "Owner custom voice model", "model": "owner-custom-realtime-model"},
+            )
+            assert r.status_code == 200, r.text
+            custom_realtime_session = r.json()
+            assert custom_realtime_session["model"] == "owner-custom-realtime-model", custom_realtime_session
+            assert custom_realtime_session["maxDurationSeconds"] is None, custom_realtime_session
 
             r = client.post(
                 f"/api/v1/chat/realtime/{owner_voice_session_id}/sideband",
@@ -425,6 +536,13 @@ def main() -> int:
                 "/api/v1/chat/realtime/session",
                 json={"userId": user, "topic": "Bad voice model", "model": "gpt-realtime-bad"},
             )
+            assert r.status_code == 200, r.text
+
+            guest_bad_voice = TestClient(app)
+            r = guest_bad_voice.post(
+                "/api/v1/chat/realtime/session",
+                json={"userId": "guest-voice", "topic": "Bad voice model", "model": "gpt-realtime-bad"},
+            )
             assert r.status_code == 400, r.text
         finally:
             settings.openai_api_key = original_openai_key
@@ -435,10 +553,13 @@ def main() -> int:
         assert selected_voice_models == [
             "gpt-realtime-mini-2025-12-15",
             "gpt-realtime-2",
+            "owner-custom-realtime-model",
             "gpt-realtime-mini-2025-12-15",
+            "gpt-realtime-bad",
         ], selected_voice_models
-        assert session_expires_at[0:2] == [None, None], session_expires_at
-        assert isinstance(session_expires_at[2], int), session_expires_at
+        assert session_expires_at[0:3] == [None, None, None], session_expires_at
+        assert isinstance(session_expires_at[3], int), session_expires_at
+        assert session_expires_at[4] is None, session_expires_at
         assert sideband_calls and sideband_calls[0][2] == "rtc_integration_test", sideband_calls
         assert kick_calls and kick_calls[0][2] == "integration_test", kick_calls
         print(
@@ -513,6 +634,18 @@ def main() -> int:
             blocked = guest.post("/api/v1/diagnose", json={"userId": "g", "text": gtext})
             assert blocked.json()["detail"]["code"] == "rate_limited", blocked.text
             print(f"12. guest diagnose x4         -> {codes}  (4th = 429: login required)")
+
+            byok_guest = TestClient(
+                app,
+                headers={"X-LLM-API-Key": "guest-byok-key", "X-LLM-Model": "guest-byok-pro-model"},
+            )
+            byok_codes = [
+                byok_guest.post("/api/v1/diagnose", json={"userId": "byok", "text": gtext}).status_code
+                for _ in range(5)
+            ]
+            assert all(c == 200 for c in byok_codes), byok_codes
+            print(f"12b. BYOK guest diagnose x5   -> {byok_codes}  (own key bypasses platform daily limit)")
+
             ocodes = [client.post("/api/v1/diagnose", json={"userId": "o", "text": gtext}).status_code for _ in range(5)]
             assert all(c == 200 for c in ocodes), ocodes
             print(f"13. owner diagnose x5 (bypass)-> {ocodes}  (never blocked)")
@@ -536,6 +669,11 @@ def main() -> int:
             assert member_me.status_code == 200 and member_me.json()["accessTier"] == "member", member_me.text
             mcodes = [member.post("/api/v1/diagnose", json={"userId": "m", "text": gtext}).status_code for _ in range(5)]
             assert all(c == 200 for c in mcodes), mcodes
+            r = member.post(
+                "/api/v1/chat/sessions",
+                json={"userId": "m", "topic": "Member custom model", "textModel": "member-custom-text-model"},
+            )
+            assert r.status_code == 200 and r.json()["session"]["textModel"] == "member-custom-text-model", r.text
             print("14. DB member role          -> accessTier=member, never blocked")
 
         return 0

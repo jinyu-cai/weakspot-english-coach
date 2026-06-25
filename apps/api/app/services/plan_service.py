@@ -10,15 +10,17 @@ Create a 7-day personalized learning plan for this learner, derived from their
 actual weaknesses (lowest-mastery skills and recent errors).
 
 Requirements:
-1. Output learning goals and task descriptions in Chinese (goalZh, titleZh, descriptionZh, promptZh, explanationZh).
+1. Output all learner-facing text in clear, simple English. The legacy schema
+   field names may end in "Zh" (goalZh, titleZh, descriptionZh, promptZh,
+   explanationZh), but their values must still be English.
 2. Each day MUST have 2–4 tasks, and the total estimatedMinutes per day MUST be at least 30.
 3. Each task must target one or more weak skill codes (use targetSkillCodes).
 4. Each task's practiceType must be one of: fix_sentence, fill_blank, rewrite_sentence.
 5. Each task MUST include 8–15 concrete exercises in the `exercises` array:
-   - promptZh: a short Chinese instruction telling the student what to do.
+   - promptZh: a short English instruction telling the student what to do.
    - question: the English sentence or prompt the student must work on.
    - answer: the correct/model answer.
-   - explanationZh: a Chinese explanation of why the answer is correct and what rule it exercises.
+   - explanationZh: an English explanation of why the answer is correct and what rule it exercises.
 6. Exercises must be realistic, varied, and directly target the weakness.
    Use the learner's recent error examples as inspiration for similar exercise sentences.
 7. Do not create speaking or pronunciation tasks.

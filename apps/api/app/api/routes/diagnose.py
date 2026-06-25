@@ -48,7 +48,7 @@ def _json_default(obj):
 async def diagnose(
     req: DiagnoseRequest,
     llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
-    identity: Identity = Depends(rate_limited("diagnose")),
+    identity: Identity = Depends(rate_limited("diagnose", allow_byok_unlimited=True)),
 ):
     """Diagnose a piece of writing, persist everything, and update the learner profile.
 
@@ -104,7 +104,7 @@ async def diagnose(
             None,
             lambda: _llm_and_persist(
                 req, profile, text_hash, request_id, started,
-                diagnosis_mode, llm_provider,
+                diagnosis_mode, identity, llm_provider,
             ),
         )
 
@@ -191,7 +191,7 @@ def _pre_check(user_id: str, text: str, request_id: str) -> dict:
     return {"duplicate": False, "profile": profile, "text_hash": text_hash}
 
 
-def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mode, llm_provider):
+def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mode, identity, llm_provider):
     """Call LLM, persist submission + errors + notes + skills, return response dict."""
     now = now_iso()
 
@@ -200,6 +200,7 @@ def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mod
         req.text,
         diagnosis_mode=diagnosis_mode,
         llm_provider=llm_provider,
+        max_output_tokens=None if identity.has_unlimited_llm_quota else identity.max_output_tokens,
         trace_id=request_id,
     )
     llm_ms = _elapsed_ms(stage_started)

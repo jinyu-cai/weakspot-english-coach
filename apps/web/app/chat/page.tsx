@@ -32,9 +32,14 @@ import { cn } from "@/lib/utils"
 type ChatMode = "text" | "voice"
 type ViewState = "chat" | "analyzing" | "summary"
 
-const TEXT_MODEL_LABELS: Record<TextChatModel, string> = {
+const TEXT_MODEL_LABELS: Record<string, string> = {
   "deepseek-v4-flash": "Flash",
   "deepseek-v4-pro": "Pro",
+}
+
+function formatTextModel(model?: string | null) {
+  if (!model) return "Default"
+  return TEXT_MODEL_LABELS[model] ?? model
 }
 
 const SCENARIOS = [
@@ -311,7 +316,7 @@ export default function ChatPage() {
         <div className="flex items-center gap-2">
           {viewState === "chat" && mode === "text" && (
             <Badge variant="secondary" className="h-7 rounded-md px-2.5 text-xs">
-              {TEXT_MODEL_LABELS[activeSession.textModel ?? selectedTextModel]}
+              {formatTextModel(activeSession.textModel ?? selectedTextModel)}
             </Badge>
           )}
           {viewState === "chat" && (

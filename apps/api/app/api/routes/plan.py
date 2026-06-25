@@ -8,6 +8,7 @@ from app.db.repositories import (
     get_or_create_profile,
     list_recent_errors,
     list_skills,
+    list_weekly_errors,
     now_iso,
     save_active_plan,
 )
@@ -22,19 +23,25 @@ router = APIRouter()
 def create_plan(
     req: GeneratePlanRequest,
     llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
-    identity: Identity = Depends(rate_limited("plan")),
+    identity: Identity = Depends(rate_limited("plan", allow_byok_unlimited=True)),
 ):
     req.userId = identity.user_id
     try:
         now = now_iso()
         profile = get_or_create_profile(req.userId)
         skills = list_skills(req.userId)
-        recent_errors = list_recent_errors(req.userId, limit=20)
+        if req.errorScope == "weekly":
+            recent_errors = list_weekly_errors(req.userId)
+        else:
+            recent_errors = list_recent_errors(
+                req.userId,
+                limit=500 if identity.has_unlimited_llm_quota else 50,
+            )
 
         ai_plan = generate_learning_plan(
             profile, skills, recent_errors,
             llm_provider=llm_provider,
-            max_output_tokens=identity.max_output_tokens,
+            max_output_tokens=None if identity.has_unlimited_llm_quota else identity.max_output_tokens,
         )
 
         days = []
