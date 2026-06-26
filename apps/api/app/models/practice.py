@@ -8,6 +8,9 @@ from app.models.common import PracticeType
 class GeneratePracticeRequest(BaseModel):
     userId: str
     targetSkillCode: Optional[str] = None
+    # When set, force the generated exercise to this type so a learner can
+    # "regenerate the same kind" of exercise (e.g. re-do a plan task).
+    practiceType: Optional[PracticeType] = None
 
 
 class PracticeExerciseAIResult(BaseModel):
@@ -23,6 +26,25 @@ class SubmitPracticeRequest(BaseModel):
     userId: str
     exerciseId: str
     userAnswer: str = Field(min_length=1)
+
+
+class GradePracticeRequest(BaseModel):
+    """Ad-hoc grading for an exercise that isn't a stored PracticeExercise.
+
+    Used by the plan-exercise practice runner: the question and model answer
+    travel with the request (they're already on the client) so plan exercises
+    can be graded — and any mistake recorded to the weakness library — without
+    first persisting them as practice exercises.
+    """
+
+    userId: str
+    targetSkillCode: str
+    question: str = Field(min_length=1)
+    expectedAnswer: str = ""
+    userAnswer: str = Field(min_length=1)
+    exerciseType: Optional[PracticeType] = None
+    promptZh: Optional[str] = None
+    explanationZh: Optional[str] = None
 
 
 class PracticeGradeAIResult(BaseModel):

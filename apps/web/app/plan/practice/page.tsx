@@ -1,0 +1,409 @@
+"use client"
+
+import { Suspense, useEffect, useMemo, useRef, useState } from "react"
+import Link from "next/link"
+import { useSearchParams } from "next/navigation"
+import useSWR from "swr"
+import { toast } from "sonner"
+import { ArrowLeft, CheckCircle2, Dumbbell, Lightbulb, RefreshCw, Trophy, XCircle } from "lucide-react"
+import { generatePractice, getPlan, gradePracticeAdhoc } from "@/lib/api-client"
+import { DEMO_USER_ID } from "@/lib/mock-data"
+import { PRACTICE_TYPE_META, SKILL_LABELS } from "@/lib/practice"
+import type {
+  LearningPlanDay,
+  LearningPlanTask,
+  PlanExercise,
+  PracticeExercise,
+  PracticeGrade,
+  PracticeType,
+} from "@/lib/types"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Separator } from "@/components/ui/separator"
+import { Spinner } from "@/components/ui/spinner"
+import { Progress } from "@/components/ui/progress"
+import { Skeleton } from "@/components/ui/skeleton"
+import { EmptyState } from "@/components/empty-state"
+import { ScoreRing } from "@/components/score-ring"
+
+const DEFAULT_SKILL = "grammar.verb_tense"
+
+type RunnerSession = {
+  task: LearningPlanTask
+  day: LearningPlanDay
+  exercises: PlanExercise[]
+}
+
+/** One gradeable exercise card: input box + AI grading + reference answer. */
+function RunnerCard({
+  exercise,
+  skillCode,
+  practiceType,
+  index,
+  total,
+  onGraded,
+  onNext,
+  onRegenerate,
+  regenerating,
+  isLast,
+}: {
+  exercise: PlanExercise
+  skillCode: string
+  practiceType: PracticeType
+  index: number
+  total: number
+  onGraded: (grade: PracticeGrade) => void
+  onNext: () => void
+  onRegenerate: () => void
+  regenerating: boolean
+  isLast: boolean
+}) {
+  const [answer, setAnswer] = useState("")
+  const [grade, setGrade] = useState<PracticeGrade | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  const skillLabel = SKILL_LABELS[skillCode] ?? skillCode
+  const typeMeta = PRACTICE_TYPE_META[practiceType]
+
+  async function handleSubmit() {
+    if (submitting || grade) return
+    setSubmitting(true)
+    try {
+      const result = await gradePracticeAdhoc(DEMO_USER_ID, {
+        targetSkillCode: skillCode,
+        question: exercise.question,
+        expectedAnswer: exercise.answer,
+        userAnswer: answer,
+        exerciseType: practiceType,
+        promptZh: exercise.promptZh,
+        explanationZh: exercise.explanationZh,
+      })
+      setGrade(result)
+      onGraded(result)
+    } catch {
+      toast.error("Couldn't grade your answer. Please try again shortly.")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const canSubmit = answer.trim().length > 0
+
+  return (
+    <Card className="w-full">
+      <CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary">{typeMeta.zhLabel}</Badge>
+            <Badge variant="outline">{skillLabel}</Badge>
+          </div>
+          <span className="text-sm text-muted-foreground tabular-nums">
+            {index + 1} / {total}
+          </span>
+        </div>
+        <CardTitle className="text-pretty text-base leading-relaxed">{exercise.promptZh}</CardTitle>
+      </CardHeader>
+
+      <CardContent className="flex flex-col gap-4">
+        <p className="rounded-xl border border-border bg-muted/50 px-4 py-3 text-pretty font-mono text-sm leading-relaxed">
+          {exercise.question}
+        </p>
+
+        <Textarea
+          value={answer}
+          onChange={(e) => setAnswer(e.target.value)}
+          disabled={!!grade || submitting}
+          placeholder="Type your answer here..."
+          className="min-h-28 resize-none"
+        />
+
+        {grade ? (
+          <>
+            <Separator />
+            <Alert variant={grade.isCorrect ? "default" : "destructive"}>
+              {grade.isCorrect ? <CheckCircle2 /> : <XCircle />}
+              <AlertTitle className="flex items-center gap-2">
+                {grade.isCorrect ? "Correct" : "Needs improvement"}
+                <Badge variant="outline" className="tabular-nums">
+                  {grade.score} pts
+                </Badge>
+              </AlertTitle>
+              <AlertDescription>{grade.feedbackZh}</AlertDescription>
+            </Alert>
+            {!grade.isCorrect ? (
+              <>
+                <Alert>
+                  <Lightbulb />
+                  <AlertTitle>Reference answer</AlertTitle>
+                  <AlertDescription>{grade.correctedAnswer}</AlertDescription>
+                </Alert>
+                <p className="text-xs text-muted-foreground">
+                  Saved to your weakness library — it&apos;ll shape your next plan and analysis.
+                </p>
+              </>
+            ) : null}
+          </>
+        ) : null}
+      </CardContent>
+
+      <CardFooter className="flex flex-wrap justify-end gap-2">
+        <Button variant="outline" onClick={onRegenerate} disabled={submitting || regenerating}>
+          {regenerating ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
+          New same-type question
+        </Button>
+        {!grade ? (
+          <Button onClick={handleSubmit} disabled={!canSubmit || submitting}>
+            {submitting ? (
+              <>
+                <Spinner data-icon="inline-start" />
+                Grading
+              </>
+            ) : (
+              "Submit answer"
+            )}
+          </Button>
+        ) : (
+          <Button onClick={onNext}>{isLast ? "Finish session" : "Next question"}</Button>
+        )}
+      </CardFooter>
+    </Card>
+  )
+}
+
+function PlanPracticeFlow() {
+  const searchParams = useSearchParams()
+  const taskId = searchParams.get("task")
+  const { data, isLoading } = useSWR("plan", () => getPlan())
+  const plan = data?.plan ?? null
+
+  // Locate the task (and the day it belongs to, for its target skill).
+  const located = useMemo(() => {
+    if (!plan || !taskId) return null
+    for (const day of plan.days) {
+      const task = day.tasks.find((t) => t.id === taskId)
+      if (task) return { day, task }
+    }
+    return null
+  }, [plan, taskId])
+
+  // Snapshot the located task into state, so a later SWR revalidation can't wipe
+  // the runner mid-session (in mock mode getPlan() revalidates back to null).
+  const [session, setSession] = useState<RunnerSession | null>(null)
+  const [current, setCurrent] = useState(0)
+  const [grades, setGrades] = useState<PracticeGrade[]>([])
+  const [phase, setPhase] = useState<"active" | "summary">("active")
+  const [regenerating, setRegenerating] = useState(false)
+  const [generatingBatch, setGeneratingBatch] = useState(false)
+
+  const seededRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (located && seededRef.current !== taskId) {
+      seededRef.current = taskId ?? null
+      setSession({ task: located.task, day: located.day, exercises: located.task.exercises ?? [] })
+      setCurrent(0)
+      setGrades([])
+      setPhase("active")
+    }
+  }, [located, taskId])
+
+  function handleGraded(grade: PracticeGrade) {
+    setGrades((prev) => [...prev, grade])
+  }
+
+  function handleNext() {
+    const total = session?.exercises.length ?? 0
+    if (current + 1 >= total) setPhase("summary")
+    else setCurrent((c) => c + 1)
+  }
+
+  async function handleRegenerate() {
+    if (!session) return
+    const skillCode = session.day.targetSkillCodes?.[0] ?? DEFAULT_SKILL
+    setRegenerating(true)
+    try {
+      const fresh = await generatePractice(DEMO_USER_ID, skillCode, session.task.practiceType)
+      const mapped: PlanExercise = {
+        id: fresh.id,
+        promptZh: fresh.promptZh,
+        question: fresh.question,
+        answer: fresh.answer ?? "",
+        explanationZh: fresh.explanationZh ?? "",
+      }
+      setSession((prev) =>
+        prev ? { ...prev, exercises: prev.exercises.map((ex, i) => (i === current ? mapped : ex)) } : prev,
+      )
+      toast.success("Fresh exercise ready", { description: "Same type, new question — give it another go." })
+    } catch {
+      toast.error("Couldn't generate a new exercise. Please try again shortly.")
+    } finally {
+      setRegenerating(false)
+    }
+  }
+
+  // Regenerate a whole fresh set of the same type/skill (used after finishing).
+  async function generateNewSet() {
+    if (!session) return
+    const skillCode = session.day.targetSkillCodes?.[0] ?? DEFAULT_SKILL
+    const count = session.exercises.length || 1
+    setGeneratingBatch(true)
+    try {
+      const results = await Promise.allSettled(
+        Array.from({ length: count }, () =>
+          generatePractice(DEMO_USER_ID, skillCode, session.task.practiceType),
+        ),
+      )
+      const fresh: PlanExercise[] = results
+        .filter((r): r is PromiseFulfilledResult<PracticeExercise> => r.status === "fulfilled")
+        .map((r) => ({
+          id: r.value.id,
+          promptZh: r.value.promptZh,
+          question: r.value.question,
+          answer: r.value.answer ?? "",
+          explanationZh: r.value.explanationZh ?? "",
+        }))
+      if (fresh.length === 0) {
+        toast.error("Couldn't generate new questions. Please try again shortly.")
+        return
+      }
+      setSession((prev) => (prev ? { ...prev, exercises: fresh } : prev))
+      setCurrent(0)
+      setGrades([])
+      setPhase("active")
+      toast.success("New questions ready", {
+        description: `${fresh.length} fresh ${PRACTICE_TYPE_META[session.task.practiceType].label.toLowerCase()} questions, same focus.`,
+      })
+    } catch {
+      toast.error("Couldn't generate new questions. Please try again shortly.")
+    } finally {
+      setGeneratingBatch(false)
+    }
+  }
+
+  const backToPlan = (
+    <Button
+      nativeButton={false}
+      render={<Link href="/plan" />}
+      variant="ghost"
+      size="sm"
+      className="w-fit gap-1 px-2"
+    >
+      <ArrowLeft className="size-4" />
+      Back to plan
+    </Button>
+  )
+
+  const notFound = (
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+      {backToPlan}
+      <EmptyState
+        icon={Dumbbell}
+        title="No exercises to practice"
+        description="This task has no exercises, or your plan has changed. Head back and pick a task with exercises."
+      >
+        <Button nativeButton={false} render={<Link href="/plan" />}>
+          Go to plan
+        </Button>
+      </EmptyState>
+    </div>
+  )
+
+  if (!session) {
+    if (isLoading || located) {
+      return (
+        <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
+          <Skeleton className="h-8 w-40 rounded-lg" />
+          <Skeleton className="h-64 w-full rounded-xl" />
+        </div>
+      )
+    }
+    return notFound
+  }
+
+  const skillCode = session.day.targetSkillCodes?.[0] ?? DEFAULT_SKILL
+  const practiceType: PracticeType = session.task.practiceType
+  const sourceExercises = session.exercises
+
+  if (sourceExercises.length === 0) return notFound
+
+  if (phase === "summary") {
+    const correct = grades.filter((g) => g.isCorrect).length
+    const avgScore = grades.length ? Math.round(grades.reduce((sum, g) => sum + g.score, 0) / grades.length) : 0
+    return (
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+        {backToPlan}
+        <Card>
+          <CardHeader className="items-center text-center">
+            <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10">
+              <Trophy className="size-7 text-primary" />
+            </div>
+            <CardTitle className="font-heading text-2xl">Task complete</CardTitle>
+            <CardDescription>You worked through {grades.length} graded answers for this task.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col items-center gap-6">
+            <ScoreRing score={avgScore} label="Avg. score" />
+            <div className="grid w-full grid-cols-2 gap-3">
+              <div className="flex flex-col items-center gap-1 rounded-xl border border-border p-4">
+                <span className="text-2xl font-bold tabular-nums text-success">{correct}</span>
+                <span className="text-xs text-muted-foreground">Correct</span>
+              </div>
+              <div className="flex flex-col items-center gap-1 rounded-xl border border-border p-4">
+                <span className="text-2xl font-bold tabular-nums">{Math.max(0, grades.length - correct)}</span>
+                <span className="text-xs text-muted-foreground">Saved to weak spots</span>
+              </div>
+            </div>
+            <div className="flex w-full flex-col gap-2 sm:flex-row">
+              <Button className="flex-1" onClick={generateNewSet} disabled={generatingBatch}>
+                {generatingBatch ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
+                {generatingBatch ? "Generating…" : "Generate new questions"}
+              </Button>
+              <Button nativeButton={false} render={<Link href="/plan" />} variant="outline" className="flex-1">
+                Back to plan
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  const exercise = sourceExercises[Math.min(current, sourceExercises.length - 1)]
+  const progress = (current / sourceExercises.length) * 100
+
+  return (
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+      <div className="flex flex-col gap-2">
+        {backToPlan}
+        <h1 className="font-heading text-2xl font-bold tracking-tight">{session.task.titleZh}</h1>
+        <p className="text-sm text-muted-foreground">
+          Day {session.day.day} · {session.day.goalZh}
+        </p>
+        <Progress value={progress} className="mt-1 h-2" />
+      </div>
+
+      <RunnerCard
+        key={exercise.id}
+        exercise={exercise}
+        skillCode={skillCode}
+        practiceType={practiceType}
+        index={current}
+        total={sourceExercises.length}
+        onGraded={handleGraded}
+        onNext={handleNext}
+        onRegenerate={handleRegenerate}
+        regenerating={regenerating}
+        isLast={current + 1 >= sourceExercises.length}
+      />
+    </div>
+  )
+}
+
+export default function PlanPracticePage() {
+  return (
+    <Suspense fallback={<div className="mx-auto h-64 w-full max-w-2xl animate-pulse rounded-xl bg-muted" />}>
+      <PlanPracticeFlow />
+    </Suspense>
+  )
+}

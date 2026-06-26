@@ -36,9 +36,16 @@ def generate_practice_exercise(
     cefr_level: str,
     recent_error_examples: list,
     llm_provider: LLMProviderConfig | None = None,
+    practice_type: str | None = None,
 ) -> PracticeExerciseAIResult:
+    type_line = (
+        f"Required exercise type:\n{practice_type} (the `type` field MUST be exactly this)\n\n"
+        if practice_type
+        else ""
+    )
     user_prompt = (
         f"Target skill:\n{skill_code} / {zh_label}\n\n"
+        f"{type_line}"
         f"Estimated CEFR level:\n{cefr_level}\n\n"
         f"Recent learner error examples:\n{recent_error_examples}"
     )
