@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { ChevronDown, ChevronRight, Clock, Eye, EyeOff } from "lucide-react"
+import Link from "next/link"
+import { ChevronDown, ChevronRight, Clock, Dumbbell, Eye, EyeOff } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { LearningPlanDay, PlanExercise } from "@/lib/types"
 import { PRACTICE_TYPE_META, SKILL_LABELS } from "@/lib/practice"
@@ -121,6 +122,19 @@ export function LearningPlanCard({
                         <span className="text-xs text-muted-foreground">
                           · {task.exercises.length} exercises
                         </span>
+                      )}
+                      {hasExercises && (
+                        <Button
+                          nativeButton={false}
+                          render={<Link href={`/plan/practice?task=${task.id}`} />}
+                          variant="secondary"
+                          size="sm"
+                          className="ml-auto h-7 gap-1 px-2 text-xs"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Dumbbell className="size-3" />
+                          Practice
+                        </Button>
                       )}
                     </div>
                   </div>

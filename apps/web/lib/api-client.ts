@@ -40,6 +40,7 @@ import type {
   PracticeGenerateResponse,
   PracticeGrade,
   PracticeSubmitResponse,
+  PracticeType,
   ProfileResponse,
   RealtimeSessionResponse,
   SessionAnalysisResponse,
@@ -280,18 +281,60 @@ export async function generatePlan(
 export async function generatePractice(
   userId: string = DEMO_USER_ID,
   targetSkillCode?: string,
+  practiceType?: PracticeType,
 ): Promise<PracticeExercise> {
   if (USE_MOCK) {
     await delay(900)
-    const exercise = getMockExercise(targetSkillCode)
+    const exercise = { ...getMockExercise(targetSkillCode), ...(practiceType ? { type: practiceType } : {}) }
     exerciseCache.set(exercise.id, exercise)
     return exercise
   }
   const { exercise } = await apiFetch<PracticeGenerateResponse>("/practice/generate", {
     method: "POST",
-    body: JSON.stringify({ userId, targetSkillCode }),
+    body: JSON.stringify({ userId, targetSkillCode, practiceType }),
   })
   return exercise
+}
+
+/**
+ * Grade an ad-hoc exercise that isn't a stored PracticeExercise — used by the
+ * plan-exercise practice runner. The question and model answer travel with the
+ * request, and a wrong answer is recorded to the weakness library server-side.
+ */
+export async function gradePracticeAdhoc(
+  userId: string = DEMO_USER_ID,
+  params: {
+    targetSkillCode: string
+    question: string
+    expectedAnswer: string
+    userAnswer: string
+    exerciseType?: PracticeType
+    promptZh?: string
+    explanationZh?: string
+  },
+): Promise<PracticeGrade> {
+  if (USE_MOCK) {
+    await delay(900)
+    return gradeMockAnswer(
+      {
+        id: "adhoc",
+        userId,
+        type: params.exerciseType ?? "fix_sentence",
+        targetSkillCode: params.targetSkillCode,
+        promptZh: params.promptZh ?? "",
+        question: params.question,
+        answer: params.expectedAnswer,
+        explanationZh: params.explanationZh,
+        createdAt: new Date().toISOString(),
+      },
+      params.userAnswer,
+    )
+  }
+  const { grade } = await apiFetch<{ grade: PracticeGrade }>("/practice/grade", {
+    method: "POST",
+    body: JSON.stringify({ userId, ...params }),
+  })
+  return grade
 }
 
 export async function submitPractice(

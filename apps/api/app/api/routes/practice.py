@@ -12,11 +12,16 @@ from app.db.repositories import (
     list_recent_errors,
     now_iso,
     put_skill,
+    save_error,
     save_exercise,
     save_practice_attempt,
     save_profile,
 )
-from app.models.practice import GeneratePracticeRequest, SubmitPracticeRequest
+from app.models.practice import (
+    GeneratePracticeRequest,
+    GradePracticeRequest,
+    SubmitPracticeRequest,
+)
 from app.services.ai_client import LLMProviderConfig
 from app.services.practice_service import generate_practice_exercise, grade_practice
 from app.services.profile_service import weakest_skill_code
@@ -25,6 +30,106 @@ router = APIRouter()
 
 DEFAULT_SKILL = "grammar.verb_tense"
 PLATFORM_PRACTICE_ANSWER_CHAR_LIMIT = 2000
+
+
+def _severity_from_score(score: int) -> str:
+    """Map a practice grade (0-100) to a weakness-library error severity."""
+    if score < 40:
+        return "high"
+    if score < 70:
+        return "medium"
+    return "low"
+
+
+def _get_or_default_skill(user_id: str, skill_code: str, now: str) -> dict:
+    existing = get_skill(user_id, skill_code)
+    if existing is not None:
+        return existing
+    taxonomy = ERROR_TAXONOMY.get(skill_code, {"label": skill_code, "zhLabel": skill_code})
+    return {
+        "userId": user_id,
+        "skillCode": skill_code,
+        "label": taxonomy["label"],
+        "zhLabel": taxonomy["zhLabel"],
+        "mastery": DEFAULT_MASTERY,
+        "errorCount": 0,
+        "correctCount": 0,
+        "lastSeenAt": None,
+        "lastPracticedAt": None,
+        "updatedAt": now,
+    }
+
+
+def _record_practice_outcome(
+    *,
+    user_id: str,
+    skill_code: str,
+    user_answer: str,
+    grade,
+    now: str,
+    exercise_id: str | None = None,
+    prompt_zh: str | None = None,
+    explanation_zh: str | None = None,
+) -> dict:
+    """Persist one graded practice attempt and fold it into the learner model.
+
+    Always saves the attempt, updates skill mastery, and bumps the practice
+    counter. On a wrong answer it also writes an ERROR into the weakness library
+    so the mistake feeds the next plan / analysis — just like a diagnosed error.
+    Shared by /practice/submit (stored exercises) and /practice/grade (ad-hoc
+    plan exercises). Returns {attempt, updatedSkill, recordedError}.
+    """
+    attempt = {
+        "id": f"att_{uuid4().hex[:12]}",
+        "userId": user_id,
+        "exerciseId": exercise_id,
+        "targetSkillCode": skill_code,
+        "userAnswer": user_answer,
+        "isCorrect": grade.isCorrect,
+        "score": grade.score,
+        "feedbackZh": grade.feedbackZh,
+        "correctedAnswer": grade.correctedAnswer,
+        "createdAt": now,
+    }
+    save_practice_attempt(attempt)
+
+    updated_skill = update_skill_from_practice(
+        existing=_get_or_default_skill(user_id, skill_code, now),
+        is_correct=grade.isCorrect,
+        mastery_delta=grade.skillMasteryDelta,
+        now=now,
+    )
+    put_skill(updated_skill)
+
+    recorded_error = None
+    if not grade.isCorrect:
+        taxonomy = ERROR_TAXONOMY.get(skill_code, {"label": skill_code, "zhLabel": skill_code})
+        recorded_error = {
+            "id": f"err_{uuid4().hex[:12]}",
+            "userId": user_id,
+            # Practice mistakes aren't tied to a writing submission, but the
+            # ERROR shape needs the field — use a synthetic, self-referential id.
+            "submissionId": f"practice_{attempt['id']}",
+            "code": skill_code,
+            "category": taxonomy["label"],
+            "severity": _severity_from_score(grade.score),
+            "originalText": user_answer,
+            "correctedText": grade.correctedAnswer,
+            "explanationZh": grade.feedbackZh,
+            "microLessonZh": explanation_zh or grade.feedbackZh,
+            "practiceGoal": prompt_zh
+            or f"Redo this {taxonomy['label']} exercise until you get it right.",
+            "source": "practice",
+            "createdAt": now,
+        }
+        save_error(recorded_error)
+
+    profile = get_or_create_profile(user_id)
+    profile["totalPracticeAttempts"] = int(profile.get("totalPracticeAttempts", 0)) + 1
+    profile["updatedAt"] = now
+    save_profile(profile)
+
+    return {"attempt": attempt, "updatedSkill": updated_skill, "recordedError": recorded_error}
 
 
 @router.post("/practice/generate")
@@ -58,6 +163,7 @@ def generate(
             cefr_level=profile.get("estimatedLevel", "B1"),
             recent_error_examples=examples,
             llm_provider=llm_provider,
+            practice_type=req.practiceType.value if req.practiceType else None,
         )
 
         exercise = {
@@ -109,54 +215,79 @@ def submit(
             llm_provider=llm_provider,
         )
 
-        attempt = {
-            "id": f"att_{uuid4().hex[:12]}",
-            "userId": req.userId,
-            "exerciseId": req.exerciseId,
-            "targetSkillCode": exercise["targetSkillCode"],
-            "userAnswer": req.userAnswer,
-            "isCorrect": grade.isCorrect,
-            "score": grade.score,
-            "feedbackZh": grade.feedbackZh,
-            "correctedAnswer": grade.correctedAnswer,
-            "createdAt": now,
-        }
-        save_practice_attempt(attempt)
-
-        skill_code = exercise["targetSkillCode"]
-        existing = get_skill(req.userId, skill_code)
-        if existing is None:
-            taxonomy = ERROR_TAXONOMY.get(skill_code, {"label": skill_code, "zhLabel": skill_code})
-            existing = {
-                "userId": req.userId,
-                "skillCode": skill_code,
-                "label": taxonomy["label"],
-                "zhLabel": taxonomy["zhLabel"],
-                "mastery": DEFAULT_MASTERY,
-                "errorCount": 0,
-                "correctCount": 0,
-                "lastSeenAt": None,
-                "lastPracticedAt": None,
-                "updatedAt": now,
-            }
-
-        updated_skill = update_skill_from_practice(
-            existing=existing,
-            is_correct=grade.isCorrect,
-            mastery_delta=grade.skillMasteryDelta,
+        outcome = _record_practice_outcome(
+            user_id=req.userId,
+            skill_code=exercise["targetSkillCode"],
+            user_answer=req.userAnswer,
+            grade=grade,
             now=now,
+            exercise_id=req.exerciseId,
+            prompt_zh=exercise.get("promptZh"),
+            explanation_zh=exercise.get("explanationZh"),
         )
-        put_skill(updated_skill)
-
-        profile = get_or_create_profile(req.userId)
-        profile["totalPracticeAttempts"] = int(profile.get("totalPracticeAttempts", 0)) + 1
-        profile["updatedAt"] = now
-        save_profile(profile)
 
         return {
             "grade": grade.model_dump(mode="json"),
-            "attempt": attempt,
-            "updatedSkill": updated_skill,
+            "attempt": outcome["attempt"],
+            "updatedSkill": outcome["updatedSkill"],
+            "recordedError": outcome["recordedError"],
+        }
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=f"AI error: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/practice/grade")
+def grade_adhoc(
+    req: GradePracticeRequest,
+    llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
+    identity: Identity = Depends(rate_limited("practice_submit", allow_byok_unlimited=True)),
+):
+    """Grade an ad-hoc exercise (e.g. a plan task exercise) and record mistakes.
+
+    Unlike /practice/submit this needs no stored exercise — the question and
+    model answer come with the request. Wrong answers are written to the
+    weakness library so plan-exercise mistakes feed the next plan / analysis.
+    """
+    req.userId = identity.user_id
+    try:
+        now = now_iso()
+        if (
+            not identity.has_unlimited_llm_quota
+            and len(req.userAnswer) > PLATFORM_PRACTICE_ANSWER_CHAR_LIMIT
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Practice answers are limited to {PLATFORM_PRACTICE_ANSWER_CHAR_LIMIT} characters unless you use your own LLM API key.",
+            )
+
+        grade = grade_practice(
+            question=req.question,
+            expected_answer=req.expectedAnswer,
+            user_answer=req.userAnswer,
+            target_skill_code=req.targetSkillCode,
+            llm_provider=llm_provider,
+        )
+
+        outcome = _record_practice_outcome(
+            user_id=req.userId,
+            skill_code=req.targetSkillCode,
+            user_answer=req.userAnswer,
+            grade=grade,
+            now=now,
+            prompt_zh=req.promptZh,
+            explanation_zh=req.explanationZh,
+        )
+
+        return {
+            "grade": grade.model_dump(mode="json"),
+            "attempt": outcome["attempt"],
+            "updatedSkill": outcome["updatedSkill"],
+            "recordedError": outcome["recordedError"],
         }
 
     except HTTPException:
