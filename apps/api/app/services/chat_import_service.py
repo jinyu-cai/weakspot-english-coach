@@ -1,8 +1,10 @@
 from typing import Literal
 
 from app.config import settings
+from app.models.common import OutputLanguage
 from app.models.chat_import import ChatImportAIResult, ImportedChatConversation
 from app.services.ai_client import LLMProviderConfig, parse_with_model
+from app.services.output_language import language_instruction
 
 AnalysisMode = Literal["fast", "deep"]
 
@@ -17,7 +19,7 @@ Analyze imported ChatGPT conversations as learning evidence. You must inspect BO
 2. User help-seeking: places where the user asks "how do I say this", uses Chinese because English is missing, or avoids expressing something in English. Treat these as expression gaps.
 3. Assistant messages: corrections, rewrites, vocabulary suggestions, grammar explanations, or repeated advice already given by the assistant. Treat these as confirmed weaknesses when relevant.
 
-Return all explanations in clear, simple English. Do not summarize private life details; focus only on English learning patterns.
+Follow the language requirement provided below for learner-facing summaries, explanations, micro-lessons, and recommendations. Do not summarize private life details; focus only on English learning patterns.
 
 Use these codes when possible:
 - grammar.verb_tense
@@ -105,6 +107,7 @@ def select_chat_import_model(analysis_mode: AnalysisMode, llm_provider: LLMProvi
 def analyze_imported_chat(
     conversations: list[ImportedChatConversation],
     analysis_mode: AnalysisMode = "fast",
+    output_language: OutputLanguage = "en",
     llm_provider: LLMProviderConfig | None = None,
     max_tokens: int | None = 16384,
     transcript_char_budget: int | None = MAX_TRANSCRIPT_CHARS,
@@ -124,7 +127,7 @@ def analyze_imported_chat(
 
     return parse_with_model(
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT + f"\n\nAnalysis mode: {analysis_mode}."},
+            {"role": "system", "content": SYSTEM_PROMPT + f"\n\n{language_instruction(output_language)}\n\nAnalysis mode: {analysis_mode}."},
             {"role": "user", "content": user_prompt},
         ],
         response_model=ChatImportAIResult,

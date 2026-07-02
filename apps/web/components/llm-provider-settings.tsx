@@ -23,6 +23,7 @@ import {
   saveLLMSettings,
   type LLMSettings,
 } from "@/lib/llm-settings"
+import { useLanguage } from "@/components/language-provider"
 
 const emptySettings: LLMSettings = {
   apiKey: "",
@@ -35,6 +36,7 @@ export function LLMProviderSettings() {
   const [open, setOpen] = useState(false)
   const [configured, setConfigured] = useState(false)
   const [settings, setSettings] = useState<LLMSettings>(emptySettings)
+  const { t } = useLanguage()
 
   useEffect(() => {
     setSettings(loadLLMSettings())
@@ -57,19 +59,19 @@ export function LLMProviderSettings() {
       clearLLMSettings()
       setConfigured(false)
       setSettings(emptySettings)
-      toast.success("Server default provider selected")
+      toast.success(t.settings.serverSelected)
       setOpen(false)
       return
     }
 
     if (!next.apiKey || !next.model) {
-      toast.error("API key and model are both required")
+      toast.error(t.settings.required)
       return
     }
 
     saveLLMSettings(next)
     setConfigured(true)
-    toast.success("Custom AI provider saved")
+    toast.success(t.settings.saved)
     setOpen(false)
   }
 
@@ -77,34 +79,34 @@ export function LLMProviderSettings() {
     clearLLMSettings()
     setConfigured(false)
     setSettings(emptySettings)
-    toast.success("Server default provider selected")
+    toast.success(t.settings.serverSelected)
   }
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger
         render={
-          <Button variant="outline" size="icon" aria-label="AI provider settings">
+          <Button variant="outline" size="icon" aria-label={t.settings.aiProviderAria} title={t.settings.aiProviderAria}>
             <KeyRound />
           </Button>
         }
       />
       <SheetContent className="w-[min(100vw,28rem)]">
         <SheetHeader>
-          <SheetTitle>AI Provider</SheetTitle>
-          <SheetDescription>OpenAI-compatible provider for AI requests.</SheetDescription>
+          <SheetTitle>{t.settings.aiProvider}</SheetTitle>
+          <SheetDescription>{t.settings.aiDescription}</SheetDescription>
         </SheetHeader>
 
         <div className="grid gap-4 px-4">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-sm font-medium text-foreground">Mode</span>
+            <span className="text-sm font-medium text-foreground">{t.settings.mode}</span>
             <Badge variant={configured ? "default" : "secondary"}>
-              {configured ? "Custom" : "Server default"}
+              {configured ? t.settings.custom : t.settings.serverDefault}
             </Badge>
           </div>
 
           <label className="grid gap-1.5 text-sm font-medium text-foreground">
-            Base URL
+            {t.settings.baseUrl}
             <input
               value={settings.baseUrl}
               onChange={(event) => update("baseUrl", event.target.value)}
@@ -114,7 +116,7 @@ export function LLMProviderSettings() {
           </label>
 
           <label className="grid gap-1.5 text-sm font-medium text-foreground">
-            Deep model
+            {t.settings.deepModel}
             <input
               value={settings.model}
               onChange={(event) => update("model", event.target.value)}
@@ -124,7 +126,7 @@ export function LLMProviderSettings() {
           </label>
 
           <label className="grid gap-1.5 text-sm font-medium text-foreground">
-            Fast model
+            {t.settings.fastModel}
             <input
               value={settings.fastModel}
               onChange={(event) => update("fastModel", event.target.value)}
@@ -134,7 +136,7 @@ export function LLMProviderSettings() {
           </label>
 
           <label className="grid gap-1.5 text-sm font-medium text-foreground">
-            API key
+            {t.settings.apiKey}
             <input
               value={settings.apiKey}
               onChange={(event) => update("apiKey", event.target.value)}
@@ -149,11 +151,11 @@ export function LLMProviderSettings() {
         <SheetFooter className="grid grid-cols-2 gap-2">
           <Button variant="outline" onClick={clear}>
             <Trash2 data-icon="inline-start" />
-            Clear
+            {t.common.clear}
           </Button>
           <Button onClick={save}>
             <Save data-icon="inline-start" />
-            Save
+            {t.common.save}
           </Button>
         </SheetFooter>
       </SheetContent>

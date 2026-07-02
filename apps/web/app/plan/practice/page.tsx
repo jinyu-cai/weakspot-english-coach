@@ -8,7 +8,7 @@ import { toast } from "sonner"
 import { ArrowLeft, CheckCircle2, Dumbbell, Lightbulb, RefreshCw, Trophy, XCircle } from "lucide-react"
 import { generatePractice, getPlan, gradePracticeAdhoc } from "@/lib/api-client"
 import { DEMO_USER_ID } from "@/lib/mock-data"
-import { PRACTICE_TYPE_META, SKILL_LABELS } from "@/lib/practice"
+import { practiceTypeLabel, skillLabel as localizedSkillLabel } from "@/lib/practice"
 import type {
   LearningPlanDay,
   LearningPlanTask,
@@ -28,6 +28,7 @@ import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
 import { EmptyState } from "@/components/empty-state"
 import { ScoreRing } from "@/components/score-ring"
+import { useLanguage } from "@/components/language-provider"
 
 const DEFAULT_SKILL = "grammar.verb_tense"
 
@@ -64,9 +65,10 @@ function RunnerCard({
   const [answer, setAnswer] = useState("")
   const [grade, setGrade] = useState<PracticeGrade | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const { language, t } = useLanguage()
 
-  const skillLabel = SKILL_LABELS[skillCode] ?? skillCode
-  const typeMeta = PRACTICE_TYPE_META[practiceType]
+  const skillLabel = localizedSkillLabel(skillCode, language)
+  const typeLabel = practiceTypeLabel(practiceType, language)
 
   async function handleSubmit() {
     if (submitting || grade) return
@@ -84,7 +86,7 @@ function RunnerCard({
       setGrade(result)
       onGraded(result)
     } catch {
-      toast.error("Couldn't grade your answer. Please try again shortly.")
+      toast.error(t.plan.gradeFailed)
     } finally {
       setSubmitting(false)
     }
@@ -97,7 +99,7 @@ function RunnerCard({
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Badge variant="secondary">{typeMeta.zhLabel}</Badge>
+            <Badge variant="secondary">{typeLabel}</Badge>
             <Badge variant="outline">{skillLabel}</Badge>
           </div>
           <span className="text-sm text-muted-foreground tabular-nums">
@@ -116,7 +118,7 @@ function RunnerCard({
           value={answer}
           onChange={(e) => setAnswer(e.target.value)}
           disabled={!!grade || submitting}
-          placeholder="Type your answer here..."
+          placeholder={t.common.typeAnswer}
           className="min-h-28 resize-none"
         />
 
@@ -126,9 +128,9 @@ function RunnerCard({
             <Alert variant={grade.isCorrect ? "default" : "destructive"}>
               {grade.isCorrect ? <CheckCircle2 /> : <XCircle />}
               <AlertTitle className="flex items-center gap-2">
-                {grade.isCorrect ? "Correct" : "Needs improvement"}
+                {grade.isCorrect ? t.common.correct : t.common.needsImprovement}
                 <Badge variant="outline" className="tabular-nums">
-                  {grade.score} pts
+                  {grade.score} {t.common.points}
                 </Badge>
               </AlertTitle>
               <AlertDescription>{grade.feedbackZh}</AlertDescription>
@@ -137,11 +139,11 @@ function RunnerCard({
               <>
                 <Alert>
                   <Lightbulb />
-                  <AlertTitle>Reference answer</AlertTitle>
+                  <AlertTitle>{t.common.referenceAnswer}</AlertTitle>
                   <AlertDescription>{grade.correctedAnswer}</AlertDescription>
                 </Alert>
                 <p className="text-xs text-muted-foreground">
-                  Saved to your weakness library — it&apos;ll shape your next plan and analysis.
+                  {t.plan.savedLibrary}
                 </p>
               </>
             ) : null}
@@ -152,21 +154,21 @@ function RunnerCard({
       <CardFooter className="flex flex-wrap justify-end gap-2">
         <Button variant="outline" onClick={onRegenerate} disabled={submitting || regenerating}>
           {regenerating ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
-          New same-type question
+          {t.plan.newSameType}
         </Button>
         {!grade ? (
           <Button onClick={handleSubmit} disabled={!canSubmit || submitting}>
             {submitting ? (
               <>
                 <Spinner data-icon="inline-start" />
-                Grading
+                {t.common.grading}
               </>
             ) : (
-              "Submit answer"
+              t.common.submitAnswer
             )}
           </Button>
         ) : (
-          <Button onClick={onNext}>{isLast ? "Finish session" : "Next question"}</Button>
+          <Button onClick={onNext}>{isLast ? t.common.finishSession : t.common.nextQuestion}</Button>
         )}
       </CardFooter>
     </Card>
@@ -197,6 +199,7 @@ function PlanPracticeFlow() {
   const [phase, setPhase] = useState<"active" | "summary">("active")
   const [regenerating, setRegenerating] = useState(false)
   const [generatingBatch, setGeneratingBatch] = useState(false)
+  const { language, t } = useLanguage()
 
   const seededRef = useRef<string | null>(null)
   useEffect(() => {
@@ -235,9 +238,9 @@ function PlanPracticeFlow() {
       setSession((prev) =>
         prev ? { ...prev, exercises: prev.exercises.map((ex, i) => (i === current ? mapped : ex)) } : prev,
       )
-      toast.success("Fresh exercise ready", { description: "Same type, new question — give it another go." })
+      toast.success(t.plan.freshReady, { description: t.plan.freshDescription })
     } catch {
-      toast.error("Couldn't generate a new exercise. Please try again shortly.")
+      toast.error(t.plan.freshFailed)
     } finally {
       setRegenerating(false)
     }
@@ -265,7 +268,7 @@ function PlanPracticeFlow() {
           explanationZh: r.value.explanationZh ?? "",
         }))
       if (fresh.length === 0) {
-        toast.error("Couldn't generate new questions. Please try again shortly.")
+        toast.error(t.plan.newFailed)
         return
       }
       setSession((prev) => (prev ? { ...prev, exercises: fresh } : prev))
@@ -273,10 +276,10 @@ function PlanPracticeFlow() {
       setGrades([])
       setPhase("active")
       toast.success("New questions ready", {
-        description: `${fresh.length} fresh ${PRACTICE_TYPE_META[session.task.practiceType].label.toLowerCase()} questions, same focus.`,
+        description: `${fresh.length} ${practiceTypeLabel(session.task.practiceType, language)} ${t.plan.sameType}`,
       })
     } catch {
-      toast.error("Couldn't generate new questions. Please try again shortly.")
+      toast.error(t.plan.newFailed)
     } finally {
       setGeneratingBatch(false)
     }
@@ -291,7 +294,7 @@ function PlanPracticeFlow() {
       className="w-fit gap-1 px-2"
     >
       <ArrowLeft className="size-4" />
-      Back to plan
+      {t.plan.backToPlan}
     </Button>
   )
 
@@ -300,11 +303,11 @@ function PlanPracticeFlow() {
       {backToPlan}
       <EmptyState
         icon={Dumbbell}
-        title="No exercises to practice"
-        description="This task has no exercises, or your plan has changed. Head back and pick a task with exercises."
+        title={t.plan.noExercises}
+        description={t.plan.noExercisesDescription}
       >
         <Button nativeButton={false} render={<Link href="/plan" />}>
-          Go to plan
+          {t.plan.goToPlan}
         </Button>
       </EmptyState>
     </div>
@@ -339,28 +342,30 @@ function PlanPracticeFlow() {
             <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10">
               <Trophy className="size-7 text-primary" />
             </div>
-            <CardTitle className="font-heading text-2xl">Task complete</CardTitle>
-            <CardDescription>You worked through {grades.length} graded answers for this task.</CardDescription>
+            <CardTitle className="font-heading text-2xl">{t.plan.taskComplete}</CardTitle>
+            <CardDescription>
+              {t.plan.workedThrough} {grades.length} {t.plan.gradedAnswers}
+            </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col items-center gap-6">
-            <ScoreRing score={avgScore} label="Avg. score" />
+            <ScoreRing score={avgScore} label={t.common.avgScore} />
             <div className="grid w-full grid-cols-2 gap-3">
               <div className="flex flex-col items-center gap-1 rounded-xl border border-border p-4">
                 <span className="text-2xl font-bold tabular-nums text-success">{correct}</span>
-                <span className="text-xs text-muted-foreground">Correct</span>
+                <span className="text-xs text-muted-foreground">{t.common.correct}</span>
               </div>
               <div className="flex flex-col items-center gap-1 rounded-xl border border-border p-4">
                 <span className="text-2xl font-bold tabular-nums">{Math.max(0, grades.length - correct)}</span>
-                <span className="text-xs text-muted-foreground">Saved to weak spots</span>
+                <span className="text-xs text-muted-foreground">{t.plan.savedWeakSpots}</span>
               </div>
             </div>
             <div className="flex w-full flex-col gap-2 sm:flex-row">
               <Button className="flex-1" onClick={generateNewSet} disabled={generatingBatch}>
                 {generatingBatch ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
-                {generatingBatch ? "Generating…" : "Generate new questions"}
+                {generatingBatch ? t.plan.generating : t.plan.generateNew}
               </Button>
               <Button nativeButton={false} render={<Link href="/plan" />} variant="outline" className="flex-1">
-                Back to plan
+                {t.plan.backToPlan}
               </Button>
             </div>
           </CardContent>
@@ -378,7 +383,7 @@ function PlanPracticeFlow() {
         {backToPlan}
         <h1 className="font-heading text-2xl font-bold tracking-tight">{session.task.titleZh}</h1>
         <p className="text-sm text-muted-foreground">
-          Day {session.day.day} · {session.day.goalZh}
+          {t.common.day} {session.day.day} · {session.day.goalZh}
         </p>
         <Progress value={progress} className="mt-1 h-2" />
       </div>

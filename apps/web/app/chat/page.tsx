@@ -28,6 +28,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { VoiceChatPanel } from "@/components/voice-chat-panel"
 import { SessionSummary } from "@/components/session-summary"
 import { cn } from "@/lib/utils"
+import { useLanguage } from "@/components/language-provider"
 
 type ChatMode = "text" | "voice"
 type ViewState = "chat" | "analyzing" | "summary"
@@ -43,13 +44,13 @@ function formatTextModel(model?: string | null) {
 }
 
 const SCENARIOS = [
-  { label: "Free Chat", topic: undefined, emoji: "💬", desc: "Talk about anything" },
-  { label: "Coffee Shop", topic: "Ordering at a coffee shop", emoji: "☕", desc: "Order drinks & chat with barista" },
-  { label: "Job Interview", topic: "Job interview practice", emoji: "💼", desc: "Practice common interview Q&A" },
-  { label: "Travel", topic: "Planning a trip and asking for directions", emoji: "✈️", desc: "Navigate airports & ask locals" },
-  { label: "Restaurant", topic: "Dining out at a restaurant", emoji: "🍽️", desc: "Order food & handle the bill" },
-  { label: "Small Talk", topic: "Making small talk with a new colleague", emoji: "👋", desc: "Break the ice at work" },
-]
+  { key: "free", topic: undefined, emoji: "💬" },
+  { key: "coffee", topic: "Ordering at a coffee shop", emoji: "☕" },
+  { key: "interview", topic: "Job interview practice", emoji: "💼" },
+  { key: "travel", topic: "Planning a trip and asking for directions", emoji: "✈️" },
+  { key: "restaurant", topic: "Dining out at a restaurant", emoji: "🍽️" },
+  { key: "smallTalk", topic: "Making small talk with a new colleague", emoji: "👋" },
+] as const
 
 export default function ChatPage() {
   const [sessions, setSessions] = useState<ChatSession[]>([])
@@ -63,6 +64,7 @@ export default function ChatPage() {
   const [selectedTextModel, setSelectedTextModel] = useState<TextChatModel>("deepseek-v4-flash")
   const [viewState, setViewState] = useState<ViewState>("chat")
   const [analysis, setAnalysis] = useState<SessionAnalysis | null>(null)
+  const { t } = useLanguage()
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -97,7 +99,7 @@ export default function ChatPage() {
       setAnalysis(result.analysis)
       setViewState("summary")
     } catch {
-      toast.error("Failed to analyze session.")
+      toast.error(t.chat.analyzeFailed)
       setViewState("chat")
     }
   }
@@ -114,7 +116,7 @@ export default function ChatPage() {
       setViewState("chat")
       setAnalysis(null)
     } catch {
-      toast.error("Failed to create chat session.")
+      toast.error(t.chat.createFailed)
     } finally {
       setCreatingSession(false)
     }
@@ -131,7 +133,7 @@ export default function ChatPage() {
       const { messages: msgs } = await getChatMessages(session.id, DEMO_USER_ID)
       setMessages(msgs)
     } catch {
-      toast.error("Failed to load messages.")
+      toast.error(t.chat.loadFailed)
     }
   }
 
@@ -165,7 +167,7 @@ export default function ChatPage() {
     } catch {
       setMessages((prev) => prev.filter((m) => m.id !== optimisticUser.id))
       setInput(text)
-      toast.error("Failed to send message. Please try again.")
+      toast.error(t.chat.sendFailed)
     } finally {
       setSending(false)
       textareaRef.current?.focus()
@@ -198,10 +200,8 @@ export default function ChatPage() {
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
         <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex flex-col gap-2">
-            <h1 className="font-heading text-3xl font-bold tracking-tight">Chat Practice</h1>
-            <p className="text-muted-foreground">
-              Practice real conversations in English. Your expressions are analyzed after each session.
-            </p>
+            <h1 className="font-heading text-3xl font-bold tracking-tight">{t.chat.title}</h1>
+            <p className="text-muted-foreground">{t.chat.description}</p>
           </div>
           <ToggleGroup
             value={[selectedTextModel]}
@@ -218,34 +218,37 @@ export default function ChatPage() {
         </header>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {SCENARIOS.map((s) => (
-            <Card
-              key={s.label}
-              className="cursor-pointer transition-all hover:border-primary/40 hover:shadow-md"
-              onClick={() => handleNewSession(s.topic)}
-            >
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <span className="text-xl">{s.emoji}</span>
-                  {s.label}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CardDescription>{s.desc}</CardDescription>
-              </CardContent>
-            </Card>
-          ))}
+          {SCENARIOS.map((s) => {
+            const localized = t.chat.scenarios[s.key]
+            return (
+              <Card
+                key={s.key}
+                className="cursor-pointer transition-all hover:border-primary/40 hover:shadow-md"
+                onClick={() => handleNewSession(s.topic)}
+              >
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <span className="text-xl">{s.emoji}</span>
+                    {localized[0]}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <CardDescription>{localized[1]}</CardDescription>
+                </CardContent>
+              </Card>
+            )
+          })}
         </div>
 
         {creatingSession && (
           <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Spinner className="size-4" /> Creating session...
+            <Spinner className="size-4" /> {t.chat.creating}
           </div>
         )}
 
         {sessions.length > 0 && (
           <div className="flex flex-col gap-3">
-            <h2 className="text-sm font-medium text-muted-foreground">Recent conversations</h2>
+            <h2 className="text-sm font-medium text-muted-foreground">{t.chat.recent}</h2>
             <div className="flex flex-col gap-2">
               {sessions.slice(0, 5).map((s) => (
                 <Card
@@ -258,10 +261,10 @@ export default function ChatPage() {
                       <MessageCircle className="size-4 text-muted-foreground" />
                       <div className="flex flex-col">
                         <span className="text-sm font-medium">
-                          {s.topic || s.summary || "Free Chat"}
+                          {s.topic || s.summary || t.chat.freeChat}
                         </span>
                         <span className="text-xs text-muted-foreground">
-                          {s.messageCount} messages
+                          {s.messageCount} {t.chat.messages}
                         </span>
                       </div>
                     </div>
@@ -277,7 +280,7 @@ export default function ChatPage() {
 
         {loadingSessions && (
           <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Spinner className="size-4" /> Loading sessions...
+            <Spinner className="size-4" /> {t.common.loading}
           </div>
         )}
       </div>
@@ -296,20 +299,20 @@ export default function ChatPage() {
             onClick={resetSession}
           >
             <ChevronDown className="size-4 rotate-90" />
-            Back
+            {t.chat.back}
           </Button>
           <div className="flex flex-col">
             <span className="text-sm font-medium">
-              {activeSession.topic || "Free Chat"}
+              {activeSession.topic || t.chat.freeChat}
             </span>
             <span className="text-xs text-muted-foreground">
               {viewState === "summary"
-                ? "Analysis complete"
+                ? t.chat.analysisComplete
                 : viewState === "analyzing"
-                  ? "Analyzing..."
+                  ? t.chat.analyzing
                   : mode === "voice"
-                    ? "Voice mode"
-                    : `${messages.length} messages`}
+                    ? t.chat.voiceMode
+                    : `${messages.length} ${t.chat.messages}`}
             </span>
           </div>
         </div>
@@ -327,11 +330,11 @@ export default function ChatPage() {
             >
               <ToggleGroupItem value="voice" className="h-7 gap-1 rounded-md px-2.5 text-xs">
                 <Mic className="size-3.5" />
-                Voice
+                {t.chat.voice}
               </ToggleGroupItem>
               <ToggleGroupItem value="text" className="h-7 gap-1 rounded-md px-2.5 text-xs">
                 <Keyboard className="size-3.5" />
-                Text
+                {t.chat.text}
               </ToggleGroupItem>
             </ToggleGroup>
           )}
@@ -341,7 +344,7 @@ export default function ChatPage() {
               size="sm"
               onClick={() => { setViewState("chat"); setAnalysis(null) }}
             >
-              Continue Chat
+              {t.chat.continueChat}
             </Button>
           )}
           <Button
@@ -351,7 +354,7 @@ export default function ChatPage() {
             disabled={creatingSession}
           >
             <Plus className="size-4" />
-            New
+            {t.chat.new}
           </Button>
         </div>
       </div>
@@ -382,10 +385,10 @@ export default function ChatPage() {
               <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
                 <MessageCircle className="size-10 opacity-30" />
                 <p className="text-sm">
-                  Start typing to begin the conversation!
+                  {t.chat.empty}
                   <br />
                   <span className="text-xs">
-                    Chat naturally — your English will be analyzed when you end the session.
+                    {t.chat.emptySub}
                   </span>
                 </p>
               </div>
@@ -398,7 +401,7 @@ export default function ChatPage() {
               {sending && (
                 <div className="flex items-center gap-2 px-4 text-sm text-muted-foreground">
                   <Spinner className="size-4" />
-                  <span>Thinking...</span>
+                  <span>{t.chat.thinking}</span>
                 </div>
               )}
             </div>
@@ -414,7 +417,7 @@ export default function ChatPage() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Type your message in English..."
+                  placeholder={t.chat.placeholder}
                   rows={1}
                   className={cn(
                     "w-full resize-none rounded-xl border border-border bg-background px-4 py-3 pr-12 text-sm",
@@ -448,7 +451,7 @@ export default function ChatPage() {
                   onClick={handleEndTextChat}
                 >
                   <ClipboardCheck className="size-3" />
-                  End &amp; Analyze
+                  {t.chat.endAnalyze}
                 </Button>
               )}
             </div>

@@ -1,5 +1,7 @@
 from app.models.practice import PracticeExerciseAIResult, PracticeGradeAIResult
+from app.models.common import OutputLanguage
 from app.services.ai_client import LLMProviderConfig, parse_with_model
+from app.services.output_language import language_instruction
 
 GENERATE_SYSTEM_PROMPT = """
 You are creating one targeted English exercise for a Chinese native speaker.
@@ -8,7 +10,7 @@ Requirements:
 1. Generate exactly one exercise.
 2. The exercise must target the given weakness (targetSkillCode) directly.
 3. The difficulty should match the learner's CEFR level.
-4. Use clear, simple English for the instruction (promptZh) and explanation (explanationZh).
+4. Follow the language requirement provided below for the instruction (promptZh) and explanation (explanationZh).
 5. The exercise `type` must be one of: fix_sentence, fill_blank, rewrite_sentence.
 6. `question` is the English prompt the student sees; `answer` is the model answer.
 7. Always include every field required by the schema.
@@ -20,7 +22,7 @@ You are grading a targeted English exercise for a Chinese native speaker.
 Requirements:
 1. Decide if the student's answer is correct (isCorrect).
 2. Give a score from 0 to 100.
-3. Give feedback in clear, simple English (feedbackZh).
+3. Follow the language requirement provided below for feedback (feedbackZh).
 4. Provide the corrected answer (correctedAnswer).
 5. Provide a skillMasteryDelta:
    - +6 to +10 if clearly correct
@@ -37,6 +39,7 @@ def generate_practice_exercise(
     recent_error_examples: list,
     llm_provider: LLMProviderConfig | None = None,
     practice_type: str | None = None,
+    output_language: OutputLanguage = "en",
 ) -> PracticeExerciseAIResult:
     type_line = (
         f"Required exercise type:\n{practice_type} (the `type` field MUST be exactly this)\n\n"
@@ -51,7 +54,7 @@ def generate_practice_exercise(
     )
     return parse_with_model(
         messages=[
-            {"role": "system", "content": GENERATE_SYSTEM_PROMPT},
+            {"role": "system", "content": f"{GENERATE_SYSTEM_PROMPT}\n\n{language_instruction(output_language)}"},
             {"role": "user", "content": user_prompt},
         ],
         response_model=PracticeExerciseAIResult,
@@ -65,6 +68,7 @@ def grade_practice(
     user_answer: str,
     target_skill_code: str,
     llm_provider: LLMProviderConfig | None = None,
+    output_language: OutputLanguage = "en",
 ) -> PracticeGradeAIResult:
     user_prompt = (
         f"Target skill:\n{target_skill_code}\n\n"
@@ -74,7 +78,7 @@ def grade_practice(
     )
     return parse_with_model(
         messages=[
-            {"role": "system", "content": GRADE_SYSTEM_PROMPT},
+            {"role": "system", "content": f"{GRADE_SYSTEM_PROMPT}\n\n{language_instruction(output_language)}"},
             {"role": "user", "content": user_prompt},
         ],
         response_model=PracticeGradeAIResult,

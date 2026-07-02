@@ -6,10 +6,12 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { NAV_ITEMS } from "@/lib/nav"
 import { getMe } from "@/lib/auth"
+import { useLanguage } from "@/components/language-provider"
 
 export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
   const [isOwner, setIsOwner] = useState(false)
+  const { t } = useLanguage()
 
   useEffect(() => {
     getMe().then((me) => setIsOwner(!!me.isOwner))
@@ -33,6 +35,7 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
         {visibleItems.map((item) => {
           const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)
           const Icon = item.icon
+          const localized = t.nav.items[item.key]
           return (
             <Link
               key={item.href}
@@ -48,8 +51,8 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
             >
               <Icon className="size-4.5 shrink-0" />
               <span className="flex flex-col leading-tight">
-                <span>{item.label}</span>
-                <span className="text-[11px] font-normal text-muted-foreground">{item.description}</span>
+                <span>{localized[0]}</span>
+                <span className="text-[11px] font-normal text-muted-foreground">{localized[1]}</span>
               </span>
             </Link>
           )
@@ -57,7 +60,7 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
       </nav>
 
       <div className="rounded-xl bg-sidebar-accent/50 p-3 text-xs leading-relaxed text-muted-foreground">
-        {"It finds what you need to practice instead of asking what you want to practice."}
+        {t.nav.tagline}
       </div>
     </div>
   )

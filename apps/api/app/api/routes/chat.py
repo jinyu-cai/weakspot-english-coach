@@ -2,7 +2,7 @@ import logging
 import time
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 
 from app.api.deps import Identity, get_llm_provider, rate_limited
 from app.config import settings
@@ -22,7 +22,7 @@ from app.db.repositories import (
     update_chat_session_analysis,
     update_chat_session_summary,
 )
-from app.models.chat import ChatCreateSessionRequest, ChatPredictRequest, ChatSendRequest
+from app.models.chat import AnalyzeSessionRequest, ChatCreateSessionRequest, ChatPredictRequest, ChatSendRequest
 from app.services.ai_client import LLMProviderConfig
 from app.services.chat_service import chat_reply, predict_completion
 from app.services.session_analysis_service import analyze_session
@@ -272,6 +272,7 @@ def predict(
 @router.post("/sessions/{session_id}/analyze")
 def analyze_chat_session(
     session_id: str,
+    req: AnalyzeSessionRequest = Body(default_factory=AnalyzeSessionRequest),
     llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
     identity: Identity = Depends(rate_limited("chat", allow_byok_unlimited=True)),
 ):
@@ -312,6 +313,7 @@ def analyze_chat_session(
         analysis = analyze_session(
             messages=messages_for_ai,
             topic=session.get("topic"),
+            output_language=req.outputLanguage,
             llm_provider=llm_provider,
             max_tokens=None if _unlimited_llm_output(identity, llm_provider) else identity.max_output_tokens,
             trace_id=request_id,

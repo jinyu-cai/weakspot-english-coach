@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { cn } from "@/lib/utils"
+import { useLanguage } from "@/components/language-provider"
 
 interface VoiceChatPanelProps {
   topic?: string
@@ -26,6 +27,7 @@ interface VoiceChatPanelProps {
 
 export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
   const [voiceModel, setVoiceModel] = useState<RealtimeVoiceModel>("gpt-realtime-mini-2025-12-15")
+  const { t } = useLanguage()
   const {
     status,
     error,
@@ -64,10 +66,8 @@ export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
           <Mic className="size-12 text-primary" />
         </div>
         <div className="flex flex-col items-center gap-2 text-center">
-          <h3 className="text-lg font-medium">Voice Practice</h3>
-          <p className="max-w-sm text-sm text-muted-foreground">
-            Start a real-time voice conversation. Chat naturally — your English will be analyzed when you end the session.
-          </p>
+          <h3 className="text-lg font-medium">{t.chat.voicePanel.title}</h3>
+          <p className="max-w-sm text-sm text-muted-foreground">{t.chat.voicePanel.description}</p>
           {error && (
             <p className="mt-1 text-sm text-destructive">{error}</p>
           )}
@@ -86,7 +86,7 @@ export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
         </ToggleGroup>
         <Button size="lg" onClick={handleConnect} className="gap-2">
           <Phone className="size-5" />
-          Start Voice Chat
+          {t.chat.voicePanel.start}
         </Button>
       </div>
     )
@@ -97,7 +97,7 @@ export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4">
         <Spinner className="size-8" />
-        <p className="text-sm text-muted-foreground">Connecting... please allow microphone access</p>
+        <p className="text-sm text-muted-foreground">{t.chat.voicePanel.connecting}</p>
       </div>
     )
   }
@@ -110,7 +110,7 @@ export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
         {transcript.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-muted-foreground">
             <Volume2 className="size-8 opacity-30" />
-            <p className="text-sm">Start speaking — your conversation will appear here</p>
+            <p className="text-sm">{t.chat.voicePanel.empty}</p>
           </div>
         )}
         <div className="flex flex-col gap-3">
@@ -123,7 +123,7 @@ export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
               )}
             >
               <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                {entry.role === "user" ? "You" : "Coach"}
+                {entry.role === "user" ? t.chat.voicePanel.you : t.chat.voicePanel.coach}
               </span>
               <div
                 className={cn(
@@ -144,7 +144,7 @@ export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
                 <span className="inline-block size-1.5 animate-bounce rounded-full bg-primary [animation-delay:150ms]" />
                 <span className="inline-block size-1.5 animate-bounce rounded-full bg-primary [animation-delay:300ms]" />
               </span>
-              Speaking...
+              {t.chat.voicePanel.speaking}
             </div>
           )}
         </div>
@@ -158,7 +158,7 @@ export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
             <div className="mb-2 flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
                 <Lightbulb className="size-3.5" />
-                Maybe you want to say...
+                {t.chat.voicePanel.maybe}
               </div>
               <button
                 onClick={dismissCompletions}
@@ -201,7 +201,7 @@ export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
           {isAiSpeaking && (
             <div className="flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1.5">
               <Volume2 className="size-4 text-primary" />
-              <span className="text-xs font-medium text-primary">AI Speaking</span>
+              <span className="text-xs font-medium text-primary">{t.chat.voicePanel.aiSpeaking}</span>
             </div>
           )}
 
@@ -216,7 +216,7 @@ export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
         </div>
         <div className="mt-2 flex items-center justify-center gap-3">
           <Badge variant="secondary" className="gap-1 text-[10px]">
-            {isMicOn ? "Listening" : "Muted"}
+            {isMicOn ? t.chat.voicePanel.listening : t.chat.voicePanel.muted}
           </Badge>
           <Badge variant="outline" className="text-[10px]">
             {voiceModel === "gpt-realtime-2" ? "Realtime 2" : "Mini"}

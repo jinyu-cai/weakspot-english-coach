@@ -42,6 +42,7 @@ def create_plan(
             profile, skills, recent_errors,
             llm_provider=llm_provider,
             max_output_tokens=None if identity.has_unlimited_llm_quota else identity.max_output_tokens,
+            output_language=req.outputLanguage,
         )
 
         days = []
@@ -80,6 +81,7 @@ def create_plan(
             "id": f"plan_{uuid4().hex[:12]}",
             "userId": req.userId,
             "title": ai_plan.title,
+            "outputLanguage": req.outputLanguage,
             "days": days,
             "createdAt": now,
             "updatedAt": now,

@@ -13,17 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
-
-const chartConfig = {
-  checkins: {
-    label: "Check-ins",
-    color: "var(--chart-1)",
-  },
-  practiceAttempts: {
-    label: "Practice",
-    color: "var(--chart-2)",
-  },
-} satisfies ChartConfig
+import { useLanguage } from "@/components/language-provider"
 
 const dayFormatter = new Intl.DateTimeFormat("en-US", { weekday: "short" })
 
@@ -45,6 +35,17 @@ function toPercent(progress: number, target: number) {
 export default function DailyWinsPage() {
   const timezone = getBrowserTimezone()
   const { data, isLoading, error } = useSWR(["daily-stats", timezone], () => getDailyStats(DEMO_USER_ID, timezone, 7))
+  const { t } = useLanguage()
+  const chartConfig = {
+    checkins: {
+      label: t.stats.checkins,
+      color: "var(--chart-1)",
+    },
+    practiceAttempts: {
+      label: t.common.practice,
+      color: "var(--chart-2)",
+    },
+  } satisfies ChartConfig
 
   const chartData =
     data?.weekly.map((day) => ({
@@ -59,19 +60,17 @@ export default function DailyWinsPage() {
           <div className="flex max-w-2xl flex-col gap-3">
             <Badge className="w-fit bg-warning/20 text-warning-foreground hover:bg-warning/20">
               <Sparkles className="size-3.5" />
-              Daily Wins
+              {t.stats.title}
             </Badge>
             <div className="flex flex-col gap-2">
               <h1 className="font-heading text-3xl font-bold tracking-tight sm:text-4xl">
-                See the small wins that make English feel lighter.
+                {t.stats.headline}
               </h1>
-              <p className="text-muted-foreground">
-                A warm 7-day view of check-ins, practice, focus time, and streak progress.
-              </p>
+              <p className="text-muted-foreground">{t.stats.description}</p>
             </div>
           </div>
           <div className="rounded-2xl border border-warning/30 bg-background/75 px-4 py-3 text-sm shadow-sm backdrop-blur">
-            <span className="text-muted-foreground">Timezone</span>
+            <span className="text-muted-foreground">{t.stats.timezone}</span>
             <div className="font-medium">{data?.timezone ?? timezone}</div>
           </div>
         </div>
@@ -80,8 +79,8 @@ export default function DailyWinsPage() {
       {error ? (
         <Card className="border-danger/30">
           <CardHeader>
-            <CardTitle>Stats are taking a break</CardTitle>
-            <CardDescription>{error instanceof Error ? error.message : "Could not load Daily Wins."}</CardDescription>
+            <CardTitle>{t.stats.errorTitle}</CardTitle>
+            <CardDescription>{error instanceof Error ? error.message : t.stats.errorDescription}</CardDescription>
           </CardHeader>
         </Card>
       ) : null}
@@ -93,35 +92,35 @@ export default function DailyWinsPage() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatTile
               icon={<Flame className="size-5" />}
-              label="Current streak"
-              value={`${data.summary.streakDays} day${data.summary.streakDays === 1 ? "" : "s"}`}
-              note="Learning days in a row"
+              label={t.stats.currentStreak}
+              value={`${data.summary.streakDays} ${data.summary.streakDays === 1 ? t.stats.day : t.stats.days}`}
+              note={t.stats.daysInRow}
             />
             <StatTile
               icon={<CalendarDays className="size-5" />}
-              label="Active days"
+              label={t.stats.activeDays}
               value={`${data.summary.activeDays}/${data.summary.days}`}
-              note="Days with check-in or practice"
+              note={t.stats.daysWithActivity}
             />
             <StatTile
               icon={<Target className="size-5" />}
-              label="Focus minutes"
+              label={t.stats.focusMinutes}
               value={`${data.summary.minutesEstimated}`}
-              note="Estimated this week"
+              note={t.stats.estimatedWeek}
             />
             <StatTile
               icon={<Trophy className="size-5" />}
-              label="Average score"
-              value={data.summary.averageScore ? `${data.summary.averageScore}%` : "New"}
-              note="Across practice attempts"
+              label={t.stats.averageScore}
+              value={data.summary.averageScore ? `${data.summary.averageScore}%` : t.stats.new}
+              note={t.stats.acrossPractice}
             />
           </div>
 
           <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
             <Card className="border-warning/20">
               <CardHeader>
-                <CardTitle>7-day activity</CardTitle>
-                <CardDescription>Check-ins and practice attempts by local day.</CardDescription>
+                <CardTitle>{t.stats.activity}</CardTitle>
+                <CardDescription>{t.stats.activityDescription}</CardDescription>
               </CardHeader>
               <CardContent>
                 <ChartContainer config={chartConfig} className="h-72 w-full">
@@ -139,14 +138,14 @@ export default function DailyWinsPage() {
 
             <Card className="border-warning/20 bg-warning/5">
               <CardHeader>
-                <CardTitle>Today&apos;s gentle scorecard</CardTitle>
-                <CardDescription>{data.today.active ? "You already have a win today." : "A tiny step counts."}</CardDescription>
+                <CardTitle>{t.stats.today}</CardTitle>
+                <CardDescription>{data.today.active ? t.stats.todayActive : t.stats.todayInactive}</CardDescription>
               </CardHeader>
               <CardContent className="grid grid-cols-2 gap-3">
-                <MiniMetric label="Check-ins" value={data.today.checkins} />
-                <MiniMetric label="Practice" value={data.today.practiceAttempts} />
-                <MiniMetric label="Correct" value={data.today.correctAttempts} />
-                <MiniMetric label="Errors found" value={data.today.errorsFound} />
+                <MiniMetric label={t.stats.checkins} value={data.today.checkins} />
+                <MiniMetric label={t.common.practice} value={data.today.practiceAttempts} />
+                <MiniMetric label={t.stats.correct} value={data.today.correctAttempts} />
+                <MiniMetric label={t.stats.errorsFound} value={data.today.errorsFound} />
               </CardContent>
             </Card>
           </div>
@@ -156,14 +155,14 @@ export default function DailyWinsPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Flame className="size-5 text-warning" />
-                  Warm streak
+                  {t.stats.warmStreak}
                 </CardTitle>
-                <CardDescription>Consistency beats intensity for this kind of learning.</CardDescription>
+                <CardDescription>{t.stats.streakDescription}</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-5">
                 <div className="flex items-end gap-2">
                   <span className="font-heading text-5xl font-bold tabular-nums">{data.summary.streakDays}</span>
-                  <span className="pb-2 text-muted-foreground">day streak</span>
+                  <span className="pb-2 text-muted-foreground">{t.stats.dayStreak}</span>
                 </div>
                 <div className="grid grid-cols-7 gap-2">
                   {data.weekly.map((day) => (
@@ -174,7 +173,7 @@ export default function DailyWinsPage() {
                             ? "size-8 rounded-full bg-warning shadow-sm ring-2 ring-warning/25"
                             : "size-8 rounded-full border border-dashed border-border bg-muted/50"
                         }
-                        aria-label={`${formatDay(day)} ${day.active ? "active" : "inactive"}`}
+                        aria-label={`${formatDay(day)} ${day.active ? t.stats.active : t.stats.inactive}`}
                       />
                       <span className="text-xs text-muted-foreground">{formatDay(day)}</span>
                     </div>
@@ -185,8 +184,8 @@ export default function DailyWinsPage() {
 
             <Card className="border-warning/20">
               <CardHeader>
-                <CardTitle>Achievement badges</CardTitle>
-                <CardDescription>Small visible milestones for a kinder learning loop.</CardDescription>
+                <CardTitle>{t.stats.badges}</CardTitle>
+                <CardDescription>{t.stats.badgesDescription}</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3 sm:grid-cols-2">
                 {data.achievements.map((achievement) => (
@@ -219,12 +218,12 @@ export default function DailyWinsPage() {
           <Card className="border-warning/30 bg-gradient-to-r from-warning/15 via-card to-card">
             <CardContent className="flex flex-col gap-4 py-6 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-col gap-1">
-                <div className="text-sm font-medium text-warning-foreground">Next best action</div>
+                <div className="text-sm font-medium text-warning-foreground">{t.stats.nextBest}</div>
                 <h2 className="font-heading text-2xl font-bold">{data.nextBestAction.title}</h2>
                 <p className="max-w-2xl text-sm text-muted-foreground">{data.nextBestAction.description}</p>
               </div>
               <Button nativeButton={false} render={<Link href={data.nextBestAction.href} />}>
-                Continue
+                {t.stats.continue}
                 <ArrowRight data-icon="inline-end" />
               </Button>
             </CardContent>

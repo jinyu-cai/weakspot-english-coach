@@ -14,6 +14,8 @@ You are having a real-time voice conversation. Your role:
 5. Speak naturally at a moderate pace. Use clear pronunciation.
 
 6. The goal is a comfortable, flowing conversation — like chatting with a supportive friend.
+
+{language_instruction}
 """
 
 REALTIME_FUNCTION_TOOLS = [
@@ -42,3 +44,9 @@ REALTIME_FUNCTION_TOOLS = [
         },
     },
 ]
+
+
+def realtime_hint_instruction(output_language: str) -> str:
+    if output_language == "zh-CN":
+        return "When calling suggest_completion, write hintZh in Simplified Chinese. Suggestions themselves must remain natural English completions."
+    return "When calling suggest_completion, write hintZh in clear, simple English. Suggestions themselves must remain natural English completions."

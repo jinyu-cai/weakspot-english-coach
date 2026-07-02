@@ -4,7 +4,8 @@ import useSWR from "swr"
 import Link from "next/link"
 import { GraduationCap, FileText, Dumbbell, ArrowRight, TrendingDown } from "lucide-react"
 import { getProfile } from "@/lib/api-client"
-import { masteryColor, masteryLabel, masteryTextClass, sortByMasteryAsc } from "@/lib/skills"
+import { masteryColor, masteryTextClass, sortByMasteryAsc } from "@/lib/skills"
+import { skillLabel as localizedSkillLabel } from "@/lib/practice"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -15,15 +16,17 @@ import { CefrBadge } from "@/components/cefr-badge"
 import { SkillBarChart } from "@/components/skill-bar-chart"
 import { WeaknessRadar } from "@/components/weakness-radar"
 import type { CEFRLevel } from "@/lib/types"
+import { useLanguage } from "@/components/language-provider"
 
 export default function DashboardPage() {
   const { data, isLoading } = useSWR("profile", () => getProfile())
+  const { language, t } = useLanguage()
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
       <header className="flex flex-col gap-2">
-        <h1 className="font-heading text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">Your evolving weakness model, built from real mistakes.</p>
+        <h1 className="font-heading text-3xl font-bold tracking-tight">{t.dashboard.title}</h1>
+        <p className="text-muted-foreground">{t.dashboard.description}</p>
       </header>
 
       {/* Stat cards */}
@@ -33,17 +36,17 @@ export default function DashboardPage() {
         <div className="grid gap-4 sm:grid-cols-3">
           <StatCard
             icon={<GraduationCap className="size-5 text-primary" />}
-            title="Estimated level"
+            title={t.dashboard.estimatedLevel}
             value={<CefrBadge level={data.profile.estimatedLevel as CEFRLevel} size="md" />}
           />
           <StatCard
             icon={<FileText className="size-5 text-primary" />}
-            title="Total submissions"
+            title={t.dashboard.totalSubmissions}
             value={<span className="font-heading text-3xl font-bold">{data.profile.totalSubmissions}</span>}
           />
           <StatCard
             icon={<Dumbbell className="size-5 text-primary" />}
-            title="Practice attempts"
+            title={t.dashboard.practiceAttempts}
             value={<span className="font-heading text-3xl font-bold">{data.profile.totalPracticeAttempts}</span>}
           />
         </div>
@@ -52,8 +55,8 @@ export default function DashboardPage() {
       {/* Weakness chart */}
       <Card>
         <CardHeader>
-          <CardTitle>Weakness model</CardTitle>
-          <CardDescription>{"Ranked by skill mastery. Red < 50, amber < 75, green is fairly strong."}</CardDescription>
+          <CardTitle>{t.dashboard.weaknessModel}</CardTitle>
+          <CardDescription>{t.dashboard.modelDescription}</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading || !data ? (
@@ -61,8 +64,8 @@ export default function DashboardPage() {
           ) : (
             <Tabs defaultValue="bar">
               <TabsList>
-                <TabsTrigger value="bar">Bar</TabsTrigger>
-                <TabsTrigger value="radar">Radar</TabsTrigger>
+                <TabsTrigger value="bar">{t.dashboard.bar}</TabsTrigger>
+                <TabsTrigger value="radar">{t.dashboard.radar}</TabsTrigger>
               </TabsList>
               <TabsContent value="bar">
                 <SkillBarChart skills={data.skills} />
@@ -81,9 +84,9 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <TrendingDown className="size-5 text-danger" />
-              Weakest skills
+              {t.dashboard.weakestSkills}
             </CardTitle>
-            <CardDescription>Sorted by lowest mastery first.</CardDescription>
+            <CardDescription>{t.dashboard.sorted}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
             {!data
@@ -94,9 +97,9 @@ export default function DashboardPage() {
                     <div key={skill.skillCode} className="flex flex-col gap-2">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex flex-col">
-                          <span className="text-sm font-medium">{skill.label}</span>
+                          <span className="text-sm font-medium">{localizedSkillLabel(skill.skillCode, language)}</span>
                           <span className="text-xs text-muted-foreground">
-                            {skill.errorCount} errors · {skill.correctCount} correct
+                            {skill.errorCount} {t.dashboard.errors} · {skill.correctCount} {t.common.correct.toLowerCase()}
                           </span>
                         </div>
                         <div className="flex items-center gap-3">
@@ -109,7 +112,7 @@ export default function DashboardPage() {
                             nativeButton={false}
                             render={<Link href={`/practice?skill=${skill.skillCode}`} />}
                           >
-                            Practice
+                            {t.common.practice}
                             <ArrowRight data-icon="inline-end" />
                           </Button>
                         </div>
@@ -128,8 +131,8 @@ export default function DashboardPage() {
         {/* Recent mistakes */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Recent mistakes</CardTitle>
-            <CardDescription>Your latest corrected errors.</CardDescription>
+            <CardTitle className="text-base">{t.dashboard.recentMistakes}</CardTitle>
+            <CardDescription>{t.dashboard.latest}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             {!data

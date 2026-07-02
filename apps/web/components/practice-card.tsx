@@ -3,7 +3,7 @@
 import { useState } from "react"
 import type { PracticeExercise, PracticeGrade } from "@/lib/types"
 import { submitPractice } from "@/lib/api-client"
-import { PRACTICE_TYPE_META, SKILL_LABELS } from "@/lib/practice"
+import { practiceTypeLabel, skillLabel as localizedSkillLabel } from "@/lib/practice"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -11,8 +11,8 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
-import { cn } from "@/lib/utils"
 import { CheckCircle2, XCircle, Lightbulb } from "lucide-react"
+import { useLanguage } from "@/components/language-provider"
 
 /** Turns a raw skill code like "vocabulary_range" or "grammar.verb_tense" into "Vocabulary range". */
 function prettifySkillCode(code: string): string {
@@ -33,9 +33,10 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
   const [answer, setAnswer] = useState("")
   const [grade, setGrade] = useState<PracticeGrade | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const { language, t } = useLanguage()
 
-  const typeMeta = PRACTICE_TYPE_META[exercise.type]
-  const skillLabel = SKILL_LABELS[exercise.targetSkillCode] ?? prettifySkillCode(exercise.targetSkillCode)
+  const typeLabel = practiceTypeLabel(exercise.type, language)
+  const skillLabel = localizedSkillLabel(exercise.targetSkillCode, language) || prettifySkillCode(exercise.targetSkillCode)
 
   async function handleSubmit() {
     if (submitting || grade) return
@@ -62,7 +63,7 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Badge variant="secondary">{typeMeta.zhLabel}</Badge>
+            <Badge variant="secondary">{typeLabel}</Badge>
             <Badge variant="outline">{skillLabel}</Badge>
           </div>
           <span className="text-sm text-muted-foreground tabular-nums">
@@ -81,7 +82,7 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
           value={answer}
           onChange={(e) => setAnswer(e.target.value)}
           disabled={!!grade || submitting}
-          placeholder="Type your answer here..."
+          placeholder={t.common.typeAnswer}
           className="min-h-28 resize-none"
         />
 
@@ -91,9 +92,9 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
             <Alert variant={grade.isCorrect ? "default" : "destructive"}>
               {grade.isCorrect ? <CheckCircle2 /> : <XCircle />}
               <AlertTitle className="flex items-center gap-2">
-                {grade.isCorrect ? "Correct" : "Needs improvement"}
+                {grade.isCorrect ? t.common.correct : t.common.needsImprovement}
                 <Badge variant="outline" className="tabular-nums">
-                  {grade.score} pts
+                  {grade.score} {t.common.points}
                 </Badge>
               </AlertTitle>
               <AlertDescription>{grade.feedbackZh}</AlertDescription>
@@ -101,7 +102,7 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
             {!grade.isCorrect ? (
               <Alert>
                 <Lightbulb />
-                <AlertTitle>Reference answer</AlertTitle>
+                <AlertTitle>{t.common.referenceAnswer}</AlertTitle>
                 <AlertDescription>{grade.correctedAnswer}</AlertDescription>
               </Alert>
             ) : null}
@@ -115,14 +116,14 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
             {submitting ? (
               <>
                 <Spinner data-icon="inline-start" />
-                Grading
+                {t.common.grading}
               </>
             ) : (
-              "Submit answer"
+              t.common.submitAnswer
             )}
           </Button>
         ) : (
-          <Button onClick={handleNext}>{isLast ? "Finish session" : "Next question"}</Button>
+          <Button onClick={handleNext}>{isLast ? t.common.finishSession : t.common.nextQuestion}</Button>
         )}
       </CardFooter>
     </Card>

@@ -2,15 +2,17 @@
 
 import { PolarAngleAxis, PolarGrid, Radar, RadarChart } from "recharts"
 import type { SkillState } from "@/lib/types"
+import { skillLabel as localizedSkillLabel } from "@/lib/practice"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
-
-const chartConfig = {
-  mastery: { label: "Mastery", color: "var(--chart-1)" },
-} satisfies ChartConfig
+import { useLanguage } from "@/components/language-provider"
 
 export function WeaknessRadar({ skills }: { skills: SkillState[] }) {
+  const { language, t } = useLanguage()
+  const chartConfig = {
+    mastery: { label: t.common.mastery, color: "var(--chart-1)" },
+  } satisfies ChartConfig
   const data = skills.map((s) => ({
-    skill: s.label,
+    skill: localizedSkillLabel(s.skillCode, language),
     mastery: s.mastery,
   }))
 

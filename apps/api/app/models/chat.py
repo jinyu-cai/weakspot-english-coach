@@ -2,7 +2,7 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from app.models.common import Severity
+from app.models.common import OutputLanguage, Severity
 
 
 RealtimeVoiceModel = Literal["gpt-realtime-mini-2025-12-15", "gpt-realtime-2"]
@@ -25,6 +25,10 @@ class ChatPredictRequest(BaseModel):
     userId: str
     sessionId: str
     partialText: str = Field(min_length=1)
+
+
+class AnalyzeSessionRequest(BaseModel):
+    outputLanguage: OutputLanguage = "en"
 
 
 class CorrectionAI(BaseModel):

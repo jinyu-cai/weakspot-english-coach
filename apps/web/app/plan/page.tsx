@@ -12,12 +12,14 @@ import { Spinner } from "@/components/ui/spinner"
 import { Skeleton } from "@/components/ui/skeleton"
 import { EmptyState } from "@/components/empty-state"
 import { LearningPlanCard } from "@/components/learning-plan-card"
+import { useLanguage } from "@/components/language-provider"
 
 export default function PlanPage() {
   const { data, isLoading, mutate } = useSWR("plan", () => getPlan())
   const [plan, setPlan] = useState<LearningPlan | null>(null)
   const [generating, setGenerating] = useState(false)
   const [errorScope, setErrorScope] = useState<PlanErrorScope>("weekly")
+  const { t } = useLanguage()
 
   const activePlan = plan ?? data?.plan ?? null
 
@@ -27,9 +29,9 @@ export default function PlanPage() {
       const newPlan = await generatePlan(undefined, errorScope)
       setPlan(newPlan)
       mutate({ plan: newPlan }, { revalidate: false })
-      toast.success("7-day plan generated", { description: "Tailored to your weakest skills." })
+      toast.success(t.plan.generated, { description: t.plan.generatedDescription })
     } catch {
-      toast.error("Couldn't generate the plan. Please try again shortly.")
+      toast.error(t.plan.generateFailed)
     } finally {
       setGenerating(false)
     }
@@ -51,10 +53,10 @@ export default function PlanPage() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
       <header className="flex flex-col gap-2">
-        <h1 className="font-heading text-3xl font-bold tracking-tight">7-Day Plan</h1>
-        <p className="text-muted-foreground">A personalized study plan built from your weakness profile.</p>
+        <h1 className="font-heading text-3xl font-bold tracking-tight">{t.plan.title}</h1>
+        <p className="text-muted-foreground">{t.plan.description}</p>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm text-muted-foreground">Error source</span>
+          <span className="text-sm text-muted-foreground">{t.plan.errorSource}</span>
           <ToggleGroup
             value={[errorScope]}
             onValueChange={(value) => {
@@ -63,8 +65,8 @@ export default function PlanPage() {
             }}
             size="sm"
           >
-            <ToggleGroupItem value="weekly">Past week</ToggleGroupItem>
-            <ToggleGroupItem value="all">All errors</ToggleGroupItem>
+            <ToggleGroupItem value="weekly">{t.plan.pastWeek}</ToggleGroupItem>
+            <ToggleGroupItem value="all">{t.plan.allErrors}</ToggleGroupItem>
           </ToggleGroup>
         </div>
       </header>
@@ -80,7 +82,7 @@ export default function PlanPage() {
             <p className="font-heading text-sm font-semibold text-primary">{activePlan.title}</p>
             <Button variant="outline" size="sm" onClick={handleGenerate} disabled={generating}>
               {generating ? <Spinner /> : <Sparkles data-icon="inline-start" />}
-              {generating ? "Regenerating..." : "Regenerate"}
+              {generating ? t.plan.regenerating : t.plan.regenerate}
             </Button>
           </div>
           <div className="flex flex-col">
@@ -92,12 +94,12 @@ export default function PlanPage() {
       ) : (
         <EmptyState
           icon={CalendarRange}
-          title="No plan yet"
-          description="Generate a personalized 7-day plan that targets your weakest skills day by day."
+          title={t.plan.noPlan}
+          description={t.plan.noPlanDescription}
         >
           <Button size="lg" onClick={handleGenerate} disabled={generating}>
             {generating ? <Spinner /> : <Sparkles data-icon="inline-start" />}
-            {generating ? "Generating..." : "Generate 7-Day Plan"}
+            {generating ? t.plan.generating : t.plan.generate}
           </Button>
         </EmptyState>
       )}

@@ -1,8 +1,10 @@
 from typing import List, Optional
 
 from app.config import settings
+from app.models.common import OutputLanguage
 from app.models.chat import SessionAnalysisAI
 from app.services.ai_client import LLMProviderConfig, parse_with_model
+from app.services.output_language import language_instruction
 
 SESSION_ANALYSIS_PROMPT = """\
 You are an expert English tutor for Chinese native speakers.
@@ -17,7 +19,7 @@ Your analysis must cover:
 
 1. **corrections** — Every grammar, vocabulary, or usage error the learner made.
    For each: code, category, severity (low/medium/high), the original text,
-   the corrected version, a Chinese explanation, one micro lesson in Chinese,
+   the corrected version, an explanation, one micro lesson,
    and one practice goal.
    Be thorough — catch every error, even small ones.
 
@@ -29,7 +31,7 @@ Your analysis must cover:
        missing, or asked the coach to translate or rephrase something. Record what the learner
        wanted to convey as `original` (their Chinese or rough attempt) and the natural English
        as `natural` (use the coach's suggestion when one was given in the conversation).
-   For each: original, natural version, Chinese explanation, usage context, and 2 example sentences.
+   For each: original, natural version, explanation, usage context, and 2 example sentences.
    Include every expression that would be useful for the learner to acquire.
 
 3. **weaknesses** — Recurring patterns or skill gaps you observe across the conversation.
@@ -40,14 +42,14 @@ Your analysis must cover:
    grammar.verb_tense, grammar.article, grammar.preposition, grammar.subject_verb_agreement,
    vocab.word_choice, vocab.repetition, sentence.structure, sentence.variety,
    discourse.coherence, style.register, clarity.expression
-   For each: code, category label, severity (low/medium/high), evidence quote, Chinese explanation,
+   For each: code, category label, severity (low/medium/high), evidence quote, explanation,
    and a practice goal.
 
-4. **strengthsZh** — What the learner does well (in Chinese).
+4. **strengthsZh** — What the learner does well.
 
-5. **summaryZh** — A Chinese summary of the learner's overall performance in this conversation.
+5. **summaryZh** — A summary of the learner's overall performance in this conversation.
 
-6. **recommendedNextActionsZh** — Recommended next steps (in Chinese).
+6. **recommendedNextActionsZh** — Recommended next steps.
 
 Be encouraging but honest. Include both recurring patterns and isolated slips.
 """
@@ -56,6 +58,7 @@ Be encouraging but honest. Include both recurring patterns and isolated slips.
 def analyze_session(
     messages: List[dict],
     topic: Optional[str] = None,
+    output_language: OutputLanguage = "en",
     llm_provider: Optional[LLMProviderConfig] = None,
     max_tokens: Optional[int] = 16384,
     trace_id: Optional[str] = None,
@@ -70,7 +73,7 @@ def analyze_session(
 
     transcript_text = "\n".join(transcript_lines)
 
-    system = SESSION_ANALYSIS_PROMPT
+    system = f"{SESSION_ANALYSIS_PROMPT}\n\n{language_instruction(output_language)}"
     if topic:
         system += f"\n\nConversation topic: {topic}"
 

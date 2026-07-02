@@ -2,12 +2,13 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from app.models.common import PracticeType
+from app.models.common import OutputLanguage, PracticeType
 
 
 class GeneratePracticeRequest(BaseModel):
     userId: str
     targetSkillCode: Optional[str] = None
+    outputLanguage: OutputLanguage = "en"
     # When set, force the generated exercise to this type so a learner can
     # "regenerate the same kind" of exercise (e.g. re-do a plan task).
     practiceType: Optional[PracticeType] = None
@@ -26,6 +27,7 @@ class SubmitPracticeRequest(BaseModel):
     userId: str
     exerciseId: str
     userAnswer: str = Field(min_length=1)
+    outputLanguage: OutputLanguage = "en"
 
 
 class GradePracticeRequest(BaseModel):
@@ -42,6 +44,7 @@ class GradePracticeRequest(BaseModel):
     question: str = Field(min_length=1)
     expectedAnswer: str = ""
     userAnswer: str = Field(min_length=1)
+    outputLanguage: OutputLanguage = "en"
     exerciseType: Optional[PracticeType] = None
     promptZh: Optional[str] = None
     explanationZh: Optional[str] = None

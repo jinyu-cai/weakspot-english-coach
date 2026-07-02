@@ -212,13 +212,13 @@ def _fake_chat_reply() -> ChatReplyAI:
             CorrectionAI(
                 original="I go to the park yesterday",
                 corrected="I went to the park yesterday",
-                explanationZh="描述过去发生的事情要用过去式，go 的过去式是 went。",
+                explanationZh="Past events need the simple past, so 'go' becomes 'went'.",
             ),
         ],
         betterExpression=BetterExpressionAI(
             original="The weather was very good",
             natural="The weather was gorgeous / It was a beautiful day",
-            explanationZh="用更生动的形容词如 gorgeous 或 beautiful 比 very good 更自然地道。",
+            explanationZh="Specific adjectives like 'gorgeous' or 'beautiful' sound more natural than 'very good'.",
         ),
     )
 
@@ -235,7 +235,7 @@ def _fake_prediction() -> ChatPredictionAI:
 
 def _fake_session_analysis() -> SessionAnalysisAI:
     return SessionAnalysisAI(
-        summaryZh="你在这次对话中表达积极，主要需要注意过去时态和更自然的描述方式。",
+        summaryZh="You communicated actively in this conversation. The main focus areas are past tense and more natural phrasing.",
         corrections=[
             SessionCorrectionAI(
                 code="grammar.verb_tense",
@@ -243,16 +243,16 @@ def _fake_session_analysis() -> SessionAnalysisAI:
                 severity=Severity.high,
                 original="I go to the park yesterday",
                 corrected="I went to the park yesterday",
-                explanationZh="描述昨天发生的事情要用过去式，go 的过去式是 went。",
-                microLessonZh="看到 yesterday、last week 这类过去时间词时，句子的主要动词通常要用过去式。",
-                practiceGoal="用过去式复述 5 件你昨天做过的事情。",
+                explanationZh="Because the sentence is about yesterday, the main verb should be in the past tense: go -> went.",
+                microLessonZh="When you see past-time words like yesterday or last week, the main verb usually needs the past tense.",
+                practiceGoal="Retell five things you did yesterday using the simple past.",
             )
         ],
         naturalExpressions=[
             SessionNaturalExpressionAI(
                 original="The weather was very good",
                 natural="The weather was gorgeous.",
-                explanationZh="gorgeous 比 very good 更自然、更生动，适合描述天气很好。",
+                explanationZh="'Gorgeous' is more vivid and natural than 'very good' when describing pleasant weather.",
                 context="Casual conversation about weather or travel experiences.",
                 examples=[
                     "The weather was gorgeous, so we walked by the river.",
@@ -266,12 +266,12 @@ def _fake_session_analysis() -> SessionAnalysisAI:
                 category="Verb tense",
                 severity="high",
                 evidenceQuote="I go to the park yesterday",
-                explanationZh="你在描述过去事件时容易忘记把动词改成过去式。",
-                practiceGoal="每天用过去式讲 3 句昨天发生的事情。",
+                explanationZh="You tend to forget to change the main verb when describing past events.",
+                practiceGoal="Say three sentences each day about what happened yesterday, using the past tense.",
             )
         ],
-        strengthsZh=["愿意主动展开对话", "能用完整句表达基本意思"],
-        recommendedNextActionsZh=["集中练习一般过去时", "积累描述天气和体验的自然表达"],
+        strengthsZh=["You are willing to keep the conversation going", "You can express basic ideas in complete sentences"],
+        recommendedNextActionsZh=["Focus on simple-past practice", "Collect natural phrases for describing weather and experiences"],
     )
 
 

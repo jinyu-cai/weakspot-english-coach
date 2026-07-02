@@ -20,11 +20,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { useLanguage } from "@/components/language-provider"
 
-function RoleBadge({ role }: { role: string }) {
+function RoleBadge({ role, label }: { role: string; label: string }) {
   return (
     <Badge variant={role === "owner" ? "default" : "secondary"}>
-      {role}
+      {label}
     </Badge>
   )
 }
@@ -45,6 +46,7 @@ function formatDate(iso: string) {
 
 export default function AdminPage() {
   const { data: me } = useSWR<Me>("me", getMe)
+  const { t } = useLanguage()
   const {
     data: roles,
     isLoading,
@@ -64,8 +66,8 @@ export default function AdminPage() {
       <div className="mx-auto max-w-3xl px-4 py-10">
         <EmptyState
           icon={ShieldAlert}
-          title="Access denied"
-          description="This page is only available to owners."
+          title={t.admin.denied}
+          description={t.admin.deniedDescription}
         />
       </div>
     )
@@ -81,9 +83,9 @@ export default function AdminPage() {
       await upsertAccessRole(trimmed, role)
       await refreshRoles()
       setIdentifier("")
-      toast.success("Access role saved", { description: `${trimmed} is now a ${role}.` })
+      toast.success(t.admin.saved, { description: `${trimmed} ${t.admin.nowRole} ${role}.` })
     } catch (err) {
-      toast.error("Failed to save role", { description: err instanceof Error ? err.message : "Please try again." })
+      toast.error(t.admin.saveFailed, { description: err instanceof Error ? err.message : t.import.tryShortly })
     } finally {
       setAdding(false)
     }
@@ -95,9 +97,9 @@ export default function AdminPage() {
     try {
       await deleteAccessRole(deleteTarget.identifier)
       await refreshRoles()
-      toast.success("Access role removed", { description: `${deleteTarget.identifier} has been removed.` })
+      toast.success(t.admin.removed, { description: `${deleteTarget.identifier} ${t.admin.hasBeenRemoved}` })
     } catch (err) {
-      toast.error("Failed to remove role", { description: err instanceof Error ? err.message : "Please try again." })
+      toast.error(t.admin.removeFailed, { description: err instanceof Error ? err.message : t.import.tryShortly })
     } finally {
       setDeleting(false)
       setDeleteTarget(null)
@@ -111,8 +113,8 @@ export default function AdminPage() {
           <Shield className="size-5 text-primary" />
         </div>
         <div>
-          <h1 className="font-heading text-3xl font-bold tracking-tight">Admin</h1>
-          <p className="text-sm text-muted-foreground">Manage access roles for owners and members.</p>
+          <h1 className="font-heading text-3xl font-bold tracking-tight">{t.admin.title}</h1>
+          <p className="text-sm text-muted-foreground">{t.admin.description}</p>
         </div>
       </div>
 
@@ -121,19 +123,19 @@ export default function AdminPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <UserPlus className="size-4" />
-            Add access role
+            {t.admin.add}
           </CardTitle>
-          <CardDescription>Enter a GitHub login or email address to grant access.</CardDescription>
+          <CardDescription>{t.admin.addDescription}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleAdd} className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="flex-1">
               <label htmlFor="identifier" className="mb-1.5 block text-sm font-medium">
-                Identifier
+                {t.admin.identifier}
               </label>
               <Input
                 id="identifier"
-                placeholder="user@example.com or github-login"
+                placeholder={t.admin.identifierPlaceholder}
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
                 disabled={adding}
@@ -141,7 +143,7 @@ export default function AdminPage() {
             </div>
             <div className="w-full sm:w-36">
               <label htmlFor="role" className="mb-1.5 block text-sm font-medium">
-                Role
+                {t.admin.role}
               </label>
               <div className="flex gap-1">
                 <Button
@@ -151,7 +153,7 @@ export default function AdminPage() {
                   className="flex-1"
                   onClick={() => setRole("member")}
                 >
-                  Member
+                  {t.admin.member}
                 </Button>
                 <Button
                   type="button"
@@ -160,12 +162,12 @@ export default function AdminPage() {
                   className="flex-1"
                   onClick={() => setRole("owner")}
                 >
-                  Owner
+                  {t.admin.owner}
                 </Button>
               </div>
             </div>
             <Button type="submit" disabled={adding || !identifier.trim()} className="sm:self-end">
-              {adding ? "Saving..." : "Add"}
+              {adding ? t.admin.saving : t.admin.addButton}
             </Button>
           </form>
         </CardContent>
@@ -174,9 +176,9 @@ export default function AdminPage() {
       {/* Roles list */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Access roles</CardTitle>
+          <CardTitle className="text-base">{t.admin.roles}</CardTitle>
           <CardDescription>
-            {roles ? `${roles.length} role${roles.length === 1 ? "" : "s"} configured` : "Loading..."}
+            {roles ? `${roles.length} ${t.admin.configured}` : t.common.loading}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -188,7 +190,7 @@ export default function AdminPage() {
             </div>
           ) : !roles || roles.length === 0 ? (
             <div className="py-8 text-center text-sm text-muted-foreground">
-              No access roles configured yet. Add one above.
+              {t.admin.noRoles}
             </div>
           ) : (
             <div className="divide-y rounded-lg border">
@@ -197,17 +199,17 @@ export default function AdminPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="truncate text-sm font-medium">{r.identifier}</span>
-                      <RoleBadge role={r.role} />
+                      <RoleBadge role={r.role} label={r.role === "owner" ? t.admin.owner : t.admin.member} />
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Updated {formatDate(r.updatedAt)}
+                      {t.admin.updated} {formatDate(r.updatedAt)}
                       {r.updatedBy ? ` by ${r.updatedBy}` : ""}
                     </p>
                   </div>
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label={`Remove ${r.identifier}`}
+                    aria-label={`${t.admin.removeLabel} ${r.identifier}`}
                     onClick={() => setDeleteTarget(r)}
                   >
                     <Trash2 className="size-4 text-muted-foreground" />
@@ -223,18 +225,17 @@ export default function AdminPage() {
       <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Remove access role</DialogTitle>
+            <DialogTitle>{t.admin.removeTitle}</DialogTitle>
             <DialogDescription>
-              Are you sure you want to remove <strong>{deleteTarget?.identifier}</strong>?
-              They will lose their <strong>{deleteTarget?.role}</strong> privileges.
+              {t.admin.removeDescription} <strong>{deleteTarget?.identifier}</strong>? {t.admin.losePrivileges}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>
-              Cancel
+              {t.common.cancel}
             </Button>
             <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
-              {deleting ? "Removing..." : "Remove"}
+              {deleting ? t.common.removing : t.common.remove}
             </Button>
           </DialogFooter>
         </DialogContent>

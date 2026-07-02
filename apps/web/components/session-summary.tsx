@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
+import { useLanguage } from "@/components/language-provider"
 
 interface SessionSummaryProps {
   analysis: SessionAnalysis | null
@@ -27,15 +28,16 @@ interface SessionSummaryProps {
 
 export function SessionSummary({ analysis, analyzing, onClose }: SessionSummaryProps) {
   const [expandedSection, setExpandedSection] = useState<string | null>("corrections")
+  const { t } = useLanguage()
 
   if (analyzing) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4">
         <Spinner className="size-8" />
         <div className="flex flex-col items-center gap-1 text-center">
-          <p className="text-sm font-medium">Analyzing your conversation...</p>
+          <p className="text-sm font-medium">{t.chat.summary.loading}</p>
           <p className="text-xs text-muted-foreground">
-            Checking grammar, finding natural expressions, identifying patterns
+            {t.chat.summary.loadingSub}
           </p>
         </div>
       </div>
@@ -47,21 +49,21 @@ export function SessionSummary({ analysis, analyzing, onClose }: SessionSummaryP
   const sections = [
     {
       id: "corrections",
-      label: "Corrections",
+      label: t.chat.summary.corrections,
       icon: Wrench,
       count: analysis.corrections.length,
       color: "text-orange-500",
     },
     {
       id: "expressions",
-      label: "Natural Expressions",
+      label: t.chat.summary.expressions,
       icon: Sparkles,
       count: analysis.naturalExpressions.length,
       color: "text-primary",
     },
     {
       id: "weaknesses",
-      label: "Patterns to Work On",
+      label: t.chat.summary.weaknesses,
       icon: Target,
       count: analysis.weaknesses.length,
       color: "text-destructive",
@@ -74,7 +76,7 @@ export function SessionSummary({ analysis, analyzing, onClose }: SessionSummaryP
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
           <CheckCircle2 className="size-5 text-success" />
-          <span className="text-sm font-medium">Session Analysis</span>
+          <span className="text-sm font-medium">{t.chat.summary.title}</span>
         </div>
         <Button variant="ghost" size="sm" onClick={onClose}>
           <X className="size-4" />
@@ -125,7 +127,7 @@ export function SessionSummary({ analysis, analyzing, onClose }: SessionSummaryP
         {expandedSection === "corrections" && (
           <div className="flex flex-col gap-3 p-4">
             {analysis.corrections.length === 0 ? (
-              <p className="text-center text-sm text-muted-foreground">No errors found — great job!</p>
+              <p className="text-center text-sm text-muted-foreground">{t.chat.summary.noErrors}</p>
             ) : (
               analysis.corrections.map((c, i) => (
                 <div key={i} className="rounded-xl border border-border bg-background p-3">
@@ -150,7 +152,7 @@ export function SessionSummary({ analysis, analyzing, onClose }: SessionSummaryP
         {expandedSection === "expressions" && (
           <div className="flex flex-col gap-3 p-4">
             {analysis.naturalExpressions.length === 0 ? (
-              <p className="text-center text-sm text-muted-foreground">Your expressions were already natural!</p>
+              <p className="text-center text-sm text-muted-foreground">{t.chat.summary.natural}</p>
             ) : (
               analysis.naturalExpressions.map((e, i) => (
                 <div key={i} className="rounded-xl border border-primary/20 bg-primary/5 p-3">
@@ -178,7 +180,7 @@ export function SessionSummary({ analysis, analyzing, onClose }: SessionSummaryP
                       )}
                       <Badge variant="secondary" className="mt-1 w-fit gap-1 text-[10px]">
                         <CheckCircle2 className="size-3" />
-                        Saved to Notebook
+                        {t.chat.summary.saved}
                       </Badge>
                     </div>
                   </div>
@@ -192,7 +194,7 @@ export function SessionSummary({ analysis, analyzing, onClose }: SessionSummaryP
         {expandedSection === "weaknesses" && (
           <div className="flex flex-col gap-3 p-4">
             {analysis.weaknesses.length === 0 ? (
-              <p className="text-center text-sm text-muted-foreground">No recurring patterns detected.</p>
+              <p className="text-center text-sm text-muted-foreground">{t.chat.summary.noPatterns}</p>
             ) : (
               analysis.weaknesses.map((w, i) => (
                 <div key={i} className="rounded-xl border border-border bg-background p-3">
@@ -227,7 +229,7 @@ export function SessionSummary({ analysis, analyzing, onClose }: SessionSummaryP
         {/* Next Actions */}
         {analysis.recommendedNextActionsZh.length > 0 && (
           <div className="border-t border-border bg-muted/20 px-4 py-3">
-            <p className="mb-2 text-xs font-medium text-muted-foreground">Recommended next steps</p>
+            <p className="mb-2 text-xs font-medium text-muted-foreground">{t.chat.summary.nextSteps}</p>
             <div className="flex flex-col gap-1.5">
               {analysis.recommendedNextActionsZh.map((a, i) => (
                 <div key={i} className="flex items-center gap-2 text-sm">

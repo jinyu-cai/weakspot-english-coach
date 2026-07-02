@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/empty-state"
 import { SubmissionCard } from "@/components/submission-card"
 import { ErrorCard } from "@/components/error-card"
+import { useLanguage } from "@/components/language-provider"
 
 const EMPTY_HISTORY: HistoryResponse = { submissions: [], errors: [], notes: [] }
 
@@ -41,12 +42,13 @@ export default function HistoryPage() {
   const submissions = data?.submissions ?? []
   const errors = data?.errors ?? []
   const notes = data?.notes ?? []
-  const errorMessage = error instanceof Error ? error.message : "Please try again shortly."
+  const { t } = useLanguage()
+  const errorMessage = error instanceof Error ? error.message : t.import.tryShortly
 
   async function handleDelete(submission: Submission) {
     if (!submission.createdAt) {
-      toast.error("Could not delete entry", {
-        description: "This entry is missing its timestamp, so it cannot be safely deleted.",
+      toast.error(t.history.deleteFailed, {
+        description: t.history.deleteMissing,
       })
       return
     }
@@ -68,18 +70,18 @@ export default function HistoryPage() {
         },
       )
 
-      toast.success("Entry deleted", {
+      toast.success(t.history.deleted, {
         description:
           removedErrors > 0
-            ? `Rolled back ${removedErrors} error${removedErrors === 1 ? "" : "s"} from your weakness profile.`
-            : "Removed from your history.",
+            ? `${t.history.rolledBack} ${removedErrors} ${t.history.fromProfile}`
+            : t.history.removedHistory,
       })
       // Refresh history (submissions + error log) and the dashboard profile/skills.
       void refreshHistory()
       void mutate("profile")
     } catch (error) {
-      toast.error("Could not delete entry", {
-        description: error instanceof Error ? error.message : "Please try again shortly.",
+      toast.error(t.history.deleteFailed, {
+        description: error instanceof Error ? error.message : t.import.tryShortly,
       })
     }
   }
@@ -87,15 +89,15 @@ export default function HistoryPage() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
       <header className="flex flex-col gap-2">
-        <h1 className="font-heading text-3xl font-bold tracking-tight">History</h1>
-        <p className="text-muted-foreground">Review all your submissions and flagged errors to track your progress.</p>
+        <h1 className="font-heading text-3xl font-bold tracking-tight">{t.history.title}</h1>
+        <p className="text-muted-foreground">{t.history.description}</p>
       </header>
 
       {error && !data ? (
-        <EmptyState icon={AlertCircle} title="History could not load" description={errorMessage}>
+        <EmptyState icon={AlertCircle} title={t.history.loadFailed} description={errorMessage}>
           <Button variant="outline" onClick={() => void refreshHistory()}>
             <RefreshCcw data-icon="inline-start" />
-            Try again
+            {t.common.tryAgain}
           </Button>
         </EmptyState>
       ) : isLoading ? (
@@ -116,14 +118,14 @@ export default function HistoryPage() {
           <TabsList>
             <TabsTrigger value="submissions">
               <FileText data-icon="inline-start" />
-              Submissions
+              {t.history.submissions}
               <Badge variant="secondary" className="ml-1 tabular-nums">
                 {submissions.length}
               </Badge>
             </TabsTrigger>
             <TabsTrigger value="errors">
               <AlertCircle data-icon="inline-start" />
-              Error log
+              {t.history.errorLog}
               <Badge variant="secondary" className="ml-1 tabular-nums">
                 {errors.length}
               </Badge>
@@ -142,7 +144,7 @@ export default function HistoryPage() {
                 />
               ))
             ) : (
-              <EmptyState icon={HistoryIcon} title="No submissions yet" description="Once you run a diagnosis, your submissions will appear here." />
+              <EmptyState icon={HistoryIcon} title={t.history.noSubmissions} description={t.history.noSubmissionsDescription} />
             )}
           </TabsContent>
 
@@ -150,7 +152,7 @@ export default function HistoryPage() {
             {errors.length ? (
               errors.map((e) => <ErrorCard key={e.id} error={e} />)
             ) : (
-              <EmptyState icon={AlertCircle} title="No errors logged" description="Great job! There are no flagged errors right now." />
+              <EmptyState icon={AlertCircle} title={t.history.noErrors} description={t.history.noErrorsDescription} />
             )}
           </TabsContent>
         </Tabs>

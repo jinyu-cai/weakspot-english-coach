@@ -3,11 +3,9 @@
 import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from "recharts"
 import type { SkillState } from "@/lib/types"
 import { masteryColor, sortByMasteryAsc } from "@/lib/skills"
+import { skillLabel as localizedSkillLabel } from "@/lib/practice"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
-
-const chartConfig = {
-  mastery: { label: "Mastery" },
-} satisfies ChartConfig
+import { useLanguage } from "@/components/language-provider"
 
 const ROW_HEIGHT = 42
 const CHART_PADDING = 84
@@ -65,8 +63,12 @@ function SkillTick({ x = 0, y = 0, payload }: SkillTickProps) {
 }
 
 export function SkillBarChart({ skills }: { skills: SkillState[] }) {
+  const { language, t } = useLanguage()
+  const chartConfig = {
+    mastery: { label: t.common.mastery },
+  } satisfies ChartConfig
   const data = sortByMasteryAsc(skills).map((s) => ({
-    skill: s.label,
+    skill: localizedSkillLabel(s.skillCode, language),
     mastery: s.mastery,
   }))
   const chartHeight = Math.max(MIN_CHART_HEIGHT, data.length * ROW_HEIGHT + CHART_PADDING)

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.api.deps import Identity, rate_limited, resolve_identity
 from app.config import settings
+from app.models.common import OutputLanguage
 from app.db.repositories import (
     get_chat_session,
     list_chat_messages,
@@ -18,7 +19,7 @@ from app.db.repositories import (
     save_chat_session,
     update_chat_session_summary,
 )
-from app.services.realtime_prompts import REALTIME_FUNCTION_TOOLS, REALTIME_SYSTEM_PROMPT
+from app.services.realtime_prompts import REALTIME_FUNCTION_TOOLS, REALTIME_SYSTEM_PROMPT, realtime_hint_instruction
 from app.services.realtime_sideband import (
     has_active_realtime_sideband,
     kick_realtime_session,
@@ -33,6 +34,7 @@ class RealtimeSessionRequest(BaseModel):
     userId: str
     topic: Optional[str] = None
     model: Optional[str] = None
+    outputLanguage: OutputLanguage = "en"
 
 
 class TranscriptMessage(BaseModel):
@@ -153,6 +155,7 @@ def create_realtime_session(
         "scenarioPrompt": None,
         "mode": "voice",
         "voiceModel": realtime_model,
+        "outputLanguage": req.outputLanguage,
         "maxDurationSeconds": identity.max_realtime_seconds,
         "expiresAt": expires_at,
         "realtimeStatus": "created",
@@ -175,7 +178,10 @@ def create_realtime_session(
     save_chat_session(session)
 
     topic_text = req.topic or "Free conversation — talk about anything"
-    instructions = REALTIME_SYSTEM_PROMPT.format(topic=topic_text)
+    instructions = REALTIME_SYSTEM_PROMPT.format(
+        topic=topic_text,
+        language_instruction=realtime_hint_instruction(req.outputLanguage),
+    )
 
     try:
         safety_identifier = hashlib.sha256(req.userId.encode("utf-8")).hexdigest()

@@ -6,6 +6,7 @@ import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { Spinner } from "@/components/ui/spinner"
 import type { DiagnosisMode } from "@/lib/types"
+import { useLanguage } from "@/components/language-provider"
 
 const MIN_DIAGNOSE_CHARACTERS = 20
 
@@ -24,28 +25,32 @@ export function DiagnosticInput({
   diagnosisMode: DiagnosisMode
   onDiagnosisModeChange: (mode: DiagnosisMode) => void
 }) {
+  const { t } = useLanguage()
+
   return (
     <Card>
       <CardContent className="pt-6">
         <label htmlFor="diagnose-input" className="sr-only">
-          Your English writing
+          {t.diagnose.inputLabel}
         </label>
         <Textarea
           id="diagnose-input"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="Write or paste a paragraph in English. The coach will diagnose your specific weaknesses..."
+          placeholder={t.diagnose.placeholder}
           rows={7}
           disabled={loading}
           className="resize-none text-base leading-relaxed"
         />
       </CardContent>
       <CardFooter className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <span className="text-xs text-muted-foreground">{value.trim().length} characters</span>
+        <span className="text-xs text-muted-foreground">
+          {value.trim().length} {t.diagnose.characters}
+        </span>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <div
             role="radiogroup"
-            aria-label="Diagnosis mode"
+            aria-label={t.diagnose.modeLabel}
             className="grid grid-cols-2 overflow-hidden rounded-lg border border-input bg-background p-1"
           >
             <button
@@ -58,7 +63,7 @@ export function DiagnosticInput({
               data-active={diagnosisMode === "fast"}
             >
               <Zap className="size-4" />
-              Quick
+              {t.diagnose.quick}
             </button>
             <button
               type="button"
@@ -70,12 +75,12 @@ export function DiagnosticInput({
               data-active={diagnosisMode === "deep"}
             >
               <Microscope className="size-4" />
-              Deep
+              {t.diagnose.deep}
             </button>
           </div>
           <Button onClick={onAnalyze} disabled={loading || value.trim().length < MIN_DIAGNOSE_CHARACTERS} size="lg">
             {loading ? <Spinner /> : <Sparkles data-icon="inline-start" />}
-            {loading ? "Analyzing..." : "Analyze My English"}
+            {loading ? t.diagnose.analyzing : t.diagnose.analyze}
           </Button>
         </div>
       </CardFooter>

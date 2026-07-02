@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { createRealtimeSession, saveVoiceTranscript } from "@/lib/api-client"
 import type { RealtimeVoiceModel, VoiceCompletion } from "@/lib/types"
+import { getCopy } from "@/lib/i18n"
+import { getOutputLanguage } from "@/lib/language"
 
 export type ConnectionStatus = "idle" | "connecting" | "connected" | "error"
 
@@ -168,7 +170,7 @@ export function useRealtimeChat(userId: string) {
             setStatus("connected")
           } else if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
             setStatus("error")
-            setError("Connection lost")
+            setError(getCopy(getOutputLanguage()).chat.voicePanel.connectionLost)
           }
         }
 
@@ -176,7 +178,7 @@ export function useRealtimeChat(userId: string) {
       } catch (err) {
         console.error("[realtime] connect error:", err)
         setStatus("error")
-        setError(err instanceof Error ? err.message : "Failed to connect")
+        setError(err instanceof Error ? err.message : getCopy(getOutputLanguage()).chat.voicePanel.failedConnect)
         cleanup()
       }
     },

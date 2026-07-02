@@ -1,4 +1,8 @@
 from enum import Enum
+from typing import Literal
+
+
+OutputLanguage = Literal["en", "zh-CN"]
 
 
 class CEFRLevel(str, Enum):

@@ -7,6 +7,7 @@ import { AppShell } from "@/components/app-shell"
 import { DiagnoseProvider } from "@/components/diagnose-provider"
 import { Toaster } from "@/components/ui/sonner"
 import { LoginGate } from "@/components/login-gate"
+import { LanguageProvider } from "@/components/language-provider"
 
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"] })
 const geistMono = Geist_Mono({
@@ -50,14 +51,16 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "try{var p=localStorage.getItem('weakspot-palette');if(p&&p!=='cream'){document.documentElement.setAttribute('data-palette',p)}}catch(e){}",
+              "try{var p=localStorage.getItem('weakspot-palette');if(p&&p!=='cream'){document.documentElement.setAttribute('data-palette',p)}var l=localStorage.getItem('weakspot-language');if(l==='zh-CN'){document.documentElement.lang=l}}catch(e){}",
           }}
         />
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-          <AppShell>
-            <DiagnoseProvider>{children}</DiagnoseProvider>
-          </AppShell>
-          <LoginGate />
+          <LanguageProvider>
+            <AppShell>
+              <DiagnoseProvider>{children}</DiagnoseProvider>
+            </AppShell>
+            <LoginGate />
+          </LanguageProvider>
           <Toaster richColors position="top-center" />
         </ThemeProvider>
         {process.env.NODE_ENV === "production" && <Analytics />}

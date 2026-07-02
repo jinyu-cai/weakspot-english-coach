@@ -164,6 +164,7 @@ def generate(
             recent_error_examples=examples,
             llm_provider=llm_provider,
             practice_type=req.practiceType.value if req.practiceType else None,
+            output_language=req.outputLanguage,
         )
 
         exercise = {
@@ -175,6 +176,7 @@ def generate(
             "question": ai_ex.question,
             "answer": ai_ex.answer,
             "explanationZh": ai_ex.explanationZh,
+            "outputLanguage": req.outputLanguage,
             "createdAt": now,
         }
         save_exercise(exercise)
@@ -213,6 +215,7 @@ def submit(
             user_answer=req.userAnswer,
             target_skill_code=exercise["targetSkillCode"],
             llm_provider=llm_provider,
+            output_language=req.outputLanguage,
         )
 
         outcome = _record_practice_outcome(
@@ -271,6 +274,7 @@ def grade_adhoc(
             user_answer=req.userAnswer,
             target_skill_code=req.targetSkillCode,
             llm_provider=llm_provider,
+            output_language=req.outputLanguage,
         )
 
         outcome = _record_practice_outcome(

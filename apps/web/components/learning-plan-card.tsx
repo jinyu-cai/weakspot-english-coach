@@ -5,14 +5,16 @@ import Link from "next/link"
 import { ChevronDown, ChevronRight, Clock, Dumbbell, Eye, EyeOff } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { LearningPlanDay, PlanExercise } from "@/lib/types"
-import { PRACTICE_TYPE_META, SKILL_LABELS } from "@/lib/practice"
+import { practiceTypeLabel, skillLabel as localizedSkillLabel } from "@/lib/practice"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useLanguage } from "@/components/language-provider"
 
 function ExerciseItem({ exercise, index }: { exercise: PlanExercise; index: number }) {
   const [showAnswer, setShowAnswer] = useState(false)
+  const { t } = useLanguage()
 
   return (
     <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
@@ -28,7 +30,7 @@ function ExerciseItem({ exercise, index }: { exercise: PlanExercise; index: numb
           onClick={() => setShowAnswer(!showAnswer)}
         >
           {showAnswer ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
-          {showAnswer ? "Hide answer" : "Show answer"}
+          {showAnswer ? t.plan.hideAnswer : t.plan.showAnswer}
         </Button>
       </div>
       {showAnswer && (
@@ -51,6 +53,7 @@ export function LearningPlanCard({
   const completedCount = day.tasks.filter((t) => t.completed).length
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
   const totalMinutes = day.tasks.reduce((sum, t) => sum + t.estimatedMinutes, 0)
+  const { language, t } = useLanguage()
 
   function toggleExpand(taskId: string) {
     setExpandedTasks((prev) => {
@@ -75,22 +78,22 @@ export function LearningPlanCard({
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="text-base">
-              Day {day.day} · {day.goalZh}
+              {t.common.day} {day.day} · {day.goalZh}
             </CardTitle>
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-1 text-xs text-muted-foreground">
                 <Clock className="size-3" />
-                {totalMinutes} min
+                {totalMinutes} {t.common.minutesShort}
               </span>
               <span className="text-xs text-muted-foreground">
-                {completedCount}/{day.tasks.length} done
+                {completedCount}/{day.tasks.length} {t.common.done}
               </span>
             </div>
           </div>
           <div className="flex flex-wrap gap-1.5 pt-1">
             {day.targetSkillCodes.map((code) => (
               <Badge key={code} variant="secondary">
-                {SKILL_LABELS[code] ?? code}
+                {localizedSkillLabel(code, language)}
               </Badge>
             ))}
           </div>
@@ -114,13 +117,13 @@ export function LearningPlanCard({
                     </span>
                     <span className="text-xs leading-relaxed text-muted-foreground">{task.descriptionZh}</span>
                     <div className="flex items-center gap-2 pt-1">
-                      <Badge variant="outline">{PRACTICE_TYPE_META[task.practiceType].label}</Badge>
+                      <Badge variant="outline">{practiceTypeLabel(task.practiceType, language)}</Badge>
                       <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Clock className="size-3" />~{task.estimatedMinutes} min
+                        <Clock className="size-3" />~{task.estimatedMinutes} {t.common.minutesShort}
                       </span>
                       {hasExercises && (
                         <span className="text-xs text-muted-foreground">
-                          · {task.exercises.length} exercises
+                          · {task.exercises.length} {t.common.exercises}
                         </span>
                       )}
                       {hasExercises && (
@@ -133,7 +136,7 @@ export function LearningPlanCard({
                           onClick={(e) => e.stopPropagation()}
                         >
                           <Dumbbell className="size-3" />
-                          Practice
+                          {t.common.practice}
                         </Button>
                       )}
                     </div>

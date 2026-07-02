@@ -1,8 +1,10 @@
 from typing import Literal
 
 from app.config import settings
+from app.models.common import OutputLanguage
 from app.models.diagnostic import DiagnosticAIResult
 from app.services.ai_client import LLMProviderConfig, parse_with_model
+from app.services.output_language import language_instruction
 
 DiagnosisMode = Literal["fast", "deep"]
 DEEPSEEK_MAX_OUTPUT_TOKENS = 384_000
@@ -13,7 +15,7 @@ You are an expert English tutor for Chinese native speakers.
 Analyze the student's English writing and return a structured diagnostic report.
 
 Important requirements:
-1. Give all feedback (explanations, summary, strengths, weaknesses) in clear, simple English.
+1. Follow the language requirement provided below for all learner-facing feedback.
 2. Do not be overly harsh; be encouraging but honest.
 3. Find every learner error you can identify. Include recurring patterns and
    isolated issues; do not cap the number of errors.
@@ -81,6 +83,7 @@ def select_diagnose_model(diagnosis_mode: DiagnosisMode, llm_provider: LLMProvid
 def diagnose_english_text(
     input_text: str,
     diagnosis_mode: DiagnosisMode = "deep",
+    output_language: OutputLanguage = "en",
     llm_provider: LLMProviderConfig | None = None,
     max_output_tokens: int | None = DEEPSEEK_MAX_OUTPUT_TOKENS,
     trace_id: str | None = None,
@@ -88,10 +91,10 @@ def diagnose_english_text(
     user_prompt = f'Student text:\n"""\n{input_text}\n"""'
     selected_model = select_diagnose_model(diagnosis_mode, llm_provider=llm_provider)
     if diagnosis_mode == "fast":
-        system_prompt = f"{SYSTEM_PROMPT}\n\n{FAST_PROMPT_APPENDIX}"
+        system_prompt = f"{SYSTEM_PROMPT}\n\n{language_instruction(output_language)}\n\n{FAST_PROMPT_APPENDIX}"
         max_tokens = max_output_tokens
     else:
-        system_prompt = f"{SYSTEM_PROMPT}\n\n{DEEP_PROMPT_APPENDIX}"
+        system_prompt = f"{SYSTEM_PROMPT}\n\n{language_instruction(output_language)}\n\n{DEEP_PROMPT_APPENDIX}"
         max_tokens = max_output_tokens
 
     return parse_with_model(

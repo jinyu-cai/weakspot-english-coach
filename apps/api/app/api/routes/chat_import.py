@@ -89,6 +89,7 @@ def analyze_chat_import(
         analysis = analyze_imported_chat(
             req.conversations,
             analysis_mode=req.analysisMode,
+            output_language=req.outputLanguage,
             llm_provider=llm_provider,
             max_tokens=None if identity.has_unlimited_llm_quota else identity.max_output_tokens,
             transcript_char_budget=None if identity.has_unlimited_llm_quota else MAX_TRANSCRIPT_CHARS,
@@ -108,6 +109,7 @@ def analyze_chat_import(
             "cefrEstimate": analysis.cefrEstimate.value,
             "summaryZh": analysis.summaryZh,
             "sourceName": req.sourceName,
+            "outputLanguage": req.outputLanguage,
             "conversationCount": len(req.conversations),
             "messageCount": message_count,
             "createdAt": now,

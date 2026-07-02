@@ -4,9 +4,11 @@ import { useEffect, useState } from "react"
 import { Code2, LogOut, Mail } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getMe, startLogin, logout, type Me } from "@/lib/auth"
+import { useLanguage } from "@/components/language-provider"
 
 export function AuthButton() {
   const [me, setMe] = useState<Me | null>(null)
+  const { t } = useLanguage()
 
   useEffect(() => {
     getMe().then(setMe)
@@ -35,12 +37,13 @@ export function AuthButton() {
       ) : null}
       <span className="hidden max-w-[8rem] truncate text-sm font-medium sm:inline">
         {me.name || me.login}
-        {me.isOwner ? " · owner" : me.isMember ? " · member" : ""}
+        {me.isOwner ? ` · ${t.settings.owner}` : me.isMember ? ` · ${t.settings.member}` : ""}
       </span>
       <Button
         variant="ghost"
         size="icon"
-        aria-label="Sign out"
+        aria-label={t.settings.signOut}
+        title={t.settings.signOut}
         onClick={async () => {
           await logout()
           location.reload()

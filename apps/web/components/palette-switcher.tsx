@@ -11,16 +11,18 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { PALETTES, getPalette, setPalette, type PaletteId } from "@/lib/palette"
 import { cn } from "@/lib/utils"
+import { useLanguage } from "@/components/language-provider"
 
 export function PaletteSwitcher() {
   const [active, setActive] = useState<PaletteId>("cream")
+  const { t } = useLanguage()
   useEffect(() => setActive(getPalette()), [])
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button variant="outline" size="icon" aria-label="Color theme">
+          <Button variant="outline" size="icon" aria-label={t.settings.colorTheme} title={t.settings.colorTheme}>
             <Palette />
           </Button>
         }

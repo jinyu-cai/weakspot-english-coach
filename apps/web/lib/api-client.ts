@@ -59,12 +59,17 @@ import {
   mockSubmissions,
 } from "./mock-data"
 import { getLLMProviderHeaders } from "./llm-settings"
+import { getOutputLanguage } from "./language"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
 const USE_MOCK = !API_BASE_URL
 const OWNER_BYPASS_TOKEN = process.env.NEXT_PUBLIC_OWNER_BYPASS_TOKEN
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+const withOutputLanguage = <T extends Record<string, unknown>>(body: T) => ({
+  ...body,
+  outputLanguage: getOutputLanguage(),
+})
 
 async function getErrorMessage(res: Response, path: string) {
   try {
@@ -148,7 +153,7 @@ export async function diagnose(
   }
   return apiFetch<DiagnoseResponse>("/diagnose", {
     method: "POST",
-    body: JSON.stringify({ userId, text, diagnosisMode }),
+    body: JSON.stringify(withOutputLanguage({ userId, text, diagnosisMode })),
   })
 }
 
@@ -238,7 +243,7 @@ export async function analyzeChatImport(
   }
   return apiFetch<ChatImportAnalyzeResponse>("/chat-import/analyze", {
     method: "POST",
-    body: JSON.stringify({ userId, sourceName, analysisMode, conversations }),
+    body: JSON.stringify(withOutputLanguage({ userId, sourceName, analysisMode, conversations })),
   })
 }
 
@@ -273,7 +278,7 @@ export async function generatePlan(
   }
   const { plan } = await apiFetch<{ plan: LearningPlan }>("/plan", {
     method: "POST",
-    body: JSON.stringify({ userId, errorScope }),
+    body: JSON.stringify(withOutputLanguage({ userId, errorScope })),
   })
   return plan
 }
@@ -291,7 +296,7 @@ export async function generatePractice(
   }
   const { exercise } = await apiFetch<PracticeGenerateResponse>("/practice/generate", {
     method: "POST",
-    body: JSON.stringify({ userId, targetSkillCode, practiceType }),
+    body: JSON.stringify(withOutputLanguage({ userId, targetSkillCode, practiceType })),
   })
   return exercise
 }
@@ -332,7 +337,7 @@ export async function gradePracticeAdhoc(
   }
   const { grade } = await apiFetch<{ grade: PracticeGrade }>("/practice/grade", {
     method: "POST",
-    body: JSON.stringify({ userId, ...params }),
+    body: JSON.stringify(withOutputLanguage({ userId, ...params })),
   })
   return grade
 }
@@ -349,7 +354,7 @@ export async function submitPractice(
   }
   const { grade } = await apiFetch<PracticeSubmitResponse>("/practice/submit", {
     method: "POST",
-    body: JSON.stringify({ userId, exerciseId, userAnswer }),
+    body: JSON.stringify(withOutputLanguage({ userId, exerciseId, userAnswer })),
   })
   return grade
 }
@@ -487,13 +492,13 @@ export async function sendChatMessage(
           {
             original: "I go there yesterday",
             corrected: "I went there yesterday",
-            explanationZh: "描述过去的事情要用过去式，go 的过去式是 went。",
+            explanationZh: "Past events need the simple past, so 'go' becomes 'went'.",
           },
         ],
         betterExpression: {
           original: "The food was very good",
           natural: "The food was amazing / The food was absolutely delicious",
-          explanationZh: "用更具体生动的形容词比 very good 更地道自然。",
+          explanationZh: "A more specific adjective sounds more natural than 'very good'.",
         },
         createdAt: now,
       },
@@ -514,7 +519,7 @@ export async function analyzeSession(
     await delay(2000)
     return {
       analysis: {
-        summaryZh: "你在这次对话中表现积极，主动使用英语交流。主要需要注意动词时态的使用和更自然的表达方式。",
+        summaryZh: "You participated actively and used English throughout the conversation. The main focus areas are verb tense and more natural phrasing.",
         corrections: [
           {
             code: "grammar.verb_tense",
@@ -522,9 +527,9 @@ export async function analyzeSession(
             severity: "high",
             original: "I go there yesterday",
             corrected: "I went there yesterday",
-            explanationZh: "描述过去的事情要用过去式，go 的过去式是 went。",
-            microLessonZh: "看到 yesterday、last week 等过去时间词时，主要动词要变成过去式。",
-            practiceGoal: "用过去式复述 5 件昨天做过的事情。",
+            explanationZh: "Past events need the simple past, so 'go' becomes 'went'.",
+            microLessonZh: "When you see past-time words like yesterday or last week, the main verb usually needs the past tense.",
+            practiceGoal: "Retell five things you did yesterday using the simple past.",
           },
           {
             code: "grammar.verb_tense",
@@ -532,17 +537,17 @@ export async function analyzeSession(
             severity: "medium",
             original: "The food is very good",
             corrected: "The food was very good",
-            explanationZh: "描述过去的体验用过去式 was，而不是现在式 is。",
-            microLessonZh: "过去经历中的 be 动词通常用 was/were。",
-            practiceGoal: "用 was/were 描述 5 个过去的体验。",
+            explanationZh: "Past experiences need the past form 'was', not the present form 'is'.",
+            microLessonZh: "When describing past experiences, use was/were for the verb be.",
+            practiceGoal: "Describe five past experiences using was/were.",
           },
         ],
         naturalExpressions: [
           {
             original: "The food was very good",
             natural: "The food was absolutely delicious",
-            explanationZh: "用更具体生动的形容词比 very good 更地道自然。",
-            context: "描述食物、体验等正面感受时使用",
+            explanationZh: "A more specific adjective sounds more natural than 'very good'.",
+            context: "Use this when describing food, experiences, or other positive impressions.",
             examples: [
               "The pasta was absolutely delicious — I'd definitely order it again.",
               "Have you tried their coffee? It's absolutely delicious.",
@@ -555,12 +560,12 @@ export async function analyzeSession(
             category: "Verb tense",
             severity: "high",
             evidenceQuote: "I go there yesterday",
-            explanationZh: "多次在描述过去事件时使用现在时态，需要加强过去时态的练习。",
-            practiceGoal: "用过去式复述5件昨天做的事情。",
+            explanationZh: "You repeatedly used present-tense verbs for past events, so past-tense practice should be a priority.",
+            practiceGoal: "Retell five things you did yesterday using the past tense.",
           },
         ],
-        strengthsZh: ["积极主动地使用英语交流", "词汇量基本满足日常对话需求"],
-        recommendedNextActionsZh: ["练习过去时态的使用", "积累更多地道表达替换 very + adj 的模式"],
+        strengthsZh: ["You actively used English to communicate", "Your vocabulary is enough for basic daily conversation"],
+        recommendedNextActionsZh: ["Practice past-tense forms", "Collect more natural alternatives to the very + adjective pattern"],
       },
       savedNotes: [],
       savedErrors: [],
@@ -570,6 +575,7 @@ export async function analyzeSession(
   }
   return apiFetch<SessionAnalysisResponse>(`/chat/sessions/${sessionId}/analyze`, {
     method: "POST",
+    body: JSON.stringify(withOutputLanguage({})),
   })
 }
 
@@ -582,7 +588,7 @@ export async function createRealtimeSession(
 ): Promise<RealtimeSessionResponse> {
   return apiFetch<RealtimeSessionResponse>("/chat/realtime/session", {
     method: "POST",
-    body: JSON.stringify({ userId, topic, model }),
+    body: JSON.stringify(withOutputLanguage({ userId, topic, model })),
   })
 }
 

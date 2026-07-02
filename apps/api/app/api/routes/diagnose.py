@@ -44,6 +44,10 @@ def _json_default(obj):
     return str(obj)
 
 
+def _language_text_hash(text: str, output_language: str) -> str:
+    return f"{output_language}:{normalized_text_hash(text)}"
+
+
 @router.post("/diagnose")
 async def diagnose(
     req: DiagnoseRequest,
@@ -78,7 +82,7 @@ async def diagnose(
     # --- Fast pre-checks (profile + dedup) run in threadpool ---
     try:
         pre = await loop.run_in_executor(
-            None, lambda: _pre_check(req.userId, req.text, request_id)
+            None, lambda: _pre_check(req.userId, req.text, req.outputLanguage, request_id)
         )
     except Exception as e:
         logger.exception("diagnose[%s] pre_check_error", request_id)
@@ -142,10 +146,10 @@ async def diagnose(
 # Helpers — run inside the threadpool via run_in_executor
 # ---------------------------------------------------------------------------
 
-def _pre_check(user_id: str, text: str, request_id: str) -> dict:
+def _pre_check(user_id: str, text: str, output_language: str, request_id: str) -> dict:
     """Load profile, check for duplicate submission."""
     profile = get_or_create_profile(user_id)
-    text_hash = normalized_text_hash(text)
+    text_hash = _language_text_hash(text, output_language)
     existing_hash = get_submission_hash(user_id, text_hash)
 
     if existing_hash:
@@ -199,6 +203,7 @@ def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mod
     diagnostic = diagnose_english_text(
         req.text,
         diagnosis_mode=diagnosis_mode,
+        output_language=req.outputLanguage,
         llm_provider=llm_provider,
         max_output_tokens=None if identity.has_unlimited_llm_quota else identity.max_output_tokens,
         trace_id=request_id,
@@ -228,6 +233,7 @@ def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mod
         "weaknessesZh": diagnostic.weaknessesZh,
         "recommendedNextActionsZh": diagnostic.recommendedNextActionsZh,
         "textHash": text_hash,
+        "outputLanguage": req.outputLanguage,
         "createdAt": now,
     }
     save_submission(submission)

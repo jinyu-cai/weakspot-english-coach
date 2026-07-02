@@ -1,21 +1,37 @@
+"use client"
+
+import { useState } from "react"
 import { CheckCircle2, AlertTriangle, FileText, ListChecks, CircleAlert } from "lucide-react"
+import { cn } from "@/lib/utils"
 import type { DiagnosticResult } from "@/lib/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { CefrBadge } from "@/components/cefr-badge"
 import { ScoreRing } from "@/components/score-ring"
 import { ErrorCard } from "@/components/error-card"
+import { DiffView } from "@/components/diff-view"
+import { useLanguage } from "@/components/language-provider"
 
-export function DiagnosticReport({ result }: { result: DiagnosticResult }) {
+export function DiagnosticReport({
+  result,
+  originalText,
+}: {
+  result: DiagnosticResult
+  originalText: string
+}) {
+  const [showDiff, setShowDiff] = useState(true)
+  const hasDiff = Boolean(originalText) && originalText !== result.correctedText
+  const { t } = useLanguage()
+
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
       <Card>
         <CardContent className="flex flex-col gap-6 pt-6 sm:flex-row sm:items-center">
-          <ScoreRing score={result.overallScore} />
+          <ScoreRing score={result.overallScore} label={t.common.score} />
           <div className="flex flex-1 flex-col gap-3">
             <div className="flex flex-wrap items-center gap-3">
               <CefrBadge level={result.cefrEstimate} size="lg" />
-              <span className="text-sm text-muted-foreground">Estimated level</span>
+              <span className="text-sm text-muted-foreground">{t.diagnose.report.estimatedLevel}</span>
             </div>
             <p className="text-pretty text-sm leading-relaxed text-foreground">{result.summaryZh}</p>
           </div>
@@ -28,7 +44,7 @@ export function DiagnosticReport({ result }: { result: DiagnosticResult }) {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <CheckCircle2 className="size-5 text-success" />
-              Strengths
+              {t.diagnose.report.strengths}
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
@@ -45,7 +61,7 @@ export function DiagnosticReport({ result }: { result: DiagnosticResult }) {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <AlertTriangle className="size-5 text-warning" />
-              Weaknesses
+              {t.diagnose.report.weaknesses}
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
@@ -61,24 +77,54 @@ export function DiagnosticReport({ result }: { result: DiagnosticResult }) {
 
       {/* Corrected text */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <FileText className="size-5 text-primary" />
-            Corrected text
+            {t.diagnose.report.correctedText}
           </CardTitle>
+          {hasDiff ? (
+            <div className="flex rounded-lg border border-border bg-muted/40 p-0.5 text-xs font-medium">
+              <button
+                type="button"
+                onClick={() => setShowDiff(true)}
+                className={cn(
+                  "rounded-md px-2.5 py-1 transition-colors",
+                  showDiff ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {t.diagnose.report.diff}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowDiff(false)}
+                className={cn(
+                  "rounded-md px-2.5 py-1 transition-colors",
+                  !showDiff ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {t.diagnose.report.polished}
+              </button>
+            </div>
+          ) : null}
         </CardHeader>
         <CardContent>
-          <p className="rounded-xl bg-muted/50 p-4 text-sm leading-relaxed text-foreground">
-            {result.correctedText}
-          </p>
+          {hasDiff && showDiff ? (
+            <DiffView original={originalText} corrected={result.correctedText} />
+          ) : (
+            <p className="rounded-xl bg-muted/50 p-4 text-sm leading-relaxed text-foreground">
+              {result.correctedText}
+            </p>
+          )}
         </CardContent>
       </Card>
 
       {/* Error cards */}
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <h2 className="font-heading text-lg font-semibold">Error breakdown</h2>
-          <span className="text-sm text-muted-foreground">{result.errors.length} issues found</span>
+          <h2 className="font-heading text-lg font-semibold">{t.diagnose.report.errorBreakdown}</h2>
+          <span className="text-sm text-muted-foreground">
+            {result.errors.length} {t.diagnose.report.issuesFound}
+          </span>
         </div>
         <div className="grid gap-4">
           {result.errors.map((error) => (
@@ -92,7 +138,7 @@ export function DiagnosticReport({ result }: { result: DiagnosticResult }) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <ListChecks className="size-5 text-primary" />
-            Recommended next actions
+            {t.diagnose.report.recommendedNextActions}
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">

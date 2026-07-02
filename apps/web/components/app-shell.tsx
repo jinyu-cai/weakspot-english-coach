@@ -9,6 +9,7 @@ import { LLMProviderSettings } from "@/components/llm-provider-settings"
 import { NavSidebar } from "@/components/nav-sidebar"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { PaletteSwitcher } from "@/components/palette-switcher"
+import { LanguageSwitcher } from "@/components/language-switcher"
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
@@ -41,6 +42,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            <LanguageSwitcher />
             <LLMProviderSettings />
             <AuthButton />
             <PaletteSwitcher />

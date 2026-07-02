@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils"
 import type { EnglishError, Severity } from "@/lib/types"
 import { Card, CardContent } from "@/components/ui/card"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { useLanguage } from "@/components/language-provider"
 
 const SEVERITY_STYLES: Record<Severity, { chip: string; label: string }> = {
   low: { chip: "border-success/30 bg-success/10 text-success", label: "Minor" },
@@ -15,10 +16,12 @@ const SEVERITY_STYLES: Record<Severity, { chip: string; label: string }> = {
 
 export function ErrorCard({ error }: { error: EnglishError }) {
   const [open, setOpen] = useState(false)
+  const { t } = useLanguage()
   const severity = SEVERITY_STYLES[error.severity] ?? {
     chip: "border-border bg-muted text-muted-foreground",
     label: "Unknown",
   }
+  const severityLabel = t.diagnose.report.severity[error.severity] ?? t.diagnose.report.severity.unknown
 
   return (
     <Card className="overflow-hidden">
@@ -28,7 +31,7 @@ export function ErrorCard({ error }: { error: EnglishError }) {
             {error.category}
           </span>
           <span className={cn("rounded-lg border px-2 py-0.5 text-xs font-medium", severity.chip)}>
-            {severity.label}
+            {severityLabel}
           </span>
         </div>
 
@@ -48,7 +51,7 @@ export function ErrorCard({ error }: { error: EnglishError }) {
           >
             <span className="flex items-center gap-2 text-foreground">
               <BookOpen className="size-4 text-primary" />
-              Micro-lesson
+              {t.diagnose.report.microLesson}
             </span>
             <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", open && "rotate-180")} />
           </CollapsibleTrigger>
@@ -62,7 +65,7 @@ export function ErrorCard({ error }: { error: EnglishError }) {
         <div className="flex items-center gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
           <Target className="size-3.5 text-primary" />
           <span>
-            Practice goal: <span className="text-foreground">{error.practiceGoal}</span>
+            {t.diagnose.report.practiceGoal} <span className="text-foreground">{error.practiceGoal}</span>
           </span>
         </div>
       </CardContent>

@@ -2,6 +2,7 @@ export type CEFRLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2"
 export type Severity = "low" | "medium" | "high"
 export type PracticeType = "fix_sentence" | "fill_blank" | "rewrite_sentence"
 export type DiagnosisMode = "fast" | "deep"
+export type OutputLanguage = "en" | "zh-CN"
 export type ChatImportEvidenceType = "user_error" | "expression_gap" | "assistant_correction" | "assistant_advice"
 export type PlanErrorScope = "weekly" | "all"
 export type TextChatModel = string

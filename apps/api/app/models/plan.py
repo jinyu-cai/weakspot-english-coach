@@ -2,7 +2,7 @@ from typing import List, Literal
 
 from pydantic import BaseModel, Field
 
-from app.models.common import PracticeType
+from app.models.common import OutputLanguage, PracticeType
 
 ErrorScope = Literal["weekly", "all"]
 
@@ -37,3 +37,4 @@ class LearningPlanAIResult(BaseModel):
 class GeneratePlanRequest(BaseModel):
     userId: str
     errorScope: ErrorScope = "weekly"
+    outputLanguage: OutputLanguage = "en"

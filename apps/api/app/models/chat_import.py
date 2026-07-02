@@ -2,7 +2,7 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from app.models.common import CEFRLevel, Severity
+from app.models.common import CEFRLevel, OutputLanguage, Severity
 from app.models.diagnostic import LearningNoteAI
 
 
@@ -26,6 +26,7 @@ class ChatImportAnalyzeRequest(BaseModel):
     userId: str
     sourceName: Optional[str] = Field(default=None, max_length=180)
     analysisMode: Literal["fast", "deep"] = "fast"
+    outputLanguage: OutputLanguage = "en"
     conversations: List[ImportedChatConversation] = Field(min_length=1)
 
 

@@ -1,4 +1,6 @@
 import type { PracticeType } from "./types"
+import type { OutputLanguage } from "./language"
+import { getCopy } from "./i18n"
 
 export const PRACTICE_TYPE_META: Record<PracticeType, { label: string; zhLabel: string }> = {
   fix_sentence: { label: "Fix sentence", zhLabel: "Fix sentence" },
@@ -21,4 +23,13 @@ export const SKILL_LABELS: Record<string, string> = {
   "discourse.coherence": "Coherence",
   "style.register": "Register & tone",
   "clarity.expression": "Clarity of expression",
+}
+
+export function practiceTypeLabel(type: PracticeType, language: OutputLanguage) {
+  return getCopy(language).labels.practiceTypes[type] ?? PRACTICE_TYPE_META[type].label
+}
+
+export function skillLabel(code: string, language: OutputLanguage) {
+  const labels = getCopy(language).labels.skills as Record<string, string>
+  return labels[code] ?? SKILL_LABELS[code] ?? code
 }

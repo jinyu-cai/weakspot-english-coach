@@ -6,7 +6,7 @@ import { toast } from "sonner"
 import { Dumbbell, RotateCcw, Target, Trophy } from "lucide-react"
 import { generatePractice } from "@/lib/api-client"
 import { DEMO_USER_ID } from "@/lib/mock-data"
-import { SKILL_LABELS } from "@/lib/practice"
+import { SKILL_LABELS, skillLabel as localizedSkillLabel } from "@/lib/practice"
 import type { PracticeExercise, PracticeGrade } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -16,6 +16,7 @@ import { Progress } from "@/components/ui/progress"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { PracticeCard } from "@/components/practice-card"
 import { ScoreRing } from "@/components/score-ring"
+import { useLanguage } from "@/components/language-provider"
 
 const SESSION_LENGTH = 4
 
@@ -31,6 +32,7 @@ function PracticeFlow() {
   const [exercises, setExercises] = useState<PracticeExercise[]>([])
   const [current, setCurrent] = useState(0)
   const [grades, setGrades] = useState<PracticeGrade[]>([])
+  const { language, t } = useLanguage()
 
   const skillOptions = ["all", ...Object.keys(SKILL_LABELS)]
 
@@ -46,7 +48,7 @@ function PracticeFlow() {
       setGrades([])
       setPhase("active")
     } catch {
-      toast.error("Couldn't load exercises. Please try again shortly.")
+      toast.error(t.practice.loadFailed)
     } finally {
       setLoading(false)
     }
@@ -79,7 +81,7 @@ function PracticeFlow() {
           <div className="flex items-center justify-between text-sm text-muted-foreground">
             <span className="flex items-center gap-2">
               <Target className="size-4 text-primary" />
-              {skill === "all" ? "Mixed practice" : SKILL_LABELS[skill]}
+              {skill === "all" ? t.practice.mixed : localizedSkillLabel(skill, language)}
             </span>
             <span className="tabular-nums">
               {current + 1} / {exercises.length}
@@ -111,28 +113,28 @@ function PracticeFlow() {
             <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10">
               <Trophy className="size-7 text-primary" />
             </div>
-            <CardTitle className="font-heading text-2xl">Session complete</CardTitle>
-            <CardDescription>You completed {exercises.length} targeted exercises.</CardDescription>
+            <CardTitle className="font-heading text-2xl">{t.practice.complete}</CardTitle>
+            <CardDescription>{t.practice.completeDescription.replace("4", String(exercises.length))}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col items-center gap-6">
-            <ScoreRing score={avgScore} label="Avg. score" />
+            <ScoreRing score={avgScore} label={t.common.avgScore} />
             <div className="grid w-full grid-cols-2 gap-3">
               <div className="flex flex-col items-center gap-1 rounded-xl border border-border p-4">
                 <span className="text-2xl font-bold tabular-nums text-success">{correct}</span>
-                <span className="text-xs text-muted-foreground">Correct</span>
+                <span className="text-xs text-muted-foreground">{t.common.correct}</span>
               </div>
               <div className="flex flex-col items-center gap-1 rounded-xl border border-border p-4">
                 <span className="text-2xl font-bold tabular-nums">{exercises.length - correct}</span>
-                <span className="text-xs text-muted-foreground">To review</span>
+                <span className="text-xs text-muted-foreground">{t.practice.toReview}</span>
               </div>
             </div>
             <div className="flex w-full flex-col gap-2 sm:flex-row">
               <Button className="flex-1" onClick={startSession} disabled={loading}>
                 {loading ? <Spinner data-icon="inline-start" /> : <RotateCcw data-icon="inline-start" />}
-                Practice again
+                {t.practice.again}
               </Button>
               <Button variant="outline" className="flex-1" onClick={reset}>
-                Change skill
+                {t.practice.changeSkill}
               </Button>
             </div>
           </CardContent>
@@ -145,17 +147,17 @@ function PracticeFlow() {
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-8">
       <header className="flex flex-col gap-2">
-        <h1 className="font-heading text-3xl font-bold tracking-tight">Practice</h1>
-        <p className="text-muted-foreground">Pick a target skill and start {SESSION_LENGTH} targeted exercises.</p>
+        <h1 className="font-heading text-3xl font-bold tracking-tight">{t.practice.title}</h1>
+        <p className="text-muted-foreground">{t.practice.description.replace("4", String(SESSION_LENGTH))}</p>
       </header>
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Dumbbell className="size-5 text-primary" />
-            Choose a skill to practice
+            {t.practice.choose}
           </CardTitle>
-          <CardDescription>We generate fix-it, fill-in-the-blank, and rewrite tasks based on your weak spots.</CardDescription>
+          <CardDescription>{t.practice.chooseDescription}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
           <ToggleGroup
@@ -165,15 +167,15 @@ function PracticeFlow() {
           >
             {skillOptions.map((code) => (
               <ToggleGroupItem key={code} value={code} className="rounded-full">
-                {code === "all" ? "Mixed practice" : SKILL_LABELS[code]}
+                {code === "all" ? t.practice.mixed : localizedSkillLabel(code, language)}
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
 
           {skill !== "all" ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Badge variant="secondary">Selected</Badge>
-              <span>{SKILL_LABELS[skill]}</span>
+              <Badge variant="secondary">{t.common.selected}</Badge>
+              <span>{localizedSkillLabel(skill, language)}</span>
             </div>
           ) : null}
 
@@ -181,12 +183,12 @@ function PracticeFlow() {
             {loading ? (
               <>
                 <Spinner data-icon="inline-start" />
-                Generating exercises
+                {t.practice.generating}
               </>
             ) : (
               <>
                 <Target data-icon="inline-start" />
-                Start practice
+                {t.practice.start}
               </>
             )}
           </Button>

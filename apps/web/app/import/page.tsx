@@ -22,13 +22,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
-
-const evidenceLabels: Record<ChatImportEvidenceType, string> = {
-  user_error: "User error",
-  expression_gap: "Expression gap",
-  assistant_correction: "AI correction",
-  assistant_advice: "AI advice",
-}
+import { useLanguage } from "@/components/language-provider"
 
 const severityVariant: Record<Severity, "secondary" | "destructive" | "outline"> = {
   low: "outline",
@@ -45,6 +39,7 @@ export default function ImportPage() {
   const [pastedText, setPastedText] = useState("")
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ChatImportAnalyzeResponse | null>(null)
+  const { t } = useLanguage()
 
   const selectedConversations = useMemo(
     () => selectImportConversations(allConversations, selectedCount),
@@ -67,12 +62,12 @@ export default function ImportPage() {
       setSourceName(file.name)
       setAllConversations(conversations)
       setResult(null)
-      toast.success("Import complete", {
-        description: `Found ${conversations.length} analyzable conversations.`,
+      toast.success(t.import.importComplete, {
+        description: `${conversations.length} ${t.import.conversations.toLowerCase()}`,
       })
     } catch (error) {
-      toast.error("Import failed", {
-        description: error instanceof Error ? error.message : "Couldn't read this file.",
+      toast.error(t.import.importFailed, {
+        description: error instanceof Error ? error.message : t.import.readFailed,
       })
     }
   }
@@ -82,12 +77,12 @@ export default function ImportPage() {
     setSourceName("pasted-transcript")
     setAllConversations(conversations)
     setResult(null)
-    toast.success("Text loaded")
+    toast.success(t.import.textLoaded)
   }
 
   async function handleAnalyze() {
     if (!selectedConversations.length) {
-      toast.error("No conversations to analyze")
+      toast.error(t.import.noConversations)
       return
     }
     setLoading(true)
@@ -95,12 +90,12 @@ export default function ImportPage() {
     try {
       const response = await analyzeChatImport(DEMO_USER_ID, selectedConversations, sourceName, analysisMode)
       setResult(response)
-      toast.success("Conversation analysis complete", {
-        description: `Updated ${response.updatedSkills.length} skills in your profile.`,
+      toast.success(t.import.analysisComplete, {
+        description: `${response.updatedSkills.length} ${t.import.updatedSkills}`,
       })
     } catch (error) {
-      toast.error("Analysis failed", {
-        description: error instanceof Error ? error.message : "Please try again shortly.",
+      toast.error(t.import.analysisFailed, {
+        description: error instanceof Error ? error.message : t.import.tryShortly,
       })
     } finally {
       setLoading(false)
@@ -111,13 +106,10 @@ export default function ImportPage() {
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
       <header className="flex flex-col gap-2">
         <span className="w-fit rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-          Chat history import
+          {t.import.badge}
         </span>
-        <h1 className="font-heading text-3xl font-bold tracking-tight">Import ChatGPT conversations</h1>
-        <p className="max-w-3xl text-muted-foreground">
-          Extract weaknesses from your messages, your requests for help, and the corrections the AI already gave you,
-          then write them into your learning profile.
-        </p>
+        <h1 className="font-heading text-3xl font-bold tracking-tight">{t.import.title}</h1>
+        <p className="max-w-3xl text-muted-foreground">{t.import.description}</p>
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
@@ -126,18 +118,15 @@ export default function ImportPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <ListChecks className="size-5 text-primary" />
-                How to import your ChatGPT history
+                {t.import.howTitle}
               </CardTitle>
-              <CardDescription>A one-time export from ChatGPT, then upload it here.</CardDescription>
+              <CardDescription>{t.import.howDescription}</CardDescription>
             </CardHeader>
             <CardContent>
               <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm text-muted-foreground">
-                <li>In ChatGPT, open <span className="font-medium text-foreground">Settings &rarr; Data controls &rarr; Export data</span> and confirm.</li>
-                <li>ChatGPT emails you a download link (it can take a few minutes).</li>
-                <li>Download the <span className="font-medium text-foreground">.zip</span> &mdash; it contains <code>conversations.json</code>.</li>
-                <li>Click <span className="font-medium text-foreground">Upload export</span> below and choose that ZIP (or the JSON).</li>
-                <li>We auto-rank your English-practice chats (translation, correction). Adjust the slider, then <span className="font-medium text-foreground">Analyze</span>.</li>
-                <li>No export handy? Paste a chat as <code>User:</code> / <code>Assistant:</code> lines instead.</li>
+                {t.import.steps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
               </ol>
             </CardContent>
           </Card>
@@ -145,9 +134,9 @@ export default function ImportPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Inbox className="size-5 text-primary" />
-                Source
+                {t.import.source}
               </CardTitle>
-              <CardDescription>ChatGPT data export ZIP, conversations.json, or pasted transcript.</CardDescription>
+              <CardDescription>{t.import.sourceDescription}</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
               <input
@@ -164,7 +153,7 @@ export default function ImportPage() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <Button variant="outline" size="lg" onClick={() => fileInputRef.current?.click()}>
                   <Upload data-icon="inline-start" />
-                  Upload export
+                  {t.import.upload}
                 </Button>
                 <Button
                   variant="secondary"
@@ -173,13 +162,13 @@ export default function ImportPage() {
                   disabled={!pastedText.trim()}
                 >
                   <FileJson data-icon="inline-start" />
-                  Use pasted text
+                  {t.import.pasted}
                 </Button>
               </div>
               <Textarea
                 value={pastedText}
                 onChange={(event) => setPastedText(event.target.value)}
-                placeholder={"User: I want to say...\nAssistant: You can say..."}
+                placeholder={t.import.placeholder}
                 className="min-h-36 resize-y"
               />
             </CardContent>
@@ -189,22 +178,22 @@ export default function ImportPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileArchive className="size-5 text-primary" />
-                Scope
+                {t.import.scope}
               </CardTitle>
-              <CardDescription>{sourceName || "No source loaded"}</CardDescription>
+              <CardDescription>{sourceName || t.import.noSource}</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-5">
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Stat label="Loaded" value={allConversations.length} />
-                <Stat label="Selected" value={stats.conversations} />
-                <Stat label="User" value={stats.user} />
-                <Stat label="AI" value={stats.assistant} />
+                <Stat label={t.import.loaded} value={allConversations.length} />
+                <Stat label={t.import.selected} value={stats.conversations} />
+                <Stat label={t.import.user} value={stats.user} />
+                <Stat label={t.import.ai} value={stats.assistant} />
               </div>
 
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between gap-3">
                   <label className="text-sm font-medium" htmlFor="conversation-count">
-                    Conversations
+                    {t.import.conversations}
                   </label>
                   <span className="text-sm text-muted-foreground">{selectedCount}</span>
                 </div>
@@ -226,14 +215,14 @@ export default function ImportPage() {
                     variant={analysisMode === mode ? "default" : "outline"}
                     onClick={() => setAnalysisMode(mode)}
                   >
-                    {mode === "fast" ? "Quick" : "Deep"}
+                    {mode === "fast" ? t.import.quick : t.import.deep}
                   </Button>
                 ))}
               </div>
 
               <Button onClick={handleAnalyze} disabled={loading || !selectedConversations.length} size="lg">
                 {loading ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Sparkles data-icon="inline-start" />}
-                Analyze conversations
+                {t.import.analyze}
               </Button>
             </CardContent>
           </Card>
@@ -244,25 +233,27 @@ export default function ImportPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <MessagesSquare className="size-5 text-primary" />
-                Preview
+                {t.import.preview}
               </CardTitle>
               <CardDescription>
                 {selectedConversations.length
-                  ? `${stats.messages} messages selected`
-                  : "Load a source to preview conversations"}
+                  ? `${stats.messages} ${t.import.messagesSelected}`
+                  : t.import.previewEmpty}
               </CardDescription>
             </CardHeader>
             <CardContent className="flex max-h-[360px] flex-col gap-3 overflow-auto">
               {selectedConversations.length ? (
                 selectedConversations.slice(0, 8).map((conversation) => (
                   <div key={conversation.id ?? conversation.title} className="rounded-lg border border-border p-3">
-                    <div className="line-clamp-1 text-sm font-medium">{conversation.title || "Untitled conversation"}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">{conversation.messages.length} messages</div>
+                    <div className="line-clamp-1 text-sm font-medium">{conversation.title || t.import.untitled}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {conversation.messages.length} {t.chat.messages}
+                    </div>
                   </div>
                 ))
               ) : (
                 <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
-                  ZIP / JSON / transcript
+                  {t.import.zipJson}
                 </div>
               )}
             </CardContent>
@@ -271,18 +262,18 @@ export default function ImportPage() {
           {result && (
             <Card>
               <CardHeader>
-                <CardTitle>Weakness harvest</CardTitle>
+                <CardTitle>{t.import.harvest}</CardTitle>
                 <CardDescription>
-                  CEFR {result.analysis.cefrEstimate} · score {result.analysis.overallScore} ·{" "}
-                  {result.importStats.conversationCount} conversations
+                  CEFR {result.analysis.cefrEstimate} · {t.import.score} {result.analysis.overallScore} ·{" "}
+                  {result.importStats.conversationCount} {t.import.conversations.toLowerCase()}
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-5">
                 <p className="leading-relaxed text-muted-foreground">{result.analysis.summaryZh}</p>
 
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <InsightList title="Blind spots" items={result.analysis.topBlindSpotsZh} />
-                  <InsightList title="AI confirmed" items={result.analysis.assistantConfirmedWeaknessesZh} />
+                  <InsightList title={t.import.blindSpots} items={result.analysis.topBlindSpotsZh} />
+                  <InsightList title={t.import.aiConfirmed} items={result.analysis.assistantConfirmedWeaknessesZh} />
                 </div>
 
                 <div className="flex flex-col gap-3">
@@ -290,7 +281,7 @@ export default function ImportPage() {
                     <div key={`${weakness.code}-${weakness.evidenceQuote}`} className="rounded-lg border border-border p-4">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant={severityVariant[weakness.severity]}>{weakness.severity}</Badge>
-                        <Badge variant="outline">{evidenceLabels[weakness.evidenceType]}</Badge>
+                        <Badge variant="outline">{t.import.evidence[weakness.evidenceType]}</Badge>
                         <span className="text-sm font-medium">{weakness.category}</span>
                       </div>
                       <blockquote className="mt-3 border-l-2 border-primary/40 pl-3 text-sm text-muted-foreground">
@@ -305,7 +296,7 @@ export default function ImportPage() {
                   ))}
                 </div>
 
-                <InsightList title="Next actions" items={result.analysis.recommendedNextActionsZh} />
+                <InsightList title={t.import.nextActions} items={result.analysis.recommendedNextActionsZh} />
               </CardContent>
             </Card>
           )}
