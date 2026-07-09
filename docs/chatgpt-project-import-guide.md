@@ -23,7 +23,8 @@ Current version:
 - Supports ChatGPT data export ZIP files that contain `conversations.json`
 - Supports uploading a standalone `conversations.json`
 - Supports pasted transcripts in `User:` / `Assistant:` format
-- Analyzes up to 20 conversations in one request
+- Analyzes any number of selected conversations by splitting large imports into
+  20-conversation batches
 - Uses the latest 80 messages per selected conversation
 
 Current version does not yet:
@@ -31,10 +32,10 @@ Current version does not yet:
 - Connect directly to your ChatGPT account
 - Auto-sync future ChatGPT conversations
 - Automatically detect only one ChatGPT Project from the full export
-- Analyze unlimited conversations in one request
+- Analyze unlimited conversations in one AI request
 
-If your ChatGPT Project has more than 20 useful conversations, import them in
-batches or paste a curated transcript.
+If your ChatGPT Project has more than 20 useful conversations, select them all
+on the import page. The app processes them in batches automatically.
 
 ## Before You Start
 
@@ -80,7 +81,8 @@ Then import into WeakSpot:
 3. Click `Upload export`.
 4. Select the ChatGPT export ZIP file.
 5. Wait for the page to show how many analyzable conversations were found.
-6. Use the `Conversations` slider to choose how many conversations to analyze.
+6. Use the `Conversations` control to choose how many conversations to analyze.
+   Large imports are processed in 20-conversation batches.
 7. Choose `Quick` for a faster scan or `Deep` for a more detailed scan.
 8. Click `Analyze conversations`.
 9. Review the `Weakness harvest` result.
@@ -123,8 +125,8 @@ Steps:
 8. Choose `Quick` or `Deep`.
 9. Click `Analyze conversations`.
 
-For a project with many conversations, repeat the process in batches. Keep each
-batch focused on English-learning content so the analysis stays useful.
+For a project with many conversations, you can paste or upload them together.
+The import page splits selected conversations into batches before analysis.
 
 ## Option C — Import A Filtered `conversations.json`
 
@@ -149,7 +151,8 @@ Steps:
 6. Open WeakSpot `Import`.
 7. Click `Upload export`.
 8. Select the filtered JSON file.
-9. Analyze up to 20 conversations at a time.
+9. Choose how many conversations to analyze. Large selections are split into
+   20-conversation batches automatically.
 
 ## How To Choose Quick vs Deep
 

@@ -11,18 +11,24 @@ import {
 } from "@/lib/chatgpt-import"
 import { DEMO_USER_ID } from "@/lib/mock-data"
 import type {
+  CEFRLevel,
   ChatImportAnalyzeResponse,
   ChatImportConversation,
   ChatImportEvidenceType,
   DiagnosisMode,
   Severity,
+  SkillState,
 } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { useLanguage } from "@/components/language-provider"
+
+const CHAT_IMPORT_BATCH_SIZE = 20
+const CEFR_LEVELS: CEFRLevel[] = ["A1", "A2", "B1", "B2", "C1", "C2"]
 
 const severityVariant: Record<Severity, "secondary" | "destructive" | "outline"> = {
   low: "outline",
@@ -38,12 +44,18 @@ export default function ImportPage() {
   const [analysisMode, setAnalysisMode] = useState<DiagnosisMode>("fast")
   const [pastedText, setPastedText] = useState("")
   const [loading, setLoading] = useState(false)
+  const [analysisProgress, setAnalysisProgress] = useState<{ completed: number; total: number } | null>(null)
   const [result, setResult] = useState<ChatImportAnalyzeResponse | null>(null)
   const { t } = useLanguage()
 
+  const requestedConversationCount = allConversations.length
+    ? Math.min(selectedCount, allConversations.length)
+    : selectedCount
+  const controlConversationCount = allConversations.length ? requestedConversationCount : 1
+
   const selectedConversations = useMemo(
-    () => selectImportConversations(allConversations, selectedCount),
-    [allConversations, selectedCount],
+    () => selectImportConversations(allConversations, requestedConversationCount),
+    [allConversations, requestedConversationCount],
   )
 
   const stats = useMemo(() => {
@@ -56,11 +68,21 @@ export default function ImportPage() {
     }
   }, [selectedConversations])
 
+  const batchCount = selectedConversations.length
+    ? Math.ceil(selectedConversations.length / CHAT_IMPORT_BATCH_SIZE)
+    : 0
+
+  function updateSelectedCount(value: number) {
+    if (!allConversations.length || !Number.isFinite(value)) return
+    setSelectedCount(Math.min(Math.max(1, Math.round(value)), allConversations.length))
+  }
+
   async function handleFile(file: File) {
     try {
       const conversations = await parseChatGPTImportFile(file)
       setSourceName(file.name)
       setAllConversations(conversations)
+      setSelectedCount(Math.max(1, conversations.length))
       setResult(null)
       toast.success(t.import.importComplete, {
         description: `${conversations.length} ${t.import.conversations.toLowerCase()}`,
@@ -76,6 +98,7 @@ export default function ImportPage() {
     const conversations = parseTranscript(pastedText)
     setSourceName("pasted-transcript")
     setAllConversations(conversations)
+    setSelectedCount(Math.max(1, conversations.length))
     setResult(null)
     toast.success(t.import.textLoaded)
   }
@@ -87,8 +110,22 @@ export default function ImportPage() {
     }
     setLoading(true)
     setResult(null)
+    setAnalysisProgress(null)
     try {
-      const response = await analyzeChatImport(DEMO_USER_ID, selectedConversations, sourceName, analysisMode)
+      const batches = chunkConversations(selectedConversations, CHAT_IMPORT_BATCH_SIZE)
+      const responses: ChatImportAnalyzeResponse[] = []
+
+      for (let index = 0; index < batches.length; index += 1) {
+        setAnalysisProgress({ completed: index, total: batches.length })
+        const batchSourceName = batches.length > 1
+          ? `${sourceName || "chat-import"} batch ${index + 1} of ${batches.length}`
+          : sourceName
+        const response = await analyzeChatImport(DEMO_USER_ID, batches[index], batchSourceName, analysisMode)
+        responses.push(response)
+        setAnalysisProgress({ completed: index + 1, total: batches.length })
+      }
+
+      const response = mergeChatImportResponses(responses)
       setResult(response)
       toast.success(t.import.analysisComplete, {
         description: `${response.updatedSkills.length} ${t.import.updatedSkills}`,
@@ -99,6 +136,7 @@ export default function ImportPage() {
       })
     } finally {
       setLoading(false)
+      setAnalysisProgress(null)
     }
   }
 
@@ -193,19 +231,46 @@ export default function ImportPage() {
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between gap-3">
                   <label className="text-sm font-medium" htmlFor="conversation-count">
-                    {t.import.conversations}
+                    {t.import.conversationsToAnalyze}
                   </label>
-                  <span className="text-sm text-muted-foreground">{selectedCount}</span>
+                  <span className="text-sm text-muted-foreground">{stats.conversations}</span>
                 </div>
                 <input
                   id="conversation-count"
                   type="range"
                   min={1}
-                  max={20}
-                  value={selectedCount}
-                  onChange={(event) => setSelectedCount(Number(event.target.value))}
+                  max={Math.max(1, allConversations.length)}
+                  value={controlConversationCount}
+                  onChange={(event) => updateSelectedCount(Number(event.target.value))}
+                  disabled={!allConversations.length}
                   className="w-full accent-primary"
                 />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={Math.max(1, allConversations.length)}
+                    value={stats.conversations}
+                    onChange={(event) => updateSelectedCount(Number(event.target.value))}
+                    disabled={!allConversations.length}
+                    className="w-28"
+                    aria-label={t.import.conversationsToAnalyze}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => updateSelectedCount(allConversations.length)}
+                    disabled={!allConversations.length || stats.conversations === allConversations.length}
+                  >
+                    {t.import.all}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {stats.conversations
+                      ? `${batchCount} ${batchCount === 1 ? t.import.batch : t.import.batches} · ${t.import.batchHint}`
+                      : t.import.previewEmpty}
+                  </span>
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -222,7 +287,9 @@ export default function ImportPage() {
 
               <Button onClick={handleAnalyze} disabled={loading || !selectedConversations.length} size="lg">
                 {loading ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Sparkles data-icon="inline-start" />}
-                {t.import.analyze}
+                {loading && analysisProgress
+                  ? `${t.import.analyzingBatch} ${Math.min(analysisProgress.completed + 1, analysisProgress.total)}/${analysisProgress.total}`
+                  : t.import.analyze}
               </Button>
             </CardContent>
           </Card>
@@ -304,6 +371,101 @@ export default function ImportPage() {
       </div>
     </div>
   )
+}
+
+function chunkConversations(conversations: ChatImportConversation[], size: number) {
+  const chunks: ChatImportConversation[][] = []
+  for (let index = 0; index < conversations.length; index += size) {
+    chunks.push(conversations.slice(index, index + size))
+  }
+  return chunks
+}
+
+function mergeChatImportResponses(responses: ChatImportAnalyzeResponse[]): ChatImportAnalyzeResponse {
+  if (responses.length === 1) return responses[0]
+
+  const latest = responses[responses.length - 1]
+  const importStats = responses.reduce(
+    (stats, response) => ({
+      conversationCount: stats.conversationCount + response.importStats.conversationCount,
+      messageCount: stats.messageCount + response.importStats.messageCount,
+      userMessageCount: stats.userMessageCount + response.importStats.userMessageCount,
+      assistantMessageCount: stats.assistantMessageCount + response.importStats.assistantMessageCount,
+    }),
+    { conversationCount: 0, messageCount: 0, userMessageCount: 0, assistantMessageCount: 0 },
+  )
+
+  const weightTotal = Math.max(1, importStats.conversationCount)
+  const overallScore = Math.round(
+    responses.reduce(
+      (sum, response) => sum + response.analysis.overallScore * Math.max(1, response.importStats.conversationCount),
+      0,
+    ) / weightTotal,
+  )
+  const cefrEstimate = averageCefrEstimate(responses)
+  const updatedSkills = Array.from(
+    responses
+      .flatMap((response) => response.updatedSkills)
+      .reduce((skills, skill) => skills.set(skill.skillCode, skill), new Map<string, SkillState>())
+      .values(),
+  )
+
+  return {
+    ...latest,
+    submission: {
+      ...latest.submission,
+      originalText: responses.map((response) => response.submission.originalText).filter(Boolean).join("\n\n"),
+      correctedText: responses.map((response) => response.analysis.summaryZh).filter(Boolean).join("\n\n"),
+      cefrEstimate,
+      summaryZh: responses.map((response, index) => `[${index + 1}/${responses.length}] ${response.analysis.summaryZh}`).join("\n\n"),
+    },
+    analysis: {
+      ...latest.analysis,
+      cefrEstimate,
+      overallScore,
+      summaryZh: responses.map((response, index) => `[${index + 1}/${responses.length}] ${response.analysis.summaryZh}`).join("\n\n"),
+      strengthsZh: uniqueStrings(responses.flatMap((response) => response.analysis.strengthsZh)),
+      topBlindSpotsZh: uniqueStrings(responses.flatMap((response) => response.analysis.topBlindSpotsZh)),
+      weaknesses: uniqueBy(
+        responses.flatMap((response) => response.analysis.weaknesses),
+        (weakness) => `${weakness.code}:${weakness.evidenceQuote}`,
+      ),
+      assistantConfirmedWeaknessesZh: uniqueStrings(
+        responses.flatMap((response) => response.analysis.assistantConfirmedWeaknessesZh),
+      ),
+      recommendedNextActionsZh: uniqueStrings(
+        responses.flatMap((response) => response.analysis.recommendedNextActionsZh),
+      ),
+    },
+    savedErrors: responses.flatMap((response) => response.savedErrors),
+    updatedSkills,
+    profile: latest.profile,
+    importStats,
+  }
+}
+
+function averageCefrEstimate(responses: ChatImportAnalyzeResponse[]) {
+  const totalWeight = responses.reduce((sum, response) => sum + Math.max(1, response.importStats.conversationCount), 0)
+  const average = responses.reduce((sum, response) => {
+    const levelIndex = CEFR_LEVELS.indexOf(response.analysis.cefrEstimate)
+    return sum + Math.max(0, levelIndex) * Math.max(1, response.importStats.conversationCount)
+  }, 0) / Math.max(1, totalWeight)
+
+  return CEFR_LEVELS[Math.min(CEFR_LEVELS.length - 1, Math.max(0, Math.round(average)))]
+}
+
+function uniqueStrings(items: string[]) {
+  return uniqueBy(items.filter(Boolean), (item) => item.trim().toLowerCase())
+}
+
+function uniqueBy<T>(items: T[], getKey: (item: T) => string) {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    const key = getKey(item)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 function Stat({ label, value }: { label: string; value: number }) {
