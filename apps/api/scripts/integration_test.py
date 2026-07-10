@@ -259,6 +259,31 @@ def main() -> int:
             f"{len(imported['updatedSkills'])} skills updated"
         )
 
+        guest_client = TestClient(app)
+        guest_import = guest_client.post(
+            "/api/v1/chat-import/analyze",
+            json={
+                "userId": "ignored-for-guests",
+                "sourceName": "guest-conversations.json",
+                "analysisMode": "fast",
+                "conversations": [
+                    {
+                        "id": "guest-chat-1",
+                        "messages": [
+                            {"role": "user", "text": "Yesterday I go to school."},
+                            {"role": "assistant", "text": "You should say: Yesterday I went to school."},
+                        ],
+                    }
+                ],
+            },
+        )
+        assert guest_import.status_code == 200, guest_import.text
+        assert guest_import.content.startswith(b" "), guest_import.content[:50]
+        assert guest_import.headers.get("x-accel-buffering") == "no", guest_import.headers
+        assert guest_client.cookies.get("guest_id"), "expected a guest identity cookie"
+        assert guest_import.json()["analysis"]["weaknesses"], guest_import.text
+        print("   guest stream + cookie  -> keepalive JSON and guest identity preserved")
+
         # 9. Text and voice model selection
         from app.api.routes import chat as chat_routes
         from app.api.routes import realtime as realtime_routes

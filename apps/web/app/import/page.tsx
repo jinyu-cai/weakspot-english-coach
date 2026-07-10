@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useRef, useState } from "react"
-import { FileArchive, FileJson, Inbox, ListChecks, Loader2, MessagesSquare, Sparkles, Upload } from "lucide-react"
+import { AlertTriangle, FileArchive, FileJson, Inbox, ListChecks, Loader2, MessagesSquare, Sparkles, Upload } from "lucide-react"
 import { toast } from "sonner"
 import { analyzeChatImport } from "@/lib/api-client"
 import {
@@ -20,6 +20,7 @@ import type {
   SkillState,
 } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -29,6 +30,7 @@ import { useLanguage } from "@/components/language-provider"
 
 const CHAT_IMPORT_BATCH_SIZE = 20
 const CEFR_LEVELS: CEFRLevel[] = ["A1", "A2", "B1", "B2", "C1", "C2"]
+type PartialFailure = { completed: number; total: number; message: string }
 
 const severityVariant: Record<Severity, "secondary" | "destructive" | "outline"> = {
   low: "outline",
@@ -46,6 +48,7 @@ export default function ImportPage() {
   const [loading, setLoading] = useState(false)
   const [analysisProgress, setAnalysisProgress] = useState<{ completed: number; total: number } | null>(null)
   const [result, setResult] = useState<ChatImportAnalyzeResponse | null>(null)
+  const [partialFailure, setPartialFailure] = useState<PartialFailure | null>(null)
   const { t } = useLanguage()
 
   const requestedConversationCount = allConversations.length
@@ -84,6 +87,7 @@ export default function ImportPage() {
       setAllConversations(conversations)
       setSelectedCount(Math.max(1, conversations.length))
       setResult(null)
+      setPartialFailure(null)
       toast.success(t.import.importComplete, {
         description: `${conversations.length} ${t.import.conversations.toLowerCase()}`,
       })
@@ -100,6 +104,7 @@ export default function ImportPage() {
     setAllConversations(conversations)
     setSelectedCount(Math.max(1, conversations.length))
     setResult(null)
+    setPartialFailure(null)
     toast.success(t.import.textLoaded)
   }
 
@@ -110,6 +115,7 @@ export default function ImportPage() {
     }
     setLoading(true)
     setResult(null)
+    setPartialFailure(null)
     setAnalysisProgress(null)
     try {
       const batches = chunkConversations(selectedConversations, CHAT_IMPORT_BATCH_SIZE)
@@ -120,13 +126,27 @@ export default function ImportPage() {
         const batchSourceName = batches.length > 1
           ? `${sourceName || "chat-import"} batch ${index + 1} of ${batches.length}`
           : sourceName
-        const response = await analyzeChatImport(DEMO_USER_ID, batches[index], batchSourceName, analysisMode)
-        responses.push(response)
-        setAnalysisProgress({ completed: index + 1, total: batches.length })
+        try {
+          const response = await analyzeChatImport(DEMO_USER_ID, batches[index], batchSourceName, analysisMode)
+          responses.push(response)
+          setAnalysisProgress({ completed: index + 1, total: batches.length })
+        } catch (error) {
+          if (!responses.length) throw error
+
+          const message = error instanceof Error ? error.message : t.import.tryShortly
+          const partialResult = mergeChatImportResponses(responses)
+          setResult(partialResult)
+          setPartialFailure({ completed: responses.length, total: batches.length, message })
+          toast.warning(t.import.partialComplete, {
+            description: `${responses.length}/${batches.length} ${t.import.batchesCompleted}. ${t.import.partialSaved}`,
+          })
+          return
+        }
       }
 
       const response = mergeChatImportResponses(responses)
       setResult(response)
+      setPartialFailure(null)
       toast.success(t.import.analysisComplete, {
         description: `${response.updatedSkills.length} ${t.import.updatedSkills}`,
       })
@@ -336,6 +356,16 @@ export default function ImportPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-5">
+                {partialFailure && (
+                  <Alert className="border-warning/40 bg-warning/10">
+                    <AlertTriangle className="size-4 text-warning" />
+                    <AlertTitle>{t.import.partialComplete}</AlertTitle>
+                    <AlertDescription>
+                      {partialFailure.completed}/{partialFailure.total} {t.import.batchesCompleted}.{" "}
+                      {t.import.partialSaved} {partialFailure.message}
+                    </AlertDescription>
+                  </Alert>
+                )}
                 <p className="leading-relaxed text-muted-foreground">{result.analysis.summaryZh}</p>
 
                 <div className="grid gap-3 sm:grid-cols-2">

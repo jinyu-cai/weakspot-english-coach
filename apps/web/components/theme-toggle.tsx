@@ -2,16 +2,18 @@
 
 import { Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
-import { useEffect, useState } from "react"
+import { useSyncExternalStore } from "react"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/components/language-provider"
 
+const subscribe = () => () => {}
+const getClientMounted = () => true
+const getServerMounted = () => false
+
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
+  const mounted = useSyncExternalStore(subscribe, getClientMounted, getServerMounted)
   const { t } = useLanguage()
-
-  useEffect(() => setMounted(true), [])
 
   const isDark = resolvedTheme === "dark"
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react"
 import { getCopy, type AppCopy } from "@/lib/i18n"
 import {
   DEFAULT_LANGUAGE,
@@ -16,20 +16,39 @@ type LanguageContextValue = {
 }
 
 const LanguageContext = createContext<LanguageContextValue | null>(null)
+const LANGUAGE_CHANGE_EVENT = "weakspot:language-change"
+
+let clientLanguage: OutputLanguage | undefined
+
+function getClientLanguage() {
+  if (clientLanguage === undefined) {
+    clientLanguage = getStoredLanguage()
+  }
+  return clientLanguage
+}
+
+function getServerLanguage(): OutputLanguage {
+  return DEFAULT_LANGUAGE
+}
+
+function subscribeToLanguage(listener: () => void) {
+  if (typeof window === "undefined") return () => {}
+  window.addEventListener(LANGUAGE_CHANGE_EVENT, listener)
+  return () => window.removeEventListener(LANGUAGE_CHANGE_EVENT, listener)
+}
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguageState] = useState<OutputLanguage>(DEFAULT_LANGUAGE)
+  const language = useSyncExternalStore(subscribeToLanguage, getClientLanguage, getServerLanguage)
 
   useEffect(() => {
-    const stored = getStoredLanguage()
-    setLanguageState(stored)
-    document.documentElement.lang = stored
-  }, [])
+    document.documentElement.lang = language
+  }, [language])
 
   const value = useMemo<LanguageContextValue>(() => {
     function setLanguage(next: OutputLanguage) {
-      setLanguageState(next)
+      clientLanguage = next
       setStoredLanguage(next)
+      window.dispatchEvent(new Event(LANGUAGE_CHANGE_EVENT))
     }
 
     return {

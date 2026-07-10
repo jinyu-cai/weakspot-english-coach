@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react"
+import { Suspense, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import useSWR from "swr"
@@ -36,6 +36,15 @@ type RunnerSession = {
   task: LearningPlanTask
   day: LearningPlanDay
   exercises: PlanExercise[]
+}
+
+function findPlanTask(plan: { days: LearningPlanDay[] } | null, taskId: string | null) {
+  if (!plan || !taskId) return null
+  for (const day of plan.days) {
+    const task = day.tasks.find((item) => item.id === taskId)
+    if (task) return { day, task }
+  }
+  return null
 }
 
 /** One gradeable exercise card: input box + AI grading + reference answer. */
@@ -181,18 +190,8 @@ function PlanPracticeFlow() {
   const { data, isLoading } = useSWR("plan", () => getPlan())
   const plan = data?.plan ?? null
 
-  // Locate the task (and the day it belongs to, for its target skill).
-  const located = useMemo(() => {
-    if (!plan || !taskId) return null
-    for (const day of plan.days) {
-      const task = day.tasks.find((t) => t.id === taskId)
-      if (task) return { day, task }
-    }
-    return null
-  }, [plan, taskId])
+  const located = findPlanTask(plan, taskId)
 
-  // Snapshot the located task into state, so a later SWR revalidation can't wipe
-  // the runner mid-session (in mock mode getPlan() revalidates back to null).
   const [session, setSession] = useState<RunnerSession | null>(null)
   const [current, setCurrent] = useState(0)
   const [grades, setGrades] = useState<PracticeGrade[]>([])
@@ -203,14 +202,16 @@ function PlanPracticeFlow() {
 
   const seededRef = useRef<string | null>(null)
   useEffect(() => {
-    if (located && seededRef.current !== taskId) {
-      seededRef.current = taskId ?? null
-      setSession({ task: located.task, day: located.day, exercises: located.task.exercises ?? [] })
-      setCurrent(0)
-      setGrades([])
-      setPhase("active")
-    }
-  }, [located, taskId])
+    if (!plan || !taskId || seededRef.current === taskId) return
+    const nextLocated = findPlanTask(plan, taskId)
+    if (!nextLocated) return
+
+    seededRef.current = taskId
+    setSession({ task: nextLocated.task, day: nextLocated.day, exercises: nextLocated.task.exercises ?? [] })
+    setCurrent(0)
+    setGrades([])
+    setPhase("active")
+  }, [plan, taskId])
 
   function handleGraded(grade: PracticeGrade) {
     setGrades((prev) => [...prev, grade])

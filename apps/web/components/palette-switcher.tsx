@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { Palette } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -15,11 +15,16 @@ import { useLanguage } from "@/components/language-provider"
 
 export function PaletteSwitcher() {
   const [active, setActive] = useState<PaletteId>("cream")
+  const [open, setOpen] = useState(false)
   const { t } = useLanguage()
-  useEffect(() => setActive(getPalette()), [])
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (nextOpen) setActive(getPalette())
+    setOpen(nextOpen)
+  }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger
         render={
           <Button variant="outline" size="icon" aria-label={t.settings.colorTheme} title={t.settings.colorTheme}>

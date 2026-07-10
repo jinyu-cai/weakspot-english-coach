@@ -75,7 +75,7 @@ export default function NotebookPage() {
     }
   }
 
-  function NoteList({ items }: { items: LearningNote[] }) {
+  function renderNoteList(items: LearningNote[]) {
     if (!items.length) {
       return <EmptyState icon={BookOpen} title={t.notebook.noNotes} description={t.notebook.noNotesDescription} />
     }
@@ -136,10 +136,10 @@ export default function NotebookPage() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="all" className="mt-6"><NoteList items={notes} /></TabsContent>
-          <TabsContent value="expression" className="mt-6"><NoteList items={expressionNotes} /></TabsContent>
-          <TabsContent value="vocabulary" className="mt-6"><NoteList items={vocabularyNotes} /></TabsContent>
-          <TabsContent value="grammar" className="mt-6"><NoteList items={grammarNotes} /></TabsContent>
+          <TabsContent value="all" className="mt-6">{renderNoteList(notes)}</TabsContent>
+          <TabsContent value="expression" className="mt-6">{renderNoteList(expressionNotes)}</TabsContent>
+          <TabsContent value="vocabulary" className="mt-6">{renderNoteList(vocabularyNotes)}</TabsContent>
+          <TabsContent value="grammar" className="mt-6">{renderNoteList(grammarNotes)}</TabsContent>
         </Tabs>
       )}
     </div>

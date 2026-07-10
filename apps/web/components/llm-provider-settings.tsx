@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { KeyRound, Save, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -38,10 +38,13 @@ export function LLMProviderSettings() {
   const [settings, setSettings] = useState<LLMSettings>(emptySettings)
   const { t } = useLanguage()
 
-  useEffect(() => {
-    setSettings(loadLLMSettings())
-    setConfigured(hasCustomLLMSettings())
-  }, [open])
+  function handleOpenChange(nextOpen: boolean) {
+    if (nextOpen) {
+      setSettings(loadLLMSettings())
+      setConfigured(hasCustomLLMSettings())
+    }
+    setOpen(nextOpen)
+  }
 
   function update<K extends keyof LLMSettings>(key: K, value: LLMSettings[K]) {
     setSettings((current) => ({ ...current, [key]: value }))
@@ -83,7 +86,7 @@ export function LLMProviderSettings() {
   }
 
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetTrigger
         render={
           <Button variant="outline" size="icon" aria-label={t.settings.aiProviderAria} title={t.settings.aiProviderAria}>
