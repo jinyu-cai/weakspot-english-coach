@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { KeyRound, Save, Trash2 } from "lucide-react"
+import { KeyRound, RefreshCw, Save, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
@@ -30,6 +30,7 @@ import {
 } from "@/lib/llm-settings"
 import { getServerLLMModels } from "@/lib/api-client"
 import { useLanguage } from "@/components/language-provider"
+import { cn } from "@/lib/utils"
 
 const emptySettings: LLMSettings = {
   apiKey: "",
@@ -45,28 +46,47 @@ export function LLMProviderSettings() {
   const [settings, setSettings] = useState<LLMSettings>(emptySettings)
   const [serverModels, setServerModels] = useState<ServerLLMModel[]>([])
   const [loadingModels, setLoadingModels] = useState(false)
+  const [modelsError, setModelsError] = useState(false)
   const { t } = useLanguage()
 
   const selectableServerModels = serverModels.length > 0
     ? serverModels
     : [{
-      id: SERVER_DEFAULT_MODEL_ID,
-      label: t.settings.serverDefault,
+      id: settings.serverModelId || SERVER_DEFAULT_MODEL_ID,
+      label: settings.serverModelId === SERVER_DEFAULT_MODEL_ID
+        ? t.settings.serverDefault
+        : settings.serverModelId,
       provider: "Server",
       model: "",
       adaptive: true,
     }]
   const selectedServerModel = selectableServerModels.find((model) => model.id === settings.serverModelId)
 
+  async function loadServerModels() {
+    setLoadingModels(true)
+    setModelsError(false)
+    try {
+      const models = await getServerLLMModels()
+      if (models.length === 0) throw new Error("No server models available.")
+      setServerModels(models)
+      setSettings((current) => (
+        models.some((model) => model.id === current.serverModelId)
+          ? current
+          : { ...current, serverModelId: SERVER_DEFAULT_MODEL_ID }
+      ))
+    } catch {
+      setServerModels([])
+      setModelsError(true)
+    } finally {
+      setLoadingModels(false)
+    }
+  }
+
   function handleOpenChange(nextOpen: boolean) {
     if (nextOpen) {
       setSettings(loadLLMSettings())
       setConfigured(hasCustomLLMSettings())
-      setLoadingModels(true)
-      void getServerLLMModels()
-        .then(setServerModels)
-        .catch(() => setServerModels([]))
-        .finally(() => setLoadingModels(false))
+      void loadServerModels()
     }
     setOpen(nextOpen)
   }
@@ -151,30 +171,62 @@ export function LLMProviderSettings() {
           <SheetDescription>{t.settings.aiDescription}</SheetDescription>
         </SheetHeader>
 
-        <div className="grid gap-4 px-4">
+        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-4 pb-4">
           <div className="flex items-center justify-between gap-3">
             <span className="text-sm font-medium text-foreground">{t.settings.mode}</span>
             <Badge variant={configured ? "default" : "secondary"}>
-              {configured ? t.settings.custom : selectedServerModel?.label ?? t.settings.serverDefault}
+              {configured
+                ? t.settings.custom
+                : selectedServerModel
+                  ? (selectedServerModel.adaptive ? t.settings.serverAuto : selectedServerModel.label)
+                  : t.settings.serverDefault}
             </Badge>
           </div>
 
           <div className="grid gap-1.5 rounded-lg border border-border bg-muted/30 p-3">
-            <label className="grid gap-1.5 text-sm font-medium text-foreground">
-              {t.settings.serverModel}
-              <select
-                value={settings.serverModelId}
-                onChange={(event) => selectServerModel(event.target.value)}
-                disabled={loadingModels}
-                className="h-9 rounded-lg border border-input bg-background px-3 text-sm font-normal outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {selectableServerModels.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.label}{model.model ? ` · ${model.model}` : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="text-sm font-medium text-foreground">{t.settings.serverModel}</div>
+            {loadingModels && serverModels.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border bg-background px-3 py-4 text-center text-xs text-muted-foreground">
+                {t.settings.serverModelsLoading}
+              </p>
+            ) : (
+              <div className="grid gap-2" role="radiogroup" aria-label={t.settings.serverModel}>
+                {selectableServerModels.map((model) => {
+                  const selected = settings.serverModelId === model.id
+                  return (
+                    <button
+                      key={model.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => selectServerModel(model.id)}
+                      className={cn(
+                        "grid gap-0.5 rounded-lg border bg-background px-3 py-2 text-left transition hover:border-primary/50",
+                        selected && "border-primary bg-primary/5 ring-1 ring-primary/20",
+                      )}
+                    >
+                      <span className="text-sm font-medium text-foreground">
+                        {model.adaptive ? t.settings.serverAuto : model.label}
+                      </span>
+                      <span className="text-xs leading-relaxed text-muted-foreground">
+                        {model.adaptive
+                          ? `${t.settings.serverDeep}: ${model.model || "—"} · ${t.settings.serverFast}: ${model.fastModel || model.model || "—"}`
+                          : `${model.provider} · ${model.model || "—"}`}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            {modelsError && (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
+                <span className="text-xs text-destructive">{t.settings.serverModelsFailed}</span>
+                <Button type="button" variant="ghost" size="sm" onClick={() => void loadServerModels()}>
+                  <RefreshCw data-icon="inline-start" />
+                  {t.common.tryAgain}
+                </Button>
+              </div>
+            )}
             <p className="text-xs text-muted-foreground">{t.settings.serverModelHint}</p>
           </div>
 

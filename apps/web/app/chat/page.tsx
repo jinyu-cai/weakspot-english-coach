@@ -10,6 +10,7 @@ import {
   MessageCircle,
   Mic,
   Plus,
+  RefreshCw,
 } from "lucide-react"
 import {
   analyzeSession,
@@ -22,6 +23,7 @@ import {
 import { DEMO_USER_ID } from "@/lib/mock-data"
 import type { ChatMessage, ChatSession, SessionAnalysis } from "@/lib/types"
 import {
+  formatServerModelOption,
   loadLLMSettings,
   LLM_SETTINGS_CHANGE_EVENT,
   saveLLMSettings,
@@ -65,12 +67,20 @@ export default function ChatPage() {
   const [creatingSession, setCreatingSession] = useState(false)
   const [mode, setMode] = useState<ChatMode>("voice")
   const [serverModels, setServerModels] = useState<ServerLLMModel[]>([])
+  const [loadingModels, setLoadingModels] = useState(true)
+  const [modelsError, setModelsError] = useState(false)
   const [selectedServerModelId, setSelectedServerModelId] = useState(
     () => loadLLMSettings().serverModelId || SERVER_DEFAULT_MODEL_ID,
   )
   const [viewState, setViewState] = useState<ViewState>("chat")
   const [analysis, setAnalysis] = useState<SessionAnalysis | null>(null)
   const { t } = useLanguage()
+
+  const modelLabels = {
+    automatic: t.settings.serverAuto,
+    deep: t.settings.serverDeep,
+    fast: t.settings.serverFast,
+  }
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -90,8 +100,46 @@ export default function ChatPage() {
       .finally(() => setLoadingSessions(false))
   }, [])
 
+  async function retryServerModels() {
+    setLoadingModels(true)
+    setModelsError(false)
+    try {
+      const models = await getServerLLMModels()
+      if (models.length === 0) throw new Error("No server models available.")
+      setServerModels(models)
+      setSelectedServerModelId((current) => (
+        models.some((model) => model.id === current) ? current : SERVER_DEFAULT_MODEL_ID
+      ))
+    } catch {
+      setServerModels([])
+      setModelsError(true)
+    } finally {
+      setLoadingModels(false)
+    }
+  }
+
   useEffect(() => {
-    void getServerLLMModels().then(setServerModels).catch(() => setServerModels([]))
+    let active = true
+    void getServerLLMModels()
+      .then((models) => {
+        if (!active) return
+        if (models.length === 0) throw new Error("No server models available.")
+        setServerModels(models)
+        setSelectedServerModelId((current) => (
+          models.some((model) => model.id === current) ? current : SERVER_DEFAULT_MODEL_ID
+        ))
+      })
+      .catch(() => {
+        if (!active) return
+        setServerModels([])
+        setModelsError(true)
+      })
+      .finally(() => {
+        if (active) setLoadingModels(false)
+      })
+    return () => {
+      active = false
+    }
   }, [])
 
   useEffect(() => {
@@ -105,8 +153,10 @@ export default function ChatPage() {
   const selectableServerModels = serverModels.length > 0
     ? serverModels
     : [{
-      id: SERVER_DEFAULT_MODEL_ID,
-      label: t.settings.serverDefault,
+      id: selectedServerModelId || SERVER_DEFAULT_MODEL_ID,
+      label: selectedServerModelId === SERVER_DEFAULT_MODEL_ID
+        ? t.settings.serverDefault
+        : selectedServerModelId,
       provider: "Server",
       model: "",
       adaptive: true,
@@ -241,20 +291,38 @@ export default function ChatPage() {
             <h1 className="font-heading text-3xl font-bold tracking-tight">{t.chat.title}</h1>
             <p className="text-muted-foreground">{t.chat.description}</p>
           </div>
-          <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-            {t.settings.serverModel}
-            <select
-              value={selectedServerModelId}
-              onChange={(event) => selectServerModel(event.target.value)}
-              className="h-8 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            >
-              {selectableServerModels.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.label}{model.model ? ` · ${model.model}` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="grid gap-1 text-xs font-medium text-muted-foreground">
+            <span>{t.settings.serverModel}</span>
+            <div className="flex items-center gap-1">
+              <select
+                value={selectedServerModelId}
+                onChange={(event) => selectServerModel(event.target.value)}
+                disabled={loadingModels && serverModels.length === 0}
+                className="h-8 min-w-52 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-60"
+              >
+                {loadingModels && serverModels.length === 0 ? (
+                  <option value={selectedServerModelId}>{t.settings.serverModelsLoading}</option>
+                ) : selectableServerModels.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {formatServerModelOption(model, modelLabels)}
+                  </option>
+                ))}
+              </select>
+              {modelsError && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  title={t.common.tryAgain}
+                  aria-label={t.common.tryAgain}
+                  onClick={() => void retryServerModels()}
+                >
+                  <RefreshCw />
+                </Button>
+              )}
+            </div>
+            {modelsError && <span className="text-destructive">{t.settings.serverModelsFailed}</span>}
+          </div>
         </header>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

@@ -15,6 +15,25 @@ export type ServerLLMModel = {
   adaptive?: boolean
 }
 
+export type ServerModelLabels = {
+  automatic: string
+  deep: string
+  fast: string
+}
+
+export function formatServerModelOption(
+  model: ServerLLMModel,
+  labels: ServerModelLabels,
+): string {
+  const name = model.adaptive ? labels.automatic : model.label
+  if (!model.model) return name
+  if (!model.adaptive) return `${name} · ${model.model}`
+
+  const fastModel = model.fastModel || model.model
+  if (fastModel === model.model) return `${name} · ${model.model}`
+  return `${name} · ${labels.deep}: ${model.model} / ${labels.fast}: ${fastModel}`
+}
+
 export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 export const QWEN_MODEL_STUDIO_INTERNATIONAL_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 export const QWEN_37_MAX_MODEL = "qwen3.7-max"

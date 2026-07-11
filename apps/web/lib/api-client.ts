@@ -64,7 +64,12 @@ import {
   mockSkills,
   mockSubmissions,
 } from "./mock-data"
-import { getLLMProviderHeaders, type ServerLLMModel } from "./llm-settings"
+import {
+  getLLMProviderHeaders,
+  QWEN_37_MAX_MODEL,
+  QWEN_37_PLUS_MODEL,
+  type ServerLLMModel,
+} from "./llm-settings"
 import { getOutputLanguage } from "./language"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
@@ -133,14 +138,28 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function getServerLLMModels(): Promise<ServerLLMModel[]> {
   if (USE_MOCK) {
-    return [{
-      id: "default",
-      label: "Server default",
-      provider: "Server",
-      model: "",
-      fastModel: "",
-      adaptive: true,
-    }]
+    return [
+      {
+        id: "default",
+        label: "Server default",
+        provider: "Server",
+        model: QWEN_37_MAX_MODEL,
+        fastModel: QWEN_37_PLUS_MODEL,
+        adaptive: true,
+      },
+      {
+        id: "qwen-deep",
+        label: "Qwen 3.7 Max",
+        provider: "Qwen Model Studio",
+        model: QWEN_37_MAX_MODEL,
+      },
+      {
+        id: "qwen-fast",
+        label: "Qwen 3.7 Plus",
+        provider: "Qwen Model Studio",
+        model: QWEN_37_PLUS_MODEL,
+      },
+    ]
   }
   const payload = await apiFetch<{ models: ServerLLMModel[] }>("/llm/models")
   return payload.models
