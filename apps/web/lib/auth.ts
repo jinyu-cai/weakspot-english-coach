@@ -28,6 +28,15 @@ export async function getMe(): Promise<Me> {
 
 export type AuthProvider = "github" | "google"
 
+export function isAuthConfigured(): boolean {
+  return Boolean(API_BASE_URL)
+}
+
+export function loginPageUrl(redirect?: string): string {
+  const target = redirect ?? (typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : "/")
+  return `/login?redirect=${encodeURIComponent(target)}`
+}
+
 export function loginUrl(provider: AuthProvider = "github", redirect?: string): string {
   const r = redirect ?? (typeof window !== "undefined" ? window.location.href : "")
   return `${API_BASE_URL}/api/v1/auth/${provider}/login?redirect=${encodeURIComponent(r)}`

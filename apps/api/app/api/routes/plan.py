@@ -1,4 +1,5 @@
 from uuid import uuid4
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -15,34 +16,62 @@ from app.db.repositories import (
 from app.models.plan import GeneratePlanRequest
 from app.services.ai_client import LLMProviderConfig
 from app.services.plan_service import generate_learning_plan
+from app.services.memory_service import retrieve_memory_pack
 
 router = APIRouter()
+logger = logging.getLogger("uvicorn.error")
 
 
 @router.post("/plan")
 def create_plan(
     req: GeneratePlanRequest,
     llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
-    identity: Identity = Depends(rate_limited("plan", allow_byok_unlimited=True)),
+    identity: Identity = Depends(rate_limited("plan")),
 ):
     req.userId = identity.user_id
     try:
         now = now_iso()
         profile = get_or_create_profile(req.userId)
-        skills = list_skills(req.userId)
+        skills = sorted(
+            list_skills(req.userId),
+            key=lambda skill: float(skill.get("mastery", 50)),
+        )[:20]
         if req.errorScope == "weekly":
             recent_errors = list_weekly_errors(req.userId)
         else:
-            recent_errors = list_recent_errors(
+            recent_errors = list_recent_errors(req.userId, limit=50)
+
+        # Keep raw evidence bounded; cross-session context comes from the fixed
+        # Memory Pack instead of dumping an ever-growing learner history.
+        bounded_errors = []
+        for error in recent_errors[:40]:
+            compact = {
+                key: error.get(key)
+                for key in (
+                    "code", "category", "severity", "originalText", "correctedText",
+                    "practiceGoal", "createdAt",
+                )
+                if key in error
+            }
+            bounded_errors.append(compact or error)
+        recent_errors = bounded_errors
+        try:
+            memory_pack = retrieve_memory_pack(
                 req.userId,
-                limit=500 if identity.has_unlimited_llm_quota else 50,
+                "Create a seven-day English learning plan using current goals, preferences, "
+                "proven strategies, recurring weaknesses, and recent practice outcomes.",
+                purpose="plan",
             )
+        except Exception:
+            logger.exception("plan memory_retrieval_error user_id=%s", req.userId)
+            memory_pack = {"text": "", "items": [], "estimatedTokens": 0, "traceId": None}
 
         ai_plan = generate_learning_plan(
             profile, skills, recent_errors,
             llm_provider=llm_provider,
             max_output_tokens=None if identity.has_unlimited_llm_quota else identity.max_output_tokens,
             output_language=req.outputLanguage,
+            memory_context=memory_pack.get("text"),
         )
 
         days = []
@@ -85,6 +114,12 @@ def create_plan(
             "days": days,
             "createdAt": now,
             "updatedAt": now,
+            "memoryRecall": {
+                "traceId": memory_pack.get("traceId"),
+                "memoryIds": [item.get("id") for item in memory_pack.get("items", [])],
+                "estimatedTokens": memory_pack.get("estimatedTokens", 0),
+                "tokenBudget": memory_pack.get("tokenBudget"),
+            },
         }
         save_active_plan(plan)
         return {"plan": plan}

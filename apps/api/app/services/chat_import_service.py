@@ -5,6 +5,7 @@ from app.models.common import OutputLanguage
 from app.models.chat_import import ChatImportAIResult, ImportedChatConversation
 from app.services.ai_client import LLMProviderConfig, parse_with_model
 from app.services.output_language import language_instruction
+from app.services.memory_service import MEMORY_EXTRACTION_INSTRUCTION
 
 AnalysisMode = Literal["fast", "deep"]
 
@@ -113,6 +114,7 @@ def analyze_imported_chat(
     transcript_char_budget: int | None = MAX_TRANSCRIPT_CHARS,
     message_char_limit: int | None = MAX_MESSAGE_CHARS,
     trace_id: str | None = None,
+    memory_context: str | None = None,
 ) -> ChatImportAIResult:
     transcript = build_chat_transcript(
         conversations,
@@ -125,11 +127,21 @@ def analyze_imported_chat(
     selected_model = select_chat_import_model(analysis_mode, llm_provider=llm_provider)
     user_prompt = f'Imported ChatGPT conversations:\n"""\n{transcript}\n"""'
 
+    system = (
+        SYSTEM_PROMPT
+        + f"\n\n{language_instruction(output_language)}\n\nAnalysis mode: {analysis_mode}."
+        + f"\n\n{MEMORY_EXTRACTION_INSTRUCTION}"
+    )
+    request_messages = [{"role": "system", "content": system}]
+    if memory_context:
+        request_messages.append({
+            "role": "system",
+            "content": memory_context
+            + "\nUse it for continuity, but derive reported errors from the imported evidence.",
+        })
+    request_messages.append({"role": "user", "content": user_prompt})
     return parse_with_model(
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT + f"\n\n{language_instruction(output_language)}\n\nAnalysis mode: {analysis_mode}."},
-            {"role": "user", "content": user_prompt},
-        ],
+        messages=request_messages,
         response_model=ChatImportAIResult,
         max_tokens=max_tokens,
         model=selected_model,

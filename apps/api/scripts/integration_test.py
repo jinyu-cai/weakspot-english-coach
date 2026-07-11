@@ -164,7 +164,9 @@ def main() -> int:
             r = client.post("/api/v1/plan", json={"userId": user, "errorScope": "all"})
             assert r.status_code == 200, r.text
             assert captured_error_sets[-1][0]["scope"] == "all", captured_error_sets
-            assert captured_error_sets[-1][0]["limit"] == 500, captured_error_sets
+            # Context stays bounded even for unlimited users; durable history is
+            # supplied through the fixed-budget Memory Pack.
+            assert captured_error_sets[-1][0]["limit"] == 50, captured_error_sets
         finally:
             plan_route.list_weekly_errors = original_weekly_errors
             plan_route.list_recent_errors = original_recent_errors
@@ -299,45 +301,80 @@ def main() -> int:
             return ChatReplyAI(reply="Model routing test reply.", corrections=[], betterExpression=None)
 
         chat_routes.chat_reply = fake_chat_reply
+        model_setting_names = (
+            "deepseek_api_key",
+            "openai_compat_api_key",
+            "qwen_model_studio_api_key",
+            "qwen_model_studio_base_url",
+            "qwen_model_studio_model",
+            "qwen_model_studio_fast_model",
+        )
+        original_model_settings = {name: getattr(settings, name) for name in model_setting_names}
         try:
+            # Make this section deterministic: only Qwen is configured. This
+            # catches the old regression where the UI's DeepSeek default was
+            # sent to DashScope.
+            settings.deepseek_api_key = ""
+            settings.openai_compat_api_key = ""
+            settings.qwen_model_studio_api_key = "test-qwen-key"
+            settings.qwen_model_studio_base_url = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+            settings.qwen_model_studio_model = "qwen3.7-max"
+            settings.qwen_model_studio_fast_model = "qwen3.7-plus"
+
+            r = client.get("/api/v1/llm/models")
+            assert r.status_code == 200, r.text
+            catalog = r.json()["models"]
+            assert [entry["id"] for entry in catalog] == ["default", "qwen-deep", "qwen-fast"], catalog
+            assert all("apiKey" not in entry and "baseUrl" not in entry for entry in catalog), catalog
+
+            r = client.post(
+                "/api/v1/diagnose",
+                headers={"X-LLM-Server-Model": "qwen-deep"},
+                json={"userId": user, "text": "I have went to the library yesterday and study English."},
+            )
+            assert r.status_code == 200, r.text
+            assert r.headers.get("x-llm-model") == "qwen3.7-max", r.headers
+
             r = client.post("/api/v1/chat/sessions", json={"userId": user, "topic": "Default text model"})
             assert r.status_code == 200, r.text
             default_model_session = r.json()["session"]
-            assert default_model_session["textModel"] == "deepseek-v4-flash", default_model_session
+            assert default_model_session["textModel"] == "qwen3.7-plus", default_model_session
             r = client.post(
                 "/api/v1/chat/send",
-                json={"userId": user, "sessionId": default_model_session["id"], "text": "Hello from Flash."},
+                json={"userId": user, "sessionId": default_model_session["id"], "text": "Hello from Plus."},
             )
             assert r.status_code == 200, r.text
-            assert selected_text_models[-1] == "deepseek-v4-flash", selected_text_models
+            assert selected_text_models[-1] == "qwen3.7-plus", selected_text_models
 
             r = client.post(
                 "/api/v1/chat/sessions",
-                json={"userId": user, "topic": "Pro text model", "textModel": "deepseek-v4-pro"},
+                headers={"X-LLM-Server-Model": "qwen-deep"},
+                json={"userId": user, "topic": "Max text model"},
             )
             assert r.status_code == 200, r.text
-            pro_model_session = r.json()["session"]
-            assert pro_model_session["textModel"] == "deepseek-v4-pro", pro_model_session
+            max_model_session = r.json()["session"]
+            assert max_model_session["textModel"] == "qwen3.7-max", max_model_session
+            assert max_model_session["llmServerModelId"] == "qwen-deep", max_model_session
             r = client.post(
                 "/api/v1/chat/send",
-                json={"userId": user, "sessionId": pro_model_session["id"], "text": "Hello from Pro."},
+                # A later browser selection must not alter an existing chat.
+                headers={"X-LLM-Server-Model": "qwen-fast"},
+                json={"userId": user, "sessionId": max_model_session["id"], "text": "Hello from Max."},
             )
             assert r.status_code == 200, r.text
-            assert selected_text_models[-1] == "deepseek-v4-pro", selected_text_models
+            assert selected_text_models[-1] == "qwen3.7-max", selected_text_models
 
             r = client.post(
                 "/api/v1/chat/sessions",
-                json={"userId": user, "topic": "Owner custom model", "textModel": "owner-custom-text-model"},
+                json={"userId": user, "topic": "Legacy unsupported model", "textModel": "deepseek-v4-pro"},
             )
-            assert r.status_code == 200, r.text
-            custom_model_session = r.json()["session"]
-            assert custom_model_session["textModel"] == "owner-custom-text-model", custom_model_session
+            assert r.status_code == 400, r.text
             r = client.post(
                 "/api/v1/chat/send",
-                json={"userId": user, "sessionId": custom_model_session["id"], "text": "Hello from custom model."},
+                headers={"X-LLM-Server-Model": "deepseek-deep"},
+                json={"userId": user, "sessionId": default_model_session["id"], "text": "Bad model header."},
             )
-            assert r.status_code == 200, r.text
-            assert selected_text_models[-1] == "owner-custom-text-model", selected_text_models
+            assert r.status_code == 400, r.text
 
             guest = TestClient(app)
             r = guest.post(
@@ -360,16 +397,18 @@ def main() -> int:
             )
             assert r.status_code == 200, r.text
             byok_session = r.json()["session"]
-            assert byok_session["textModel"] == "any-text-model", byok_session
+            assert byok_session["textModel"] == "guest-byok-pro-model", byok_session
             r = byok_guest.post(
                 "/api/v1/chat/send",
                 json={"userId": "guest-byok", "sessionId": byok_session["id"], "text": "Hello from BYOK."},
             )
             assert r.status_code == 200, r.text
             assert selected_text_models[-1] == "guest-byok-pro-model", selected_text_models
-            assert selected_text_max_tokens[-1] is None, selected_text_max_tokens
+            assert selected_text_max_tokens[-1] == 2000, selected_text_max_tokens
         finally:
             chat_routes.chat_reply = original_chat_reply
+            for name, value in original_model_settings.items():
+                setattr(settings, name, value)
 
         original_openai_key = settings.openai_api_key
         original_realtime_post = realtime_routes.httpx.post
@@ -546,7 +585,7 @@ def main() -> int:
             kicked = r.json()
             assert kicked["kickRequested"] is True and kicked["kickSent"] is True, kicked
 
-            guest_voice = TestClient(app)
+            guest_voice = TestClient(app, headers={"X-Real-IP": "198.51.100.30"})
             before_guest_voice = int(time.time())
             r = guest_voice.post(
                 "/api/v1/chat/realtime/session",
@@ -563,7 +602,7 @@ def main() -> int:
             )
             assert r.status_code == 200, r.text
 
-            guest_bad_voice = TestClient(app)
+            guest_bad_voice = TestClient(app, headers={"X-Real-IP": "198.51.100.31"})
             r = guest_bad_voice.post(
                 "/api/v1/chat/realtime/session",
                 json={"userId": "guest-voice", "topic": "Bad voice model", "model": "gpt-realtime-bad"},
@@ -588,7 +627,7 @@ def main() -> int:
         assert sideband_calls and sideband_calls[0][2] == "rtc_integration_test", sideband_calls
         assert kick_calls and kick_calls[0][2] == "integration_test", kick_calls
         print(
-            "9. POST /chat model routing -> text/pro + realtime expiry + sideband transcript/audit/kick validated"
+            "9. Server model catalog + Qwen session routing + realtime expiry + sideband transcript/audit/kick validated"
         )
 
         # 10. End-of-session chat analysis
@@ -654,6 +693,14 @@ def main() -> int:
             assert _client_ip(Request(spoofed_scope)) == "203.0.113.8"
             print("11. proxy IP resolution      -> X-Real-IP wins over spoofed XFF")
             gtext = "I has many problem with my english grammar and I want to improve it very fast."
+            stream_guest = TestClient(app, headers={"X-Real-IP": "198.51.100.44"})
+            first_stream = stream_guest.post(
+                "/api/v1/diagnose",
+                json={"userId": "first-stream-guest", "text": gtext},
+            )
+            assert first_stream.status_code == 200, first_stream.text
+            assert stream_guest.cookies.get("guest_id"), "streamed diagnosis must preserve first-visit guest cookie"
+            print("11b. diagnose stream cookie -> first-visit guest identity preserved")
             codes = [guest.post("/api/v1/diagnose", json={"userId": "g", "text": gtext}).status_code for _ in range(4)]
             assert codes == [200, 200, 200, 429], codes
             blocked = guest.post("/api/v1/diagnose", json={"userId": "g", "text": gtext})
@@ -662,14 +709,18 @@ def main() -> int:
 
             byok_guest = TestClient(
                 app,
-                headers={"X-LLM-API-Key": "guest-byok-key", "X-LLM-Model": "guest-byok-pro-model"},
+                headers={
+                    "X-LLM-API-Key": "guest-byok-key",
+                    "X-LLM-Model": "guest-byok-pro-model",
+                    "X-Real-IP": "198.51.100.29",
+                },
             )
             byok_codes = [
                 byok_guest.post("/api/v1/diagnose", json={"userId": "byok", "text": gtext}).status_code
                 for _ in range(5)
             ]
-            assert all(c == 200 for c in byok_codes), byok_codes
-            print(f"12b. BYOK guest diagnose x5   -> {byok_codes}  (own key bypasses platform daily limit)")
+            assert byok_codes == [200, 200, 200, 429, 429], byok_codes
+            print(f"12b. BYOK guest diagnose x5   -> {byok_codes}  (same platform daily limit)")
 
             ocodes = [client.post("/api/v1/diagnose", json={"userId": "o", "text": gtext}).status_code for _ in range(5)]
             assert all(c == 200 for c in ocodes), ocodes
@@ -698,7 +749,7 @@ def main() -> int:
                 "/api/v1/chat/sessions",
                 json={"userId": "m", "topic": "Member custom model", "textModel": "member-custom-text-model"},
             )
-            assert r.status_code == 200 and r.json()["session"]["textModel"] == "member-custom-text-model", r.text
+            assert r.status_code == 400, r.text
             print("14. DB member role          -> accessTier=member, never blocked")
 
         return 0

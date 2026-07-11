@@ -4,6 +4,7 @@ from app.config import settings
 from app.models.common import OutputLanguage
 from app.models.diagnostic import DiagnosticAIResult
 from app.services.ai_client import LLMProviderConfig, parse_with_model
+from app.services.memory_service import MEMORY_EXTRACTION_INSTRUCTION
 from app.services.output_language import language_instruction
 
 DiagnosisMode = Literal["fast", "deep"]
@@ -87,21 +88,27 @@ def diagnose_english_text(
     llm_provider: LLMProviderConfig | None = None,
     max_output_tokens: int | None = DEEPSEEK_MAX_OUTPUT_TOKENS,
     trace_id: str | None = None,
+    memory_context: str | None = None,
 ) -> DiagnosticAIResult:
     user_prompt = f'Student text:\n"""\n{input_text}\n"""'
     selected_model = select_diagnose_model(diagnosis_mode, llm_provider=llm_provider)
     if diagnosis_mode == "fast":
-        system_prompt = f"{SYSTEM_PROMPT}\n\n{language_instruction(output_language)}\n\n{FAST_PROMPT_APPENDIX}"
+        system_prompt = f"{SYSTEM_PROMPT}\n\n{language_instruction(output_language)}\n\n{FAST_PROMPT_APPENDIX}\n\n{MEMORY_EXTRACTION_INSTRUCTION}"
         max_tokens = max_output_tokens
     else:
-        system_prompt = f"{SYSTEM_PROMPT}\n\n{language_instruction(output_language)}\n\n{DEEP_PROMPT_APPENDIX}"
+        system_prompt = f"{SYSTEM_PROMPT}\n\n{language_instruction(output_language)}\n\n{DEEP_PROMPT_APPENDIX}\n\n{MEMORY_EXTRACTION_INSTRUCTION}"
         max_tokens = max_output_tokens
 
+    messages = [{"role": "system", "content": system_prompt}]
+    if memory_context:
+        messages.append({
+            "role": "system",
+            "content": memory_context
+            + "\nUse it only to personalize feedback. Judge the submitted text from its own evidence.",
+        })
+    messages.append({"role": "user", "content": user_prompt})
     return parse_with_model(
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
+        messages=messages,
         response_model=DiagnosticAIResult,
         max_tokens=max_tokens,
         model=selected_model,

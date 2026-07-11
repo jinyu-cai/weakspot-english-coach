@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { Menu } from "lucide-react"
+import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { AuthButton } from "@/components/auth-button"
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
@@ -13,6 +14,9 @@ import { LanguageSwitcher } from "@/components/language-switcher"
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
+  const pathname = usePathname()
+
+  if (pathname === "/login") return children
 
   return (
     <div className="flex min-h-screen w-full">

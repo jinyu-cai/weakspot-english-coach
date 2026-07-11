@@ -7,6 +7,8 @@ export type ChatImportEvidenceType = "user_error" | "expression_gap" | "assistan
 export type PlanErrorScope = "weekly" | "all"
 export type TextChatModel = string
 export type RealtimeVoiceModel = string
+export type MemoryKind = "preference" | "goal" | "strategy" | "weakness" | "episode"
+export type MemoryStatus = "active" | "superseded" | "expired" | "forgotten"
 
 export interface LearnerProfile {
   userId: string
@@ -213,6 +215,104 @@ export interface NextBestAction {
   href: string
 }
 
+/* ---- MemoryAgent types ---- */
+
+export interface MemoryScoreBreakdown {
+  semantic: number
+  lexical: number
+  importance: number
+  recency: number
+  frequency: number
+  critical: number
+}
+
+export interface MemoryItem {
+  id: string
+  userId: string
+  kind: MemoryKind
+  canonicalKey: string
+  content: string
+  evidence: string
+  confidence: number
+  importance: number
+  status: MemoryStatus
+  pinned: boolean
+  sourceType: string
+  sourceId: string
+  observationCount: number
+  accessCount: number
+  lastAccessedAt?: string | null
+  createdAt: string
+  updatedAt: string
+  expiresAt?: string | null
+  supersededBy?: string | null
+  retrievalScore?: number
+  scoreBreakdown?: MemoryScoreBreakdown
+  stats?: {
+    skillCode?: string
+    exerciseType?: PracticeType
+    attempts?: number
+    averageScore?: number
+    successRate?: number
+    lastScore?: number
+  }
+}
+
+export interface MemoryPack {
+  text: string
+  items: MemoryItem[]
+  estimatedTokens: number
+  tokenBudget: number
+  totalCandidates: number
+  traceId?: string | null
+}
+
+export interface MemoryTraceSelection {
+  id: string
+  kind: MemoryKind
+  content: string
+  score: number
+  scoreBreakdown: MemoryScoreBreakdown
+}
+
+export interface MemoryTrace {
+  id: string
+  purpose: string
+  queryPreview: string
+  selectedMemoryIds: string[]
+  selected: MemoryTraceSelection[]
+  totalCandidates: number
+  estimatedTokens: number
+  tokenBudget: number
+  createdAt: string
+}
+
+export interface NextActionDecision {
+  targetSkillCode: string
+  practiceType: PracticeType
+  reason: string
+  skillReason: string
+  practiceTypeReason: string
+  supportingMemoryIds: string[]
+  policy: string
+  generatedAt: string
+  skillScores: Array<{
+    skillCode: string
+    score: number
+    mastery: number
+    recentErrorCount: number
+    attemptCount: number
+    averagePracticeScore?: number | null
+  }>
+  practiceTypeScores: Array<{
+    practiceType: PracticeType
+    score: number
+    attemptCount: number
+    averageScore?: number | null
+    memoryId?: string | null
+  }>
+}
+
 export type NoteType = "expression" | "vocabulary" | "grammar"
 
 export interface LearningNote {
@@ -237,6 +337,7 @@ export interface ChatSession {
   topic?: string | null
   scenarioPrompt?: string | null
   textModel?: TextChatModel | null
+  llmServerModelId?: string | null
   voiceModel?: RealtimeVoiceModel | null
   messageCount: number
   summary?: string | null

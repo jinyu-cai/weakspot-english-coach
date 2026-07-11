@@ -19,6 +19,7 @@ from app.db.repositories import (
     update_chat_session_fields,
     update_chat_session_summary,
 )
+from app.services.memory_service import heuristic_memory_candidates, remember_candidates
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -234,6 +235,17 @@ async def _save_transcript_message(
         "createdAt": created_at,
     }
     await asyncio.to_thread(save_chat_message, message)
+    if role == "user":
+        try:
+            await asyncio.to_thread(
+                remember_candidates,
+                state.user_id,
+                heuristic_memory_candidates(text),
+                source_type="chat",
+                source_id=state.session_id,
+            )
+        except Exception as exc:
+            logger.warning("realtime memory persist failed session=%s: %s", state.session_id, exc)
     state.saved_transcript_message_count += 1
     if role == "user" and not state.transcript_summary:
         state.transcript_summary = text[:80]

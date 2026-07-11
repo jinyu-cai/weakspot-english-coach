@@ -44,3 +44,11 @@ def chat_session_sk(session_id: str) -> str:
 
 def chat_message_sk(created_at: str, message_id: str) -> str:
     return f"CHATMSG#{created_at}#{message_id}"
+
+
+def memory_sk(memory_id: str) -> str:
+    return f"MEMORY#{memory_id}"
+
+
+def memory_trace_sk(created_at: str, trace_id: str) -> str:
+    return f"MEMTRACE#{created_at}#{trace_id}"

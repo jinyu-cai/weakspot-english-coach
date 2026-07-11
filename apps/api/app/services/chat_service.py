@@ -3,6 +3,7 @@ from typing import List, Optional
 from app.config import settings
 from app.models.chat import ChatPredictionAI, ChatReplyAI
 from app.services.ai_client import LLMProviderConfig, parse_with_model
+from app.services.memory_service import MEMORY_EXTRACTION_INSTRUCTION
 
 CHAT_SYSTEM_PROMPT = """\
 You are a friendly, patient English conversation partner for Chinese-speaking learners.
@@ -35,8 +36,9 @@ def build_chat_messages(
     history: List[dict],
     user_text: str,
     topic: Optional[str] = None,
+    memory_context: Optional[str] = None,
 ) -> list:
-    messages = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}]
+    messages = [{"role": "system", "content": f"{CHAT_SYSTEM_PROMPT}\n\n{MEMORY_EXTRACTION_INSTRUCTION}"}]
 
     if topic:
         messages.append({
@@ -44,7 +46,14 @@ def build_chat_messages(
             "content": f"The conversation topic/scenario: {topic}",
         })
 
-    for msg in history:
+    if memory_context:
+        messages.append({
+            "role": "system",
+            "content": memory_context
+            + "\nPersonalize naturally, but never claim a memory if it conflicts with the current message.",
+        })
+
+    for msg in history[-settings.memory_chat_recent_messages:]:
         role = msg.get("role", "user")
         content = msg.get("content", "")
         if role in ("user", "assistant") and content:
@@ -62,8 +71,9 @@ def chat_reply(
     model: Optional[str] = None,
     max_tokens: Optional[int] = 2000,
     trace_id: Optional[str] = None,
+    memory_context: Optional[str] = None,
 ) -> ChatReplyAI:
-    messages = build_chat_messages(history, user_text, topic)
+    messages = build_chat_messages(history, user_text, topic, memory_context)
     return parse_with_model(
         messages=messages,
         response_model=ChatReplyAI,

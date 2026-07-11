@@ -3,9 +3,24 @@ export type LLMSettings = {
   baseUrl: string
   model: string
   fastModel: string
+  serverModelId: string
+}
+
+export type ServerLLMModel = {
+  id: string
+  label: string
+  provider: string
+  model: string
+  fastModel?: string
+  adaptive?: boolean
 }
 
 export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
+export const QWEN_MODEL_STUDIO_INTERNATIONAL_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+export const QWEN_37_MAX_MODEL = "qwen3.7-max"
+export const QWEN_37_PLUS_MODEL = "qwen3.7-plus"
+export const SERVER_DEFAULT_MODEL_ID = "default"
+export const LLM_SETTINGS_CHANGE_EVENT = "weakspot:llm-settings-change"
 
 const STORAGE_KEY = "weakspot.llmSettings.v1"
 
@@ -14,6 +29,7 @@ const defaultSettings: LLMSettings = {
   baseUrl: DEFAULT_OPENAI_BASE_URL,
   model: "",
   fastModel: "",
+  serverModelId: SERVER_DEFAULT_MODEL_ID,
 }
 
 function canUseStorage() {
@@ -32,6 +48,7 @@ export function loadLLMSettings(): LLMSettings {
       baseUrl: parsed.baseUrl || DEFAULT_OPENAI_BASE_URL,
       model: parsed.model ?? "",
       fastModel: parsed.fastModel ?? "",
+      serverModelId: parsed.serverModelId || SERVER_DEFAULT_MODEL_ID,
     }
   } catch {
     return defaultSettings
@@ -47,13 +64,16 @@ export function saveLLMSettings(settings: LLMSettings) {
       baseUrl: (settings.baseUrl || DEFAULT_OPENAI_BASE_URL).trim().replace(/\/+$/, ""),
       model: settings.model.trim(),
       fastModel: settings.fastModel.trim(),
+      serverModelId: settings.serverModelId.trim() || SERVER_DEFAULT_MODEL_ID,
     }),
   )
+  window.dispatchEvent(new Event(LLM_SETTINGS_CHANGE_EVENT))
 }
 
 export function clearLLMSettings() {
   if (!canUseStorage()) return
   window.localStorage.removeItem(STORAGE_KEY)
+  window.dispatchEvent(new Event(LLM_SETTINGS_CHANGE_EVENT))
 }
 
 export function hasCustomLLMSettings() {
@@ -63,7 +83,11 @@ export function hasCustomLLMSettings() {
 
 export function getLLMProviderHeaders(): Record<string, string> {
   const settings = loadLLMSettings()
-  if (!settings.apiKey || !settings.model) return {}
+  if (!settings.apiKey || !settings.model) {
+    return settings.serverModelId && settings.serverModelId !== SERVER_DEFAULT_MODEL_ID
+      ? { "X-LLM-Server-Model": settings.serverModelId }
+      : {}
+  }
 
   const headers: Record<string, string> = {
     "X-LLM-API-Key": settings.apiKey,

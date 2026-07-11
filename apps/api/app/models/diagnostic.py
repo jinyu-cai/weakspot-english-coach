@@ -3,6 +3,7 @@ from typing import List, Literal
 from pydantic import BaseModel, Field
 
 from app.models.common import CEFRLevel, OutputLanguage, Severity
+from app.models.memory import MemoryCandidate
 
 
 DiagnosisMode = Literal["fast", "deep"]
@@ -55,3 +56,4 @@ class DiagnosticAIResult(BaseModel):
     errors: List[DiagnosticErrorAI]
     recommendedNextActionsZh: List[str]
     learningNotes: List[LearningNoteAI] = []
+    memoryCandidates: List[MemoryCandidate] = Field(default_factory=list)

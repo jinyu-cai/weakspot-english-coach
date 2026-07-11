@@ -1,134 +1,192 @@
-# Devpost Submission — H0 Hackathon
+# Devpost Submission Draft — Qwen Cloud Hackathon
 
-## Quick Info
+## Quick information
 
-- **Project**: WeakSpot English Coach
-- **Tagline**: Instead of asking what you want to practice, it discovers what you need to practice.
-- **Track**: Monetizable B2C App (Education) / Open Innovation
-- **AWS Database**: Amazon DynamoDB (single-table design)
-- **Vercel URL**: https://englearning.jinxxx.de
-- **Vercel Team ID**: [LOOK UP in Vercel Dashboard → Team Settings]
+- **Project:** WeakSpot English Coach
+- **Tagline:** An English coach that remembers what works for you.
+- **Track:** Track 1 — MemoryAgent
+- **Live app:** https://englearning.jinxxx.de
+- **Primary API:** https://enapi.jinxxx.de
+- **Primary compute:** Alibaba Cloud ECS
+- **Qwen services:** `qwen3.7-max`, `qwen3.7-plus`, `text-embedding-v4`
+- **Persistence:** Amazon DynamoDB single-table design
+- **License:** MIT
+- **Repository:** `[ADD PUBLIC GITHUB URL]`
+- **Demo video:** `[ADD PUBLIC VIDEO URL — under 3 minutes]`
 
----
+The Devpost page currently lists the deadline as **July 20, 2026 at 2:00 PM
+PDT**. Recheck the [official challenge page](https://qwencloud-hackathon.devpost.com/)
+before the final submission.
 
-## Text Description (for Devpost)
+## What it does
 
-### What it does
+Most AI tutors forget the learner when a session ends. WeakSpot remembers five
+types of durable learning evidence: preferences, goals, effective strategies,
+recurring weaknesses, and consequential recent experiences.
 
-WeakSpot English Coach is an adaptive AI-powered English learning app. The learner simply writes English — a paragraph, a chat message, anything — and the system analyzes it against an 11-category error taxonomy (verb tense, articles, prepositions, word choice, register, sentence variety, etc.). It returns a detailed diagnostic report with CEFR level estimation, structured errors with micro-lessons, and then **writes everything into DynamoDB** to build an evolving, persistent "weakness profile."
+Learners can submit writing, practice through text or voice chat, import prior
+ChatGPT conversations, generate a seven-day plan, and complete targeted
+exercises. Qwen analyzes each interaction and proposes conservative durable
+memories inside its structured response. Practice results independently update
+per-skill/per-format effectiveness statistics. Before the next task, WeakSpot
+retrieves only the most relevant memories into a fixed-size Memory Pack, so the
+coach becomes more accurate without sending the entire history back to the
+model.
 
-From that profile, WeakSpot generates a personalized 7-day learning plan targeting the learner's weakest skills, creates targeted practice exercises, grades answers, and continuously updates skill mastery scores. **Every interaction tightens the model** — the database IS the learner's long-term memory, which is what makes the system genuinely adaptive.
+The learner can inspect everything in Memory Center: what is active, the
+evidence, confidence and importance, what was replaced or expired, why a memory
+was recalled, how many tokens it consumed, and which memories drove the next
+practice decision. They can edit, pin, or forget any memory.
 
-### The problem it solves
+## How it meets Track 1
 
-Most AI English tutors are stateless. Every session starts from zero. The learner has to know what to ask. WeakSpot is different — it doesn't ask what you want to practice, it **discovers** what you need to practice by analyzing your actual English output and tracking your weaknesses over time.
+### Persistent memory that autonomously accumulates experience
 
-### Why DynamoDB (and how we use it)
+- Diagnosis, text chat, session analysis, and chat import return Qwen
+  `memoryCandidates` without a second completion call.
+- Diagnosed errors create recurring-weakness memories with evidence.
+- Every graded attempt updates a strategy memory containing attempts, average
+  score, success rate, and last outcome, plus a short-lived episode.
+- All memory is stored across sessions in DynamoDB `MEMORY#` rows.
 
-We chose DynamoDB because it's a perfect fit for the learner-profile data model:
+### Preferences and increasingly accurate decisions
 
-- **Single-table design** (`WeakSpotEnglishCoach`) — one table holds profiles, skill states, submissions, errors, plans, exercises, attempts, notes, chat messages, and dedup markers. The partition key is `USER#{userId}` and the sort key encodes entity type + timestamp, so all of a learner's data lives in one contiguous partition.
-- **Serverless & pay-per-request** — perfect for a B2C education app where traffic patterns follow daily learning sessions. No cold starts, no idle costs, no connection pooling.
-- **Atomic skill mastery updates** — when a learner submits practice, the skill mastery delta is computed and written in the same request flow. The 11-category taxonomy is tracked per-user-per-skill with exact error/correct counts.
-- **De-duplication via hash markers** — identical text re-submissions are detected via `SUBHASH#` records and don't re-penalize skill scores, keeping the weakness model clean.
-- **Manual delete with skill rollback** — deleting a submission reverses its error count impact on affected skills, maintaining data integrity.
+- Stable keys represent preferences such as concise feedback, business English,
+  and explanation language, plus IELTS/career goals.
+- The next skill is selected from mastery gap, recent error density, historical
+  failure need, and time since practice.
+- The exercise format balances actual historical scores, productive difficulty,
+  under-sampled exploration, and sample reliability.
+- Every decision includes a reason, component scores, and supporting memory IDs.
 
-### Tech stack
+### Efficient storage and retrieval
 
-- **Frontend**: Next.js 16 (App Router) + TypeScript + Tailwind CSS + shadcn/ui, generated with **Vercel v0**
-- **Frontend deploy**: **Vercel** (HTTPS, global CDN)
-- **Backend**: **FastAPI** (Python 3.11), Docker on Linux (ARM64), Nginx + Certbot
-- **AI**: **DeepSeek-V4-Pro** (primary) + DeepSeek-V4-Flash (fast tasks) — OpenAI-compatible JSON mode with Pydantic validation
-- **Database**: **Amazon DynamoDB** — single-table design, boto3
-- **Auth**: GitHub OAuth + Google OAuth with session cookies
-- **Voice**: OpenAI Realtime API with backend sideband monitoring
+- Alibaba Model Studio `text-embedding-v4` produces 256-dimensional vectors.
+- Retrieval combines vector similarity, lexical match, importance, recency,
+  access frequency, and critical preference/goal signals.
+- The deterministic fallback stays functional when embedding service is
+  unavailable.
+- Memory is capped at 200 active rows per learner; low-value old episodes are
+  pruned first.
 
-### What's unique
+### Timely forgetting
 
-1. **Database-driven personalization** — the learner profile IS in DynamoDB, not in a stateless LLM prompt. Skills, errors, and mastery evolve across every session.
-2. **11-category structured error taxonomy** — not just "this sounds wrong" but specific, actionable diagnostics (verb tense, article, preposition, word choice, repetition, clarity, register, sentence variety, transition, Chinese-English transfer, completeness).
-3. **Closed-loop adaptive learning** — diagnose → profile → plan → practice → grade → update → repeat. Every step writes to and reads from DynamoDB.
-4. **Monetizable B2C architecture** — usage-based DynamoDB costs scale with user activity, per-user rate limiting is server-enforced by identity role (guest/user/member/owner), and the whole stack is pay-as-you-go with no fixed infrastructure spend.
+- Preferences persist; goals, strategies, weaknesses, and episodes have
+  different default lifetimes.
+- Kind-specific half-life decay lowers stale recall before expiration.
+- Conflicting facts reuse a canonical key: the new fact becomes active and the
+  old one is marked `superseded`.
+- The service filters `expiresAt` immediately; DynamoDB TTL removes archived
+  rows later.
+- Users can explicitly forget or pin memory.
 
-### How to try it
+### Critical recall within a limited context window
 
-1. Visit https://englearning.jinxxx.de
-2. The home page shows a sample English paragraph — click "Analyze My English"
-3. See the diagnostic report with CEFR level, errors, and micro-lessons
-4. Go to Dashboard to see your weakness radar
-5. Go to Plan to generate a personalized 7-day plan
-6. Go to Practice to do a targeted exercise
-7. Check History to see all past submissions
+- The default Memory Pack is at most six memories and 700 estimated tokens.
+- Up to two important preferences/goals are reserved before score-based fill.
+- Text chat uses only the 12 latest local messages.
+- Plan generation caps raw skills/errors instead of transmitting all history.
+- `MEMTRACE#` rows make selection and token use auditable.
 
----
-
-## Architecture Diagram (Mermaid — for Devpost)
+## Technical implementation
 
 ```mermaid
-graph TD
-    U[Browser] -->|HTTPS| V[Vercel<br/>Next.js + v0<br/>englearning.jinxxx.de]
-    V -->|HTTPS + CORS| N[Nginx + Certbot<br/>oracle-us-west]
-    N -->|reverse proxy| F[FastAPI<br/>Docker, Python 3.11]
-    F -->|JSON mode| D[DeepSeek API<br/>deepseek-v4-pro]
-    F -->|boto3| DB[(Amazon DynamoDB<br/>WeakSpotEnglishCoach<br/>Single-table design)]
-    
-    subgraph DynamoDB Data Model
-        DB2[PK: USER#id<br/>SK: PROFILE] 
-        DB3[PK: USER#id<br/>SK: SKILL#code]
-        DB4[PK: USER#id<br/>SK: SUBMISSION#ts]
-        DB5[PK: USER#id<br/>SK: ERROR#ts]
-        DB6[PK: USER#id<br/>SK: PLAN#ACTIVE]
-        DB7[PK: USER#id<br/>SK: EXERCISE#id]
-        DB8[PK: USER#id<br/>SK: ATTEMPT#ts]
-    end
-    
-    DB --> DB2
-    DB --> DB3
-    DB --> DB4
-    DB --> DB5
-    DB --> DB6
-    DB --> DB7
-    DB --> DB8
+flowchart LR
+    User[Next.js / Vercel] -->|HTTPS| Ali[Alibaba ECS / FastAPI]
+    Ali --> Qwen[Qwen 3.7 Max + Plus]
+    Ali --> Emb[Qwen text-embedding-v4]
+    Ali --> Agent[Memory lifecycle + hybrid ranker]
+    Agent <--> DB[(DynamoDB)]
+    Agent -->|bounded Memory Pack| Qwen
+    Grade[Practice outcomes] --> Agent
+    Oracle[Oracle standby] -. rollback .-> DB
 ```
 
-## Mermaid diagram code (paste into Devpost)
+The primary FastAPI/Docker deployment runs on Alibaba Cloud ECS behind Nginx
+and TLS. The Vercel frontend calls that origin during the hackathon. Oracle
+Cloud remains a manual standby using the same DynamoDB state.
 
-Copy the code block above into Devpost's description field (Devpost supports Mermaid via their markdown renderer, or you can screenshot the diagram).
+Important code links after the repository is public:
 
----
+- `apps/api/app/services/memory_service.py` — consolidation, lifecycle,
+  retrieval, budget, and practice strategy updates.
+- `apps/api/app/services/embedding_client.py` — Qwen embedding integration and
+  fallback.
+- `apps/api/app/services/decision_service.py` — explainable next-action policy.
+- `apps/api/app/api/routes/memory.py` — learner memory controls and traces.
+- `apps/web/app/memory/page.tsx` — Memory Center.
+- `apps/api/scripts/memory_benchmark.py` — reproducible evaluation.
 
-## Demo Video Script (< 3 minutes)
+## Evidence and measured result
 
-### Structure (total: ~2:45)
+Secret-free deterministic benchmark (`moto` + lexical fallback):
 
-**0:00-0:20 — Intro & Problem**
-- "Most AI English tutors are stateless. Every session starts from zero. You have to know what to ask."
-- "WeakSpot is different — it discovers what YOU need to practice."
+| Metric | Result |
+| --- | ---: |
+| Recall@6 | 1.00 (5/5 fixtures) |
+| Expired/superseded suppression | 100% |
+| Token-budget compliance | 100% |
+| Raw fixture history | 1,266 estimated tokens |
+| Average Memory Pack | 220 estimated tokens |
+| Context reduction | 82.6% |
 
-**0:20-1:00 — Diagnose Demo**
-- Show the home page at https://englearning.jinxxx.de
-- Click "Analyze My English" on the sample paragraph
-- Walk through the diagnostic report: CEFR badge, score ring, error cards with micro-lessons
-- "Each error is tagged with a category from our 11-category taxonomy"
+Run it with:
 
-**1:00-1:30 — Dashboard (the DynamoDB proof)**
-- Navigate to /dashboard
-- Show the weakness radar chart — "This data comes from DynamoDB. Every diagnosis updates your skill mastery."
-- Show the "weakest skills" list — "The system knows exactly what you need to work on."
+```bash
+cd apps/api
+DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_agent_test
+DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
+```
 
-**1:30-1:55 — Plan & Practice**
-- Go to /plan, show the 7-day personalized plan
-- "This plan is generated FROM your DynamoDB weakness profile — weakest skills first."
-- Go to /practice, show a generated exercise, submit an answer, show grading
+Set `MEMORY_BENCHMARK_LIVE=1` to measure the live Qwen embedding path.
 
-**1:55-2:25 — DynamoDB Deep Dive**
-- Switch to AWS Console screenshot
-- Show the `WeakSpotEnglishCoach` table
-- "Single-table design: USER#{id} partition key, sort keys encode entity types — PROFILE, SKILL#, SUBMISSION#, ERROR#, PLAN#ACTIVE..."
-- "All of one learner's data lives in one contiguous partition. Serverless, pay-per-request, zero cold starts."
+## Significant update for this hackathon
 
-**2:25-2:45 — Closing**
-- Show the adaptive loop diagram
-- "Diagnose → profile → plan → practice → grade → update. Every interaction tightens the model."
-- "WeakSpot English Coach — built with Vercel v0, FastAPI, and Amazon DynamoDB."
-- "#H0Hackathon"
+The original project had an error library and selected the lowest mastery skill,
+but it did not have a general memory model. This submission adds, after the
+hackathon start date:
+
+- five-class durable memory and canonical conflict replacement;
+- Qwen autonomous preference/goal/strategy extraction;
+- Model Studio embeddings and hybrid retrieval;
+- time decay, expiration, DynamoDB TTL, and capacity pruning;
+- bounded cross-session Memory Packs;
+- practice-effectiveness accumulation and adaptive decisions;
+- a complete Memory Center, recall audit trail, tests, and benchmark;
+- Alibaba Cloud primary deployment and Qwen provider routing.
+
+## Under-three-minute demo outline
+
+1. **0:00–0:20 — Problem:** show that a stateless tutor forgets; introduce a
+   cross-session learner memory.
+2. **0:20–0:50 — Accumulation:** state “I am preparing for IELTS and prefer
+   concise feedback,” then diagnose writing. Open Memory Center and show the
+   goal/preference/weakness created automatically.
+3. **0:50–1:20 — Cross-session recall:** start a new chat or create a plan. Show
+   that it honors IELTS and concise feedback without restating them.
+4. **1:20–1:50 — Retrieval/forgetting:** run recall preview, show scores and the
+   700-token budget; replace a preference and show the old row as Replaced;
+   forget another memory.
+5. **1:50–2:20 — Improving decision:** complete practices, then show the next
+   skill/type reason and supporting strategy memory.
+6. **2:20–2:45 — Alibaba/Qwen proof:** show ECS, public API health, backend log
+   model names, Model Studio models, architecture, and DynamoDB `MEMORY#` rows.
+7. **2:45–2:58 — Close:** show benchmark result and public MIT repository.
+
+Use [DEMO_VIDEO_SCRIPT.md](DEMO_VIDEO_SCRIPT.md) for the narration.
+
+## Final submission checklist
+
+- [x] Track 1 implementation in the repository
+- [x] Alibaba Cloud deployment runbook and architecture
+- [x] Visible MIT `LICENSE`
+- [x] MemoryAgent tests and benchmark
+- [x] Demo script under three minutes
+- [x] Deploy the final backend revision to Alibaba ECS
+- [x] Keep Oracle standby healthy after the same schema-compatible revision
+- [ ] Deploy the final frontend revision to Vercel
+- [ ] Make repository public and insert its URL above
+- [ ] Capture Alibaba ECS + Model Studio + DynamoDB proof without secrets
+- [ ] Record/upload public video and insert its URL above
+- [ ] Add project screenshots and architecture diagram to Devpost
+- [ ] Verify deadline and submit before the official cutoff

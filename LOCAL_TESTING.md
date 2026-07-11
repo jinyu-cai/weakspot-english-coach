@@ -99,6 +99,8 @@ These tests do not need real AWS, Docker, or an LLM key.
 cd apps/api
 uv run python -m scripts.smoke_test
 uv run python -m scripts.integration_test
+DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_agent_test
+DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
 ```
 
 The integration test covers diagnose, profile, plan, practice generation,
@@ -164,6 +166,8 @@ Before merging:
 ```bash
 cd apps/api && uv run python -m scripts.smoke_test
 cd apps/api && uv run python -m scripts.integration_test
+cd apps/api && DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_agent_test
+cd apps/api && DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
 cd apps/web && pnpm exec tsc --noEmit
 cd apps/web && pnpm build
 ```

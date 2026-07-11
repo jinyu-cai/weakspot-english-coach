@@ -21,6 +21,7 @@ from app.db.repositories import (
     put_skill,
     save_profile,
 )
+from app.services.memory_service import forget_memories_from_source
 
 router = APIRouter()
 
@@ -82,6 +83,7 @@ def delete_history_entry(
     delete_submission(user_id, createdAt, submission_id)
     text_hash = submission.get("textHash") or normalized_text_hash(submission.get("originalText", ""))
     delete_submission_hash(user_id, text_hash)
+    updated_memories = forget_memories_from_source(user_id, submission_id)
 
     profile = get_profile(user_id)
     if profile:
@@ -95,4 +97,5 @@ def delete_history_entry(
         "removedErrors": len(errors),
         "updatedSkills": list(skills_by_code.values()),
         "profile": profile,
+        "updatedMemories": updated_memories,
     }

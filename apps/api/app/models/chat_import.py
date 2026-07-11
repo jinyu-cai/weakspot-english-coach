@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 from app.models.common import CEFRLevel, OutputLanguage, Severity
 from app.models.diagnostic import LearningNoteAI
+from app.models.memory import MemoryCandidate
 
 
 ChatRole = Literal["user", "assistant"]
@@ -53,6 +54,7 @@ class ChatImportAIResult(BaseModel):
     assistantConfirmedWeaknessesZh: List[str]
     recommendedNextActionsZh: List[str]
     learningNotes: List[LearningNoteAI] = []
+    memoryCandidates: List[MemoryCandidate] = Field(default_factory=list)
 
 
 class ChatImportAnalyzeResponse(BaseModel):

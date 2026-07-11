@@ -40,6 +40,8 @@ def generate_practice_exercise(
     llm_provider: LLMProviderConfig | None = None,
     practice_type: str | None = None,
     output_language: OutputLanguage = "en",
+    memory_context: str | None = None,
+    decision_reason: str | None = None,
 ) -> PracticeExerciseAIResult:
     type_line = (
         f"Required exercise type:\n{practice_type} (the `type` field MUST be exactly this)\n\n"
@@ -52,6 +54,10 @@ def generate_practice_exercise(
         f"Estimated CEFR level:\n{cefr_level}\n\n"
         f"Recent learner error examples:\n{recent_error_examples}"
     )
+    if decision_reason:
+        user_prompt += f"\n\nAdaptive selection rationale:\n{decision_reason}"
+    if memory_context:
+        user_prompt += f"\n\n{memory_context}\nHonor relevant learner preferences and effective strategies."
     return parse_with_model(
         messages=[
             {"role": "system", "content": f"{GENERATE_SYSTEM_PROMPT}\n\n{language_instruction(output_language)}"},

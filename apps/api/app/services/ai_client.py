@@ -30,6 +30,12 @@ class LLMProviderConfig:
     base_url: str
     model: str
     fast_model: Optional[str] = None
+    # Server-managed choices are resolved from a small allowlist and never send
+    # their credentials to the browser. BYOK remains request-scoped and is
+    # intentionally distinguished so quotas cannot be relaxed merely because a
+    # caller supplied arbitrary headers.
+    server_model_id: Optional[str] = None
+    is_byok: bool = False
 
 
 def get_client(provider: Optional[LLMProviderConfig] = None) -> OpenAI:
@@ -57,6 +63,14 @@ def _is_unsupported_reasoning_effort(error: OpenAIError) -> bool:
     )
 
 
+def _uses_model_studio_qwen(model: str, base_url: str) -> bool:
+    normalized_model = model.strip().lower()
+    normalized_base_url = base_url.strip().lower()
+    return normalized_model.startswith("qwen") and (
+        "dashscope" in normalized_base_url or "maas.aliyuncs.com" in normalized_base_url
+    )
+
+
 def parse_with_model(
     messages: list,
     response_model: Type[T],
@@ -74,6 +88,8 @@ def parse_with_model(
     selected_model = model or (provider.model if provider else settings.default_llm_model)
     if not selected_model:
         raise ValueError("No LLM model configured.")
+    base_url = provider.base_url if provider else settings.default_llm_base_url
+    uses_model_studio_qwen = _uses_model_studio_qwen(selected_model, base_url)
 
     schema = json.dumps(response_model.model_json_schema(), ensure_ascii=False)
 
@@ -89,16 +105,17 @@ def parse_with_model(
     last_error: Optional[Exception] = None
     trace = trace_id or "-"
     logger.info(
-        "llm[%s] start model=%s response_model=%s schema_bytes=%d max_tokens=%s reasoning_effort=%s",
+        "llm[%s] start model=%s response_model=%s schema_bytes=%d max_tokens=%s reasoning_effort=%s qwen_json_mode=%s",
         trace,
         selected_model,
         response_model.__name__,
         len(schema.encode("utf-8")),
         max_tokens if max_tokens is not None else "unlimited",
         HIGH_REASONING_EFFORT,
+        uses_model_studio_qwen,
     )
 
-    use_reasoning_effort = True
+    use_reasoning_effort = not uses_model_studio_qwen
     for attempt in range(1, 3):  # one retry
         attempt_started = time.perf_counter()
         try:
@@ -111,6 +128,8 @@ def parse_with_model(
             )
             if max_tokens is not None:
                 create_kwargs["max_tokens"] = max_tokens
+            if uses_model_studio_qwen:
+                create_kwargs["extra_body"] = {"enable_thinking": False}
             while True:
                 if use_reasoning_effort:
                     create_kwargs["reasoning_effort"] = HIGH_REASONING_EFFORT

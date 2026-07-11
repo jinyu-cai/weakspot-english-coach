@@ -5,7 +5,7 @@ import time
 from decimal import Decimal
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import Identity, get_llm_provider, rate_limited
@@ -29,6 +29,12 @@ from app.db.repositories import (
 from app.models.diagnostic import DiagnoseRequest
 from app.services.ai_client import LLMProviderConfig
 from app.services.diagnose_service import diagnose_english_text, select_diagnose_model
+from app.services.memory_service import (
+    heuristic_memory_candidates,
+    memory_candidates_from_errors,
+    remember_candidates,
+    retrieve_memory_pack,
+)
 
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
@@ -51,8 +57,9 @@ def _language_text_hash(text: str, output_language: str) -> str:
 @router.post("/diagnose")
 async def diagnose(
     req: DiagnoseRequest,
+    response: Response,
     llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
-    identity: Identity = Depends(rate_limited("diagnose", allow_byok_unlimited=True)),
+    identity: Identity = Depends(rate_limited("diagnose")),
 ):
     """Diagnose a piece of writing, persist everything, and update the learner profile.
 
@@ -137,9 +144,16 @@ async def diagnose(
 
         yield json.dumps(result, ensure_ascii=False, default=_json_default).encode()
 
-    return StreamingResponse(
+    stream = StreamingResponse(
         generate(), media_type="application/json", headers=resp_headers,
     )
+    # Dependencies attach a first-visit guest cookie to FastAPI's injected
+    # Response. Copy it to the explicit streaming response so the learner keeps
+    # the same server-resolved identity on the next page/API call.
+    for name, value in response.raw_headers:
+        if name.lower() == b"set-cookie":
+            stream.raw_headers.append((name, value))
+    return stream
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +213,16 @@ def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mod
     """Call LLM, persist submission + errors + notes + skills, return response dict."""
     now = now_iso()
 
+    try:
+        memory_pack = retrieve_memory_pack(
+            req.userId,
+            f"Diagnose this learner's writing and personalize useful feedback: {req.text[:1200]}",
+            purpose="diagnosis",
+        )
+    except Exception:
+        logger.exception("diagnose[%s] memory_retrieval_error", request_id)
+        memory_pack = {"text": "", "items": [], "estimatedTokens": 0, "traceId": None}
+
     stage_started = time.perf_counter()
     diagnostic = diagnose_english_text(
         req.text,
@@ -207,6 +231,7 @@ def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mod
         llm_provider=llm_provider,
         max_output_tokens=None if identity.has_unlimited_llm_quota else identity.max_output_tokens,
         trace_id=request_id,
+        memory_context=memory_pack.get("text"),
     )
     llm_ms = _elapsed_ms(stage_started)
     logger.info(
@@ -299,6 +324,22 @@ def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mod
     profile["updatedAt"] = now
     save_profile(profile)
     put_submission_hash(req.userId, text_hash, submission_id, now)
+
+    try:
+        memory_candidates = [
+            *diagnostic.memoryCandidates,
+            *heuristic_memory_candidates(req.text),
+            *memory_candidates_from_errors(saved_errors),
+        ]
+        saved_memories = remember_candidates(
+            req.userId,
+            memory_candidates,
+            source_type="diagnosis",
+            source_id=submission_id,
+        )
+    except Exception:
+        logger.exception("diagnose[%s] memory_persist_error", request_id)
+        saved_memories = []
     persist_ms = _elapsed_ms(stage_started)
 
     logger.info(
@@ -319,4 +360,10 @@ def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mod
         "profile": profile,
         "duplicate": False,
         "notes": saved_notes,
+        "memoriesSaved": saved_memories,
+        "memoryRecall": {
+            "traceId": memory_pack.get("traceId"),
+            "memoryIds": [item.get("id") for item in memory_pack.get("items", [])],
+            "estimatedTokens": memory_pack.get("estimatedTokens", 0),
+        },
     }

@@ -25,6 +25,11 @@ from app.services.realtime_sideband import (
     kick_realtime_session,
     start_realtime_sideband,
 )
+from app.services.memory_service import (
+    heuristic_memory_candidates,
+    remember_candidates,
+    retrieve_memory_pack,
+)
 
 router = APIRouter(prefix="/chat")
 logger = logging.getLogger("uvicorn.error")
@@ -148,6 +153,16 @@ def create_realtime_session(
     expires_at = int(time.time()) + identity.max_realtime_seconds if identity.max_realtime_seconds else None
     now = now_iso()
     session_id = f"cs_{uuid4().hex[:12]}"
+    try:
+        memory_pack = retrieve_memory_pack(
+            req.userId,
+            f"Start a realtime English conversation about {req.topic or 'general conversation'}; "
+            "honor learner preferences and goals.",
+            purpose="realtime_chat",
+        )
+    except Exception:
+        logger.exception("realtime memory_retrieval_error user_id=%s", req.userId)
+        memory_pack = {"text": "", "items": [], "estimatedTokens": 0, "traceId": None}
     session = {
         "id": session_id,
         "userId": req.userId,
@@ -174,6 +189,11 @@ def create_realtime_session(
         "summary": None,
         "createdAt": now,
         "updatedAt": now,
+        "memoryRecall": {
+            "traceId": memory_pack.get("traceId"),
+            "memoryIds": [item.get("id") for item in memory_pack.get("items", [])],
+            "estimatedTokens": memory_pack.get("estimatedTokens", 0),
+        },
     }
     save_chat_session(session)
 
@@ -182,6 +202,10 @@ def create_realtime_session(
         topic=topic_text,
         language_instruction=realtime_hint_instruction(req.outputLanguage),
     )
+    if memory_pack.get("text"):
+        instructions += (
+            f"\n\n{memory_pack['text']}\nPersonalize naturally. The learner's current statement always overrides memory."
+        )
 
     try:
         safety_identifier = hashlib.sha256(req.userId.encode("utf-8")).hexdigest()
@@ -340,6 +364,7 @@ def save_transcript(
     }
     saved = 0
     skipped_duplicates = 0
+    new_user_texts: list[str] = []
     for msg in req.messages:
         content = msg.content.strip()
         if not content:
@@ -363,11 +388,24 @@ def save_transcript(
         }
         save_chat_message(message)
         saved += 1
+        if msg.role == "user":
+            new_user_texts.append(content)
 
     if saved > 0:
         first_text = next((msg.content.strip() for msg in req.messages if msg.content.strip()), "")
         summary = session.get("summary") or first_text[:80] or None
         update_chat_session_summary(req.userId, session_id, summary, len(existing_messages) + saved)
+
+    try:
+        saved_memories = remember_candidates(
+            req.userId,
+            heuristic_memory_candidates(" ".join(new_user_texts)),
+            source_type="chat",
+            source_id=session_id,
+        )
+    except Exception:
+        logger.exception("realtime transcript memory_persist_error session=%s", session_id)
+        saved_memories = []
 
     logger.info(
         "transcript saved session=%s messages=%d skipped_duplicates=%d",
@@ -375,4 +413,9 @@ def save_transcript(
         saved,
         skipped_duplicates,
     )
-    return {"saved": saved, "skippedDuplicates": skipped_duplicates, "sessionId": session_id}
+    return {
+        "saved": saved,
+        "skippedDuplicates": skipped_duplicates,
+        "sessionId": session_id,
+        "memoriesSaved": saved_memories,
+    }

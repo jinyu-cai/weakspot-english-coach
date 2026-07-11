@@ -18,6 +18,136 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-10 — Qwen Track 1 MemoryAgent
+
+Date: 2026-07-10
+
+Branch: current local worktree
+
+GitHub status: Not pushed.
+
+Deploy status: Backend deployed to Alibaba Cloud ECS (primary) and
+`oracle-us-sj` (standby). Both Docker containers are healthy. The public
+Alibaba API passed live Qwen diagnosis and `text-embedding-v4` Memory retrieval.
+Frontend source is validated locally but not yet deployed to Vercel.
+
+Summary:
+
+- Added five persistent memory kinds: preference, goal, strategy, weakness, and
+  episode, with evidence, confidence, importance, source lineage, observation
+  count, pinning, and lifecycle status.
+- Added Qwen memory-candidate extraction to diagnosis, text chat, session
+  analysis, and chat import without an extra chat-completion call.
+- Added deterministic weakness memories and accumulated per-skill/per-format
+  practice effectiveness.
+- Added Alibaba Model Studio `text-embedding-v4` (256d), lexical fallback,
+  hybrid ranking, critical goal/preference reservation, and fixed 700-token
+  Memory Packs.
+- Added expiration, kind-specific decay, conflict replacement, capacity
+  pruning, explicit forget, and DynamoDB TTL enablement.
+- Replaced the lowest-mastery-only exercise choice with an explainable policy
+  using mastery, error density, spacing, observed score, productive difficulty,
+  and exploration.
+- Added Memory APIs, recall audit traces, and the bilingual `/memory` Memory
+  Center with edit, pin, forget, retrieval preview, score breakdown, and
+  next-action display.
+- Added MIT license, Track 1 architecture/submission/demo documentation, and
+  Alibaba deployment evidence guidance.
+
+Tests run:
+
+- `python -m scripts.smoke_test` passed.
+- `DYNAMODB_ENDPOINT_URL= python -m scripts.integration_test` passed the full
+  learner/auth/model/realtime loop.
+- `DYNAMODB_ENDPOINT_URL= python -m scripts.memory_agent_test` passed merge,
+  conflict, expiry, bounded recall, adaptive decision, and API tests.
+- `DYNAMODB_ENDPOINT_URL= python -m scripts.memory_benchmark` passed with
+  Recall@6 1.00, stale suppression, full budget compliance, and 82.6% sample
+  context reduction.
+- `pnpm exec tsc --noEmit` passed.
+- `pnpm build` passed, including static `/memory` generation.
+- Alibaba public Memory probe passed create → retrieve (57/180 tokens with
+  score breakdown) → forget; container logs showed no embedding fallback.
+- Live `qwen3.7-plus` diagnosis returned valid structured output with 4 errors,
+  persisted preferences/goals/weaknesses, and source deletion retracted all
+  active test memories.
+- DynamoDB TTL is `ENABLED` on attribute `ttl`; Alibaba reports Qwen provider +
+  `text-embedding-v4`/256d, Oracle reports lexical fallback readiness.
+- First-visit streamed-diagnosis guest cookie regression passed in production
+  configuration; all temporary submissions, notes, and active memories were
+  cleaned.
+
+Known issues:
+
+- Browser visual automation was unavailable in the current tool environment;
+  frontend compile/static-generation checks passed.
+- Final frontend deployment requires the normal Vercel source deployment after
+  the code is pushed.
+
+Next step:
+
+1. Push the repository and deploy the frontend through Vercel.
+2. Capture Alibaba/Model Studio/DynamoDB proof and record the video.
+
+## 2026-07-09 — Safe server-model selector (DeepSeek / Qwen)
+
+Date: 2026-07-09
+
+Branch: current local `main` worktree
+
+GitHub status: Not pushed.
+
+Deploy status: Backend deployed to `oracle-us-sj` on 2026-07-09. The public
+`https://enapi.jinxxx.de/api/v1/llm/models` endpoint and CORS preflight are
+healthy. The Vercel frontend changes are not deployed yet.
+
+Summary:
+
+- Added a safe server-managed text-model catalog at `GET /api/v1/llm/models`.
+- Users can choose only models whose provider key is configured on the backend;
+  the browser receives model IDs/labels, never provider secrets or base URLs.
+- Added global model selection in the header and a dynamic selector before a
+  new text chat. The choice applies to diagnosis, plans, practice, imports, and
+  text chat; voice remains on its separate OpenAI Realtime selector.
+- Added Qwen 3.7 Max/Plus and DeepSeek choices when the corresponding backend
+  credentials are configured. Existing chat sessions retain their selected
+  server model and safely fall back if a provider is removed.
+- Removed the prior hard-coded DeepSeek chat default that would have sent a
+  DeepSeek model name to Qwen Model Studio.
+- Kept BYOK optional but separated it from server-model selection, require
+  HTTPS, and enforce the normal account rate/size limits.
+
+Files changed:
+
+- `apps/api/app/services/model_catalog.py`
+- `apps/api/app/api/routes/models.py`
+- `apps/api/app/api/deps.py`
+- `apps/api/app/api/routes/chat.py`
+- `apps/web/components/llm-provider-settings.tsx`
+- `apps/web/app/chat/page.tsx`
+- related configuration, docs, and regression tests
+
+Tests run:
+
+- `DYNAMODB_ENDPOINT_URL= UV_CACHE_DIR=.uv-cache uv run python -m scripts.smoke_test` ✅
+- `DYNAMODB_ENDPOINT_URL= UV_CACHE_DIR=.uv-cache uv run python -m scripts.integration_test` ✅
+- `pnpm lint` ✅
+- `pnpm exec tsc --noEmit` ✅
+- `pnpm build` ✅
+
+Known issues:
+
+- Qwen is intentionally not enabled yet because the production `.env` has no
+  `QWEN_MODEL_STUDIO_API_KEY`; the live catalog currently lists DeepSeek only.
+
+Next step:
+
+1. Add the Qwen Model Studio variables to
+   `~/weakspot-backend/.env` on `oracle-us-sj`, then recreate the API
+   container.
+2. Deploy the current Vercel frontend changes and verify the selector at
+   `https://englearning.jinxxx.de` against `https://enapi.jinxxx.de`.
+
 ## 2026-06-20 — Move repo to apps monorepo layout
 
 Date: 2026-06-20

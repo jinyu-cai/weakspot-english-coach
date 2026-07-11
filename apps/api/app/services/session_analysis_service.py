@@ -5,6 +5,7 @@ from app.models.common import OutputLanguage
 from app.models.chat import SessionAnalysisAI
 from app.services.ai_client import LLMProviderConfig, parse_with_model
 from app.services.output_language import language_instruction
+from app.services.memory_service import MEMORY_EXTRACTION_INSTRUCTION
 
 SESSION_ANALYSIS_PROMPT = """\
 You are an expert English tutor for Chinese native speakers.
@@ -62,6 +63,7 @@ def analyze_session(
     llm_provider: Optional[LLMProviderConfig] = None,
     max_tokens: Optional[int] = 16384,
     trace_id: Optional[str] = None,
+    memory_context: Optional[str] = None,
 ) -> SessionAnalysisAI:
     transcript_lines = []
     for msg in messages:
@@ -73,7 +75,7 @@ def analyze_session(
 
     transcript_text = "\n".join(transcript_lines)
 
-    system = f"{SESSION_ANALYSIS_PROMPT}\n\n{language_instruction(output_language)}"
+    system = f"{SESSION_ANALYSIS_PROMPT}\n\n{language_instruction(output_language)}\n\n{MEMORY_EXTRACTION_INSTRUCTION}"
     if topic:
         system += f"\n\nConversation topic: {topic}"
 
@@ -85,11 +87,16 @@ def analyze_session(
     elif settings.default_llm_model:
         model = settings.default_llm_model
 
+    request_messages = [{"role": "system", "content": system}]
+    if memory_context:
+        request_messages.append({
+            "role": "system",
+            "content": memory_context
+            + "\nUse prior memory only as context; base corrections on this transcript.",
+        })
+    request_messages.append({"role": "user", "content": user_prompt})
     return parse_with_model(
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user_prompt},
-        ],
+        messages=request_messages,
         response_model=SessionAnalysisAI,
         max_tokens=max_tokens,
         model=model,

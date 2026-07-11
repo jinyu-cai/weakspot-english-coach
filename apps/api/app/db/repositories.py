@@ -12,6 +12,8 @@ from app.db.keys import (
     error_sk,
     exercise_sk,
     note_sk,
+    memory_sk,
+    memory_trace_sk,
     profile_sk,
     skill_sk,
     submission_hash_sk,
@@ -235,6 +237,67 @@ def get_note(user_id: str, created_at: str, note_id: str) -> Optional[dict]:
 
 def delete_note(user_id: str, created_at: str, note_id: str) -> None:
     _delete(user_pk(user_id), note_sk(created_at, note_id))
+
+
+# ----- MemoryAgent memories and retrieval traces -----
+
+def save_memory(memory: dict) -> None:
+    item = {
+        **memory,
+        "PK": user_pk(memory["userId"]),
+        "SK": memory_sk(memory["id"]),
+        "entityType": "MEMORY",
+    }
+    _put(item)
+
+
+def get_memory(user_id: str, memory_id: str) -> Optional[dict]:
+    res = table.get_item(Key={"PK": user_pk(user_id), "SK": memory_sk(memory_id)})
+    item = res.get("Item")
+    return clean(item) if item else None
+
+
+def list_memories(user_id: str, limit: int = 200) -> list:
+    if limit <= 0:
+        return []
+    memories: list[dict] = []
+    query_kwargs = {
+        "KeyConditionExpression": Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("MEMORY#"),
+    }
+    while len(memories) < limit:
+        res = table.query(**query_kwargs)
+        memories.extend(clean(item) for item in res.get("Items", []))
+        last_key = res.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_kwargs["ExclusiveStartKey"] = last_key
+    memories.sort(key=lambda item: item.get("updatedAt", item.get("createdAt", "")), reverse=True)
+    return memories[:limit]
+
+
+def delete_memory(user_id: str, memory_id: str) -> None:
+    _delete(user_pk(user_id), memory_sk(memory_id))
+
+
+def save_memory_trace(trace: dict) -> None:
+    item = {
+        **trace,
+        "PK": user_pk(trace["userId"]),
+        "SK": memory_trace_sk(trace["createdAt"], trace["id"]),
+        "entityType": "MEMORY_TRACE",
+    }
+    _put(item)
+
+
+def list_memory_traces(user_id: str, limit: int = 20) -> list:
+    if limit <= 0:
+        return []
+    res = table.query(
+        KeyConditionExpression=Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("MEMTRACE#"),
+        ScanIndexForward=False,
+        Limit=limit,
+    )
+    return [clean(item) for item in res.get("Items", [])]
 
 
 # ----- Plan -----

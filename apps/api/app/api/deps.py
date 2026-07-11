@@ -10,6 +10,7 @@ from fastapi import Header, HTTPException, Request, Response
 from app.config import settings
 from app.db.repositories import get_access_role, incr_rate_counter
 from app.services.ai_client import LLMProviderConfig
+from app.services.model_catalog import server_model_by_id
 
 
 def get_llm_provider(
@@ -17,15 +18,39 @@ def get_llm_provider(
     x_llm_base_url: Annotated[Optional[str], Header(alias="X-LLM-Base-URL")] = None,
     x_llm_model: Annotated[Optional[str], Header(alias="X-LLM-Model")] = None,
     x_llm_fast_model: Annotated[Optional[str], Header(alias="X-LLM-Fast-Model")] = None,
+    x_llm_server_model: Annotated[Optional[str], Header(alias="X-LLM-Server-Model")] = None,
 ) -> Optional[LLMProviderConfig]:
-    """Build an optional per-request OpenAI-compatible provider config.
+    """Build a selected server model or optional per-request BYOK config.
 
-    No headers means the server default provider is used. If a caller opts into
-    BYOK, require both key and model so we do not accidentally pair an OpenAI key
-    with a server-side DeepSeek model name.
+    ``X-LLM-Server-Model`` is an opaque allowlisted ID. It selects a model whose
+    key and base URL stay on the server. BYOK remains separate and requires both
+    an API key and model, so it can never accidentally pair a user key with a
+    server-side model name.
     """
     raw_values = [x_llm_api_key, x_llm_base_url, x_llm_model, x_llm_fast_model]
-    if not any(value and value.strip() for value in raw_values):
+    requested_server_model = (x_llm_server_model or "").strip()
+    has_byok_values = any(value and value.strip() for value in raw_values)
+
+    if requested_server_model:
+        if has_byok_values:
+            raise HTTPException(
+                status_code=400,
+                detail="Choose either a server model or a custom LLM provider, not both.",
+            )
+        if requested_server_model == "default":
+            return None
+        selected = server_model_by_id(requested_server_model)
+        if selected is None:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "invalid_server_model",
+                    "message": "The selected server model is unavailable.",
+                },
+            )
+        return selected.config
+
+    if not has_byok_values:
         return None
 
     api_key = (x_llm_api_key or "").strip()
@@ -37,16 +62,15 @@ def get_llm_provider(
         raise HTTPException(status_code=400, detail="X-LLM-API-Key is required for custom LLM provider requests.")
     if not model:
         raise HTTPException(status_code=400, detail="X-LLM-Model is required for custom LLM provider requests.")
-    if not base_url.startswith(("https://", "http://")):
-        raise HTTPException(status_code=400, detail="X-LLM-Base-URL must be an absolute URL.")
+    if not base_url.startswith("https://"):
+        raise HTTPException(status_code=400, detail="X-LLM-Base-URL must be an HTTPS URL.")
 
-    return LLMProviderConfig(api_key=api_key, base_url=base_url, model=model, fast_model=fast_model or None)
-
-
-def request_uses_own_llm_provider(request: Request) -> bool:
-    return bool(
-        request.headers.get("x-llm-api-key", "").strip()
-        and request.headers.get("x-llm-model", "").strip()
+    return LLMProviderConfig(
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        fast_model=fast_model or None,
+        is_byok=True,
     )
 
 
@@ -117,7 +141,6 @@ class Identity:
     max_output_tokens: Optional[int]
     max_realtime_seconds: Optional[int]
     login: Optional[str] = None
-    uses_own_llm_provider: bool = False
 
     @property
     def is_unlimited(self) -> bool:
@@ -125,11 +148,10 @@ class Identity:
 
     @property
     def has_unlimited_llm_quota(self) -> bool:
-        return self.is_unlimited or self.uses_own_llm_provider
+        return self.is_unlimited
 
 
 def resolve_identity(request: Request, response: Response) -> Identity:
-    uses_own_llm_provider = request_uses_own_llm_provider(request)
     bypass = request.headers.get("x-owner-token")
     if settings.owner_bypass_token and bypass == settings.owner_bypass_token:
         return Identity(
@@ -142,7 +164,6 @@ def resolve_identity(request: Request, response: Response) -> Identity:
             None,
             None,
             None,
-            uses_own_llm_provider=uses_own_llm_provider,
         )
 
     claims = read_session(request)
@@ -161,10 +182,9 @@ def resolve_identity(request: Request, response: Response) -> Identity:
             is_member=is_member,
             rate_key=claims["sub"],
             daily_limit=10**9 if is_owner or is_member else settings.user_daily_limit,
-            max_output_tokens=None if is_owner or is_member or uses_own_llm_provider else settings.user_max_output_tokens,
+            max_output_tokens=None if is_owner or is_member else settings.user_max_output_tokens,
             max_realtime_seconds=None if is_owner or is_member else settings.user_realtime_max_seconds,
             login=claims.get("login"),
-            uses_own_llm_provider=uses_own_llm_provider,
         )
 
     guest_id = request.cookies.get(GUEST_COOKIE)
@@ -178,16 +198,15 @@ def resolve_identity(request: Request, response: Response) -> Identity:
         is_member=False,
         rate_key=f"ip_{_client_ip(request)}",
         daily_limit=settings.guest_daily_limit,
-        max_output_tokens=None if uses_own_llm_provider else settings.guest_max_output_tokens,
+        max_output_tokens=settings.guest_max_output_tokens,
         max_realtime_seconds=settings.guest_realtime_max_seconds,
-        uses_own_llm_provider=uses_own_llm_provider,
     )
 
 
-def rate_limited(feature: str, allow_byok_unlimited: bool = False):
+def rate_limited(feature: str):
     def _dep(request: Request, response: Response) -> Identity:
         identity = resolve_identity(request, response)
-        if identity.is_unlimited or (allow_byok_unlimited and identity.uses_own_llm_provider):
+        if identity.is_unlimited:
             return identity
         day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         ttl = int(time.time()) + 2 * 86400

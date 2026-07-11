@@ -25,6 +25,25 @@ If `NEXT_PUBLIC_API_BASE_URL` is unset, the app falls back to built-in mock data
 (`apps/web/lib/mock-data.ts`) — handy for previewing the UI. The backend's `CORS_ORIGINS`
 must include this app's origin.
 
+## Memory Center
+
+`/memory` is the Track 1 MemoryAgent control surface. It shows active and
+archived preferences, goals, strategies, weaknesses, and experiences; supports
+manual add/edit/pin/forget; previews the bounded Memory Pack and score
+breakdown; lists recall traces; and displays the explainable next-practice
+decision. Mock mode includes representative memory data so the complete page
+can be reviewed without a backend.
+
+## Text-model selection
+
+The header AI settings button loads the backend's safe server-model catalog.
+Users can select any model configured by the backend (for example DeepSeek or
+Qwen) without receiving an API key. The same selection applies to text AI
+features; the chat page also exposes it before a new conversation starts.
+
+The optional custom-provider form is BYOK and is stored only in that browser's
+local storage. It overrides the server-model choice until cleared.
+
 ## Getting Started
 
 First, run the development server:

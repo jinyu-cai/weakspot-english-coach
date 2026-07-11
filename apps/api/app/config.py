@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     openai_compat_base_url: str = ""
     openai_compat_model: str = ""
     openai_compat_fast_model: str = ""
+    qwen_model_studio_api_key: str = ""
+    qwen_model_studio_base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+    qwen_model_studio_model: str = "qwen3.7-max"
+    qwen_model_studio_fast_model: str = "qwen3.7-plus"
+    qwen_embedding_model: str = "text-embedding-v4"
+    qwen_embedding_dimensions: int = 256
     openai_api_key: str = ""
     openai_realtime_model: str = "gpt-realtime-mini-2025-12-15"
     openai_realtime_models: str = "gpt-realtime-mini-2025-12-15,gpt-realtime-2"
@@ -48,6 +54,13 @@ class Settings(BaseSettings):
     # Enable only while debugging malformed provider output; this can log model
     # response snippets that may contain user text.
     llm_debug_log_content: bool = False
+
+    # --- MemoryAgent ---
+    memory_enabled: bool = True
+    memory_context_token_budget: int = 700
+    memory_retrieval_limit: int = 6
+    memory_max_items_per_user: int = 200
+    memory_chat_recent_messages: int = 12
 
     # --- Auth (GitHub OAuth) + rate limiting ---
     github_client_id: str = ""
@@ -76,19 +89,31 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
     @property
+    def uses_qwen_model_studio(self) -> bool:
+        return bool(self.qwen_model_studio_api_key)
+
+    @property
     def default_llm_api_key(self) -> str:
+        if self.uses_qwen_model_studio:
+            return self.qwen_model_studio_api_key
         return self.openai_compat_api_key or self.deepseek_api_key
 
     @property
     def default_llm_base_url(self) -> str:
+        if self.uses_qwen_model_studio:
+            return self.qwen_model_studio_base_url
         return self.openai_compat_base_url or self.deepseek_base_url
 
     @property
     def default_llm_model(self) -> str:
+        if self.uses_qwen_model_studio:
+            return self.qwen_model_studio_model
         return self.openai_compat_model or self.llm_model
 
     @property
     def default_llm_fast_model(self) -> str:
+        if self.uses_qwen_model_studio:
+            return self.qwen_model_studio_fast_model
         return self.openai_compat_fast_model or self.llm_model_fast
 
     @property

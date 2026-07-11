@@ -3,6 +3,7 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 from app.models.common import OutputLanguage, Severity
+from app.models.memory import MemoryCandidate
 
 
 RealtimeVoiceModel = Literal["gpt-realtime-mini-2025-12-15", "gpt-realtime-2"]
@@ -47,6 +48,7 @@ class ChatReplyAI(BaseModel):
     reply: str
     corrections: List[CorrectionAI] = []
     betterExpression: Optional[BetterExpressionAI] = None
+    memoryCandidates: List[MemoryCandidate] = Field(default_factory=list)
 
 
 class ChatPredictionAI(BaseModel):
@@ -87,3 +89,4 @@ class SessionAnalysisAI(BaseModel):
     weaknesses: List[SessionWeaknessAI] = []
     strengthsZh: List[str] = []
     recommendedNextActionsZh: List[str] = []
+    memoryCandidates: List[MemoryCandidate] = Field(default_factory=list)

@@ -33,6 +33,12 @@ import type {
   DiagnosisMode,
   HistoryResponse,
   LearningPlan,
+  MemoryItem,
+  MemoryKind,
+  MemoryPack,
+  MemoryStatus,
+  MemoryTrace,
+  NextActionDecision,
   NotesResponse,
   PlanErrorScope,
   PlanResponse,
@@ -58,7 +64,7 @@ import {
   mockSkills,
   mockSubmissions,
 } from "./mock-data"
-import { getLLMProviderHeaders } from "./llm-settings"
+import { getLLMProviderHeaders, type ServerLLMModel } from "./llm-settings"
 import { getOutputLanguage } from "./language"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
@@ -125,8 +131,104 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T
 }
 
+export async function getServerLLMModels(): Promise<ServerLLMModel[]> {
+  if (USE_MOCK) {
+    return [{
+      id: "default",
+      label: "Server default",
+      provider: "Server",
+      model: "",
+      fastModel: "",
+      adaptive: true,
+    }]
+  }
+  const payload = await apiFetch<{ models: ServerLLMModel[] }>("/llm/models")
+  return payload.models
+}
+
 /* In-memory exercise cache so submit() can grade against the generated item. */
 const exerciseCache = new Map<string, PracticeExercise>()
+
+const memoryNow = new Date().toISOString()
+let mockMemoryStore: MemoryItem[] = [
+  {
+    id: "mem-pref-business",
+    userId: DEMO_USER_ID,
+    kind: "preference",
+    canonicalKey: "preference.learning_focus",
+    content: "The learner wants to focus on business English.",
+    evidence: "I want to practice business English for meetings.",
+    confidence: 0.96,
+    importance: 0.86,
+    status: "active",
+    pinned: true,
+    sourceType: "chat",
+    sourceId: "mock-chat",
+    observationCount: 3,
+    accessCount: 5,
+    createdAt: memoryNow,
+    updatedAt: memoryNow,
+    expiresAt: null,
+  },
+  {
+    id: "mem-goal-ielts",
+    userId: DEMO_USER_ID,
+    kind: "goal",
+    canonicalKey: "goal.exam.ielts",
+    content: "The learner is preparing for IELTS and is targeting stronger writing performance.",
+    evidence: "I am preparing for IELTS writing.",
+    confidence: 0.94,
+    importance: 0.92,
+    status: "active",
+    pinned: false,
+    sourceType: "diagnosis",
+    sourceId: "mock-diagnosis",
+    observationCount: 2,
+    accessCount: 4,
+    createdAt: memoryNow,
+    updatedAt: memoryNow,
+    expiresAt: new Date(Date.now() + 300 * 86400000).toISOString(),
+  },
+  {
+    id: "mem-strategy-tense",
+    userId: DEMO_USER_ID,
+    kind: "strategy",
+    canonicalKey: "strategy.practice.grammar.verb_tense.fix_sentence",
+    content: "For grammar.verb_tense, fix_sentence has 6 attempts, an average score of 73, and a 67% success rate.",
+    evidence: "Latest score: 82/100; correct=true.",
+    confidence: 0.82,
+    importance: 0.72,
+    status: "active",
+    pinned: false,
+    sourceType: "practice",
+    sourceId: "mock-attempt",
+    observationCount: 6,
+    accessCount: 2,
+    createdAt: memoryNow,
+    updatedAt: memoryNow,
+    expiresAt: new Date(Date.now() + 180 * 86400000).toISOString(),
+    stats: { skillCode: "grammar.verb_tense", exerciseType: "fix_sentence", attempts: 6, averageScore: 73, successRate: 0.67, lastScore: 82 },
+  },
+  {
+    id: "mem-weak-tense",
+    userId: DEMO_USER_ID,
+    kind: "weakness",
+    canonicalKey: "weakness.grammar.verb_tense",
+    content: "The learner needs recurring practice with verb tense.",
+    evidence: "Yesterday I go → Yesterday I went",
+    confidence: 0.9,
+    importance: 0.88,
+    status: "active",
+    pinned: false,
+    sourceType: "diagnosis",
+    sourceId: "mock-diagnosis",
+    observationCount: 4,
+    accessCount: 3,
+    createdAt: memoryNow,
+    updatedAt: memoryNow,
+    expiresAt: new Date(Date.now() + 60 * 86400000).toISOString(),
+  },
+]
 
 export async function diagnose(
   userId: string,
@@ -258,6 +360,194 @@ export async function getProfile(userId: string = DEMO_USER_ID): Promise<Profile
     }
   }
   return apiFetch<ProfileResponse>(`/profile/${userId}`)
+}
+
+/* ---- MemoryAgent ---- */
+
+export async function getMemories(
+  status: MemoryStatus | "all" = "all",
+): Promise<{ memories: MemoryItem[]; count: number; activeCount: number }> {
+  if (USE_MOCK) {
+    await delay(250)
+    const memories = status === "all" ? mockMemoryStore : mockMemoryStore.filter((item) => item.status === status)
+    return {
+      memories,
+      count: memories.length,
+      activeCount: mockMemoryStore.filter((item) => item.status === "active").length,
+    }
+  }
+  return apiFetch<{ memories: MemoryItem[]; count: number; activeCount: number }>(`/memory?status=${status}`)
+}
+
+export async function createMemory(input: {
+  kind: MemoryKind
+  content: string
+  canonicalKey?: string
+  evidence?: string
+  pinned?: boolean
+  importance?: number
+}): Promise<MemoryItem> {
+  if (USE_MOCK) {
+    await delay(250)
+    const now = new Date().toISOString()
+    const memory: MemoryItem = {
+      id: `mem-${Date.now()}`,
+      userId: DEMO_USER_ID,
+      kind: input.kind,
+      canonicalKey: input.canonicalKey ?? `${input.kind}.manual-${Date.now()}`,
+      content: input.content,
+      evidence: input.evidence ?? "Added by the learner.",
+      confidence: 1,
+      importance: input.importance ?? 0.8,
+      status: "active",
+      pinned: input.pinned ?? false,
+      sourceType: "manual",
+      sourceId: `manual-${Date.now()}`,
+      observationCount: 1,
+      accessCount: 0,
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: input.pinned || input.kind === "preference" ? null : new Date(Date.now() + 365 * 86400000).toISOString(),
+    }
+    mockMemoryStore = [memory, ...mockMemoryStore]
+    return memory
+  }
+  const { memory } = await apiFetch<{ memory: MemoryItem }>("/memory", {
+    method: "POST",
+    body: JSON.stringify({ userId: DEMO_USER_ID, ...input }),
+  })
+  return memory
+}
+
+export async function updateMemory(
+  memoryId: string,
+  fields: Partial<Pick<MemoryItem, "content" | "evidence" | "confidence" | "importance" | "pinned">>,
+): Promise<MemoryItem> {
+  if (USE_MOCK) {
+    await delay(200)
+    let updated: MemoryItem | undefined
+    mockMemoryStore = mockMemoryStore.map((item) => {
+      if (item.id !== memoryId) return item
+      updated = {
+        ...item,
+        ...fields,
+        expiresAt: fields.pinned === true ? null : item.expiresAt,
+        updatedAt: new Date().toISOString(),
+      }
+      return updated
+    })
+    if (!updated) throw new Error("Memory not found")
+    return updated
+  }
+  const { memory } = await apiFetch<{ memory: MemoryItem }>(`/memory/${memoryId}`, {
+    method: "PATCH",
+    body: JSON.stringify(fields),
+  })
+  return memory
+}
+
+export async function forgetMemory(memoryId: string): Promise<MemoryItem> {
+  if (USE_MOCK) {
+    await delay(200)
+    let forgotten: MemoryItem | undefined
+    mockMemoryStore = mockMemoryStore.map((item) => {
+      if (item.id !== memoryId) return item
+      forgotten = { ...item, status: "forgotten", pinned: false, updatedAt: new Date().toISOString() }
+      return forgotten
+    })
+    if (!forgotten) throw new Error("Memory not found")
+    return forgotten
+  }
+  const { memory } = await apiFetch<{ memory: MemoryItem }>(`/memory/${memoryId}`, { method: "DELETE" })
+  return memory
+}
+
+export async function retrieveMemories(query: string, tokenBudget = 700): Promise<MemoryPack> {
+  if (USE_MOCK) {
+    await delay(350)
+    const terms = query.toLowerCase().split(/\W+/).filter(Boolean)
+    const active = mockMemoryStore.filter((item) => item.status === "active")
+    const ranked = active
+      .map((item) => {
+        const haystack = `${item.kind} ${item.canonicalKey} ${item.content} ${item.evidence}`.toLowerCase()
+        const lexical = terms.length ? terms.filter((term) => haystack.includes(term)).length / terms.length : 0
+        const critical = item.kind === "preference" || item.kind === "goal" ? 1 : 0
+        const retrievalScore = Math.min(1, 0.5 * lexical + 0.25 * item.importance + 0.15 * critical + (item.pinned ? 0.1 : 0))
+        return {
+          ...item,
+          retrievalScore,
+          scoreBreakdown: {
+            semantic: lexical,
+            lexical,
+            importance: item.importance,
+            recency: 1,
+            frequency: Math.min(1, item.accessCount / 10),
+            critical,
+          },
+        }
+      })
+      .sort((a, b) => (b.retrievalScore ?? 0) - (a.retrievalScore ?? 0))
+      .slice(0, 6)
+    const text = ranked.map((item) => `- [${item.kind} | ${item.id}] ${item.content}`).join("\n")
+    return {
+      text,
+      items: ranked,
+      estimatedTokens: Math.min(tokenBudget, Math.ceil(text.length / 4)),
+      tokenBudget,
+      totalCandidates: active.length,
+      traceId: `mtr-${Date.now()}`,
+    }
+  }
+  const { memoryPack } = await apiFetch<{ memoryPack: MemoryPack }>("/memory/retrieve", {
+    method: "POST",
+    body: JSON.stringify({ userId: DEMO_USER_ID, query, tokenBudget, limit: 6 }),
+  })
+  return memoryPack
+}
+
+export async function getMemoryTraces(): Promise<MemoryTrace[]> {
+  if (USE_MOCK) {
+    await delay(200)
+    return [{
+      id: "mtr-demo",
+      purpose: "practice_generation",
+      queryPreview: "Generate the next verb tense exercise",
+      selectedMemoryIds: ["mem-pref-business", "mem-strategy-tense", "mem-weak-tense"],
+      selected: mockMemoryStore.slice(0, 3).map((item, index) => ({
+        id: item.id,
+        kind: item.kind,
+        content: item.content,
+        score: 0.92 - index * 0.08,
+        scoreBreakdown: { semantic: 0.85 - index * 0.1, lexical: 0.7, importance: item.importance, recency: 1, frequency: 0.4, critical: index === 0 ? 1 : 0 },
+      })),
+      totalCandidates: mockMemoryStore.length,
+      estimatedTokens: 126,
+      tokenBudget: 700,
+      createdAt: memoryNow,
+    }]
+  }
+  const { traces } = await apiFetch<{ traces: MemoryTrace[] }>("/memory/traces?limit=20")
+  return traces
+}
+
+export async function getNextActionDecision(): Promise<NextActionDecision> {
+  if (USE_MOCK) {
+    await delay(200)
+    return {
+      targetSkillCode: "grammar.verb_tense",
+      practiceType: "fix_sentence",
+      reason: "Verb tense has the strongest learning need. Fix sentence is in the productive difficulty range based on 6 prior attempts.",
+      skillReason: "Verb tense has the strongest current learning need.",
+      practiceTypeReason: "Fix sentence balances learning need and observed effectiveness.",
+      supportingMemoryIds: ["mem-strategy-tense"],
+      policy: "hybrid-need-effectiveness-exploration-v1",
+      generatedAt: memoryNow,
+      skillScores: [{ skillCode: "grammar.verb_tense", score: 0.82, mastery: 43, recentErrorCount: 4, attemptCount: 6, averagePracticeScore: 73 }],
+      practiceTypeScores: [{ practiceType: "fix_sentence", score: 0.78, attemptCount: 6, averageScore: 73, memoryId: "mem-strategy-tense" }],
+    }
+  }
+  const { decision } = await apiFetch<{ decision: NextActionDecision }>("/memory/next-action")
+  return decision
 }
 
 export async function getPlan(userId: string = DEMO_USER_ID): Promise<PlanResponse> {
@@ -405,7 +695,7 @@ export async function deleteNote(noteId: string, createdAt: string): Promise<{ d
 export async function createChatSession(
   userId: string = DEMO_USER_ID,
   topic?: string,
-  textModel: TextChatModel = "deepseek-v4-flash",
+  textModel?: TextChatModel,
 ): Promise<ChatSession> {
   if (USE_MOCK) {
     await delay(300)
@@ -414,7 +704,7 @@ export async function createChatSession(
       userId,
       topic: topic ?? null,
       scenarioPrompt: null,
-      textModel,
+      textModel: textModel ?? "Server default",
       messageCount: 0,
       summary: null,
       createdAt: new Date().toISOString(),
@@ -423,7 +713,7 @@ export async function createChatSession(
   }
   const { session } = await apiFetch<{ session: ChatSession }>("/chat/sessions", {
     method: "POST",
-    body: JSON.stringify({ userId, topic, textModel }),
+    body: JSON.stringify({ userId, topic, ...(textModel ? { textModel } : {}) }),
   })
   return session
 }

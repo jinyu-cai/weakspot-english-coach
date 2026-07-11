@@ -1,7 +1,7 @@
 # WeakSpot English Coach — Backend (FastAPI)
 
 FastAPI service that owns AI calls, DynamoDB access, the learner
-profile, plan generation, and practice grading. Deployed on a Linux server
+profile, persistent MemoryAgent, plan generation, and practice grading. Deployed on a Linux server
 behind Nginx/HTTPS. The Vercel frontend talks to it over `/api/v1`.
 
 Dependencies are managed with [uv](https://docs.astral.sh/uv/) via
@@ -28,6 +28,8 @@ Managing dependencies: `uv add <pkg>` / `uv remove <pkg>` (updates the lockfile)
 ```bash
 uv run python -m scripts.smoke_test          # imports + schemas + validation
 uv run python -m scripts.integration_test    # full loop end-to-end (moto + fake AI)
+uv run python -m scripts.memory_agent_test   # memory merge/conflict/expiry/API/decision
+uv run python -m scripts.memory_benchmark    # recall, stale suppression, context budget
 ```
 
 The integration test drives diagnose → profile → plan → practice → history in-process
@@ -53,6 +55,7 @@ Interactive docs at `http://localhost:8000/docs`.
 
 ```
 GET  /health
+GET  /llm/models               # public model labels/IDs; never returns keys or base URLs
 POST /diagnose                 { userId, text }
 GET  /profile/{user_id}
 POST /plan                     { userId }
@@ -66,6 +69,13 @@ POST /chat/send
 POST /chat/predict
 POST /chat/sessions/{session_id}/analyze
 POST /chat/realtime/session
+GET  /memory?status=active|all
+POST /memory
+PATCH /memory/{memory_id}
+DELETE /memory/{memory_id}
+POST /memory/retrieve
+GET  /memory/traces
+GET  /memory/next-action
 ```
 
 ## Deploy (Linux)
@@ -92,6 +102,50 @@ OPENAI_COMPAT_MODEL=your_chat_model
 OPENAI_COMPAT_FAST_MODEL=your_fast_chat_model
 ```
 
+For Alibaba Cloud Model Studio, set the Qwen 3.7 profile instead. The backend
+uses `qwen3.7-max` for deep analysis and `qwen3.7-plus` for fast paths:
+
+```bash
+QWEN_MODEL_STUDIO_API_KEY=...
+QWEN_MODEL_STUDIO_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+QWEN_MODEL_STUDIO_MODEL=qwen3.7-max
+QWEN_MODEL_STUDIO_FAST_MODEL=qwen3.7-plus
+QWEN_EMBEDDING_MODEL=text-embedding-v4
+QWEN_EMBEDDING_DIMENSIONS=256
+```
+
+The MemoryAgent uses the embedding model for hybrid semantic/lexical retrieval
+and automatically falls back to lexical scoring when embeddings are
+unavailable. Its default Memory Pack is bounded to six memories and 700
+estimated tokens. See
+[`../../docs/MEMORY_AGENT_DESIGN.md`](../../docs/MEMORY_AGENT_DESIGN.md).
+
+Use the base URL that matches the Model Studio workspace and API key. See
+[`../../docs/ALIBABA_QWEN_DEPLOYMENT.md`](../../docs/ALIBABA_QWEN_DEPLOYMENT.md)
+for the Alibaba Cloud deployment runbook and regional endpoints.
+
+### Server-managed model selection
+
+When one or more server providers are configured, `GET /api/v1/llm/models`
+returns a safe catalog of selectable IDs and display labels. The browser sends
+only an ID, for example:
+
+```text
+X-LLM-Server-Model: qwen-deep
+```
+
+The server resolves that ID to its matching key, endpoint, and exact model. No
+provider credentials or base URLs are returned to the browser. The built-in
+selector applies to text features (diagnosis, plans, practice, imports, and
+new text chats). `default` keeps adaptive fast/deep routing; an explicit choice
+uses that exact model for the request. Text-chat sessions retain their chosen
+server model so a later browser selection does not change an existing session.
+
+With both DeepSeek and Qwen configured, the catalog exposes each configured
+model. Removing a provider removes its choices; old chat sessions safely fall
+back to the current server default instead of sending a model name to the wrong
+provider.
+
 The app also supports per-request BYOK for OpenAI-compatible providers. Send:
 
 ```text
@@ -102,9 +156,11 @@ X-LLM-Fast-Model: your_fast_chat_model  # optional
 ```
 
 The request-scoped key is used only for that API call and is not stored in
-DynamoDB. The client uses JSON mode (`response_format={"type":"json_object"}`) +
-Pydantic validation + one retry, which works across providers that support the
-OpenAI-compatible chat completions shape.
+DynamoDB. BYOK endpoints must use HTTPS and remain subject to the normal
+account rate and size limits. The client uses JSON mode
+(`response_format={"type":"json_object"}`) + Pydantic validation + one retry,
+which works across providers that support the OpenAI-compatible chat
+completions shape.
 
 Realtime voice is separate from the text provider. Configure
 `OPENAI_API_KEY`, optionally `OPENAI_REALTIME_MODEL`, and
@@ -112,9 +168,9 @@ Realtime voice is separate from the text provider. Configure
 exchanges the server key for short-lived Realtime client secrets so the browser
 never sees the real OpenAI key.
 
-Text chat uses `LLM_MODEL_FAST` (`deepseek-v4-flash`) by default and can opt into
-`LLM_MODEL` (`deepseek-v4-pro`) per chat session. Prediction remains on the fast
-model and session analysis remains on the pro model.
+Text chat uses the server fast model by default. A user can choose an available
+server model before starting a new text chat; prediction and end-of-session
+analysis stay with that saved model.
 
 ## Diagnose request debugging
 

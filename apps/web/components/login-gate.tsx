@@ -2,7 +2,7 @@
 
 import { useEffect } from "react"
 import { toast } from "sonner"
-import { startLogin } from "@/lib/auth"
+import { loginPageUrl } from "@/lib/auth"
 import { getCopy } from "@/lib/i18n"
 import { getOutputLanguage } from "@/lib/language"
 
@@ -16,7 +16,12 @@ export function LoginGate() {
       const detail = (e as CustomEvent).detail as { message?: string } | undefined
       const t = getCopy(getOutputLanguage())
       toast.error(detail?.message || t.settings.needAuth, {
-        action: { label: t.settings.signInGithub, onClick: () => startLogin() },
+        action: {
+          label: t.settings.signIn,
+          onClick: () => {
+            window.location.href = loginPageUrl()
+          },
+        },
         duration: 8000,
       })
     }

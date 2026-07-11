@@ -75,7 +75,27 @@ def main() -> None:
     assert result.errors[0].code == "grammar.verb_tense"
     print("Sample DiagnosticAIResult validated OK.")
 
-    # 4. Mastery scoring + Decimal round-trip.
+    from app.config import Settings
+    from app.services.ai_client import _uses_model_studio_qwen
+    from app.services.model_catalog import catalog_payload, server_model_by_id
+
+    qwen_settings = Settings(
+        qwen_model_studio_api_key="test-qwen-key",
+        deepseek_api_key="",
+        openai_compat_api_key="",
+    )
+    assert qwen_settings.default_llm_model == "qwen3.7-max"
+    assert qwen_settings.default_llm_fast_model == "qwen3.7-plus"
+    assert _uses_model_studio_qwen(qwen_settings.default_llm_model, qwen_settings.default_llm_base_url)
+    qwen_catalog = catalog_payload(qwen_settings)
+    assert [entry["id"] for entry in qwen_catalog["models"]] == ["default", "qwen-deep", "qwen-fast"]
+    assert all("apiKey" not in entry and "baseUrl" not in entry for entry in qwen_catalog["models"])
+    selected_qwen = server_model_by_id("qwen-deep", qwen_settings)
+    assert selected_qwen and selected_qwen.config.model == "qwen3.7-max"
+    assert selected_qwen.config.fast_model == "qwen3.7-max"
+    assert server_model_by_id("deepseek-deep", qwen_settings) is None
+    print("Qwen Model Studio defaults + safe model catalog + JSON routing OK.")
+
     from app.core.mastery import update_skill_from_error
     from app.db.serialization import clean, to_dynamo
 

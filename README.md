@@ -1,141 +1,156 @@
 # WeakSpot English Coach
 
-**An adaptive English-learning coach that discovers what you need to practice — instead of asking you.**
+**A cross-session English coach that remembers what works for each learner.**
 
-Built for the **H0: Hack the Zero Stack** hackathon (Vercel v0 + AWS Databases).
+WeakSpot is being submitted to the **Qwen Cloud Hackathon — Track 1:
+MemoryAgent**. It diagnoses real English, autonomously accumulates learner
+preferences, goals, recurring weaknesses, learning strategies, and recent
+experience, then uses a bounded, explainable Memory Pack to make the next
+conversation, plan, and exercise more accurate.
 
-Most AI English tutors are stateless: every session starts from zero and the learner
-has to know what to ask. WeakSpot is different — the learner just writes English, and
-the system diagnoses *specific* weaknesses (verb tense, repetitive vocabulary, clarity,
-register, sentence variety…), accumulates an evolving **weakness profile** in DynamoDB,
-and turns those real mistakes into a personalized 7-day plan and targeted exercises.
-**The database is the learner's long-term memory — that's what makes it adaptive.**
+Live app: [englearning.jinxxx.de](https://englearning.jinxxx.de)<br>
+Primary API: [enapi.jinxxx.de/api/v1/health](https://enapi.jinxxx.de/api/v1/health)
 
-## The adaptive loop
+## Why this is a MemoryAgent
 
-```
-Learner writes English
-  → DeepSeek diagnoses structured errors (11-category taxonomy)
-    → errors + skill mastery written to DynamoDB (the learner profile)
-      → plan & practice generated FROM that profile (weakest skills first)
-        → practice graded → mastery updated → loop tightens
-```
+| Capability | Implementation |
+| --- | --- |
+| Autonomous experience accumulation | Qwen extracts durable memory candidates during diagnosis/chat; practice outcomes update strategy statistics automatically |
+| Preferences and goals | Remembers feedback style, explanation language, learning focus, IELTS/career goals, and explicit manual memories |
+| Efficient retrieval | Qwen `text-embedding-v4` (256d) + lexical hybrid ranking + importance, recency, and access signals |
+| Timely forgetting | Kind-specific expiration, recency decay, conflict replacement, capacity pruning, user-controlled forget, DynamoDB TTL |
+| Limited-context recall | At most six memories in a default 700-token Memory Pack; text chat keeps 12 recent turns |
+| Improving decisions | Next skill and exercise format use mastery, error density, spacing, historical score, productive difficulty, and exploration |
+| Explainability | Memory Center shows every memory; recall traces show selected IDs, component scores, and token use |
 
-## Architecture (front/back separated)
+## Learning loop
 
-```
-Browser ──HTTPS──> Vercel (Next.js, built with v0)
-                      │  fetch NEXT_PUBLIC_API_BASE_URL
-                      ▼
-                   Nginx (HTTPS / Certbot) ──> FastAPI (Docker, Linux)
-                                                  ├─ DeepSeek-V4-Pro (JSON mode)
-                                                  └─ DynamoDB (single table, boto3)
-```
-
-Secrets (DeepSeek key, AWS keys) live **only** in the backend. The frontend gets
-just `NEXT_PUBLIC_API_BASE_URL` + `NEXT_PUBLIC_DEMO_USER_ID`.
-
-## Repo layout
-
-```
-repo-root/
-  apps/
-    api/            FastAPI service: AI, DynamoDB, profile, plan, practice, stats
-    web/            Next.js app generated with v0 + integration kit
-  docs/             project notes and deployment structure
-  README.md
-  LOCAL_TESTING.md
+```text
+diagnose / chat / import / practice
+  -> Qwen structured analysis + durable memory candidates
+  -> consolidate, merge evidence, replace conflicts, expire stale memory
+  -> store MEMORY# rows in DynamoDB
+  -> hybrid retrieve into a bounded Memory Pack
+  -> personalize chat, diagnosis, plan, and exercise generation
+  -> grade outcome and update strategy effectiveness
+  -> make the next decision with more evidence
 ```
 
-This Git repo starts at the canonical monorepo root. Backend commands run from
-`repo-root/apps/api`; frontend commands run from `repo-root/apps/web`.
+## Architecture
+
+```mermaid
+flowchart LR
+    Browser[Next.js on Vercel] -->|HTTPS| Ali[Alibaba Cloud ECS\nNginx + FastAPI]
+    Ali -->|structured generation| Qwen[Qwen 3.7 Max / Plus]
+    Ali -->|256d embeddings| Embed[Qwen text-embedding-v4]
+    Ali --> Memory[Memory lifecycle + hybrid ranker]
+    Memory <--> DB[(DynamoDB single table)]
+    Memory -->|<= 700-token pack| Qwen
+    Oracle[Oracle Cloud standby\nFastAPI + DeepSeek] -. rollback .-> DB
+```
+
+Alibaba Cloud ECS is the primary backend for the hackathon. Oracle Cloud stays
+online as a manual standby and shares the same DynamoDB learner state. See
+[Architecture](docs/ARCHITECTURE.md) and the
+[Alibaba/Qwen deployment runbook](docs/ALIBABA_QWEN_DEPLOYMENT.md).
+
+## Product features
+
+- Writing diagnosis with CEFR estimate, corrected text, categorized errors,
+  micro-lessons, and auto-collected notes.
+- Text and realtime voice conversation, end-of-session analysis, and ChatGPT
+  history import.
+- Persistent learner weakness/mastery model and daily progress dashboard.
+- Memory Center at `/memory`: add, inspect, edit, pin, forget, preview recall,
+  inspect recall traces, and see the next-action decision.
+- Seven-day plan built from bounded recent evidence plus goals, preferences,
+  strategies, and memories.
+- Targeted practice whose skill and format adapt from actual learning outcomes.
 
 ## Tech stack
 
-| Layer    | Choice |
-|----------|--------|
-| Frontend | Next.js + TypeScript + Tailwind + shadcn/ui, generated with **Vercel v0**, deployed on **Vercel** |
-| Backend  | **FastAPI** (Python 3.11) in Docker on a Linux server, Nginx + Certbot HTTPS |
-| Database | **Amazon DynamoDB** — single-table design (`WeakSpotEnglishCoach`) |
-| AI       | **DeepSeek-V4-Pro** via OpenAI-compatible SDK, JSON mode + Pydantic validation |
+| Layer | Technology |
+| --- | --- |
+| Frontend | Next.js 16, TypeScript, Tailwind CSS, shadcn/ui, Vercel |
+| Primary backend | FastAPI/Python 3.11 in Docker on Alibaba Cloud ECS, Nginx, TLS |
+| Qwen | Model Studio `qwen3.7-max`, `qwen3.7-plus`, `text-embedding-v4` |
+| Persistence | Amazon DynamoDB single-table design with TTL |
+| Standby | Oracle Cloud FastAPI deployment with DeepSeek |
+| Voice | OpenAI Realtime API with backend sideband transcript capture |
+| Auth | GitHub/Google OAuth, server-resolved identity, per-tier limits |
+
+## Repository
+
+```text
+apps/api/   FastAPI, Qwen integration, DynamoDB, MemoryAgent, tests, deploy
+apps/web/   Next.js application and Memory Center
+docs/       architecture, MemoryAgent design, submission, demo, deployment
+```
 
 ## Quickstart
 
-**Backend** (managed with [uv](https://docs.astral.sh/uv/); details in [`apps/api/README.md`](apps/api/README.md)):
+Backend:
+
 ```bash
 cd apps/api
-uv sync                                   # .venv (Python 3.11) + deps from lockfile
-uv run python -m scripts.smoke_test       # offline: imports + schemas + validation
-cp .env.example .env                       # fill in DeepSeek + AWS keys
-uv run python -m scripts.create_table      # create the DynamoDB table
+uv sync
+cp .env.example .env
+uv run python -m scripts.create_table
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
-**Frontend** (details in [`apps/web/README.md`](apps/web/README.md)):
-1. Generate the UI on **v0.dev** with [`apps/web/V0_PROMPT.md`](apps/web/V0_PROMPT.md).
-2. Keep frontend source in `apps/web/app`, `apps/web/components`, and `apps/web/lib`.
-3. `cd apps/web && pnpm install && pnpm dev` (point `NEXT_PUBLIC_API_BASE_URL` at the backend).
-
-## Vercel deployment
-
-In Vercel Project Settings, set **Root Directory** to:
-
-```text
-apps/web
-```
-
-Then use the frontend defaults:
-
-```text
-Install Command: corepack enable && corepack prepare pnpm@9.6.0 --activate && pnpm install --frozen-lockfile
-Build Command:   corepack enable && corepack prepare pnpm@9.6.0 --activate && pnpm build
-Output:          .next
-```
-
-The tracked Vercel config lives in `apps/web/vercel.json`, because Vercel reads
-that file after entering the configured Root Directory.
-
-## Testing locally (before deploying)
-
-See **[LOCAL_TESTING.md](LOCAL_TESTING.md)**. The fastest check needs no Docker, no
-AWS, and no DeepSeek key — it runs the whole loop in-process (moto + fake AI):
-```bash
-cd apps/api && uv run python -m scripts.integration_test
-```
-You can then run a live backend (real AWS DynamoDB or DynamoDB Local) and the v0
-frontend on `localhost` to test the full front+back integration before shipping.
-
-## End-to-end demo flow
-
-Diagnose a paragraph → see structured errors + CEFR + score → open Dashboard
-(weakness radar updates) → generate the 7-day Plan (built from weak skills) →
-do a Practice exercise targeting the weakest skill → open Daily Wins to see your
-7-day streak, focus minutes, badges, and next best action → re-diagnose and watch
-mastery move.
-
-## Branch workflow
-
-Every new feature starts from the latest remote main:
+Frontend:
 
 ```bash
-git fetch origin
-git switch -c feature/my-feature origin/main
+cd apps/web
+pnpm install
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm dev
 ```
 
-Test locally, push the feature branch, open a PR, verify the Vercel Preview URL,
-then merge to `main` only after the preview and backend checks pass. See
-[`LOCAL_TESTING.md`](LOCAL_TESTING.md) for the full test and deploy checklist.
-Record each meaningful change in [`docs/change-log.md`](docs/change-log.md).
+Configure Alibaba Model Studio in `apps/api/.env`:
 
-User guide: [`docs/chatgpt-project-import-guide.md`](docs/chatgpt-project-import-guide.md)
-explains how to import ChatGPT Project conversations into the website.
+```bash
+QWEN_MODEL_STUDIO_API_KEY=...
+QWEN_MODEL_STUDIO_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+QWEN_MODEL_STUDIO_MODEL=qwen3.7-max
+QWEN_MODEL_STUDIO_FAST_MODEL=qwen3.7-plus
+QWEN_EMBEDDING_MODEL=text-embedding-v4
+QWEN_EMBEDDING_DIMENSIONS=256
+```
 
-## Hackathon submission checklist
+## Tests and benchmark
 
-- [ ] Demo video < 3 min (YouTube) — show the loop **and** explain the DynamoDB data model
-- [ ] Architecture diagram (the one above, fleshed out)
-- [ ] **DynamoDB usage screenshot** (AWS console — table items)
-- [ ] Published Vercel project link + **Vercel Team ID**
-- [ ] Text description naming the AWS database used (DynamoDB)
-- [ ] Track: **Monetizable B2C App** (education) or Open Innovation
-- [ ] Submit before **2026-06-29 5:00pm PDT**
+All backend tests below run without external services by using moto and fake
+structured model output:
+
+```bash
+cd apps/api
+uv run python -m scripts.smoke_test
+DYNAMODB_ENDPOINT_URL= uv run python -m scripts.integration_test
+DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_agent_test
+DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
+```
+
+Frontend:
+
+```bash
+cd apps/web
+pnpm exec tsc --noEmit
+pnpm build
+```
+
+The deterministic MemoryAgent benchmark achieves Recall@6 `1.00`, suppresses
+expired/superseded rows, stays within every token budget, and reduces the sample
+context by `82.6%`. See [MemoryAgent Design](docs/MEMORY_AGENT_DESIGN.md) for the
+method and live-embedding option.
+
+## Submission material
+
+- [Devpost submission draft](docs/SUBMISSION.md)
+- [Under-three-minute demo script](docs/DEMO_VIDEO_SCRIPT.md)
+- [MemoryAgent technical design](docs/MEMORY_AGENT_DESIGN.md)
+- [Alibaba Cloud deployment evidence checklist](docs/ALIBABA_QWEN_DEPLOYMENT.md)
+
+## License
+
+Released under the [MIT License](LICENSE).

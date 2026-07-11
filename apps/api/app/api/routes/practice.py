@@ -1,4 +1,5 @@
 from uuid import uuid4
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -24,9 +25,11 @@ from app.models.practice import (
 )
 from app.services.ai_client import LLMProviderConfig
 from app.services.practice_service import generate_practice_exercise, grade_practice
-from app.services.profile_service import weakest_skill_code
+from app.services.decision_service import recommend_next_action
+from app.services.memory_service import record_practice_outcome_memory, retrieve_memory_pack
 
 router = APIRouter()
+logger = logging.getLogger("uvicorn.error")
 
 DEFAULT_SKILL = "grammar.verb_tense"
 PLATFORM_PRACTICE_ANSWER_CHAR_LIMIT = 2000
@@ -70,6 +73,7 @@ def _record_practice_outcome(
     exercise_id: str | None = None,
     prompt_zh: str | None = None,
     explanation_zh: str | None = None,
+    exercise_type: str = "fix_sentence",
 ) -> dict:
     """Persist one graded practice attempt and fold it into the learner model.
 
@@ -84,6 +88,7 @@ def _record_practice_outcome(
         "userId": user_id,
         "exerciseId": exercise_id,
         "targetSkillCode": skill_code,
+        "exerciseType": exercise_type,
         "userAnswer": user_answer,
         "isCorrect": grade.isCorrect,
         "score": grade.score,
@@ -129,33 +134,70 @@ def _record_practice_outcome(
     profile["updatedAt"] = now
     save_profile(profile)
 
-    return {"attempt": attempt, "updatedSkill": updated_skill, "recordedError": recorded_error}
+    try:
+        memory_updates = record_practice_outcome_memory(
+            user_id=user_id,
+            skill_code=skill_code,
+            exercise_type=exercise_type,
+            score=grade.score,
+            is_correct=grade.isCorrect,
+            attempt_id=attempt["id"],
+            created_at=now,
+        )
+    except Exception:
+        logger.exception("practice memory_persist_error user_id=%s attempt=%s", user_id, attempt["id"])
+        memory_updates = []
+
+    return {
+        "attempt": attempt,
+        "updatedSkill": updated_skill,
+        "recordedError": recorded_error,
+        "memoryUpdates": memory_updates,
+    }
 
 
 @router.post("/practice/generate")
 def generate(
     req: GeneratePracticeRequest,
     llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
-    identity: Identity = Depends(rate_limited("practice_generate", allow_byok_unlimited=True)),
+    identity: Identity = Depends(rate_limited("practice_generate")),
 ):
     req.userId = identity.user_id
     try:
         now = now_iso()
         profile = get_or_create_profile(req.userId)
 
-        skill_code = req.targetSkillCode or weakest_skill_code(req.userId) or DEFAULT_SKILL
+        requested_type = req.practiceType.value if req.practiceType else None
+        decision = recommend_next_action(
+            req.userId,
+            requested_skill_code=req.targetSkillCode,
+            requested_practice_type=requested_type,
+        )
+        skill_code = decision.get("targetSkillCode") or DEFAULT_SKILL
+        selected_type = decision.get("practiceType") or requested_type
         taxonomy = ERROR_TAXONOMY.get(skill_code, {"label": skill_code, "zhLabel": skill_code})
 
         recent_errors = list_recent_errors(
             req.userId,
-            limit=500 if identity.has_unlimited_llm_quota else 20,
+            limit=50,
         )
         matching_examples = [
             {"originalText": e.get("originalText"), "correctedText": e.get("correctedText")}
             for e in recent_errors
             if e.get("code") == skill_code
         ]
-        examples = matching_examples if identity.has_unlimited_llm_quota else matching_examples[:5]
+        examples = matching_examples[:8]
+
+        try:
+            memory_pack = retrieve_memory_pack(
+                req.userId,
+                f"Generate the next {selected_type} exercise for {skill_code}; use relevant "
+                "learning preferences, strategies, weaknesses, and practice outcomes.",
+                purpose="practice_generation",
+            )
+        except Exception:
+            logger.exception("practice memory_retrieval_error user_id=%s", req.userId)
+            memory_pack = {"text": "", "items": [], "estimatedTokens": 0, "traceId": None}
 
         ai_ex = generate_practice_exercise(
             skill_code=skill_code,
@@ -163,8 +205,10 @@ def generate(
             cefr_level=profile.get("estimatedLevel", "B1"),
             recent_error_examples=examples,
             llm_provider=llm_provider,
-            practice_type=req.practiceType.value if req.practiceType else None,
+            practice_type=selected_type,
             output_language=req.outputLanguage,
+            memory_context=memory_pack.get("text"),
+            decision_reason=decision.get("reason"),
         )
 
         exercise = {
@@ -178,6 +222,12 @@ def generate(
             "explanationZh": ai_ex.explanationZh,
             "outputLanguage": req.outputLanguage,
             "createdAt": now,
+            "decision": decision,
+            "memoryRecall": {
+                "traceId": memory_pack.get("traceId"),
+                "memoryIds": [item.get("id") for item in memory_pack.get("items", [])],
+                "estimatedTokens": memory_pack.get("estimatedTokens", 0),
+            },
         }
         save_exercise(exercise)
         return {"exercise": exercise}
@@ -192,7 +242,7 @@ def generate(
 def submit(
     req: SubmitPracticeRequest,
     llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
-    identity: Identity = Depends(rate_limited("practice_submit", allow_byok_unlimited=True)),
+    identity: Identity = Depends(rate_limited("practice_submit")),
 ):
     req.userId = identity.user_id
     try:
@@ -203,7 +253,7 @@ def submit(
         ):
             raise HTTPException(
                 status_code=400,
-                detail=f"Practice answers are limited to {PLATFORM_PRACTICE_ANSWER_CHAR_LIMIT} characters unless you use your own LLM API key.",
+                detail=f"Practice answers are limited to {PLATFORM_PRACTICE_ANSWER_CHAR_LIMIT} characters for the current access tier.",
             )
         exercise = get_exercise(req.userId, req.exerciseId)
         if not exercise:
@@ -227,6 +277,7 @@ def submit(
             exercise_id=req.exerciseId,
             prompt_zh=exercise.get("promptZh"),
             explanation_zh=exercise.get("explanationZh"),
+            exercise_type=exercise.get("type", "fix_sentence"),
         )
 
         return {
@@ -234,6 +285,7 @@ def submit(
             "attempt": outcome["attempt"],
             "updatedSkill": outcome["updatedSkill"],
             "recordedError": outcome["recordedError"],
+            "memoryUpdates": outcome["memoryUpdates"],
         }
 
     except HTTPException:
@@ -248,7 +300,7 @@ def submit(
 def grade_adhoc(
     req: GradePracticeRequest,
     llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
-    identity: Identity = Depends(rate_limited("practice_submit", allow_byok_unlimited=True)),
+    identity: Identity = Depends(rate_limited("practice_submit")),
 ):
     """Grade an ad-hoc exercise (e.g. a plan task exercise) and record mistakes.
 
@@ -265,7 +317,7 @@ def grade_adhoc(
         ):
             raise HTTPException(
                 status_code=400,
-                detail=f"Practice answers are limited to {PLATFORM_PRACTICE_ANSWER_CHAR_LIMIT} characters unless you use your own LLM API key.",
+                detail=f"Practice answers are limited to {PLATFORM_PRACTICE_ANSWER_CHAR_LIMIT} characters for the current access tier.",
             )
 
         grade = grade_practice(
@@ -285,6 +337,7 @@ def grade_adhoc(
             now=now,
             prompt_zh=req.promptZh,
             explanation_zh=req.explanationZh,
+            exercise_type=req.exerciseType.value if req.exerciseType else "fix_sentence",
         )
 
         return {
@@ -292,6 +345,7 @@ def grade_adhoc(
             "attempt": outcome["attempt"],
             "updatedSkill": outcome["updatedSkill"],
             "recordedError": outcome["recordedError"],
+            "memoryUpdates": outcome["memoryUpdates"],
         }
 
     except HTTPException:

@@ -14,6 +14,29 @@ from botocore.exceptions import ClientError
 from app.config import settings
 
 
+def ensure_ttl(client, name: str) -> None:
+    """Enable asynchronous cleanup for expired memory and rate-limit rows."""
+    try:
+        description = client.describe_time_to_live(TableName=name)
+        ttl = description.get("TimeToLiveDescription", {})
+        status = ttl.get("TimeToLiveStatus")
+        if status in {"ENABLED", "ENABLING"} and ttl.get("AttributeName") == "ttl":
+            print(f"TTL is {status.lower()} on '{name}' (attribute: ttl).")
+            return
+        if status in {"DISABLING", "ENABLING"}:
+            print(f"TTL is currently {status.lower()} on '{name}'; retry later if needed.")
+            return
+        client.update_time_to_live(
+            TableName=name,
+            TimeToLiveSpecification={"Enabled": True, "AttributeName": "ttl"},
+        )
+        print(f"TTL enablement requested on '{name}' (attribute: ttl).")
+    except ClientError as error:
+        # Some local DynamoDB emulators do not implement TTL. The application
+        # still applies expiresAt synchronously during every retrieval.
+        print(f"TTL could not be enabled automatically: {error}")
+
+
 def create_table() -> None:
     client = boto3.client(
         "dynamodb",
@@ -26,7 +49,8 @@ def create_table() -> None:
 
     try:
         client.describe_table(TableName=name)
-        print(f"Table '{name}' already exists — nothing to do.")
+        print(f"Table '{name}' already exists.")
+        ensure_ttl(client, name)
         return
     except ClientError as e:
         if e.response["Error"]["Code"] != "ResourceNotFoundException":
@@ -47,6 +71,7 @@ def create_table() -> None:
     )
     client.get_waiter("table_exists").wait(TableName=name)
     print(f"Table '{name}' is ready.")
+    ensure_ttl(client, name)
 
 
 if __name__ == "__main__":

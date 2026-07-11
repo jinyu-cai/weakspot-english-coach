@@ -41,12 +41,15 @@ def generate_learning_plan(
     llm_provider: LLMProviderConfig | None = None,
     max_output_tokens: Optional[int] = None,
     output_language: OutputLanguage = "en",
+    memory_context: str | None = None,
 ) -> LearningPlanAIResult:
     user_prompt = (
         f"Learner profile:\n{profile}\n\n"
         f"Current skill states (lower mastery = weaker):\n{skills}\n\n"
         f"Recent errors:\n{recent_errors}"
     )
+    if memory_context:
+        user_prompt += f"\n\n{memory_context}\nUse these memories to honor goals, preferences, and proven learning strategies."
     return parse_with_model(
         messages=[
             {"role": "system", "content": f"{SYSTEM_PROMPT}\n\n{language_instruction(output_language)}"},

@@ -30,6 +30,12 @@ from app.services.chat_import_service import (
     build_chat_transcript,
     select_chat_import_model,
 )
+from app.services.memory_service import (
+    heuristic_memory_candidates,
+    memory_candidates_from_errors,
+    remember_candidates,
+    retrieve_memory_pack,
+)
 
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
@@ -43,12 +49,12 @@ def _enforce_platform_import_limits(req: ChatImportAnalyzeRequest, identity: Ide
     if len(req.conversations) > PLATFORM_IMPORT_CONVERSATION_LIMIT:
         raise HTTPException(
             status_code=400,
-            detail=f"Chat import is limited to {PLATFORM_IMPORT_CONVERSATION_LIMIT} conversations unless you use your own LLM API key.",
+            detail=f"Chat import is limited to {PLATFORM_IMPORT_CONVERSATION_LIMIT} conversations for the current access tier.",
         )
     if any(len(conversation.messages) > PLATFORM_IMPORT_MESSAGE_LIMIT for conversation in req.conversations):
         raise HTTPException(
             status_code=400,
-            detail=f"Each imported conversation is limited to {PLATFORM_IMPORT_MESSAGE_LIMIT} messages unless you use your own LLM API key.",
+            detail=f"Each imported conversation is limited to {PLATFORM_IMPORT_MESSAGE_LIMIT} messages for the current access tier.",
         )
 
 
@@ -61,7 +67,7 @@ async def analyze_chat_import(
     req: ChatImportAnalyzeRequest,
     response: Response,
     llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
-    identity: Identity = Depends(rate_limited("chat_import", allow_byok_unlimited=True)),
+    identity: Identity = Depends(rate_limited("chat_import")),
 ):
     req.userId = identity.user_id
     request_id = uuid4().hex[:10]
@@ -147,6 +153,16 @@ def _analyze_chat_import_and_persist(
         "custom" if llm_provider else "server-default",
     )
 
+    try:
+        memory_pack = retrieve_memory_pack(
+            req.userId,
+            f"Analyze imported English-learning conversations: {transcript}",
+            purpose="chat_import",
+        )
+    except Exception:
+        logger.exception("chat_import[%s] memory_retrieval_error", request_id)
+        memory_pack = {"text": "", "items": [], "estimatedTokens": 0, "traceId": None}
+
     analysis = analyze_imported_chat(
         req.conversations,
         analysis_mode=req.analysisMode,
@@ -156,6 +172,7 @@ def _analyze_chat_import_and_persist(
         transcript_char_budget=None if identity.has_unlimited_llm_quota else MAX_TRANSCRIPT_CHARS,
         message_char_limit=None if identity.has_unlimited_llm_quota else MAX_MESSAGE_CHARS,
         trace_id=request_id,
+        memory_context=memory_pack.get("text"),
     )
 
     now = now_iso()
@@ -240,6 +257,27 @@ def _analyze_chat_import_and_persist(
     profile["updatedAt"] = now
     save_profile(profile)
 
+    learner_text = " ".join(
+        message.text
+        for conversation in req.conversations
+        for message in conversation.messages
+        if message.role == "user"
+    )
+    try:
+        saved_memories = remember_candidates(
+            req.userId,
+            [
+                *analysis.memoryCandidates,
+                *heuristic_memory_candidates(learner_text),
+                *memory_candidates_from_errors(saved_errors),
+            ],
+            source_type="chat_import",
+            source_id=submission_id,
+        )
+    except Exception:
+        logger.exception("chat_import[%s] memory_persist_error", request_id)
+        saved_memories = []
+
     logger.info(
         "chat_import[%s] complete total_ms=%d weaknesses=%d updated_skills=%d notes=%d",
         request_id,
@@ -256,6 +294,12 @@ def _analyze_chat_import_and_persist(
         "updatedSkills": updated_skills,
         "notes": saved_notes,
         "profile": profile,
+        "memoriesSaved": saved_memories,
+        "memoryRecall": {
+            "traceId": memory_pack.get("traceId"),
+            "memoryIds": [item.get("id") for item in memory_pack.get("items", [])],
+            "estimatedTokens": memory_pack.get("estimatedTokens", 0),
+        },
         "importStats": {
             "conversationCount": len(req.conversations),
             "messageCount": message_count,
