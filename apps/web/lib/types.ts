@@ -8,7 +8,7 @@ export type PlanErrorScope = "weekly" | "all"
 export type TextChatModel = string
 export type RealtimeVoiceModel = string
 export type MemoryKind = "preference" | "goal" | "strategy" | "weakness" | "episode"
-export type MemoryStatus = "active" | "superseded" | "expired" | "forgotten"
+export type MemoryStatus = "active" | "resolved" | "superseded" | "expired" | "forgotten"
 
 export interface LearnerProfile {
   userId: string
@@ -226,6 +226,36 @@ export interface MemoryScoreBreakdown {
   critical: number
 }
 
+export interface WeaknessGraduation {
+  policy: string
+  state: "collecting" | "eligible" | "resolved"
+  eligible: boolean
+  progress?: number
+  attempts?: number
+  successfulAttempts?: number
+  distinctDays?: number
+  spanDays?: number
+  recentSuccessRate?: number
+  recentAverageScore?: number
+  mastery?: number
+  exerciseTypeCount?: number
+  daysSinceLastObserved?: number
+  lastObservedAt?: string | null
+  criteria?: Record<string, boolean>
+  thresholds?: {
+    minAttempts: number
+    minDistinctDays: number
+    minSpanDays: number
+    recentWindow: number
+    minRecentSuccessRate: number
+    recentAverageWindow: number
+    minRecentAverageScore: number
+    minMastery: number
+    minExerciseTypes: number
+    recurrenceFreeDays: number
+  }
+}
+
 export interface MemoryItem {
   id: string
   userId: string
@@ -246,6 +276,10 @@ export interface MemoryItem {
   updatedAt: string
   expiresAt?: string | null
   supersededBy?: string | null
+  resolvedAt?: string | null
+  resolutionReason?: string | null
+  reopenedCount?: number
+  graduation?: WeaknessGraduation
   retrievalScore?: number
   scoreBreakdown?: MemoryScoreBreakdown
   stats?: {

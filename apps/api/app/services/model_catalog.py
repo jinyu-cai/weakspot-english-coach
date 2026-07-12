@@ -1,13 +1,13 @@
 """Server-managed text model catalog.
 
-The browser may select one of these opaque IDs, but it never receives an API
-key or provider base URL. A selected entry resolves to an exact model on the
-server; using the same model for ``model`` and ``fast_model`` makes a deliberate
-user choice win over the app's usual fast/deep routing.
+The browser may independently select deep and fast opaque IDs, but it never
+receives an API key or provider base URL. Each entry resolves to an exact model
+and provider on the server. The legacy single-ID path remains available for
+older clients.
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Literal, Optional
 
 from app.config import Settings, settings
 from app.services.ai_client import LLMProviderConfig
@@ -19,6 +19,7 @@ class ServerModelOption:
     label: str
     provider_label: str
     model: str
+    mode: Literal["deep", "fast"]
     config: LLMProviderConfig
 
     def public_dict(self) -> dict:
@@ -27,6 +28,7 @@ class ServerModelOption:
             "label": self.label,
             "provider": self.provider_label,
             "model": self.model,
+            "mode": self.mode,
         }
 
 
@@ -43,6 +45,7 @@ def _add_option(
     api_key: str,
     base_url: str,
     model: str,
+    mode: Literal["deep", "fast"],
 ) -> None:
     api_key = _normalized(api_key)
     base_url = _normalized(base_url).rstrip("/")
@@ -55,6 +58,7 @@ def _add_option(
             label=label,
             provider_label=provider_label,
             model=model,
+            mode=mode,
             config=LLMProviderConfig(
                 api_key=api_key,
                 base_url=base_url,
@@ -80,6 +84,7 @@ def configured_server_models(config: Settings = settings) -> list[ServerModelOpt
         api_key=config.deepseek_api_key,
         base_url=config.deepseek_base_url,
         model=config.llm_model,
+        mode="deep",
     )
     _add_option(
         options,
@@ -89,6 +94,7 @@ def configured_server_models(config: Settings = settings) -> list[ServerModelOpt
         api_key=config.deepseek_api_key,
         base_url=config.deepseek_base_url,
         model=config.llm_model_fast,
+        mode="fast",
     )
     _add_option(
         options,
@@ -98,6 +104,7 @@ def configured_server_models(config: Settings = settings) -> list[ServerModelOpt
         api_key=config.qwen_model_studio_api_key,
         base_url=config.qwen_model_studio_base_url,
         model=config.qwen_model_studio_model,
+        mode="deep",
     )
     _add_option(
         options,
@@ -107,6 +114,7 @@ def configured_server_models(config: Settings = settings) -> list[ServerModelOpt
         api_key=config.qwen_model_studio_api_key,
         base_url=config.qwen_model_studio_base_url,
         model=config.qwen_model_studio_fast_model,
+        mode="fast",
     )
     _add_option(
         options,
@@ -116,6 +124,7 @@ def configured_server_models(config: Settings = settings) -> list[ServerModelOpt
         api_key=config.openai_compat_api_key,
         base_url=config.openai_compat_base_url,
         model=config.openai_compat_model,
+        mode="deep",
     )
     _add_option(
         options,
@@ -125,14 +134,15 @@ def configured_server_models(config: Settings = settings) -> list[ServerModelOpt
         api_key=config.openai_compat_api_key,
         base_url=config.openai_compat_base_url,
         model=config.openai_compat_fast_model,
+        mode="fast",
     )
 
-    # A provider can intentionally use one model for both modes. Keep the
-    # catalog concise instead of rendering duplicate choices.
+    # Deduplicate repeated configuration within a mode while retaining the
+    # same model in both modes when a provider intentionally reuses it.
     deduped: list[ServerModelOption] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str]] = set()
     for option in options:
-        key = (option.provider_label, option.model)
+        key = (option.provider_label, option.model, option.mode)
         if key in seen:
             continue
         seen.add(key)
@@ -169,6 +179,28 @@ def server_model_by_id(model_id: str, config: Settings = settings) -> Optional[S
     if not normalized_id or normalized_id == "default":
         return None
     return next((option for option in configured_server_models(config) if option.id == normalized_id), None)
+
+
+def server_model_pair(
+    deep_model_id: str,
+    fast_model_id: str,
+    config: Settings = settings,
+) -> Optional[LLMProviderConfig]:
+    """Resolve independently selected deep/fast IDs into one safe provider config."""
+    deep = server_model_by_id(deep_model_id, config)
+    fast = server_model_by_id(fast_model_id, config)
+    if deep is None or fast is None or deep.mode != "deep" or fast.mode != "fast":
+        return None
+    return LLMProviderConfig(
+        api_key=deep.config.api_key,
+        base_url=deep.config.base_url,
+        model=deep.model,
+        fast_model=fast.model,
+        fast_api_key=fast.config.api_key,
+        fast_base_url=fast.config.base_url,
+        server_deep_model_id=deep.id,
+        server_fast_model_id=fast.id,
+    )
 
 
 def server_model_for_name(model: str, config: Settings = settings) -> Optional[ServerModelOption]:

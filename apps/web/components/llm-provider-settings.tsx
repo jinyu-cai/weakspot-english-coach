@@ -17,27 +17,30 @@ import {
 } from "@/components/ui/sheet"
 import {
   clearLLMSettings,
+  DEFAULT_SERVER_DEEP_MODEL_ID,
+  DEFAULT_SERVER_FAST_MODEL_ID,
   DEFAULT_OPENAI_BASE_URL,
   hasCustomLLMSettings,
   loadLLMSettings,
+  normalizeServerModelSettings,
   QWEN_37_MAX_MODEL,
   QWEN_37_PLUS_MODEL,
   QWEN_MODEL_STUDIO_INTERNATIONAL_BASE_URL,
-  SERVER_DEFAULT_MODEL_ID,
   saveLLMSettings,
+  serverModelsForMode,
   type LLMSettings,
   type ServerLLMModel,
 } from "@/lib/llm-settings"
 import { getServerLLMModels } from "@/lib/api-client"
 import { useLanguage } from "@/components/language-provider"
-import { cn } from "@/lib/utils"
 
 const emptySettings: LLMSettings = {
   apiKey: "",
   baseUrl: DEFAULT_OPENAI_BASE_URL,
   model: "",
   fastModel: "",
-  serverModelId: SERVER_DEFAULT_MODEL_ID,
+  serverDeepModelId: DEFAULT_SERVER_DEEP_MODEL_ID,
+  serverFastModelId: DEFAULT_SERVER_FAST_MODEL_ID,
 }
 
 export function LLMProviderSettings() {
@@ -49,18 +52,14 @@ export function LLMProviderSettings() {
   const [modelsError, setModelsError] = useState(false)
   const { t } = useLanguage()
 
-  const selectableServerModels = serverModels.length > 0
-    ? serverModels
-    : [{
-      id: settings.serverModelId || SERVER_DEFAULT_MODEL_ID,
-      label: settings.serverModelId === SERVER_DEFAULT_MODEL_ID
-        ? t.settings.serverDefault
-        : settings.serverModelId,
-      provider: "Server",
-      model: "",
-      adaptive: true,
-    }]
-  const selectedServerModel = selectableServerModels.find((model) => model.id === settings.serverModelId)
+  const deepServerModels = serverModelsForMode(serverModels, "deep")
+  const fastServerModels = serverModelsForMode(serverModels, "fast")
+  const selectedDeepModel = deepServerModels.find((model) => model.id === settings.serverDeepModelId)
+  const selectedFastModel = fastServerModels.find((model) => model.id === settings.serverFastModelId)
+  const isQwenDefault = (
+    settings.serverDeepModelId === DEFAULT_SERVER_DEEP_MODEL_ID
+    && settings.serverFastModelId === DEFAULT_SERVER_FAST_MODEL_ID
+  )
 
   async function loadServerModels() {
     setLoadingModels(true)
@@ -69,11 +68,7 @@ export function LLMProviderSettings() {
       const models = await getServerLLMModels()
       if (models.length === 0) throw new Error("No server models available.")
       setServerModels(models)
-      setSettings((current) => (
-        models.some((model) => model.id === current.serverModelId)
-          ? current
-          : { ...current, serverModelId: SERVER_DEFAULT_MODEL_ID }
-      ))
+      setSettings((current) => normalizeServerModelSettings(current, models))
     } catch {
       setServerModels([])
       setModelsError(true)
@@ -104,10 +99,10 @@ export function LLMProviderSettings() {
     }))
   }
 
-  function selectServerModel(serverModelId: string) {
+  function selectServerModel(mode: "deep" | "fast", serverModelId: string) {
     setSettings((current) => ({
       ...current,
-      serverModelId,
+      [mode === "deep" ? "serverDeepModelId" : "serverFastModelId"]: serverModelId,
       // Selecting a hosted model is an explicit move away from BYOK. Do not
       // leave browser-stored credentials silently overriding that choice.
       apiKey: "",
@@ -123,14 +118,16 @@ export function LLMProviderSettings() {
       baseUrl: (settings.baseUrl || DEFAULT_OPENAI_BASE_URL).trim(),
       model: settings.model.trim(),
       fastModel: settings.fastModel.trim(),
-      serverModelId: settings.serverModelId || SERVER_DEFAULT_MODEL_ID,
+      serverDeepModelId: settings.serverDeepModelId || DEFAULT_SERVER_DEEP_MODEL_ID,
+      serverFastModelId: settings.serverFastModelId || DEFAULT_SERVER_FAST_MODEL_ID,
     }
 
     if (!next.apiKey && !next.model) {
       saveLLMSettings(next)
       setConfigured(false)
       toast.success(
-        next.serverModelId === SERVER_DEFAULT_MODEL_ID
+        next.serverDeepModelId === DEFAULT_SERVER_DEEP_MODEL_ID
+          && next.serverFastModelId === DEFAULT_SERVER_FAST_MODEL_ID
           ? t.settings.serverSelected
           : t.settings.serverModelSaved,
       )
@@ -177,9 +174,9 @@ export function LLMProviderSettings() {
             <Badge variant={configured ? "default" : "secondary"}>
               {configured
                 ? t.settings.custom
-                : selectedServerModel
-                  ? (selectedServerModel.adaptive ? t.settings.serverAuto : selectedServerModel.label)
-                  : t.settings.serverDefault}
+                : isQwenDefault
+                  ? t.settings.serverDefault
+                  : `${selectedDeepModel?.provider || t.settings.serverDeep} / ${selectedFastModel?.provider || t.settings.serverFast}`}
             </Badge>
           </div>
 
@@ -190,32 +187,21 @@ export function LLMProviderSettings() {
                 {t.settings.serverModelsLoading}
               </p>
             ) : (
-              <div className="grid gap-2" role="radiogroup" aria-label={t.settings.serverModel}>
-                {selectableServerModels.map((model) => {
-                  const selected = settings.serverModelId === model.id
-                  return (
-                    <button
-                      key={model.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      onClick={() => selectServerModel(model.id)}
-                      className={cn(
-                        "grid gap-0.5 rounded-lg border bg-background px-3 py-2 text-left transition hover:border-primary/50",
-                        selected && "border-primary bg-primary/5 ring-1 ring-primary/20",
-                      )}
-                    >
-                      <span className="text-sm font-medium text-foreground">
-                        {model.adaptive ? t.settings.serverAuto : model.label}
-                      </span>
-                      <span className="text-xs leading-relaxed text-muted-foreground">
-                        {model.adaptive
-                          ? `${t.settings.serverDeep}: ${model.model || "—"} · ${t.settings.serverFast}: ${model.fastModel || model.model || "—"}`
-                          : `${model.provider} · ${model.model || "—"}`}
-                      </span>
-                    </button>
-                  )
-                })}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <ServerModelSelect
+                  label={t.settings.deepModel}
+                  value={settings.serverDeepModelId}
+                  models={deepServerModels}
+                  disabled={loadingModels}
+                  onChange={(value) => selectServerModel("deep", value)}
+                />
+                <ServerModelSelect
+                  label={t.settings.fastModel}
+                  value={settings.serverFastModelId}
+                  models={fastServerModels}
+                  disabled={loadingModels}
+                  onChange={(value) => selectServerModel("fast", value)}
+                />
               </div>
             )}
             {modelsError && (
@@ -295,5 +281,38 @@ export function LLMProviderSettings() {
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  )
+}
+
+function ServerModelSelect({
+  label,
+  value,
+  models,
+  disabled,
+  onChange,
+}: {
+  label: string
+  value: string
+  models: ServerLLMModel[]
+  disabled: boolean
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
+      {label}
+      <select
+        value={value}
+        disabled={disabled || models.length === 0}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-10 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-60"
+      >
+        {models.length === 0 && <option value={value}>{value}</option>}
+        {models.map((model) => (
+          <option key={model.id} value={model.id}>
+            {model.label} · {model.model}
+          </option>
+        ))}
+      </select>
+    </label>
   )
 }

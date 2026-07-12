@@ -37,9 +37,13 @@ can be reviewed without a backend.
 ## Text-model selection
 
 The header AI settings button loads the backend's safe server-model catalog.
-Users can select any model configured by the backend (for example DeepSeek or
-Qwen) without receiving an API key. The same selection applies to text AI
-features; the chat page also exposes it before a new conversation starts.
+Users independently select a Deep model and a Fast model from the providers
+configured by the backend without receiving an API key. The default pair is
+Qwen 3.7 Max for deep work and Qwen 3.7 Plus for fast work. Either slot can be
+switched to its DeepSeek equivalent, so Qwen/DeepSeek mixed pairs are supported.
+Loading failures are shown with a retry action. The same pair applies to text
+AI features; the chat page also exposes both selectors before a new
+conversation starts.
 
 The optional custom-provider form is BYOK and is stored only in that browser's
 local storage. It overrides the server-model choice until cleared.
@@ -65,6 +69,10 @@ pnpm build
 ```
 
 ## Learn More
+
+For a source-guided introduction to React/Next.js, the FastAPI backend, and the
+complete request/data flow, start with the repo-level
+[`development.md`](../../development.md).
 
 To learn more, take a look at the following resources:
 

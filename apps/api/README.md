@@ -15,9 +15,11 @@ uv sync                       # creates .venv (Python 3.11) + installs from the 
 cp .env.example .env          # then fill in real keys
 ```
 
-Required `.env` values: text-model provider config (`DEEPSEEK_API_KEY` or
-`OPENAI_COMPAT_*`), `OPENAI_API_KEY` for realtime voice, AWS creds +
-`DYNAMODB_TABLE`, and `CORS_ORIGINS` (include your Vercel URL). See
+Common production `.env` values are: at least one text-model provider profile
+(`QWEN_MODEL_STUDIO_*`, `OPENAI_COMPAT_*`, or the backwards-compatible
+`DEEPSEEK_*` variables), AWS credentials/role + `DYNAMODB_TABLE`, and
+`CORS_ORIGINS` (include your Vercel URL). Add `OPENAI_API_KEY` only when realtime
+voice is enabled, and add OAuth/session values when login is enabled. See
 `.env.example`.
 
 Managing dependencies: `uv add <pkg>` / `uv remove <pkg>` (updates the lockfile);
@@ -28,7 +30,7 @@ Managing dependencies: `uv add <pkg>` / `uv remove <pkg>` (updates the lockfile)
 ```bash
 uv run python -m scripts.smoke_test          # imports + schemas + validation
 uv run python -m scripts.integration_test    # full loop end-to-end (moto + fake AI)
-uv run python -m scripts.memory_agent_test   # memory merge/conflict/expiry/API/decision
+uv run python -m scripts.memory_agent_test   # lifecycle/graduation/relapse/API/decision
 uv run python -m scripts.memory_benchmark    # recall, stale suppression, context budget
 ```
 
@@ -56,27 +58,61 @@ Interactive docs at `http://localhost:8000/docs`.
 ```
 GET  /health
 GET  /llm/models               # public model labels/IDs; never returns keys or base URLs
-POST /diagnose                 { userId, text }
+POST /diagnose                 # writing diagnosis, notes, mastery, and memory
 GET  /profile/{user_id}
-POST /plan                     { userId }
+POST /plan
 GET  /plan/{user_id}
-POST /practice/generate        { userId, targetSkillCode? }
-POST /practice/submit          { userId, exerciseId, userAnswer }
+POST /practice/generate
+POST /practice/submit
+POST /practice/grade           # ad-hoc grading for plan exercises
 GET  /history/{user_id}
+DELETE /history/{submission_id}
+GET  /notes
+DELETE /notes/{note_id}
 GET  /stats/daily/{user_id}?timezone=<IANA timezone>&days=7
+
 POST /chat/sessions
+GET  /chat/sessions
+GET  /chat/sessions/{session_id}/messages
 POST /chat/send
 POST /chat/predict
 POST /chat/sessions/{session_id}/analyze
+POST /chat/sessions/{session_id}/transcript
 POST /chat/realtime/session
-GET  /memory?status=active|all
+POST /chat/realtime/{session_id}/sideband
+GET  /chat/realtime/{session_id}/audit
+POST /chat/realtime/{session_id}/kick
+POST /chat-import/analyze
+
+GET  /memory?status=active|resolved|superseded|expired|forgotten|all
 POST /memory
 PATCH /memory/{memory_id}
 DELETE /memory/{memory_id}
 POST /memory/retrieve
 GET  /memory/traces
 GET  /memory/next-action
+
+GET  /auth/github/login
+GET  /auth/github/callback
+GET  /auth/google/login
+GET  /auth/google/callback
+GET  /auth/me
+POST /auth/logout
+
+GET  /admin/access-roles                   # owner only
+GET  /admin/access-roles/{identifier}      # owner only
+POST /admin/access-roles                   # owner only
+DELETE /admin/access-roles/{identifier}    # owner only
 ```
+
+Treat this as a route index, not a substitute for the generated OpenAPI docs.
+Run the backend and open `http://localhost:8000/docs` for exact request schemas.
+
+Weakness memories use evidence-based graduation rather than a one-answer
+delete rule. Five attempts across at least three days and 14 days, stable recent
+scores, mastery >= 85, two successful exercise formats, and 14 recurrence-free
+days are all required. The row then becomes `resolved` and stops being recalled;
+fresh evidence for the same weakness reactivates the same row.
 
 ## Deploy (Linux)
 
@@ -85,15 +121,17 @@ docker compose up -d --build
 curl http://localhost:8000/api/v1/health
 ```
 
-Then put Nginx in front and issue HTTPS with Certbot (see root project docs /
-`development.md` §19). The frontend's `NEXT_PUBLIC_API_BASE_URL` must point at
+Then put Nginx in front and issue HTTPS with Certbot (see `DEPLOY.md` and
+[`../../docs/ALIBABA_QWEN_DEPLOYMENT.md`](../../docs/ALIBABA_QWEN_DEPLOYMENT.md)).
+The frontend's `NEXT_PUBLIC_API_BASE_URL` must point at
 the HTTPS backend domain, and that domain must be listed in `CORS_ORIGINS`.
 
 ## AI client note (OpenAI-compatible / BYOK)
 
 The backend uses the OpenAI Python SDK against an OpenAI-compatible chat
-completions API. DeepSeek is the default deployment provider, but new
-deployments can also use provider-neutral env vars:
+completions API. The primary production deployment uses Qwen Model Studio;
+provider-neutral and backwards-compatible DeepSeek settings remain available.
+Provider-neutral deployments can use:
 
 ```bash
 OPENAI_COMPAT_API_KEY=...
@@ -127,19 +165,23 @@ for the Alibaba Cloud deployment runbook and regional endpoints.
 ### Server-managed model selection
 
 When one or more server providers are configured, `GET /api/v1/llm/models`
-returns a safe catalog of selectable IDs and display labels. The browser sends
-only an ID, for example:
+returns a safe catalog of selectable IDs, modes, and display labels. The
+browser can independently select one deep model and one fast model, for
+example:
 
 ```text
-X-LLM-Server-Model: qwen-deep
+X-LLM-Server-Deep-Model: qwen-deep
+X-LLM-Server-Fast-Model: deepseek-fast
 ```
 
 The server resolves that ID to its matching key, endpoint, and exact model. No
-provider credentials or base URLs are returned to the browser. The built-in
-selector applies to text features (diagnosis, plans, practice, imports, and
-new text chats). `default` keeps adaptive fast/deep routing; an explicit choice
-uses that exact model for the request. Text-chat sessions retain their chosen
-server model so a later browser selection does not change an existing session.
+provider credentials or base URLs are returned to the browser. Qwen Max for
+deep work plus Qwen Plus for fast work is the default. Each slot can instead
+use its matching DeepSeek model, including mixed Qwen/DeepSeek combinations.
+The built-in selector applies to text features (diagnosis, plans, practice,
+imports, and new text chats). Text-chat sessions retain their chosen pair so a
+later browser selection does not change an existing session. The legacy
+`X-LLM-Server-Model` single-model header remains supported for older clients.
 
 With both DeepSeek and Qwen configured, the catalog exposes each configured
 model. Removing a provider removes its choices; old chat sessions safely fall
@@ -168,9 +210,8 @@ Realtime voice is separate from the text provider. Configure
 exchanges the server key for short-lived Realtime client secrets so the browser
 never sees the real OpenAI key.
 
-Text chat uses the server fast model by default. A user can choose an available
-server model before starting a new text chat; prediction and end-of-session
-analysis stay with that saved model.
+Text chat and prediction use the saved fast slot. End-of-session analysis uses
+the saved deep slot. Users can choose both before starting a new text chat.
 
 ## Diagnose request debugging
 

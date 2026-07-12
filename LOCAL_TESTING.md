@@ -82,11 +82,16 @@ Open [http://localhost:3000](http://localhost:3000) and check:
 
 ```text
 Diagnose
+Chat (Auto / Deep / Fast server-model choices)
+Import
 Daily Wins
 Dashboard
+Memory Center (add/retrieve/trace/forget)
+Notebook
 Plan
 Practice
 History
+Login
 ```
 
 Daily Wins should load at `/stats` with mock 7-day stats.
@@ -104,8 +109,10 @@ DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
 ```
 
 The integration test covers diagnose, profile, plan, practice generation,
-practice submit, history, and `GET /api/v1/stats/daily/{userId}`. It also checks
-that fixed UTC timestamps group into the expected local day for a timezone.
+practice submit, history, auth/rate limiting, server model routing, realtime
+session rules, chat import, session analysis, and daily stats. The dedicated
+MemoryAgent test covers merge, conflict replacement, expiry, bounded recall,
+source retraction, adaptive decisions, and Memory APIs.
 
 ## Full local frontend + backend
 
@@ -113,8 +120,12 @@ Terminal A:
 
 ```bash
 cd apps/api
-uv run uvicorn app.main:app --reload --port 8000
+uv run python -m scripts.dev_server
 ```
+
+This recommended learning mode uses in-process moto + fake AI, needs no AWS or
+model keys, and resets data when stopped. To test real configured services,
+use `uv run uvicorn app.main:app --reload --port 8000` with a valid `.env`.
 
 Terminal B:
 
@@ -128,6 +139,9 @@ Open [http://localhost:3000](http://localhost:3000), then verify:
 ```text
 Diagnose creates records
 Practice submit creates attempts
+Memory Center recalls and forgets a manual memory
+Chat model selector shows independent Deep and Fast choices (Qwen defaults,
+mixed Qwen/DeepSeek combinations available when both providers are configured)
 Daily Wins shows real backend stats
 Dashboard and History still load
 ```
@@ -177,6 +191,9 @@ Then verify the PR's Vercel Preview:
 ```text
 Daily Wins /stats
 Diagnose /
+Chat /chat
+Memory /memory
+Login /login
 Practice /practice
 Dashboard /dashboard
 History /history

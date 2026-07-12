@@ -58,6 +58,27 @@ ACTIVE = "active"
 ARCHIVE_GRACE_DAYS = 30
 MIN_AUTO_CONFIDENCE = 0.55
 
+# A weakness is not considered mastered after a few back-to-back answers. The
+# graduation gate requires repeated retrieval across time, strong recent
+# performance, transfer across exercise formats, high skill mastery, and no
+# recent recurrence. These conservative defaults are intentionally explicit so
+# they can be calibrated from real learner data later.
+WEAKNESS_GRADUATION_POLICY = "spaced-evidence-v1"
+WEAKNESS_GRADUATION_THRESHOLDS = {
+    "minAttempts": 5,
+    "minDistinctDays": 3,
+    "minSpanDays": 14,
+    "recentWindow": 5,
+    "minRecentSuccessRate": 0.80,
+    "recentAverageWindow": 3,
+    "minRecentAverageScore": 85,
+    "minMastery": 85,
+    "minExerciseTypes": 2,
+    "recurrenceFreeDays": 14,
+}
+WEAKNESS_PRACTICE_EVIDENCE_LIMIT = 20
+RESOLVED_WEAKNESS_RETENTION_DAYS = 180
+
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -183,6 +204,278 @@ def list_active_memory_records(user_id: str) -> list[dict]:
     return _active_memories(user_id, expire_due=True)
 
 
+def _matching_memories(
+    user_id: str,
+    canonical_key: str,
+    *,
+    include_resolved: bool = False,
+) -> list[dict]:
+    matches = [
+        memory
+        for memory in _active_memories(user_id)
+        if memory.get("canonicalKey") == canonical_key
+    ]
+    if include_resolved:
+        known_ids = {memory.get("id") for memory in matches}
+        matches.extend(
+            memory
+            for memory in list_memories(
+                user_id,
+                limit=settings.memory_max_items_per_user + 100,
+            )
+            if memory.get("id") not in known_ids
+            and memory.get("status") == "resolved"
+            and memory.get("canonicalKey") == canonical_key
+        )
+    return matches
+
+
+def _reactivate_weakness(memory: dict, now: datetime) -> dict:
+    """Reopen a resolved weakness when fresh error evidence appears."""
+    memory = dict(memory)
+    now_text = iso_at(now)
+    if memory.get("status") == "resolved":
+        history = list(memory.get("resolutionHistory") or [])
+        history.append({
+            "resolvedAt": memory.get("resolvedAt"),
+            "reopenedAt": now_text,
+            "policy": memory.get("resolutionReason") or WEAKNESS_GRADUATION_POLICY,
+        })
+        memory["resolutionHistory"] = history[-10:]
+        memory["reopenedCount"] = int(memory.get("reopenedCount", 0)) + 1
+    memory["status"] = ACTIVE
+    memory["lastObservedAt"] = now_text
+    memory.pop("resolvedAt", None)
+    memory.pop("resolutionReason", None)
+    graduation = dict(memory.get("graduation") or {})
+    graduation.update({
+        "policy": WEAKNESS_GRADUATION_POLICY,
+        "state": "collecting",
+        "eligible": False,
+        "lastObservedAt": now_text,
+    })
+    memory["graduation"] = graduation
+    memory.update(_expiry_fields("weakness", None, bool(memory.get("pinned")), now))
+    if memory.get("expiresAt") is None:
+        memory.pop("ttl", None)
+    return memory
+
+
+def _weakness_graduation_snapshot(
+    memory: dict,
+    *,
+    mastery: Optional[float],
+    now: datetime,
+) -> dict:
+    thresholds = WEAKNESS_GRADUATION_THRESHOLDS
+    evidence = sorted(
+        (
+            row
+            for row in list(memory.get("practiceEvidence") or [])
+            if parse_iso(row.get("createdAt")) is not None
+        ),
+        key=lambda row: row.get("createdAt", ""),
+    )
+    attempts = len(evidence)
+    successful = [
+        row
+        for row in evidence
+        if bool(row.get("isCorrect")) and float(row.get("score", 0)) >= 80
+    ]
+    distinct_days = {
+        parsed.date().isoformat()
+        for row in evidence
+        if (parsed := parse_iso(row.get("createdAt"))) is not None
+    }
+    timestamps = [
+        parsed
+        for row in evidence
+        if (parsed := parse_iso(row.get("createdAt"))) is not None
+    ]
+    span_days = (
+        max(0.0, (max(timestamps) - min(timestamps)).total_seconds() / 86400)
+        if len(timestamps) >= 2
+        else 0.0
+    )
+    recent = evidence[-int(thresholds["recentWindow"]):]
+    recent_success_rate = (
+        sum(
+            bool(row.get("isCorrect")) and float(row.get("score", 0)) >= 80
+            for row in recent
+        )
+        / len(recent)
+        if recent
+        else 0.0
+    )
+    recent_average_rows = evidence[-int(thresholds["recentAverageWindow"]):]
+    recent_average_score = (
+        sum(float(row.get("score", 0)) for row in recent_average_rows)
+        / len(recent_average_rows)
+        if recent_average_rows
+        else 0.0
+    )
+    exercise_types = {
+        str(row.get("exerciseType"))
+        for row in successful
+        if row.get("exerciseType")
+    }
+    last_observed = parse_iso(memory.get("lastObservedAt"))
+    days_since_observed = (
+        max(0.0, (now - last_observed).total_seconds() / 86400)
+        if last_observed is not None
+        else 0.0
+    )
+    mastery_value = float(mastery if mastery is not None else 0.0)
+    criteria = {
+        "attempts": attempts >= int(thresholds["minAttempts"]),
+        "distinctDays": len(distinct_days) >= int(thresholds["minDistinctDays"]),
+        "spanDays": span_days >= float(thresholds["minSpanDays"]),
+        "recentSuccessRate": (
+            len(recent) >= int(thresholds["recentWindow"])
+            and recent_success_rate >= float(thresholds["minRecentSuccessRate"])
+        ),
+        "recentAverageScore": (
+            len(recent_average_rows) >= int(thresholds["recentAverageWindow"])
+            and recent_average_score >= float(thresholds["minRecentAverageScore"])
+        ),
+        "mastery": mastery_value >= float(thresholds["minMastery"]),
+        "exerciseTypes": len(exercise_types) >= int(thresholds["minExerciseTypes"]),
+        "recurrenceFree": (
+            last_observed is not None
+            and days_since_observed >= float(thresholds["recurrenceFreeDays"])
+        ),
+    }
+    passed = sum(bool(value) for value in criteria.values())
+    eligible = passed == len(criteria)
+    return {
+        "policy": WEAKNESS_GRADUATION_POLICY,
+        "state": "eligible" if eligible else "collecting",
+        "eligible": eligible,
+        "progress": round(passed / len(criteria), 4),
+        "attempts": attempts,
+        "successfulAttempts": len(successful),
+        "distinctDays": len(distinct_days),
+        "spanDays": round(span_days, 1),
+        "recentSuccessRate": round(recent_success_rate, 4),
+        "recentAverageScore": round(recent_average_score, 1),
+        "mastery": round(mastery_value, 2),
+        "exerciseTypeCount": len(exercise_types),
+        "daysSinceLastObserved": round(days_since_observed, 1),
+        "lastObservedAt": memory.get("lastObservedAt"),
+        "criteria": criteria,
+        "thresholds": dict(thresholds),
+    }
+
+
+def _record_weakness_practice_evidence(
+    *,
+    user_id: str,
+    skill_code: str,
+    exercise_type: str,
+    score: int,
+    is_correct: bool,
+    attempt_id: str,
+    created_at: str,
+    mastery: Optional[float],
+) -> Optional[dict]:
+    canonical_key = normalize_canonical_key("weakness", f"weakness.{skill_code}")
+    matches = _matching_memories(user_id, canonical_key, include_resolved=True)
+    memory = max(matches, key=lambda row: row.get("updatedAt", ""), default=None)
+    created = False
+
+    if memory is None and not is_correct:
+        saved = remember_candidates(
+            user_id,
+            [MemoryCandidate(
+                kind="weakness",
+                canonicalKey=canonical_key,
+                content=f"The learner needs recurring practice with {skill_code}.",
+                evidence=f"Practice score: {score}/100.",
+                confidence=0.72,
+                importance=0.75,
+                expiresInDays=60,
+            )],
+            source_type="practice",
+            source_id=attempt_id,
+        )
+        if not saved:
+            return None
+        memory = get_memory(user_id, saved[-1]["id"])
+        created = True
+
+    if memory is None:
+        return None
+
+    now = parse_iso(created_at) or utc_now()
+    now_text = iso_at(now)
+    if memory.get("status") == "resolved":
+        if is_correct:
+            return None
+        memory = _reactivate_weakness(memory, now)
+
+    if memory.get("status", ACTIVE) != ACTIVE:
+        return None
+
+    memory = dict(memory)
+    if not memory.get("lastObservedAt"):
+        memory["lastObservedAt"] = (
+            memory.get("createdAt") or memory.get("updatedAt") or now_text
+        )
+    rows = [
+        row
+        for row in list(memory.get("practiceEvidence") or [])
+        if row.get("attemptId") != attempt_id
+    ]
+    rows.append({
+        "attemptId": attempt_id,
+        "createdAt": now_text,
+        "score": int(score),
+        "isCorrect": bool(is_correct),
+        "exerciseType": exercise_type,
+    })
+    memory["practiceEvidence"] = sorted(
+        rows,
+        key=lambda row: row.get("createdAt", ""),
+    )[-WEAKNESS_PRACTICE_EVIDENCE_LIMIT:]
+    memory["updatedAt"] = now_text
+
+    if not is_correct:
+        memory["lastObservedAt"] = now_text
+        if not created:
+            refs = list(memory.get("sourceRefs") or [])
+            refs.append(_source_ref(
+                "practice",
+                attempt_id,
+                f"Practice score: {score}/100; correct={is_correct}.",
+                now_text,
+            ))
+            memory["sourceRefs"] = refs[-12:]
+            memory["sourceType"] = "practice"
+            memory["sourceId"] = attempt_id
+            memory["evidence"] = f"Practice score: {score}/100; correct={is_correct}."
+            memory["observationCount"] = int(memory.get("observationCount", 1)) + 1
+
+    graduation = _weakness_graduation_snapshot(memory, mastery=mastery, now=now)
+    if graduation["eligible"]:
+        memory["status"] = "resolved"
+        memory["resolvedAt"] = now_text
+        memory["resolutionReason"] = WEAKNESS_GRADUATION_POLICY
+        graduation["state"] = "resolved"
+        memory.update(_expiry_fields(
+            "weakness",
+            RESOLVED_WEAKNESS_RETENTION_DAYS,
+            bool(memory.get("pinned")),
+            now,
+        ))
+    else:
+        memory.update(_expiry_fields("weakness", None, bool(memory.get("pinned")), now))
+        if memory.get("expiresAt") is None:
+            memory.pop("ttl", None)
+    memory["graduation"] = graduation
+    save_memory(memory)
+    return public_memory(memory)
+
+
 def remember_candidates(
     user_id: str,
     candidates: Iterable[MemoryCandidate | dict],
@@ -213,17 +506,34 @@ def remember_candidates(
         now = utc_now()
         now_text = iso_at(now)
         canonical_key = normalize_canonical_key(candidate.kind, candidate.canonicalKey, candidate.content)
-        active = _active_memories(user_id)
-        matches = [m for m in active if m.get("canonicalKey") == canonical_key]
+        matches = _matching_memories(
+            user_id,
+            canonical_key,
+            include_resolved=candidate.kind == "weakness",
+        )
         existing = max(matches, key=lambda m: m.get("updatedAt", ""), default=None)
         vector = embeddings[index] if index < len(embeddings) else None
+        resolved_weakness = bool(
+            candidate.kind == "weakness"
+            and existing
+            and existing.get("status") == "resolved"
+        )
 
         if (
             existing
-            and not _looks_conflicting(existing.get("content", ""), candidate.content)
-            and _content_similarity(existing.get("content", ""), candidate.content) >= 0.86
+            and (
+                resolved_weakness
+                or (
+                    not _looks_conflicting(existing.get("content", ""), candidate.content)
+                    and _content_similarity(existing.get("content", ""), candidate.content) >= 0.86
+                )
+            )
         ):
-            memory = dict(existing)
+            memory = (
+                _reactivate_weakness(existing, now)
+                if resolved_weakness
+                else dict(existing)
+            )
             refs = list(memory.get("sourceRefs") or [])
             refs.append(_source_ref(source_type, source_id, candidate.evidence, now_text))
             memory.update(
@@ -243,6 +553,16 @@ def remember_candidates(
                     "status": ACTIVE,
                 }
             )
+            if candidate.kind == "weakness":
+                memory["lastObservedAt"] = now_text
+                graduation = dict(memory.get("graduation") or {})
+                graduation.update({
+                    "policy": WEAKNESS_GRADUATION_POLICY,
+                    "state": "collecting",
+                    "eligible": False,
+                    "lastObservedAt": now_text,
+                })
+                memory["graduation"] = graduation
             if vector is not None:
                 memory["embedding"] = vector
                 memory["embeddingModel"] = settings.qwen_embedding_model
@@ -274,6 +594,15 @@ def remember_candidates(
             "createdAt": now_text,
             "updatedAt": now_text,
         }
+        if candidate.kind == "weakness":
+            memory["lastObservedAt"] = now_text
+            memory["graduation"] = {
+                "policy": WEAKNESS_GRADUATION_POLICY,
+                "state": "collecting",
+                "eligible": False,
+                "progress": 0.0,
+                "lastObservedAt": now_text,
+            }
         memory.update(_expiry_fields(candidate.kind, candidate.expiresInDays, pinned, now))
         if vector is not None:
             memory["embedding"] = vector
@@ -695,8 +1024,9 @@ def record_practice_outcome_memory(
     is_correct: bool,
     attempt_id: str,
     created_at: str,
+    mastery: Optional[float] = None,
 ) -> list[dict]:
-    """Accumulate empirical strategy effectiveness and a short-lived episode."""
+    """Accumulate strategy, episode, and weakness-graduation evidence."""
     if not settings.memory_enabled:
         return []
     canonical = normalize_canonical_key("strategy", f"practice.{skill_code}.{exercise_type}")
@@ -779,5 +1109,19 @@ def record_practice_outcome_memory(
         source_type="practice",
         source_id=attempt_id,
     )
+    weakness_update = _record_weakness_practice_evidence(
+        user_id=user_id,
+        skill_code=skill_code,
+        exercise_type=exercise_type,
+        score=score,
+        is_correct=is_correct,
+        attempt_id=attempt_id,
+        created_at=created_at,
+        mastery=mastery,
+    )
     _enforce_capacity(user_id)
-    return [public_memory(memory), *episodic]
+    return [
+        public_memory(memory),
+        *([weakness_update] if weakness_update is not None else []),
+        *episodic,
+    ]

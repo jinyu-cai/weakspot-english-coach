@@ -3,7 +3,8 @@ export type LLMSettings = {
   baseUrl: string
   model: string
   fastModel: string
-  serverModelId: string
+  serverDeepModelId: string
+  serverFastModelId: string
 }
 
 export type ServerLLMModel = {
@@ -13,6 +14,7 @@ export type ServerLLMModel = {
   model: string
   fastModel?: string
   adaptive?: boolean
+  mode?: "deep" | "fast"
 }
 
 export type ServerModelLabels = {
@@ -39,6 +41,8 @@ export const QWEN_MODEL_STUDIO_INTERNATIONAL_BASE_URL = "https://dashscope-intl.
 export const QWEN_37_MAX_MODEL = "qwen3.7-max"
 export const QWEN_37_PLUS_MODEL = "qwen3.7-plus"
 export const SERVER_DEFAULT_MODEL_ID = "default"
+export const DEFAULT_SERVER_DEEP_MODEL_ID = "qwen-deep"
+export const DEFAULT_SERVER_FAST_MODEL_ID = "qwen-fast"
 export const LLM_SETTINGS_CHANGE_EVENT = "weakspot:llm-settings-change"
 
 const STORAGE_KEY = "weakspot.llmSettings.v1"
@@ -48,7 +52,58 @@ const defaultSettings: LLMSettings = {
   baseUrl: DEFAULT_OPENAI_BASE_URL,
   model: "",
   fastModel: "",
-  serverModelId: SERVER_DEFAULT_MODEL_ID,
+  serverDeepModelId: DEFAULT_SERVER_DEEP_MODEL_ID,
+  serverFastModelId: DEFAULT_SERVER_FAST_MODEL_ID,
+}
+
+type StoredLLMSettings = Partial<LLMSettings> & { serverModelId?: string }
+
+function legacyServerPair(serverModelId?: string): Pick<LLMSettings, "serverDeepModelId" | "serverFastModelId"> {
+  const legacyId = (serverModelId || "").trim()
+  if (!legacyId || legacyId === SERVER_DEFAULT_MODEL_ID) {
+    return {
+      serverDeepModelId: DEFAULT_SERVER_DEEP_MODEL_ID,
+      serverFastModelId: DEFAULT_SERVER_FAST_MODEL_ID,
+    }
+  }
+  const providerPrefix = legacyId.replace(/-(deep|fast)$/, "")
+  return {
+    serverDeepModelId: `${providerPrefix}-deep`,
+    serverFastModelId: `${providerPrefix}-fast`,
+  }
+}
+
+export function serverModelsForMode(
+  models: ServerLLMModel[],
+  mode: "deep" | "fast",
+): ServerLLMModel[] {
+  return models.filter((model) => (
+    model.mode === mode
+    || (!model.adaptive && !model.mode && model.id.endsWith(`-${mode}`))
+  ))
+}
+
+export function normalizeServerModelSettings(
+  settings: LLMSettings,
+  models: ServerLLMModel[],
+): LLMSettings {
+  const deepModels = serverModelsForMode(models, "deep")
+  const fastModels = serverModelsForMode(models, "fast")
+  const preferredDeep = deepModels.find((model) => model.id === DEFAULT_SERVER_DEEP_MODEL_ID)?.id
+    || deepModels[0]?.id
+    || DEFAULT_SERVER_DEEP_MODEL_ID
+  const preferredFast = fastModels.find((model) => model.id === DEFAULT_SERVER_FAST_MODEL_ID)?.id
+    || fastModels[0]?.id
+    || DEFAULT_SERVER_FAST_MODEL_ID
+  return {
+    ...settings,
+    serverDeepModelId: deepModels.some((model) => model.id === settings.serverDeepModelId)
+      ? settings.serverDeepModelId
+      : preferredDeep,
+    serverFastModelId: fastModels.some((model) => model.id === settings.serverFastModelId)
+      ? settings.serverFastModelId
+      : preferredFast,
+  }
 }
 
 function canUseStorage() {
@@ -61,13 +116,15 @@ export function loadLLMSettings(): LLMSettings {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return defaultSettings
-    const parsed = JSON.parse(raw) as Partial<LLMSettings>
+    const parsed = JSON.parse(raw) as StoredLLMSettings
+    const legacyPair = legacyServerPair(parsed.serverModelId)
     return {
       apiKey: parsed.apiKey ?? "",
       baseUrl: parsed.baseUrl || DEFAULT_OPENAI_BASE_URL,
       model: parsed.model ?? "",
       fastModel: parsed.fastModel ?? "",
-      serverModelId: parsed.serverModelId || SERVER_DEFAULT_MODEL_ID,
+      serverDeepModelId: parsed.serverDeepModelId || legacyPair.serverDeepModelId,
+      serverFastModelId: parsed.serverFastModelId || legacyPair.serverFastModelId,
     }
   } catch {
     return defaultSettings
@@ -83,7 +140,8 @@ export function saveLLMSettings(settings: LLMSettings) {
       baseUrl: (settings.baseUrl || DEFAULT_OPENAI_BASE_URL).trim().replace(/\/+$/, ""),
       model: settings.model.trim(),
       fastModel: settings.fastModel.trim(),
-      serverModelId: settings.serverModelId.trim() || SERVER_DEFAULT_MODEL_ID,
+      serverDeepModelId: settings.serverDeepModelId.trim() || DEFAULT_SERVER_DEEP_MODEL_ID,
+      serverFastModelId: settings.serverFastModelId.trim() || DEFAULT_SERVER_FAST_MODEL_ID,
     }),
   )
   window.dispatchEvent(new Event(LLM_SETTINGS_CHANGE_EVENT))
@@ -103,9 +161,16 @@ export function hasCustomLLMSettings() {
 export function getLLMProviderHeaders(): Record<string, string> {
   const settings = loadLLMSettings()
   if (!settings.apiKey || !settings.model) {
-    return settings.serverModelId && settings.serverModelId !== SERVER_DEFAULT_MODEL_ID
-      ? { "X-LLM-Server-Model": settings.serverModelId }
-      : {}
+    const isQwenDefault = (
+      settings.serverDeepModelId === DEFAULT_SERVER_DEEP_MODEL_ID
+      && settings.serverFastModelId === DEFAULT_SERVER_FAST_MODEL_ID
+    )
+    return isQwenDefault
+      ? {}
+      : {
+        "X-LLM-Server-Deep-Model": settings.serverDeepModelId,
+        "X-LLM-Server-Fast-Model": settings.serverFastModelId,
+      }
   }
 
   const headers: Record<string, string> = {

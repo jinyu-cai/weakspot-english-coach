@@ -30,18 +30,43 @@ class LLMProviderConfig:
     base_url: str
     model: str
     fast_model: Optional[str] = None
+    # A server-managed fast slot may use a different provider from the deep
+    # slot (for example Qwen Max + DeepSeek Flash). Keep its credentials on the
+    # server and select them only when the fast model is requested.
+    fast_api_key: Optional[str] = None
+    fast_base_url: Optional[str] = None
     # Server-managed choices are resolved from a small allowlist and never send
     # their credentials to the browser. BYOK remains request-scoped and is
     # intentionally distinguished so quotas cannot be relaxed merely because a
     # caller supplied arbitrary headers.
     server_model_id: Optional[str] = None
+    server_deep_model_id: Optional[str] = None
+    server_fast_model_id: Optional[str] = None
     is_byok: bool = False
 
 
-def get_client(provider: Optional[LLMProviderConfig] = None) -> OpenAI:
+def _provider_connection(
+    provider: LLMProviderConfig,
+    selected_model: str,
+) -> tuple[str, str]:
+    if (
+        provider.fast_model
+        and selected_model == provider.fast_model
+        and provider.fast_api_key
+        and provider.fast_base_url
+    ):
+        return provider.fast_api_key, provider.fast_base_url
+    return provider.api_key, provider.base_url
+
+
+def get_client(
+    provider: Optional[LLMProviderConfig] = None,
+    model: Optional[str] = None,
+) -> OpenAI:
     """Lazily construct the client so the module can be imported without secrets."""
     if provider is not None:
-        return OpenAI(api_key=provider.api_key, base_url=provider.base_url)
+        api_key, base_url = _provider_connection(provider, model or provider.model)
+        return OpenAI(api_key=api_key, base_url=base_url)
 
     global _client
     if _client is None:
@@ -88,7 +113,10 @@ def parse_with_model(
     selected_model = model or (provider.model if provider else settings.default_llm_model)
     if not selected_model:
         raise ValueError("No LLM model configured.")
-    base_url = provider.base_url if provider else settings.default_llm_base_url
+    if provider:
+        _, base_url = _provider_connection(provider, selected_model)
+    else:
+        base_url = settings.default_llm_base_url
     uses_model_studio_qwen = _uses_model_studio_qwen(selected_model, base_url)
 
     schema = json.dumps(response_model.model_json_schema(), ensure_ascii=False)
@@ -136,7 +164,7 @@ def parse_with_model(
                 else:
                     create_kwargs.pop("reasoning_effort", None)
                 try:
-                    resp = get_client(provider).chat.completions.create(**create_kwargs)
+                    resp = get_client(provider, selected_model).chat.completions.create(**create_kwargs)
                     break
                 except OpenAIError as e:
                     if use_reasoning_effort and _is_unsupported_reasoning_effort(e):

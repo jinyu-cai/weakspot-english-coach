@@ -21,7 +21,7 @@ router = APIRouter(prefix="/memory")
 
 @router.get("")
 def get_memories(
-    status: Optional[Literal["active", "superseded", "expired", "forgotten", "all"]] = "active",
+    status: Optional[Literal["active", "resolved", "superseded", "expired", "forgotten", "all"]] = "active",
     kind: Optional[Literal["preference", "goal", "strategy", "weakness", "episode"]] = None,
     limit: int = Query(default=200, ge=1, le=500),
     identity: Identity = Depends(resolve_identity),

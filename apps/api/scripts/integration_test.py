@@ -296,7 +296,7 @@ def main() -> int:
         selected_text_max_tokens = []
 
         def fake_chat_reply(*, model=None, llm_provider=None, max_tokens=None, **kwargs):
-            selected_text_models.append(llm_provider.model if llm_provider else model)
+            selected_text_models.append(model or (llm_provider.model if llm_provider else None))
             selected_text_max_tokens.append(max_tokens)
             return ChatReplyAI(reply="Model routing test reply.", corrections=[], betterExpression=None)
 
@@ -363,6 +363,55 @@ def main() -> int:
             )
             assert r.status_code == 200, r.text
             assert selected_text_models[-1] == "qwen3.7-max", selected_text_models
+
+            # Enable DeepSeek too, then verify each slot can independently use
+            # a different server provider without exposing either API key.
+            settings.deepseek_api_key = "test-deepseek-key"
+            r = client.get("/api/v1/llm/models")
+            assert r.status_code == 200, r.text
+            mixed_catalog = r.json()["models"]
+            assert [entry["id"] for entry in mixed_catalog] == [
+                "default",
+                "deepseek-deep",
+                "deepseek-fast",
+                "qwen-deep",
+                "qwen-fast",
+            ], mixed_catalog
+            assert {entry.get("mode") for entry in mixed_catalog[1:]} == {"deep", "fast"}, mixed_catalog
+
+            pair_headers = {
+                "X-LLM-Server-Deep-Model": "qwen-deep",
+                "X-LLM-Server-Fast-Model": "deepseek-fast",
+            }
+            r = client.post(
+                "/api/v1/chat/sessions",
+                headers=pair_headers,
+                json={"userId": user, "topic": "Mixed provider pair"},
+            )
+            assert r.status_code == 200, r.text
+            mixed_session = r.json()["session"]
+            assert mixed_session["textModel"] == "deepseek-v4-flash", mixed_session
+            assert mixed_session["llmServerDeepModelId"] == "qwen-deep", mixed_session
+            assert mixed_session["llmServerFastModelId"] == "deepseek-fast", mixed_session
+            r = client.post(
+                "/api/v1/chat/send",
+                # The saved pair must win over a later browser selection.
+                headers={
+                    "X-LLM-Server-Deep-Model": "deepseek-deep",
+                    "X-LLM-Server-Fast-Model": "qwen-fast",
+                },
+                json={"userId": user, "sessionId": mixed_session["id"], "text": "Hello from mixed routing."},
+            )
+            assert r.status_code == 200, r.text
+            assert selected_text_models[-1] == "deepseek-v4-flash", selected_text_models
+
+            r = client.post(
+                "/api/v1/chat/sessions",
+                headers={"X-LLM-Server-Deep-Model": "qwen-deep"},
+                json={"userId": user, "topic": "Incomplete pair"},
+            )
+            assert r.status_code == 400, r.text
+            settings.deepseek_api_key = ""
 
             r = client.post(
                 "/api/v1/chat/sessions",

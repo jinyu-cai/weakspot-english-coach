@@ -1,2442 +1,1239 @@
-> **⚠️ 实现变更（权威覆盖，优先级高于本文档其余部分）— 2026-06-16**
+# WeakSpot English Coach：从零读懂项目的学习指南
+
+> 适合读者：学过一点数据结构、网络、操作系统或编程基础，但没有 Python、FastAPI、云部署和完整 Web 工程经验的人。
 >
-> 真实代码已落地在 `apps/api/`（FastAPI）与 `apps/web/`（v0 + 集成 kit）。以下覆盖适用：
->
-> 1. **AI 模型：OpenAI gpt-4o-mini → DeepSeek-V4-Pro。** DeepSeek 不支持 OpenAI 的
->    `client.beta.chat.completions.parse` 强 schema；改用 **JSON mode**
->    (`response_format={"type":"json_object"}`) + Pydantic 校验 + 一次重试。
->    见 `apps/api/app/services/ai_client.py`。`.env` 改用 `DEEPSEEK_API_KEY` /
->    `DEEPSEEK_BASE_URL=https://api.deepseek.com` / `LLM_MODEL=deepseek-v4-pro`
->    （替换下文所有 `OPENAI_*`、`gpt-4o-mini`、第 10 节的 `parse_with_model`）。
-> 2. **前端：create-next-app → Vercel v0。** 赛题要求用 v0 生成前端。
->    见 `apps/web/V0_PROMPT.md` 与 `apps/web/README.md`（第 4.1 节据此替换）。
-> 3. **DynamoDB Decimal 修复：** boto3 不接受 Python `float`，写入前 float→Decimal、
->    读出后 Decimal→int/float。见 `apps/api/app/db/serialization.py`（第 13/14 节据此增强）。
-> 4. **HTTPS/CORS：** Vercel(HTTPS) 前端调用后端必须走 HTTPS（Nginx+Certbot），
->    `CORS_ORIGINS` 必须含 Vercel 域名。
-> 5. **提交交付物：** <3min Demo 视频 / 架构图 / DynamoDB 控制台截图 / Vercel 链接+Team ID。
-> 6. **依赖与运行：用 uv 管理**（`apps/api/pyproject.toml` + `uv.lock`，Python 锁 3.11），
->    不再用 `requirements.txt` / `pip`。第 6.1 节的 `pip install -r requirements.txt` 用
->    `uv sync` 替换；运行与脚本命令前加 `uv run`（如 `uv run uvicorn app.main:app ...`）。
->
-> 下文 OpenAI / create-next-app / pip 片段以本节为准被替换；其余架构、数据模型、API 契约、
-> DynamoDB 单表设计、mastery 闭环、分阶段与验收标准仍然有效。
->
-> ---
+> 最后核对日期：2026-07-11。本文以当前 `main` 分支代码为准，不再作为“让 AI 生成项目的规格”，而是作为读懂真实实现的学习笔记。
 
-完全可以。你现在的架构应该改成：
+## 0. 先说明：原来的笔记有什么问题
 
-**前端：Next.js / React / shadcn/ui，部署在 Vercel。**
-**后端：FastAPI，部署在你的 Linux 服务器。**
-**数据库：AWS DynamoDB。**
-**AI 调用、DynamoDB、学习画像、练习生成全部放后端。**
+原来的 `development.md` 有 2400 多行，看起来很详细，但它其实是项目早期的生成规格草稿，不是按当前代码编写的教程。它存在这些问题：
 
-原因是：前端部署到 Vercel 后，只能安全暴露 `NEXT_PUBLIC_` 开头的变量；OpenAI Key、AWS Key 不能放前端。Next.js 官方也说明，非 `NEXT_PUBLIC_` 环境变量不会暴露给浏览器，而 `NEXT_PUBLIC_` 会被打包进前端代码，所以这里只适合放公开 API 地址。([Next.js][1]) 另外，前后端不同域名时必须处理 CORS，FastAPI 官方建议使用 `CORSMiddleware` 明确允许前端 origin。([FastAPI][2])
+- 大量示例仍使用 `pip`、`requirements.txt`、OpenAI 和旧目录，当前项目实际使用 `uv`、`pyproject.toml`、`apps/api` 和 Qwen/DeepSeek。
+- 只讲了最早的 Diagnose、Profile、Plan、Practice，没有覆盖登录、限流、文字/语音聊天、ChatGPT 导入、学习笔记、Daily Wins、服务端模型选择和 MemoryAgent。
+- 代码片段是“准备实现什么”，不一定等于仓库里“现在怎样实现”。
+- 它直接给出长代码，但没有先解释 HTTP、依赖注入、Pydantic、ASGI、线程池、DynamoDB 访问模式等概念。
+- 新手很难区分 route、service、repository、model 各自负责什么。
 
-下面这份是**前后端分离版开发文档**，可以直接保存为：
+因此本文已经重写。旧内容仍可从 Git 历史查看，但不应继续作为实现依据。
 
-```txt
-PROJECT_SPEC_SEPARATED.md
+本次审计和补齐结果：
+
+| 主题 | 旧笔记状态 | 现在的位置 |
+| --- | --- | --- |
+| Python 入门语法 | 基本没有，直接贴长代码 | 第 4 章 |
+| FastAPI/Uvicorn/Depends/Streaming | 只给样板，缺少运行原理 | 第 5 章 |
+| route/service/repository 分层 | 文件很多，但没有职责边界 | 第 6 章 |
+| 当前 Diagnose 完整链路 | 示例已与真实实现分叉 | 第 7 章 |
+| Qwen/DeepSeek/Auto/Deep/Fast/BYOK | 缺失 | 第 8 章 |
+| DynamoDB Decimal/TTL/当前 key | 部分过时 | 第 9 章 |
+| Chat、Import、Notes、Stats、OAuth | 缺失 | 第 10 章 |
+| MemoryAgent | 完全缺失 | 第 11 章 |
+| 自适应练习决策 | 仍写“只选最低 mastery” | 第 12 章 |
+| 前端请求与环境变量 | 偏脚手架说明 | 第 13 章 |
+| 无密钥本地学习、测试、部署 | 命令和依赖过时 | 第 14–16 章 |
+| 工程取舍和后续学习路径 | 缺失 | 第 18–21 章 |
+
+当前文档的分工如下：
+
+| 文档 | 用途 | 适合什么时候看 |
+| --- | --- | --- |
+| `README.md` | 产品、功能和技术栈总览 | 第一次认识项目 |
+| `development.md` | 从 Python/FastAPI 基础到完整请求链路 | 系统学习代码 |
+| `apps/api/README.md` | 后端命令、接口和配置速查 | 实际启动或调试后端 |
+| `apps/web/README.md` | 前端运行和后端连接方式 | 实际启动或修改前端 |
+| `LOCAL_TESTING.md` | 分层测试与发布前检查 | 写完代码之后 |
+| `docs/ARCHITECTURE.md` | 当前生产架构和数据流 | 已理解基本代码分层后 |
+| `docs/MEMORY_AGENT_DESIGN.md` | MemoryAgent 算法设计 | 学习新功能时 |
+| `docs/ALIBABA_QWEN_DEPLOYMENT.md` | Alibaba/Qwen 部署步骤 | 准备上线时 |
+
+## 1. 用一句话理解这个项目
+
+WeakSpot 不是“再做一个聊天机器人”，而是把用户每次真实英语输入变成长期学习状态：
+
+```text
+用户写作 / 对话 / 导入记录 / 做练习
+  -> AI 返回结构化结果
+  -> 后端保存错误、掌握度、笔记和长期记忆
+  -> 下一次只召回相关信息
+  -> 自动选择更合适的计划、技能和题型
 ```
 
-然后放进 Codex / Claude Code。
+最重要的工程边界是：
 
----
-
-````md
-# PROJECT_SPEC_SEPARATED.md
-
-# Project: WeakSpot English Coach
-
-## 0. 项目目标
-
-构建一个前后端分离的英语学习 AI Web App。
-
-用户通过写作、短答、练习等方式持续输入英文，系统自动分析用户的具体英语弱点，维护用户学习画像，并生成个性化学习计划和针对性练习。
-
-核心闭环：
-
-1. 学生输入英文
-2. 后端 AI 诊断错误
-3. 后端更新用户学习画像
-4. 后端生成个性化学习计划
-5. 前端展示学习计划和针对性练习
-6. 用户练习后，后端批改并继续更新画像
-
-一句话定位：
-
-> Instead of asking the student what they want to practice, the system discovers what they need to practice.
-
----
-
-# 1. 架构要求
-
-## 1.1 必须前后端分离
-
-项目必须分成两个独立应用：
-
-```txt
-weakspot-english-coach/
-  apps/web/
-  apps/api/
-````
-
-## 1.2 部署方式
-
-### Frontend
-
-* Framework: Next.js App Router
-* UI: Tailwind CSS + shadcn/ui
-* Deploy: Vercel
-* 只负责页面、交互、调用后端 API
-* 不允许在前端直接调用 OpenAI
-* 不允许在前端直接访问 AWS DynamoDB
-
-### Backend
-
-* Framework: FastAPI
-* Language: Python 3.11+
-* Deploy: Linux server
-* 负责：
-
-  * OpenAI API 调用
-  * AI 结构化诊断
-  * DynamoDB 读写
-  * 学习画像更新
-  * 学习计划生成
-  * 练习生成与批改
-  * CORS
-  * API 认证预留
-
-### Database
-
-* AWS DynamoDB
-* 使用 single-table design
-* 表名：`WeakSpotEnglishCoach`
-
-DynamoDB 建模必须基于访问模式，不要先按传统关系型数据库方式设计表。AWS 官方建议 DynamoDB 设计时先明确系统需要满足的查询模式，并尽量让数据形状贴合查询方式。([AWS Documentation][3])
-
----
-
-# 2. 技术栈
-
-## 2.1 Frontend 技术栈
-
-```txt
-Next.js
-TypeScript
-Tailwind CSS
-shadcn/ui
-lucide-react
-recharts
-date-fns
+```text
+浏览器
+  -> Next.js 前端（显示页面、收集输入）
+  -> HTTPS + JSON
+  -> FastAPI 后端（身份、业务规则、AI、数据库）
+  -> Qwen / DeepSeek / OpenAI Realtime
+  -> DynamoDB
 ```
 
-## 2.2 Backend 技术栈
+浏览器永远不应该直接拿到服务器的 Qwen、DeepSeek、AWS 或 OAuth secret。
 
-```txt
-FastAPI
-Uvicorn
-Pydantic
-OpenAI Python SDK
-boto3
-python-dotenv
-```
+## 2. 先补齐最少的 Web 基础
 
-FastAPI 适合这个项目，因为它天然支持 Pydantic 数据模型、自动生成 OpenAPI 文档、请求校验和清晰的 API 层结构。FastAPI 的 CORS 文档也明确说明，前端和后端不同 origin 时，需要后端允许对应前端 origin。([FastAPI][2])
+### 2.1 客户端和服务器
 
-## 2.3 AI 输出要求
+- **客户端**：用户浏览器里的 Next.js/React 代码。
+- **服务器**：Linux 上运行的 FastAPI 进程。
+- **API**：两者约定好的通信接口。
+- **数据库**：服务器保存长期状态的地方。
 
-AI 输出必须使用结构化 JSON，不允许依赖自由文本解析。
+例如浏览器请求：
 
-OpenAI Structured Outputs 可以让模型输出符合 JSON Schema 的结构化结果，并减少字段缺失、enum 幻觉等问题。([OpenAI Platform][4])
-
----
-
-# 3. 项目目录结构
-
-## 3.1 Root
-
-```txt
-weakspot-english-coach/
-  apps/web/
-  apps/api/
-  README.md
-  PROJECT_SPEC_SEPARATED.md
-```
-
----
-
-# 4. Frontend 开发文档
-
-## 4.1 初始化
-
-```bash
-npx create-next-app@latest frontend \
-  --typescript \
-  --tailwind \
-  --eslint \
-  --app \
-  --src-dir \
-  --import-alias "@/*"
-```
-
-进入前端目录：
-
-```bash
-cd apps/web
-```
-
-安装依赖：
-
-```bash
-npm install lucide-react recharts date-fns clsx tailwind-merge
-npx shadcn@latest init
-npx shadcn@latest add button card textarea input badge progress tabs scroll-area separator alert skeleton dialog sheet
-```
-
----
-
-## 4.2 Frontend 环境变量
-
-创建：
-
-```txt
-apps/web/.env.local
-```
-
-内容：
-
-```bash
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-NEXT_PUBLIC_DEMO_USER_ID=demo-user-001
-```
-
-Vercel 部署时设置：
-
-```bash
-NEXT_PUBLIC_API_BASE_URL=https://api.your-domain.com
-NEXT_PUBLIC_DEMO_USER_ID=demo-user-001
-```
-
-注意：
-
-* 前端只能使用 `NEXT_PUBLIC_API_BASE_URL`
-* 不要在 frontend 里放 OpenAI Key
-* 不要在 frontend 里放 AWS Key
-* 不要在 frontend 里放任何数据库连接信息
-
----
-
-## 4.3 Frontend 文件结构
-
-```txt
-apps/web/
-  app/
-    page.tsx
-    dashboard/
-      page.tsx
-    plan/
-      page.tsx
-    practice/
-      page.tsx
-    history/
-      page.tsx
-    layout.tsx
-    globals.css
-
-  components/
-    app-shell.tsx
-    nav-sidebar.tsx
-    diagnostic-input.tsx
-    diagnostic-report.tsx
-    error-card.tsx
-    skill-bar-chart.tsx
-    learning-plan-card.tsx
-    practice-card.tsx
-    submission-history.tsx
-    empty-state.tsx
-    loading-state.tsx
-
-  lib/
-    api-client.ts
-    types.ts
-    constants.ts
-    utils.ts
-```
-
----
-
-## 4.4 Frontend API Client
-
-创建：
-
-```txt
-apps/web/lib/api-client.ts
-```
-
-```ts
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
-
-export async function apiFetch<T>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-  });
-
-  if (!res.ok) {
-    let message = "Request failed";
-    try {
-      const data = await res.json();
-      message = data.detail || data.message || message;
-    } catch {
-      // ignore
-    }
-    throw new Error(message);
-  }
-
-  return res.json();
-}
-
-export function getDemoUserId() {
-  return process.env.NEXT_PUBLIC_DEMO_USER_ID || "demo-user-001";
-}
-```
-
----
-
-## 4.5 Frontend 类型
-
-创建：
-
-```txt
-apps/web/lib/types.ts
-```
-
-```ts
-export type CEFRLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
-
-export type Severity = "low" | "medium" | "high";
-
-export type PracticeType =
-  | "fix_sentence"
-  | "fill_blank"
-  | "rewrite_sentence";
-
-export interface LearnerProfile {
-  userId: string;
-  nativeLanguage: string;
-  targetLanguage: "English";
-  estimatedLevel: CEFRLevel;
-  totalSubmissions: number;
-  totalPracticeAttempts: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface SkillState {
-  userId: string;
-  skillCode: string;
-  label: string;
-  zhLabel: string;
-  mastery: number;
-  errorCount: number;
-  correctCount: number;
-  lastSeenAt?: string;
-  lastPracticedAt?: string;
-  updatedAt: string;
-}
-
-export interface EnglishError {
-  id: string;
-  userId: string;
-  submissionId: string;
-  code: string;
-  category: string;
-  severity: Severity;
-  originalText: string;
-  correctedText: string;
-  explanationZh: string;
-  microLessonZh: string;
-  practiceGoal: string;
-  createdAt: string;
-}
-
-export interface Submission {
-  id: string;
-  userId: string;
-  mode: "writing" | "chat" | "practice";
-  originalText: string;
-  correctedText?: string;
-  cefrEstimate?: CEFRLevel;
-  summaryZh?: string;
-  createdAt: string;
-}
-
-export interface DiagnosticResult {
-  cefrEstimate: CEFRLevel;
-  overallScore: number;
-  summaryZh: string;
-  strengthsZh: string[];
-  weaknessesZh: string[];
-  correctedText: string;
-  errors: EnglishError[];
-  recommendedNextActionsZh: string[];
-}
-
-export interface LearningPlanTask {
-  id: string;
-  titleZh: string;
-  descriptionZh: string;
-  practiceType: PracticeType;
-  estimatedMinutes: number;
-  completed: boolean;
-}
-
-export interface LearningPlanDay {
-  day: number;
-  goalZh: string;
-  targetSkillCodes: string[];
-  tasks: LearningPlanTask[];
-}
-
-export interface LearningPlan {
-  id: string;
-  userId: string;
-  title: string;
-  days: LearningPlanDay[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface PracticeExercise {
-  id: string;
-  userId: string;
-  type: PracticeType;
-  targetSkillCode: string;
-  promptZh: string;
-  question: string;
-  answer?: string;
-  explanationZh?: string;
-  createdAt: string;
-}
-```
-
----
-
-# 5. Frontend 页面要求
-
-## 5.1 `/`
-
-首页为诊断页面。
-
-功能：
-
-1. 展示输入框
-2. 默认 sample text
-3. 点击 `Analyze My English`
-4. 调用：
-
-```txt
+```http
 POST /api/v1/diagnose
+Content-Type: application/json
+
+{
+  "userId": "demo-user-001",
+  "text": "Yesterday I go to school...",
+  "diagnosisMode": "fast",
+  "outputLanguage": "zh-CN"
+}
 ```
 
-5. 展示返回结果：
+这里包含四个重要部分：
 
-   * CEFR level
-   * score
-   * summary
-   * strengths
-   * weaknesses
-   * corrected text
-   * error cards
-   * recommended next actions
+1. `POST` 是 HTTP method，表示提交数据。
+2. `/api/v1/diagnose` 是 path。
+3. `Content-Type` 是 header，说明 body 是 JSON。
+4. `{...}` 是 request body。
 
-请求：
+FastAPI 处理后返回 JSON，前端再把 JSON 渲染成诊断报告。
 
-```ts
-await apiFetch("/api/v1/diagnose", {
-  method: "POST",
-  body: JSON.stringify({
-    userId,
-    text,
-  }),
-});
-```
+### 2.2 JSON 不是 Python 字典，但很像
 
----
-
-## 5.2 `/dashboard`
-
-调用：
-
-```txt
-GET /api/v1/profile/demo-user-001
-```
-
-展示：
-
-* estimatedLevel
-* totalSubmissions
-* totalPracticeAttempts
-* skill mastery chart
-* recent errors
-* recommended next action
-
----
-
-## 5.3 `/plan`
-
-功能：
-
-1. 页面加载时调用：
-
-```txt
-GET /api/v1/plan/demo-user-001
-```
-
-2. 如果没有 plan，展示按钮：
-
-```txt
-Generate 7-Day Plan
-```
-
-3. 点击后调用：
-
-```txt
-POST /api/v1/plan
-```
-
-请求：
+JSON：
 
 ```json
-{
-  "userId": "demo-user-001"
-}
+{"score": 88, "errors": ["grammar.article"], "duplicate": false}
 ```
 
----
-
-## 5.4 `/practice`
-
-功能：
-
-1. 点击 `Generate Practice`
-2. 调用：
-
-```txt
-POST /api/v1/practice/generate
-```
-
-3. 用户提交答案
-4. 调用：
-
-```txt
-POST /api/v1/practice/submit
-```
-
----
-
-## 5.5 `/history`
-
-调用：
-
-```txt
-GET /api/v1/history/demo-user-001
-```
-
-展示：
-
-* recent submissions
-* recent errors
-
----
-
-# 6. Backend 开发文档
-
-## 6.1 初始化
-
-进入 backend：
-
-```bash
-mkdir backend
-cd apps/api
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-创建：
-
-```txt
-apps/api/requirements.txt
-```
-
-```txt
-fastapi
-uvicorn[standard]
-pydantic
-pydantic-settings
-python-dotenv
-openai
-boto3
-```
-
-安装：
-
-```bash
-pip install -r requirements.txt
-```
-
----
-
-## 6.2 Backend 环境变量
-
-创建：
-
-```txt
-apps/api/.env
-```
-
-```bash
-APP_ENV=development
-APP_NAME=WeakSpot English Coach API
-
-OPENAI_API_KEY=your_openai_key
-OPENAI_MODEL=gpt-4o-mini
-
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your_aws_access_key
-AWS_SECRET_ACCESS_KEY=your_aws_secret
-DYNAMODB_TABLE=WeakSpotEnglishCoach
-
-CORS_ORIGINS=http://localhost:3000,https://your-vercel-app.vercel.app
-DEMO_USER_ID=demo-user-001
-```
-
-生产环境 Linux 服务器上也要设置同样变量。
-
----
-
-## 6.3 Backend 文件结构
-
-```txt
-apps/api/
-  app/
-    main.py
-    config.py
-
-    api/
-      routes/
-        health.py
-        diagnose.py
-        profile.py
-        plan.py
-        practice.py
-        history.py
-
-    core/
-      taxonomy.py
-      mastery.py
-
-    models/
-      common.py
-      learner.py
-      diagnostic.py
-      plan.py
-      practice.py
-
-    services/
-      ai_client.py
-      diagnose_service.py
-      plan_service.py
-      practice_service.py
-      profile_service.py
-
-    db/
-      dynamodb.py
-      keys.py
-      repositories.py
-
-  requirements.txt
-  Dockerfile
-  docker-compose.yml
-```
-
----
-
-# 7. Backend 基础代码
-
-## 7.1 `app/config.py`
+Python 读入后通常变成：
 
 ```py
-from pydantic_settings import BaseSettings
-from typing import List
-
-
-class Settings(BaseSettings):
-    app_env: str = "development"
-    app_name: str = "WeakSpot English Coach API"
-
-    openai_api_key: str
-    openai_model: str = "gpt-4o-mini"
-
-    aws_region: str = "us-east-1"
-    aws_access_key_id: str
-    aws_secret_access_key: str
-    dynamodb_table: str = "WeakSpotEnglishCoach"
-
-    cors_origins: str = "http://localhost:3000"
-    demo_user_id: str = "demo-user-001"
-
-    @property
-    def cors_origin_list(self) -> List[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
-
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
-
-
-settings = Settings()
+{"score": 88, "errors": ["grammar.article"], "duplicate": False}
 ```
 
----
+主要区别包括：JSON 使用 `true/false/null`，Python 使用 `True/False/None`。
 
-## 7.2 `app/main.py`
+### 2.3 CORS 是什么
+
+线上前端和后端是不同 origin：
+
+```text
+https://englearning.jinxxx.de
+https://enapi.jinxxx.de
+```
+
+浏览器默认不允许一个 origin 随意读取另一个 origin。FastAPI 在 `app/main.py` 中通过 `CORSMiddleware` 明确允许生产前端和 Vercel Preview。CORS 是浏览器安全规则，不是后端登录机制。
+
+## 3. 当前仓库地图
+
+```text
+weakspot-english-coach/
+├── apps/
+│   ├── api/                  # Python + FastAPI 后端
+│   │   ├── app/
+│   │   │   ├── main.py      # 创建 FastAPI app、挂载中间件和 routers
+│   │   │   ├── config.py    # 读取环境变量
+│   │   │   ├── api/
+│   │   │   │   ├── deps.py  # 身份、限流、模型选择依赖
+│   │   │   │   └── routes/  # HTTP endpoints
+│   │   │   ├── models/      # Pydantic 输入/输出结构
+│   │   │   ├── services/    # AI、Memory、计划、练习等业务逻辑
+│   │   │   ├── db/          # DynamoDB 与 repository
+│   │   │   └── core/        # mastery、taxonomy 等纯规则
+│   │   ├── scripts/         # 建表、测试、benchmark、本地服务器
+│   │   ├── pyproject.toml    # Python 依赖定义
+│   │   ├── uv.lock           # 锁定依赖版本
+│   │   ├── Dockerfile
+│   │   └── docker-compose.yml
+│   └── web/                  # TypeScript + Next.js 前端
+│       ├── app/              # App Router 页面
+│       ├── components/       # 可复用 UI/业务组件
+│       └── lib/              # API client、类型、i18n、设置
+├── docs/                     # 架构、MemoryAgent、部署和提交材料
+├── README.md
+├── LOCAL_TESTING.md
+└── development.md            # 本学习指南
+```
+
+读后端代码时，建议一直记住这条链：
+
+```text
+models -> routes -> services -> repositories -> DynamoDB
+```
+
+它不是强制每次都经过所有层，而是各层职责的方向。
+
+## 4. 本项目需要的 Python 基础
+
+你不需要先学完整本 Python 教材。先理解项目里反复出现的语法即可。
+
+### 4.1 Python 文件、模块和包
+
+`apps/api/app/services/memory_service.py` 对应模块：
 
 ```py
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-
-from app.config import settings
-from app.api.routes import health, diagnose, profile, plan, practice, history
-
-
-app = FastAPI(title=settings.app_name)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-app.include_router(health.router, prefix="/api/v1", tags=["health"])
-app.include_router(diagnose.router, prefix="/api/v1", tags=["diagnose"])
-app.include_router(profile.router, prefix="/api/v1", tags=["profile"])
-app.include_router(plan.router, prefix="/api/v1", tags=["plan"])
-app.include_router(practice.router, prefix="/api/v1", tags=["practice"])
-app.include_router(history.router, prefix="/api/v1", tags=["history"])
+app.services.memory_service
 ```
 
----
-
-## 7.3 `app/api/routes/health.py`
+因此其他文件这样导入：
 
 ```py
-from fastapi import APIRouter
-
-router = APIRouter()
-
-
-@router.get("/health")
-def health_check():
-    return {"status": "ok"}
+from app.services.memory_service import retrieve_memory_pack
 ```
 
----
+后端命令要从 `apps/api` 运行，是因为此时 Python 才能正确找到顶层 `app` 包。
 
-# 8. Backend Pydantic Models
+### 4.2 缩进就是语法
 
-## 8.1 `app/models/common.py`
+Python 不用 `{}` 包围函数和条件块，而依赖缩进：
 
 ```py
-from enum import Enum
-
-
-class CEFRLevel(str, Enum):
-    A1 = "A1"
-    A2 = "A2"
-    B1 = "B1"
-    B2 = "B2"
-    C1 = "C1"
-    C2 = "C2"
-
-
-class Severity(str, Enum):
-    low = "low"
-    medium = "medium"
-    high = "high"
-
-
-class PracticeType(str, Enum):
-    fix_sentence = "fix_sentence"
-    fill_blank = "fill_blank"
-    rewrite_sentence = "rewrite_sentence"
+def clamp(value: float, low: float = 0, high: float = 100) -> float:
+    if value < low:
+        return low
+    return min(value, high)
 ```
 
----
+项目统一使用 4 个空格。缩进错误可能让代码无法启动，或让逻辑进入错误的条件块。
 
-## 8.2 `app/models/diagnostic.py`
+### 4.3 常见数据类型
 
 ```py
-from pydantic import BaseModel, Field
-from typing import List
-from app.models.common import CEFRLevel, Severity
-
-
-class DiagnoseRequest(BaseModel):
-    userId: str
-    text: str = Field(min_length=20, max_length=4000)
-
-
-class DiagnosticErrorAI(BaseModel):
-    code: str
-    category: str
-    severity: Severity
-    originalText: str
-    correctedText: str
-    explanationZh: str
-    microLessonZh: str
-    practiceGoal: str
-
-
-class SkillUpdateAI(BaseModel):
-    skillCode: str
-    label: str
-    zhLabel: str
-    masteryDelta: float
-    evidenceZh: str
-
-
-class DiagnosticAIResult(BaseModel):
-    cefrEstimate: CEFRLevel
-    overallScore: int = Field(ge=0, le=100)
-    summaryZh: str
-    strengthsZh: List[str]
-    weaknessesZh: List[str]
-    correctedText: str
-    errors: List[DiagnosticErrorAI]
-    skillUpdates: List[SkillUpdateAI]
-    recommendedNextActionsZh: List[str]
+name = "grammar.article"       # str
+score = 88                     # int
+mastery = 73.5                 # float
+enabled = True                 # bool
+missing = None                 # 没有值
+errors = ["a", "b"]           # list
+profile = {"level": "B1"}     # dict
 ```
 
----
+这个项目在 service 和 repository 之间大量使用 `dict`。Pydantic model 则用于 API 和 AI 输出边界。
 
-## 8.3 `app/models/learner.py`
+### 4.4 函数和 type hints
 
 ```py
-from pydantic import BaseModel
-from typing import Optional
-from app.models.common import CEFRLevel, Severity
-
-
-class LearnerProfile(BaseModel):
-    userId: str
-    nativeLanguage: str = "Chinese"
-    targetLanguage: str = "English"
-    estimatedLevel: CEFRLevel = CEFRLevel.B1
-    totalSubmissions: int = 0
-    totalPracticeAttempts: int = 0
-    createdAt: str
-    updatedAt: str
-
-
-class SkillState(BaseModel):
-    userId: str
-    skillCode: str
-    label: str
-    zhLabel: str
-    mastery: float
-    errorCount: int
-    correctCount: int
-    lastSeenAt: Optional[str] = None
-    lastPracticedAt: Optional[str] = None
-    updatedAt: str
-
-
-class Submission(BaseModel):
-    id: str
-    userId: str
-    mode: str
-    originalText: str
-    correctedText: Optional[str] = None
-    cefrEstimate: Optional[CEFRLevel] = None
-    summaryZh: Optional[str] = None
-    createdAt: str
-
-
-class EnglishError(BaseModel):
-    id: str
-    userId: str
-    submissionId: str
-    code: str
-    category: str
-    severity: Severity
-    originalText: str
-    correctedText: str
-    explanationZh: str
-    microLessonZh: str
-    practiceGoal: str
-    createdAt: str
+def get_memory(user_id: str, memory_id: str) -> Optional[dict]:
+    ...
 ```
 
----
+- `user_id: str` 表示期望字符串。
+- `-> Optional[dict]` 表示返回字典或 `None`。
+- type hint 默认不会像 Java 编译器一样强制所有运行时类型，但编辑器、Pydantic 和测试会利用它。
 
-## 8.4 `app/models/plan.py`
+当前代码也使用 Python 3.10+ 的写法：
 
 ```py
-from pydantic import BaseModel
-from typing import List
-from app.models.common import PracticeType
-
-
-class LearningPlanTaskAI(BaseModel):
-    titleZh: str
-    descriptionZh: str
-    practiceType: PracticeType
-    estimatedMinutes: int
-
-
-class LearningPlanDayAI(BaseModel):
-    day: int
-    goalZh: str
-    targetSkillCodes: List[str]
-    tasks: List[LearningPlanTaskAI]
-
-
-class LearningPlanAIResult(BaseModel):
-    title: str
-    days: List[LearningPlanDayAI]
-
-
-class GeneratePlanRequest(BaseModel):
-    userId: str
+LLMProviderConfig | None
+list[dict]
+dict[str, int]
 ```
 
----
-
-## 8.5 `app/models/practice.py`
+### 4.5 `Literal` 和 `Optional`
 
 ```py
-from pydantic import BaseModel, Field
-from app.models.common import PracticeType
-
-
-class GeneratePracticeRequest(BaseModel):
-    userId: str
-    targetSkillCode: str | None = None
-
-
-class PracticeExerciseAIResult(BaseModel):
-    type: PracticeType
-    targetSkillCode: str
-    promptZh: str
-    question: str
-    answer: str
-    explanationZh: str
-
-
-class SubmitPracticeRequest(BaseModel):
-    userId: str
-    exerciseId: str
-    userAnswer: str = Field(min_length=1, max_length=2000)
-
-
-class PracticeGradeAIResult(BaseModel):
-    isCorrect: bool
-    score: int = Field(ge=0, le=100)
-    feedbackZh: str
-    correctedAnswer: str
-    skillMasteryDelta: float
+MemoryKind = Literal["preference", "goal", "strategy", "weakness", "episode"]
 ```
 
----
+这表示值只能从五个字符串中选择。`Optional[str]` 表示字符串或 `None`。
 
-# 9. Error Taxonomy
-
-创建：
-
-```txt
-apps/api/app/core/taxonomy.py
-```
-
-```py
-ERROR_TAXONOMY = {
-    "grammar.verb_tense": {
-        "label": "Verb tense",
-        "zhLabel": "动词时态",
-        "description": "Incorrect or inconsistent use of verb tense.",
-    },
-    "grammar.article": {
-        "label": "Articles",
-        "zhLabel": "冠词",
-        "description": "Incorrect or missing a/an/the.",
-    },
-    "grammar.preposition": {
-        "label": "Prepositions",
-        "zhLabel": "介词",
-        "description": "Incorrect use of prepositions such as in, on, at, for.",
-    },
-    "grammar.subject_verb_agreement": {
-        "label": "Subject-verb agreement",
-        "zhLabel": "主谓一致",
-        "description": "Subject and verb do not agree in number/person.",
-    },
-    "vocab.word_choice": {
-        "label": "Word choice",
-        "zhLabel": "用词不自然",
-        "description": "Word is understandable but unnatural or inaccurate.",
-    },
-    "vocab.repetition": {
-        "label": "Repetitive vocabulary",
-        "zhLabel": "词汇重复",
-        "description": "Same words are repeated too often.",
-    },
-    "sentence.structure": {
-        "label": "Sentence structure",
-        "zhLabel": "句子结构",
-        "description": "Sentence is awkward, fragmented, or too simple.",
-    },
-    "sentence.variety": {
-        "label": "Sentence variety",
-        "zhLabel": "句式单一",
-        "description": "Sentences lack variety in structure and length.",
-    },
-    "discourse.coherence": {
-        "label": "Coherence",
-        "zhLabel": "逻辑连贯性",
-        "description": "Ideas are not connected clearly.",
-    },
-    "style.register": {
-        "label": "Register and tone",
-        "zhLabel": "语气和语域",
-        "description": "Tone is too casual, too formal, or inappropriate.",
-    },
-    "clarity.expression": {
-        "label": "Clarity",
-        "zhLabel": "表达清晰度",
-        "description": "Meaning is unclear or hard to follow.",
-    },
-}
-```
-
----
-
-# 10. OpenAI AI Client
-
-创建：
-
-```txt
-apps/api/app/services/ai_client.py
-```
-
-```py
-from openai import OpenAI
-from app.config import settings
-
-client = OpenAI(api_key=settings.openai_api_key)
-
-
-def parse_with_model(messages, response_model):
-    completion = client.beta.chat.completions.parse(
-        model=settings.openai_model,
-        messages=messages,
-        response_format=response_model,
-    )
-
-    parsed = completion.choices[0].message.parsed
-    if parsed is None:
-        raise ValueError("AI returned no parsed structured output")
-
-    return parsed
-```
-
----
-
-# 11. AI Prompts
-
-创建：
-
-```txt
-apps/api/app/services/diagnose_service.py
-```
-
-```py
-from app.services.ai_client import parse_with_model
-from app.models.diagnostic import DiagnosticAIResult
-
-
-def diagnose_english_text(input_text: str) -> DiagnosticAIResult:
-    system_prompt = """
-You are an expert English tutor for Chinese native speakers.
-
-Analyze the student's English writing and return a structured diagnostic report.
-
-Important requirements:
-1. Give feedback in Simplified Chinese.
-2. Do not be overly harsh.
-3. Focus on recurring patterns, not only isolated typos.
-4. Classify each error using one of these categories when possible:
-   - grammar.verb_tense
-   - grammar.article
-   - grammar.preposition
-   - grammar.subject_verb_agreement
-   - vocab.word_choice
-   - vocab.repetition
-   - sentence.structure
-   - sentence.variety
-   - discourse.coherence
-   - style.register
-   - clarity.expression
-5. For each error, provide:
-   - original text span
-   - corrected version
-   - Chinese explanation
-   - one micro lesson
-   - one practice goal
-6. Estimate CEFR level based on the text.
-7. Return only the structured object required by the schema.
-"""
-
-    user_prompt = f"""
-Student text:
-\"\"\"
-{input_text}
-\"\"\"
-"""
-
-    return parse_with_model(
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        response_model=DiagnosticAIResult,
-    )
-```
-
----
-
-# 12. DynamoDB 设计
-
-## 12.1 表结构
-
-表名：
-
-```txt
-WeakSpotEnglishCoach
-```
-
-主键：
-
-```txt
-PK string
-SK string
-```
-
-## 12.2 Key Pattern
-
-```txt
-PK = USER#{userId}
-SK = PROFILE
-
-PK = USER#{userId}
-SK = SKILL#{skillCode}
-
-PK = USER#{userId}
-SK = SUBMISSION#{createdAt}#{submissionId}
-
-PK = USER#{userId}
-SK = ERROR#{createdAt}#{errorId}
-
-PK = USER#{userId}
-SK = PLAN#ACTIVE
-
-PK = USER#{userId}
-SK = EXERCISE#{exerciseId}
-
-PK = USER#{userId}
-SK = ATTEMPT#{createdAt}#{attemptId}
-```
-
----
-
-# 13. Backend DynamoDB Code
-
-## 13.1 `app/db/dynamodb.py`
-
-```py
-import boto3
-from app.config import settings
-
-dynamodb = boto3.resource(
-    "dynamodb",
-    region_name=settings.aws_region,
-    aws_access_key_id=settings.aws_access_key_id,
-    aws_secret_access_key=settings.aws_secret_access_key,
-)
-
-table = dynamodb.Table(settings.dynamodb_table)
-```
-
----
-
-## 13.2 `app/db/keys.py`
+### 4.6 f-string
 
 ```py
 def user_pk(user_id: str) -> str:
     return f"USER#{user_id}"
-
-
-def profile_sk() -> str:
-    return "PROFILE"
-
-
-def skill_sk(skill_code: str) -> str:
-    return f"SKILL#{skill_code}"
-
-
-def submission_sk(created_at: str, submission_id: str) -> str:
-    return f"SUBMISSION#{created_at}#{submission_id}"
-
-
-def error_sk(created_at: str, error_id: str) -> str:
-    return f"ERROR#{created_at}#{error_id}"
-
-
-def active_plan_sk() -> str:
-    return "PLAN#ACTIVE"
-
-
-def exercise_sk(exercise_id: str) -> str:
-    return f"EXERCISE#{exercise_id}"
-
-
-def attempt_sk(created_at: str, attempt_id: str) -> str:
-    return f"ATTEMPT#{created_at}#{attempt_id}"
 ```
 
----
+如果 `user_id == "abc"`，结果就是 `USER#abc`。
 
-# 14. Repository Layer
-
-创建：
-
-```txt
-apps/api/app/db/repositories.py
-```
-
-必须实现这些函数：
+### 4.7 list/dict comprehension
 
 ```py
-from datetime import datetime, timezone
-from boto3.dynamodb.conditions import Key
-from app.db.dynamodb import table
-from app.db.keys import (
-    user_pk,
-    profile_sk,
-    skill_sk,
-    submission_sk,
-    error_sk,
-    active_plan_sk,
-    exercise_sk,
-    attempt_sk,
-)
-
-
-def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def get_profile(user_id: str):
-    res = table.get_item(
-        Key={
-            "PK": user_pk(user_id),
-            "SK": profile_sk(),
-        }
-    )
-    return res.get("Item")
-
-
-def get_or_create_profile(user_id: str):
-    existing = get_profile(user_id)
-    if existing:
-        return existing
-
-    now = now_iso()
-    item = {
-        "PK": user_pk(user_id),
-        "SK": profile_sk(),
-        "entityType": "PROFILE",
-        "userId": user_id,
-        "nativeLanguage": "Chinese",
-        "targetLanguage": "English",
-        "estimatedLevel": "B1",
-        "totalSubmissions": 0,
-        "totalPracticeAttempts": 0,
-        "createdAt": now,
-        "updatedAt": now,
-    }
-    table.put_item(Item=item)
-    return item
-
-
-def save_profile(profile: dict):
-    item = {
-        **profile,
-        "PK": user_pk(profile["userId"]),
-        "SK": profile_sk(),
-        "entityType": "PROFILE",
-    }
-    table.put_item(Item=item)
-
-
-def list_skills(user_id: str):
-    res = table.query(
-        KeyConditionExpression=Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("SKILL#")
-    )
-    return res.get("Items", [])
-
-
-def put_skill(skill: dict):
-    item = {
-        **skill,
-        "PK": user_pk(skill["userId"]),
-        "SK": skill_sk(skill["skillCode"]),
-        "entityType": "SKILL",
-    }
-    table.put_item(Item=item)
-
-
-def save_submission(submission: dict):
-    item = {
-        **submission,
-        "PK": user_pk(submission["userId"]),
-        "SK": submission_sk(submission["createdAt"], submission["id"]),
-        "entityType": "SUBMISSION",
-    }
-    table.put_item(Item=item)
-
-
-def list_recent_submissions(user_id: str, limit: int = 10):
-    res = table.query(
-        KeyConditionExpression=Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("SUBMISSION#"),
-        ScanIndexForward=False,
-        Limit=limit,
-    )
-    return res.get("Items", [])
-
-
-def save_error(error: dict):
-    item = {
-        **error,
-        "PK": user_pk(error["userId"]),
-        "SK": error_sk(error["createdAt"], error["id"]),
-        "entityType": "ERROR",
-    }
-    table.put_item(Item=item)
-
-
-def list_recent_errors(user_id: str, limit: int = 20):
-    res = table.query(
-        KeyConditionExpression=Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("ERROR#"),
-        ScanIndexForward=False,
-        Limit=limit,
-    )
-    return res.get("Items", [])
-
-
-def save_active_plan(plan: dict):
-    item = {
-        **plan,
-        "PK": user_pk(plan["userId"]),
-        "SK": active_plan_sk(),
-        "entityType": "PLAN",
-    }
-    table.put_item(Item=item)
-
-
-def get_active_plan(user_id: str):
-    res = table.get_item(
-        Key={
-            "PK": user_pk(user_id),
-            "SK": active_plan_sk(),
-        }
-    )
-    return res.get("Item")
-
-
-def save_exercise(exercise: dict):
-    item = {
-        **exercise,
-        "PK": user_pk(exercise["userId"]),
-        "SK": exercise_sk(exercise["id"]),
-        "entityType": "EXERCISE",
-    }
-    table.put_item(Item=item)
-
-
-def get_exercise(user_id: str, exercise_id: str):
-    res = table.get_item(
-        Key={
-            "PK": user_pk(user_id),
-            "SK": exercise_sk(exercise_id),
-        }
-    )
-    return res.get("Item")
-
-
-def save_practice_attempt(attempt: dict):
-    item = {
-        **attempt,
-        "PK": user_pk(attempt["userId"]),
-        "SK": attempt_sk(attempt["createdAt"], attempt["id"]),
-        "entityType": "ATTEMPT",
-    }
-    table.put_item(Item=item)
+existing_skills = {skill["skillCode"]: skill for skill in list_skills(user_id)}
 ```
 
----
+它把技能列表转换为以 `skillCode` 为 key 的字典，便于 O(1) 查找。
 
-# 15. Mastery Logic
-
-创建：
-
-```txt
-apps/api/app/core/mastery.py
-```
+### 4.8 `*` 和 `**`
 
 ```py
-def clamp(value: float, min_value: float = 0, max_value: float = 100) -> float:
-    return max(min_value, min(max_value, value))
-
-
-def severity_penalty(severity: str) -> float:
-    if severity == "low":
-        return -3
-    if severity == "medium":
-        return -7
-    return -12
-
-
-def update_skill_from_error(existing, user_id, skill_code, label, zh_label, severity, now):
-    old_mastery = existing.get("mastery", 70) if existing else 70
-    old_error_count = existing.get("errorCount", 0) if existing else 0
-    old_correct_count = existing.get("correctCount", 0) if existing else 0
-
-    return {
-        "userId": user_id,
-        "skillCode": skill_code,
-        "label": label,
-        "zhLabel": zh_label,
-        "mastery": clamp(old_mastery + severity_penalty(severity)),
-        "errorCount": old_error_count + 1,
-        "correctCount": old_correct_count,
-        "lastSeenAt": now,
-        "lastPracticedAt": existing.get("lastPracticedAt") if existing else None,
-        "updatedAt": now,
-    }
-
-
-def update_skill_from_practice(existing, is_correct, mastery_delta, now):
-    return {
-        **existing,
-        "mastery": clamp(existing.get("mastery", 70) + mastery_delta),
-        "correctCount": existing.get("correctCount", 0) + (1 if is_correct else 0),
-        "errorCount": existing.get("errorCount", 0) + (0 if is_correct else 1),
-        "lastPracticedAt": now,
-        "updatedAt": now,
-    }
+all_candidates = [*ai_candidates, *heuristic_candidates]
+result = {**old_record, "status": "forgotten"}
 ```
 
----
+- `*list` 展开列表。
+- `**dict` 展开字典。
+- 后面的相同 key 会覆盖前面的值。
 
-# 16. API Routes
+### 4.9 class、Pydantic 和 dataclass
 
-## 16.1 `POST /api/v1/diagnose`
-
-文件：
-
-```txt
-apps/api/app/api/routes/diagnose.py
-```
-
-请求：
-
-```json
-{
-  "userId": "demo-user-001",
-  "text": "Yesterday I go to my university..."
-}
-```
-
-返回：
-
-```json
-{
-  "submission": {},
-  "diagnostic": {},
-  "updatedSkills": [],
-  "profile": {}
-}
-```
-
-逻辑：
-
-1. 校验输入文本
-2. get_or_create_profile
-3. 调用 AI 诊断
-4. 保存 submission
-5. 保存 errors
-6. 更新 skill mastery
-7. 更新 profile estimatedLevel / totalSubmissions
-8. 返回完整结果
-
-实现：
+Pydantic model：
 
 ```py
-from fastapi import APIRouter, HTTPException
-from uuid import uuid4
-
-from app.models.diagnostic import DiagnoseRequest
-from app.services.diagnose_service import diagnose_english_text
-from app.db.repositories import (
-    get_or_create_profile,
-    save_profile,
-    list_skills,
-    put_skill,
-    save_submission,
-    save_error,
-    now_iso,
-)
-from app.core.mastery import update_skill_from_error
-from app.core.taxonomy import ERROR_TAXONOMY
-
-router = APIRouter()
-
-
-@router.post("/diagnose")
-def diagnose(req: DiagnoseRequest):
-    try:
-        now = now_iso()
-        profile = get_or_create_profile(req.userId)
-
-        diagnostic = diagnose_english_text(req.text)
-
-        submission_id = f"sub_{uuid4().hex[:12]}"
-        submission = {
-            "id": submission_id,
-            "userId": req.userId,
-            "mode": "writing",
-            "originalText": req.text,
-            "correctedText": diagnostic.correctedText,
-            "cefrEstimate": diagnostic.cefrEstimate.value,
-            "summaryZh": diagnostic.summaryZh,
-            "createdAt": now,
-        }
-        save_submission(submission)
-
-        existing_skills = {
-            s["skillCode"]: s
-            for s in list_skills(req.userId)
-        }
-
-        updated_skills = []
-        saved_errors = []
-
-        for err in diagnostic.errors:
-            error_id = f"err_{uuid4().hex[:12]}"
-            error = {
-                "id": error_id,
-                "userId": req.userId,
-                "submissionId": submission_id,
-                "code": err.code,
-                "category": err.category,
-                "severity": err.severity.value,
-                "originalText": err.originalText,
-                "correctedText": err.correctedText,
-                "explanationZh": err.explanationZh,
-                "microLessonZh": err.microLessonZh,
-                "practiceGoal": err.practiceGoal,
-                "createdAt": now,
-            }
-            save_error(error)
-            saved_errors.append(error)
-
-            taxonomy = ERROR_TAXONOMY.get(err.code, {
-                "label": err.code,
-                "zhLabel": err.code,
-            })
-
-            skill = update_skill_from_error(
-                existing=existing_skills.get(err.code),
-                user_id=req.userId,
-                skill_code=err.code,
-                label=taxonomy["label"],
-                zh_label=taxonomy["zhLabel"],
-                severity=err.severity.value,
-                now=now,
-            )
-            put_skill(skill)
-            updated_skills.append(skill)
-
-        profile["estimatedLevel"] = diagnostic.cefrEstimate.value
-        profile["totalSubmissions"] = profile.get("totalSubmissions", 0) + 1
-        profile["updatedAt"] = now
-        save_profile(profile)
-
-        return {
-            "submission": submission,
-            "diagnostic": {
-                **diagnostic.model_dump(),
-                "errors": saved_errors,
-            },
-            "updatedSkills": updated_skills,
-            "profile": profile,
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+class RetrieveMemoryRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=2000)
+    tokenBudget: int = Field(default=700, ge=100, le=2000)
 ```
 
----
+它负责验证外部输入。空 query 或过大的 token budget 会在进入业务函数前被 FastAPI 拒绝。
 
-## 16.2 `GET /api/v1/profile/{user_id}`
-
-文件：
-
-```txt
-apps/api/app/api/routes/profile.py
-```
-
-返回：
-
-```json
-{
-  "profile": {},
-  "skills": [],
-  "recentErrors": [],
-  "recentSubmissions": []
-}
-```
-
-实现：
+`@dataclass` 更适合内部配置对象：
 
 ```py
-from fastapi import APIRouter
-from app.db.repositories import (
-    get_or_create_profile,
-    list_skills,
-    list_recent_errors,
-    list_recent_submissions,
-)
-
-router = APIRouter()
-
-
-@router.get("/profile/{user_id}")
-def get_profile_page_data(user_id: str):
-    profile = get_or_create_profile(user_id)
-
-    return {
-        "profile": profile,
-        "skills": list_skills(user_id),
-        "recentErrors": list_recent_errors(user_id, limit=10),
-        "recentSubmissions": list_recent_submissions(user_id, limit=10),
-    }
+@dataclass(frozen=True)
+class LLMProviderConfig:
+    api_key: str
+    base_url: str
+    model: str
 ```
 
----
+它没有 HTTP schema 的职责，只是让内部数据比裸 dict 更清晰。
 
-## 16.3 `POST /api/v1/plan`
-
-请求：
-
-```json
-{
-  "userId": "demo-user-001"
-}
-```
-
-逻辑：
-
-1. 获取 profile
-2. 获取 skills
-3. 获取 recent errors
-4. AI 生成 7 天计划
-5. 保存为 `PLAN#ACTIVE`
-6. 返回 plan
-
----
-
-## 16.4 `GET /api/v1/plan/{user_id}`
-
-返回当前 active plan。
-
-如果没有：
-
-```json
-{
-  "plan": null
-}
-```
-
----
-
-## 16.5 `POST /api/v1/practice/generate`
-
-请求：
-
-```json
-{
-  "userId": "demo-user-001",
-  "targetSkillCode": "grammar.verb_tense"
-}
-```
-
-如果没有 targetSkillCode：
-
-1. 找 mastery 最低的 skill
-2. 如果没有 skill，默认用 `grammar.verb_tense`
-
-返回：
-
-```json
-{
-  "exercise": {}
-}
-```
-
----
-
-## 16.6 `POST /api/v1/practice/submit`
-
-请求：
-
-```json
-{
-  "userId": "demo-user-001",
-  "exerciseId": "ex_123",
-  "userAnswer": "Yesterday I went to the library."
-}
-```
-
-逻辑：
-
-1. 读取 exercise
-2. AI 批改
-3. 保存 attempt
-4. 更新 skill mastery
-5. 返回 feedback
-
----
-
-## 16.7 `GET /api/v1/history/{user_id}`
-
-返回：
-
-```json
-{
-  "submissions": [],
-  "errors": []
-}
-```
-
----
-
-# 17. Backend Plan Service Prompt
-
-创建：
-
-```txt
-apps/api/app/services/plan_service.py
-```
+### 4.10 异常处理
 
 ```py
-from app.services.ai_client import parse_with_model
-from app.models.plan import LearningPlanAIResult
-
-
-def generate_learning_plan(profile, skills, recent_errors) -> LearningPlanAIResult:
-    system_prompt = """
-You are an adaptive English learning coach.
-
-Create a 7-day personalized learning plan for this learner.
-
-Requirements:
-1. Output Chinese learning goals and task descriptions.
-2. Each day should have 2 or 3 tasks.
-3. Each task must target one or more weak skills.
-4. Prefer short, focused practice over generic lessons.
-5. Practice types must be one of:
-   - fix_sentence
-   - fill_blank
-   - rewrite_sentence
-6. Do not create speaking or pronunciation tasks in MVP.
-7. Return only the structured object required by the schema.
-"""
-
-    user_prompt = f"""
-Learner profile:
-{profile}
-
-Current skill states:
-{skills}
-
-Recent errors:
-{recent_errors}
-"""
-
-    return parse_with_model(
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        response_model=LearningPlanAIResult,
-    )
+try:
+    memory_pack = retrieve_memory_pack(...)
+except Exception:
+    logger.exception("memory retrieval failed")
+    memory_pack = {"text": "", "items": []}
 ```
 
----
+Memory 是增强功能，所以失败时允许主诊断继续。相反，如果请求输入本身错误，会主动抛出 `HTTPException`。
 
-# 18. Backend Practice Service Prompt
+### 4.11 `def`、`async def` 和 `await`
 
-创建：
+- `def`：普通同步函数。
+- `async def`：协程函数，可以在等待网络或定时器时让事件循环处理其他请求。
+- `await`：等待另一个协程。
 
-```txt
-apps/api/app/services/practice_service.py
+本项目的 DynamoDB boto3 和普通 OpenAI client 是同步库。`diagnose.py` 用 `run_in_executor` 把耗时同步工作放入线程池，避免阻塞 FastAPI 的事件循环。不要机械地把所有函数都改成 `async def`；如果内部仍调用阻塞函数，反而可能拖慢整个服务。
+
+## 5. FastAPI 从零理解
+
+### 5.1 FastAPI 和 Uvicorn 分别是什么
+
+- **FastAPI**：声明路由、验证输入、生成 OpenAPI、组织依赖的框架。
+- **Uvicorn**：真正监听端口并把 HTTP 请求交给 FastAPI 的 ASGI server。
+
+启动命令：
+
+```bash
+cd apps/api
+uv run uvicorn app.main:app --reload --port 8000
 ```
+
+`app.main:app` 的含义是：导入 `app/main.py`，找到其中名为 `app` 的对象。
+
+### 5.2 应用入口
+
+`apps/api/app/main.py` 做三件事：
+
+1. `app = FastAPI(...)` 创建应用。
+2. 添加 CORS middleware。
+3. 用 `include_router` 挂载所有 route。
+
+router 让功能可以分文件维护，而不是把全部 endpoint 写进 `main.py`。
+
+### 5.3 decorator 如何变成 API
 
 ```py
-from app.services.ai_client import parse_with_model
-from app.models.practice import PracticeExerciseAIResult, PracticeGradeAIResult
+router = APIRouter(prefix="/memory")
 
-
-def generate_practice_exercise(skill_code, zh_label, cefr_level, recent_error_examples):
-    system_prompt = """
-You are creating one targeted English exercise for a Chinese native speaker.
-
-Requirements:
-1. Generate exactly one exercise.
-2. The exercise should target the weakness directly.
-3. The difficulty should match the learner level.
-4. Use Chinese for instructions and explanation.
-5. Exercise type must be one of:
-   - fix_sentence
-   - fill_blank
-   - rewrite_sentence
-6. Include the correct answer and a short Chinese explanation.
-7. Return only the structured object required by the schema.
-"""
-
-    user_prompt = f"""
-Target skill:
-{skill_code} / {zh_label}
-
-Estimated CEFR level:
-{cefr_level}
-
-Recent learner error examples:
-{recent_error_examples}
-"""
-
-    return parse_with_model(
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        response_model=PracticeExerciseAIResult,
-    )
-
-
-def grade_practice(question, expected_answer, user_answer, target_skill_code):
-    system_prompt = """
-You are grading a targeted English exercise.
-
-Requirements:
-1. Decide if the answer is correct.
-2. Give a score from 0 to 100.
-3. Give feedback in Simplified Chinese.
-4. Provide corrected answer.
-5. Provide a skillMasteryDelta:
-   - +6 to +10 if clearly correct
-   - +1 to +5 if partially correct
-   - -3 to 0 if incorrect
-6. Return only the structured object required by the schema.
-"""
-
-    user_prompt = f"""
-Target skill:
-{target_skill_code}
-
-Question:
-{question}
-
-Expected answer:
-{expected_answer}
-
-Student answer:
-{user_answer}
-"""
-
-    return parse_with_model(
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        response_model=PracticeGradeAIResult,
-    )
+@router.get("/traces")
+def traces(...):
+    ...
 ```
 
----
+再加上 `main.py` 的 `/api/v1` prefix，最终路径是：
 
-# 19. Linux Server 部署
-
-## 19.1 Backend Dockerfile
-
-创建：
-
-```txt
-apps/api/Dockerfile
+```text
+GET /api/v1/memory/traces
 ```
 
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-COPY requirements.txt .
-
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY app ./app
-
-EXPOSE 8000
-
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
----
-
-## 19.2 Docker Compose
-
-创建：
-
-```txt
-apps/api/docker-compose.yml
-```
-
-```yaml
-services:
-  api:
-    build: .
-    container_name: weakspot-api
-    restart: always
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
-```
-
-启动：
-
-```bash
-docker compose up -d --build
-```
-
-测试：
-
-```bash
-curl http://localhost:8000/api/v1/health
-```
-
----
-
-## 19.3 Nginx 反向代理
-
-假设后端域名是：
-
-```txt
-api.your-domain.com
-```
-
-Nginx 配置：
-
-```nginx
-server {
-    listen 80;
-    server_name api.your-domain.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_http_version 1.1;
-
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-然后用 Certbot 配 HTTPS：
-
-```bash
-sudo certbot --nginx -d api.your-domain.com
-```
-
-生产环境前端的环境变量应改成：
-
-```bash
-NEXT_PUBLIC_API_BASE_URL=https://api.your-domain.com
-```
-
-后端 `.env` 的 CORS 应包含：
-
-```bash
-CORS_ORIGINS=https://your-vercel-app.vercel.app,https://your-custom-frontend-domain.com
-```
-
----
-
-# 20. Vercel 部署 Frontend
-
-在 Vercel 导入 GitHub repo 时：
-
-* Root Directory 选择：
-
-```txt
-frontend
-```
-
-* Build Command:
-
-```txt
-npm run build
-```
-
-* Output 默认即可。
-
-设置 Environment Variables：
-
-```bash
-NEXT_PUBLIC_API_BASE_URL=https://api.your-domain.com
-NEXT_PUBLIC_DEMO_USER_ID=demo-user-001
-```
-
-注意：如果后端 API 地址换了，Vercel 需要重新部署，因为 `NEXT_PUBLIC_` 变量会在 build 时进入前端 bundle。([Next.js][1])
-
----
-
-# 21. CORS 要求
-
-后端必须允许：
-
-```txt
-http://localhost:3000
-https://your-vercel-app.vercel.app
-https://your-custom-frontend-domain.com
-```
-
-不要在生产环境长期使用：
+### 5.4 请求验证
 
 ```py
-allow_origins=["*"]
+@router.post("/retrieve")
+def retrieve(req: RetrieveMemoryRequest, ...):
+    ...
 ```
 
-除非 demo 阶段临时使用。
+FastAPI 会：
 
-FastAPI 文档说明，如果前端和后端不同 origin，浏览器会发送跨域请求，后端必须通过 CORS header 明确授权该 origin。([FastAPI][2])
+1. 读取 JSON body。
+2. 用 `RetrieveMemoryRequest` 验证和转换。
+3. 验证成功后调用函数。
+4. 验证失败则自动返回 422。
 
----
+你不需要在每个 route 手写 `if query == ""`。
 
-# 22. Demo Flow
+### 5.5 `Depends`：FastAPI 的依赖注入
 
-最终 demo 必须支持以下流程：
-
-## Step 1
-
-打开 Vercel 前端。
-
-## Step 2
-
-在 Diagnose 页面输入：
-
-```txt
-Yesterday I go to my university and I meet my friend. We talk about our project, but I feel my English is not very good. Sometimes I cannot explain my idea clearly, and I always use simple words. I want to improve my speaking and writing because I need to do presentation in class.
+```py
+identity: Identity = Depends(rate_limited("memory"))
 ```
 
-## Step 3
+在 route 真正执行前，FastAPI 会先执行依赖函数。这里依次完成：
 
-点击：
+- 从 cookie/header 解析身份。
+- 判断 owner/member/user/guest。
+- 检查当日额度。
+- 把得到的 `Identity` 传入 route。
 
-```txt
-Analyze My English
+模型选择同样是依赖：
+
+```py
+llm_provider: LLMProviderConfig | None = Depends(get_llm_provider)
 ```
 
-前端调用 Linux 后端：
+### 5.6 为什么不能相信 body 里的 `userId`
 
-```txt
-POST https://api.your-domain.com/api/v1/diagnose
+攻击者可以自己修改 JSON。因此诊断 route 会执行：
+
+```py
+req.userId = identity.user_id
 ```
 
-## Step 4
+数据库身份来自服务端解析的 cookie/header，而不是客户端自报的 `userId`。这是本项目很重要的安全边界。
 
-后端：
+### 5.7 StreamingResponse 为什么存在
 
-1. 调用 OpenAI
-2. 得到结构化诊断 JSON
-3. 写入 DynamoDB
-4. 更新 learner profile
-5. 返回结果
+深度诊断可能超过反向代理的空闲超时。`diagnose.py` 返回 `StreamingResponse`，先发送空白 keepalive，再等待线程池中的 LLM 和持久化工作。
 
-## Step 5
+响应仍然是合法 JSON，因为 JSON parser 会忽略开头空白。代码还要把依赖设置的 guest cookie 复制到真正的 streaming response，否则新访客下一次请求会变成另一个用户。
 
-前端展示：
+### 5.8 自动 API 文档
 
-* CEFR: A2 / B1
-* 动词时态错误
-* 词汇重复
-* 表达清晰度问题
-* corrected text
-* recommended next actions
+启动后端后打开：
 
-## Step 6
-
-进入 Dashboard。
-
-展示：
-
-* skill mastery chart
-* recent errors
-* weakest skills
-
-## Step 7
-
-进入 Plan。
-
-点击：
-
-```txt
-Generate 7-Day Plan
+```text
+http://localhost:8000/docs
 ```
 
-展示个性化计划。
+这是学习 FastAPI 最好的入口之一。你可以看到 path、method、request schema 和 response，并直接发送测试请求。
 
-## Step 8
+## 6. 项目为什么要分层
 
-进入 Practice。
+| 层 | 负责什么 | 不应该做什么 |
+| --- | --- | --- |
+| `models/` | 定义输入输出结构和校验 | 不访问数据库 |
+| `api/routes/` | HTTP、依赖、状态码、组织流程 | 不堆放所有算法细节 |
+| `services/` | AI prompt、Memory、决策、业务计算 | 不关心页面长什么样 |
+| `db/repositories.py` | 封装 DynamoDB 读写和查询 | 不生成学习计划 |
+| `core/` | taxonomy、mastery 等纯规则 | 不调用网络 |
+| `config.py` | 环境配置和默认值 | 不放真实 secret |
 
-生成针对最低 mastery skill 的练习。
+分层的价值不是“文件更多显得专业”，而是让你能够单独测试和替换每个边界。
 
----
+例如切换 Qwen/DeepSeek 时，大部分 route 不需要变化；它们仍然调用 `parse_with_model`。
 
-# 23. 前后端 API Contract
+## 7. 完整跟读一次 Diagnose 请求
 
-所有 API base URL：
+这是理解整个项目最重要的一章。
 
-```txt
-/api/v1
+### 7.1 前端发请求
+
+前端通过 `apps/web/lib/api-client.ts` 请求 `/diagnose`。API client 统一处理：
+
+- `NEXT_PUBLIC_API_BASE_URL`
+- cookie
+- 输出语言
+- 服务端模型 ID 或 BYOK headers
+- 429 登录提示
+- JSON/error 解析
+
+### 7.2 FastAPI 解析依赖
+
+`apps/api/app/api/routes/diagnose.py` 先执行：
+
+1. `get_llm_provider`：解析 Auto/Deep/Fast/自定义模型。
+2. `rate_limited("diagnose")`：解析身份并检查额度。
+3. 用服务端身份覆盖 `req.userId`。
+
+### 7.3 快速预检查
+
+`_pre_check`：
+
+- 读取或创建 profile。
+- 对输入文字和输出语言生成 hash。
+- 如果相同输入已经诊断过，重建以前的结果，避免重复收费和重复写数据。
+
+### 7.4 召回相关长期记忆
+
+在调用 LLM 前，`retrieve_memory_pack` 根据当前文字查询该用户的 Memory。失败时只记录日志，诊断继续执行。
+
+### 7.5 调用结构化 AI
+
+`diagnose_service.py`：
+
+- Fast 模式选择 fast model。
+- Deep 模式选择 deep model。
+- 加入输出语言要求、Memory extraction instruction 和 Memory Pack。
+- 调用 `parse_with_model(..., response_model=DiagnosticAIResult)`。
+
+`ai_client.py`：
+
+1. 把 Pydantic JSON schema 放进 system prompt。
+2. 调用 OpenAI-compatible `chat.completions.create`。
+3. 要求 JSON mode。
+4. 用 `DiagnosticAIResult.model_validate_json` 再验证。
+5. JSON 不合法时带校验错误重试一次。
+
+AI 返回的是候选数据，不直接等于可信数据库写入；Pydantic 是边界验证层。
+
+### 7.6 保存业务数据
+
+`_llm_and_persist` 依次保存：
+
+- submission
+- 每条 diagnostic error
+- learning notes
+- 更新后的 skills/mastery
+- profile
+- submission hash
+
+### 7.7 更新 mastery
+
+`apps/api/app/core/mastery.py` 的简化规则：
+
+```text
+low error    -> mastery -3
+medium error -> mastery -7
+high error   -> mastery -12
 ```
 
-## Backend Endpoints
+练习完成后再根据 `skillMasteryDelta` 提升或降低。所有分数限制在 0 到 100。
 
-```txt
-GET  /api/v1/health
+### 7.8 保存 Memory
 
-POST /api/v1/diagnose
+候选来源包括：
 
-GET  /api/v1/profile/{user_id}
+- Qwen 在原诊断结构中返回的 `memoryCandidates`
+- 对用户文字的保守 heuristic
+- 从已确认错误生成的 deterministic weakness
 
-POST /api/v1/plan
-GET  /api/v1/plan/{user_id}
+`remember_candidates` 再负责校验、合并、冲突替换、embedding 和容量控制。
 
-POST /api/v1/practice/generate
-POST /api/v1/practice/submit
+### 7.9 返回前端
 
-GET  /api/v1/history/{user_id}
+最终 response 除诊断外还包括：
+
+- `notes`
+- `memoriesSaved`
+- `memoryRecall.traceId`
+- 被召回的 memory IDs 和 token 估算
+
+这就是一条完整的工程链路：HTTP → 身份 → 模型 → Memory → AI → 数据库 → JSON。
+
+## 8. AI provider 和新的模型选择功能
+
+### 8.1 为什么可以同时支持多个提供方
+
+Qwen、DeepSeek 和很多服务都提供近似 OpenAI Chat Completions 的接口。项目统一使用 OpenAI Python SDK，但传入不同的 `base_url`、key 和 model。
+
+默认优先级在 `config.py`：
+
+```text
+有 QWEN_MODEL_STUDIO_API_KEY -> Qwen
+否则有 OPENAI_COMPAT_API_KEY -> provider-neutral 配置
+否则 -> 旧 DeepSeek 配置
 ```
 
----
+### 8.2 Auto、Deep 和 Fast
 
-# 24. Codex / Claude Code 开发顺序
+`GET /api/v1/llm/models` 只返回安全的 ID、标签和模型名，不返回 key/base URL。
 
-## Phase 1: Backend Skeleton
+当前生产目录包括：
 
-先完成：
+```text
+default        -> Auto：复杂任务用 qwen3.7-max，快速任务用 qwen3.7-plus
+qwen-deep      -> 固定 qwen3.7-max
+qwen-fast      -> 固定 qwen3.7-plus
+deepseek-deep  -> 固定 deepseek-v4-pro
+deepseek-fast  -> 固定 deepseek-v4-flash
+```
 
-* FastAPI app
-* config
-* CORS
-* health endpoint
-* Dockerfile
-* docker-compose
+浏览器只发送：
 
-验收：
+```http
+X-LLM-Server-Model: qwen-fast
+```
+
+后端在 allowlist 中解析 ID，再使用自己的 secret。显式选择某个模型时，deep/fast 都固定为该模型；选择 `default` 才保留按任务自动路由。
+
+### 8.3 为什么已有 Chat session 不随全局选择变化
+
+创建文字会话时，后端把选择的 server model ID/具体模型保存到 session。之后改变浏览器全局选择，不应偷偷改变旧对话的 provider，否则上下文行为会突然漂移。
+
+### 8.4 BYOK 是另一条路径
+
+用户也可以在浏览器 localStorage 保存自己的 OpenAI-compatible key，并通过 headers 仅用于当前请求。它与 server model selection 不能同时使用，并要求 HTTPS base URL。
+
+注意：localStorage 能被同源 JavaScript 读取，因此 BYOK 是用户自行承担的浏览器侧选择；服务器生产 key 绝不能通过此方式下发。
+
+### 8.5 Qwen 的特殊兼容处理
+
+Model Studio Qwen 路径会：
+
+- 使用 JSON mode。
+- 设置 `enable_thinking: false`，保证结构化响应稳定。
+- 不发送不兼容的 `reasoning_effort`。
+
+其他提供方如果不支持 `reasoning_effort`，客户端会检测错误并移除该参数重试。
+
+### 8.6 Realtime voice 是独立模型系统
+
+文字 AI selector 不控制语音。语音使用 OpenAI Realtime API，后端用真实 OpenAI key 换取短期 client secret，并通过 sideband 连接保存 transcript、usage 和会话状态。
+
+## 9. DynamoDB：不是把 SQL 表换个名字
+
+### 9.1 单表设计的核心
+
+表只有两个主键字段：
+
+```text
+PK  partition key
+SK  sort key
+```
+
+同一个用户的大多数记录放在：
+
+```text
+PK = USER#{userId}
+```
+
+不同实体通过 SK prefix 区分：
+
+| 实体 | SK 例子 |
+| --- | --- |
+| Profile | `PROFILE` |
+| Skill | `SKILL#grammar.article` |
+| Submission | `SUBMISSION#2026-...#sub_xxx` |
+| Error | `ERROR#2026-...#err_xxx` |
+| Note | `NOTE#2026-...#note_xxx` |
+| Plan | `PLAN#ACTIVE` |
+| Exercise | `EXERCISE#ex_xxx` |
+| Attempt | `ATTEMPT#2026-...#att_xxx` |
+| Chat session | `CHAT#chat_xxx` |
+| Chat message | `CHATMSG#2026-...#msg_xxx` |
+| Memory | `MEMORY#mem_xxx` |
+| Recall trace | `MEMTRACE#2026-...#mtr_xxx` |
+
+这样可以执行：
+
+```py
+PK == USER#abc and SK begins_with MEMORY#
+```
+
+一次查询拿到用户的所有 Memory。
+
+### 9.2 repository 层
+
+route/service 不应散落 `table.query(...)`。`repositories.py` 提供诸如：
+
+```py
+list_recent_errors(user_id)
+save_memory(memory)
+get_chat_session(user_id, session_id)
+```
+
+以后更换 key pattern 或增加条件写，主要修改 repository。
+
+### 9.3 为什么有 Decimal 转换
+
+DynamoDB 的 boto3 不接受 Python `float`，读出的数字通常是 `Decimal`。`db/serialization.py` 在写入前递归执行 float → Decimal，读出后 Decimal → int/float。
+
+### 9.4 TTL 不是立即删除
+
+Memory 的 `expiresAt` 用于业务层立即过滤，`ttl` 交给 DynamoDB 后台物理删除。DynamoDB TTL 不是定时器，过期行可能稍后才真正消失，所以代码绝不能依赖“到点立刻物理删除”。
+
+## 10. 原有核心学习闭环
+
+### 10.1 Learner profile 和 skills
+
+Profile 保存总体等级、提交次数等。每个 `SKILL#...` 保存掌握度、错误/正确次数和最后练习时间。
+
+Skill 是可统计的弱点模型，例如 `grammar.article`；Memory 则保存更语义化、跨场景的事实。两者不能互相替代。
+
+### 10.2 Plan
+
+`POST /plan` 读取：
+
+- profile
+- 最多 20 个 skills
+- 有界的 recent errors
+- 相关 Memory Pack
+
+然后生成并保存 7 天计划。当前默认 error scope 是最近一周，也可以显式选择全部历史。
+
+### 10.3 Practice
+
+Practice 分三种题型：
+
+- `fix_sentence`
+- `fill_blank`
+- `rewrite_sentence`
+
+生成时可以由用户指定技能/题型；否则使用新的 decision policy 自动选择。提交后保存 attempt、更新 mastery，并积累 strategy/episode memory。
+
+### 10.4 History 删除不是只删一行
+
+删除 submission 时还要：
+
+- 删除对应 errors 和 hash。
+- 回滚这些 error 对 mastery 的影响。
+- 撤销该 submission 对 Memory 的 evidence。
+
+这体现了工程中的“数据一致性”：删除上游证据，派生状态也要更新。
+
+### 10.5 Notes 和 Notebook
+
+诊断和对话分析可以产生 expression、vocabulary、grammar 笔记。Notebook 页面展示这些可复用知识，而不是只保留一次性 AI 回复。
+
+### 10.6 Daily Wins
+
+Stats service 按用户时区把 submission、attempt 等事件分组为本地日期，再计算 streak、平均分、成就和下一步行动。时间处理要使用 timezone-aware datetime，不能简单截取 UTC 日期。
+
+### 10.7 文字 Chat、预测和会话分析
+
+文字 Chat 保存 session/messages。发送消息时只带最近的会话消息和有界 Memory Pack，避免上下文随历史无限增长。结束后可分析 corrections、natural expressions、weaknesses 和 notes。
+
+### 10.8 ChatGPT 导入
+
+导入功能把历史对话转换为 transcript，分批分析后更新 weakness、notes 和 Memory。它有输入大小、批次数和平台额度限制，避免一次请求无限消耗模型上下文。
+
+### 10.9 登录、guest 和限流
+
+身份层支持：
+
+```text
+owner -> member -> signed-in user -> guest
+```
+
+- GitHub/Google OAuth 成功后写 HttpOnly session cookie。
+- guest 使用长期 guest cookie，但按可信代理解析出的 IP 计额度。
+- owner/member 可以不受普通额度限制。
+- 前端 body 的 `userId` 不决定最终身份。
+
+## 11. 新功能：MemoryAgent 详细讲解
+
+### 11.1 为什么 mastery 之外还需要 Memory
+
+`grammar.article = 52` 能告诉系统“冠词较弱”，却不能表达：
+
+- 用户目标是 IELTS 7 分。
+- 用户喜欢简短反馈。
+- 商务邮件是当前重点。
+- `fill_blank` 对这个用户效果好于 `rewrite_sentence`。
+- 上周面试练习是一个重要近期事件。
+
+MemoryAgent 负责这些长期、语义化、可召回的信息。
+
+### 11.2 五种 Memory
+
+| kind | 含义 | 默认生命周期 |
+| --- | --- | --- |
+| `preference` | 反馈风格、语言、语气、学习偏好 | 不自动过期 |
+| `goal` | 考试、工作、分数、截止日期 | 365 天 |
+| `strategy` | 哪种练法对某技能有效 | 180 天 |
+| `weakness` | 有证据的重复弱点 | 60 天 |
+| `episode` | 值得短期记住的重要经历 | 30 天 |
+
+每条 Memory 还有：
+
+- `canonicalKey`：同一事实的稳定 key。
+- `content/evidence`：事实与证据。
+- `confidence/importance`：可信度和重要性。
+- `sourceRefs`：来自哪次诊断、聊天或练习。
+- `observationCount/accessCount`：被观察和召回多少次。
+- `status`：active、resolved、superseded、expired、forgotten。
+- optional embedding。
+
+### 11.3 自动积累而不增加额外 chat-completion
+
+诊断、聊天、会话分析和导入使用的 Pydantic AI result 都包含 `memoryCandidates`。模型在原来那次结构化生成里顺便返回候选，不需要再发一次昂贵的 chat-completion。
+
+此外，确定性代码还会：
+
+- 从诊断错误产生 weakness memory。
+- 从练习成绩累积 strategy statistics。
+- 必要时用保守 heuristic 提取明确目标/偏好。
+
+### 11.4 合并和冲突
+
+流程大致是：
+
+1. 验证 kind、长度和 confidence。
+2. 规范化 `canonicalKey`。
+3. 同 key 且内容相似：合并 evidence，提高 confidence 和 observation count。
+4. 同 key 但内容冲突：新建记录，把旧记录标成 `superseded`。
+5. 超过每用户容量时，优先清理低重要度、较旧、未 pin 的 episode。
+
+例如：
+
+```text
+preference.feedback_style = "Prefer concise feedback"
+```
+
+之后用户明确要求详细解释，仍使用同一个 canonical key。系统就能把旧偏好替换，而不是同时召回两条矛盾指令。
+
+### 11.5 Embedding 和 lexical fallback
+
+生产环境使用 Qwen `text-embedding-v4` 生成 256 维向量。query vector 和 memory vector 用 cosine similarity 比较语义相关性。
+
+如果 embedding 服务不可用，`embedding_client.py` 返回 `None`，检索自动用 lexical similarity 继续，不让诊断/聊天整体失败。
+
+这是典型的 graceful degradation：增强能力下降，但核心服务仍可用。
+
+### 11.6 混合排序公式
+
+每条候选的基础分数：
+
+```text
+0.50 * semantic similarity
++ 0.15 * lexical similarity
++ 0.15 * importance
++ 0.10 * recency
++ 0.05 * access frequency
++ 0.05 * critical kind
+```
+
+pin 的 Memory 额外加 `0.15`。preference/goal 是 critical kind。
+
+semantic 不可用时使用 lexical 代替，因此不是简单把 0 填进去。
+
+### 11.7 为什么还要保留关键记忆名额
+
+纯相似度排序可能因为 query 没出现 “IELTS” 而漏掉重要目标。ranker 会保留最多两条高重要度 preference/goal，然后再填充普通高分候选。
+
+### 11.8 有界 Memory Pack
+
+默认最多：
+
+```text
+6 条 Memory
+约 700 estimated tokens
+```
+
+代码逐条加入并在预算边界截断。当前用户输入永远优先于历史 Memory，prompt 里也明确写出这条规则。
+
+限制上下文有三个价值：
+
+- 控制费用和延迟。
+- 避免陈旧信息淹没当前输入。
+- 让用户历史增长后请求大小仍大致稳定。
+
+### 11.9 Recall trace
+
+每次召回可写 `MEMTRACE#...`，记录：
+
+- query preview/hash
+- 候选数量
+- selected IDs
+- 每个分数组件
+- estimated tokens/token budget
+- purpose
+
+这让“模型为什么记起这条信息”可以调试，而不是黑盒。
+
+### 11.10 薄弱项如何用练习证据“毕业”
+
+这里要先区分三个概念：
+
+- **做对一次**：只是一条观测，可能是猜对、题目简单或短期记忆。
+- **暂时掌握**：多次、跨天、跨题型都能成功，近期也没有复发。
+- **物理删除**：数据库记录消失，之后无法审计学习历史。
+
+本项目只在第二种情况把 weakness 从 `active` 改成 `resolved`，不会因为一次高分直接删除。`resolved` 不再进入 Memory Pack，也不再影响下一练习决策，但记录会保留 180 天；如果用户 pin，则继续保留。
+
+每次练习提交后，`routes/practice.py` 先更新 `SkillState.mastery`，再把本次结果传给 `record_practice_outcome_memory`。`memory_service.py` 找到同一 `weakness.{skillCode}`，保存最近 20 条 `practiceEvidence`，并计算下面 8 个条件：
+
+| 条件 | 当前阈值 | 为什么不能省略 |
+| --- | --- | --- |
+| 总练习次数 | 至少 5 次 | 避免用单次偶然结果下结论 |
+| 不同练习日 | 至少 3 天 | 证明不是同一时段的短期记忆 |
+| 首末练习跨度 | 至少 14 天 | 引入间隔效应，检查较长期保持 |
+| 最近 5 次成功率 | 至少 80% | 检查近期表现是否稳定；成功要求答对且分数至少 80 |
+| 最近 3 次平均分 | 至少 85 | 不只看二值 correct，也要求答案质量 |
+| 技能 mastery | 至少 85 | 用总体技能状态交叉验证单条 Memory |
+| 成功题型 | 至少 2 种 | 检查能力能否迁移，不只会做一种题 |
+| 距最后一次同类错误 | 至少 14 天 | 防止刚犯错后马上被判定为掌握 |
+
+只有全部通过才执行：
+
+```text
+active weakness
+  -> 持续追加 practiceEvidence
+  -> 8 个条件全部通过
+  -> resolved（停止召回，但保留记录）
+```
+
+如果之后诊断或错误练习再次产生同一个 canonical key：
+
+```text
+resolved
+  -> 新的错误证据
+  -> 恢复为 active
+  -> reopenedCount + 1
+  -> 保存 resolutionHistory
+  -> 重新开始无复发期判断
+```
+
+这是一套保守、可解释的工程策略，不是“学习已经永久完成”的科学证明。阈值集中在 `WEAKNESS_GRADUATION_THRESHOLDS`，将来可以根据真实用户数据做校准，而不需要改动状态机。
+
+它借鉴的核心学习科学思想是：主动提取练习比只重复阅读更能检验学习；分散练习比挤在一次会话中更能检验保持；跨题型成功比记住一道题更接近迁移。因此代码同时要求 retrieval 次数、spacing、近期稳定度和题型覆盖，而不是只设置“连续答对 3 次”。
+
+可继续阅读三类基础研究：
+
+- [Retrieval Practice（Science, 2008）](https://doi.org/10.1126/science.1152408)：反复从记忆中提取，比只重复阅读更能支持长期保持。
+- [Distributed Practice Meta-analysis（Psychological Bulletin, 2006）](https://doi.org/10.1037/0033-2909.132.3.354)：把练习分散到不同时间，比集中练习更适合检验保持。
+- [Bayesian Knowledge Tracing（1994）](https://doi.org/10.1007/BF01099821)：把“是否已经掌握”看成根据连续观测更新的隐藏状态，而不是一次答题的直接结论。
+
+这些研究支持“应该观察哪些证据”，并不直接给出本项目的 5 次、14 天、85 分等精确数字；这些是目前偏保守的产品阈值，后续要用真实学习数据校准。
+
+Memory Center 会显示每个薄弱项的 8 项证据、实际值/阈值和总进度。`resolved` 项会进入已归档视图并显示“已掌握”，复发后自动回到 active。
+
+### 11.11 忘记、过期和 pin
+
+- `forgotten`：用户主动忘记后立即不再召回。
+- `resolved`：薄弱项通过练习证据判定为暂时掌握；复发时可恢复。
+- `expired`：超过业务生命周期后立即不再召回。
+- `superseded`：被更新事实替代。
+- `pinned`：不自动过期。
+- `ttl`：稍后物理清理归档行。
+
+“不再参与业务”与“数据库物理删除”是两个时间点。
+
+### 11.12 Memory Center
+
+前端 `/memory` 页面支持：
+
+- 查看 active/archived Memory，以及已掌握 weakness 的证据进度。
+- 手动新增、编辑、pin、forget。
+- 输入 query 预览 Memory Pack。
+- 查看 score breakdown 和 traces。
+- 查看 next-action decision。
+
+它不仅是设置页，也是 MemoryAgent 的可解释性和用户控制界面。
+
+## 12. 新功能：自适应下一练习决策
+
+旧逻辑基本只选 mastery 最低的 skill。新逻辑同时考虑历史错误、练习效果和时间。
+
+### 12.1 技能分数
+
+```text
+45% mastery gap
++ 25% recent error density
++ 20% historical failure need
++ 10% time since practice
+```
+
+直觉：掌握度低、最近错误多、练习成绩差、很久没练的技能更值得被选中。
+
+### 12.2 题型分数
+
+对 fix/fill/rewrite 分别计算：
+
+- learning need
+- 是否接近约 75 分的 productive difficulty
+- under-sampled format exploration
+- 多次尝试后的 reliability
+
+冷启动时还使用技能类型先验。例如 grammar 更倾向从 `fix_sentence` 开始。
+
+### 12.3 为什么结果包含 breakdown 和 reason
+
+推荐结果不仅返回一个题型，还返回 component scores、supporting memory IDs 和可读 reason。这样前端、测试和开发者能解释决策，也方便以后替换权重。
+
+## 13. 前端代码怎么读
+
+### 13.1 Next.js App Router
+
+`apps/web/app/<path>/page.tsx` 对应页面：
+
+```text
+app/chat/page.tsx   -> /chat
+app/memory/page.tsx -> /memory
+app/login/page.tsx  -> /login
+```
+
+带 `"use client"` 的文件在浏览器执行，可以使用 state、effect、localStorage 和点击事件。
+
+### 13.2 components 和 lib
+
+- `components/`：页面可复用 UI，如登录页、模型设置、报告卡片。
+- `lib/api-client.ts`：所有后端请求的统一入口。
+- `lib/types.ts`：前端使用的 TypeScript 数据结构。
+- `lib/i18n.ts`：中英文文案。
+- `lib/llm-settings.ts`：模型选择和 BYOK localStorage。
+
+### 13.3 React state 和 effect
+
+```tsx
+const [serverModels, setServerModels] = useState([])
+
+useEffect(() => {
+  getServerLLMModels().then(setServerModels)
+}, [])
+```
+
+可以理解为：组件第一次显示后，从后端加载模型目录，成功后更新 state，React 自动重新渲染。
+
+当前模型选择器还显式显示 loading、failure 和 retry，避免请求失败时伪装成“只有 Server default”。
+
+### 13.4 环境变量何时生效
+
+`NEXT_PUBLIC_API_BASE_URL` 会在 Next.js build 时编译进浏览器 bundle。修改 Vercel 环境变量后必须 redeploy。
+
+任何 `NEXT_PUBLIC_` 变量都可被用户看到，所以绝不能放服务器 secret。特别是不要在 Vercel 设置 `NEXT_PUBLIC_OWNER_BYPASS_TOKEN`。
+
+## 14. 推荐的本地学习环境
+
+### 14.1 第一步：不使用任何真实 key
+
+安装后端依赖：
 
 ```bash
-curl http://localhost:8000/api/v1/health
+cd apps/api
+uv sync
 ```
 
-返回：
+启动 moto + fake AI 后端：
 
-```json
-{"status":"ok"}
+```bash
+uv run python -m scripts.dev_server
 ```
 
----
+它会：
 
-## Phase 2: Frontend Skeleton
+- 用 moto 在进程内模拟 AWS。
+- 自动创建 DynamoDB table。
+- 使用 `fake_ai.py` 返回固定结构。
+- 在 `127.0.0.1:8000` 启动 FastAPI。
+- 进程停止后清空数据。
 
-完成：
-
-* Next.js app
-* shadcn/ui
-* sidebar
-* 5 个页面
-* api-client.ts
-* mock UI
-
-验收：
+另一个终端启动前端：
 
 ```bash
 cd apps/web
-npm run dev
+pnpm install
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm dev
 ```
 
-页面可打开，导航可点击。
+这比一开始配置真实 AWS/Qwen 更适合学习，因为你可以先理解请求流。
 
----
+### 14.2 用 Swagger 逐个实验
 
-## Phase 3: DynamoDB
+打开 `http://localhost:8000/docs`，建议按顺序：
 
-完成：
+1. `GET /api/v1/health`
+2. `GET /api/v1/llm/models`
+3. `POST /api/v1/diagnose`
+4. `GET /api/v1/profile/{user_id}`
+5. `POST /api/v1/memory`
+6. `POST /api/v1/memory/retrieve`
+7. `GET /api/v1/memory/traces`
+8. `GET /api/v1/memory/next-action`
 
-* DynamoDB table
-* repositories.py
-* get_or_create_profile
-* list_skills
-* save_submission
-* save_error
+每做一步，回到 route 找 decorator，再顺着 import 跟到 service/repository。
 
-验收：
+### 14.3 curl 示例
 
 ```bash
-curl http://localhost:8000/api/v1/profile/demo-user-001
+curl -sS http://localhost:8000/api/v1/llm/models
 ```
-
-返回 profile。
-
----
-
-## Phase 4: Diagnose API
-
-完成：
-
-* Pydantic AI schema
-* OpenAI client
-* diagnose_service
-* POST /api/v1/diagnose
-* 保存 submission/errors/skills/profile
-
-验收：
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/diagnose \
-  -H "Content-Type: application/json" \
-  -d '{"userId":"demo-user-001","text":"Yesterday I go to school and I meet my friend."}'
+curl -sS -X POST http://localhost:8000/api/v1/diagnose \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "userId":"demo-user-001",
+    "text":"Yesterday I go to the library and I meet my friend.",
+    "diagnosisMode":"fast",
+    "outputLanguage":"zh-CN"
+  }'
 ```
 
-必须返回 structured diagnostic。
+### 14.4 再切换到真实服务
 
----
-
-## Phase 5: Connect Frontend Diagnose
-
-完成：
-
-* 首页调用真实后端
-* loading state
-* error state
-* diagnostic report UI
-
-验收：
-
-前端能通过 Vercel 或 localhost 调用后端。
-
----
-
-## Phase 6: Dashboard
-
-完成：
-
-* GET /api/v1/profile/{user_id}
-* chart
-* recent errors
-
----
-
-## Phase 7: Plan
-
-完成：
-
-* plan AI schema
-* POST /api/v1/plan
-* GET /api/v1/plan/{user_id}
-* frontend plan page
-
----
-
-## Phase 8: Practice
-
-完成：
-
-* generate practice
-* submit practice
-* grade answer
-* update mastery
-* frontend practice page
-
----
-
-## Phase 9: Deployment
-
-完成：
-
-* backend deploy to Linux
-* Nginx reverse proxy
-* HTTPS
-* Vercel frontend deploy
-* CORS production origin
-
----
-
-# 25. 验收标准
-
-## 25.1 Backend
-
-必须满足：
+只有理解 fake 路径后，再复制和填写 `.env`：
 
 ```bash
-GET /api/v1/health
+cd apps/api
+cp .env.example .env
+uv run python -m scripts.create_table
+uv run uvicorn app.main:app --reload --port 8000
 ```
 
-返回 ok。
+不要提交 `.env`。
 
-```bash
-POST /api/v1/diagnose
-```
+## 15. 测试应该怎样理解
 
-返回结构化诊断结果。
+| 命令 | 证明什么 |
+| --- | --- |
+| `python -m scripts.smoke_test` | import、route、schema 和基础规则没有坏 |
+| `python -m scripts.integration_test` | diagnose → profile → plan → practice → auth/chat 的完整环 |
+| `python -m scripts.memory_agent_test` | merge、conflict、expiry、API、decision 和来源撤销 |
+| `python -m scripts.memory_benchmark` | Recall@6、陈旧抑制、token budget 和上下文缩减 |
+| `pnpm lint` | React/TypeScript 常见代码问题 |
+| `pnpm exec tsc --noEmit` | 独立 TypeScript 类型检查 |
+| `pnpm build` | Next.js 生产构建和所有 route 生成 |
 
-```bash
-GET /api/v1/profile/demo-user-001
-```
+后端测试通常用 moto + fake AI，所以不等于“真实 Qwen 一定可用”；生产还需要少量 live probe。
 
-返回 profile、skills、recentErrors、recentSubmissions。
+`next.config.mjs` 当前允许 build 跳过 TypeScript error，因此不能只看 `pnpm build`，必须独立运行 `pnpm exec tsc --noEmit`。
 
----
+## 16. 部署架构和工程含义
 
-## 25.2 Frontend
+### 16.1 前端
 
-必须满足：
+- Vercel Root Directory 是 `apps/web`。
+- `main` 更新触发生产部署。
+- `NEXT_PUBLIC_API_BASE_URL` 在 build 时固定。
 
-* Vercel 前端能打开
-* 可以提交英文文本
-* 可以展示 AI 诊断
-* Dashboard 能展示用户弱点
-* Plan 能生成学习计划
-* Practice 能生成练习并批改
+### 16.2 后端
 
----
+- FastAPI 在 Docker 中运行。
+- 端口 8000 只绑定本机。
+- Nginx 提供公网 443/TLS 并反向代理。
+- `deploy/start_backend.sh` build image、幂等建表/启用 TTL、重建容器并健康检查。
 
-## 25.3 数据闭环
+### 16.3 当前双后端
 
-必须能证明：
+- Alibaba ECS：主站，Qwen chat + embedding。
+- Oracle：备用，DeepSeek + lexical fallback。
+- 两者使用同一 DynamoDB learner state。
 
-1. 用户提交英文
-2. 后端识别错误
-3. DynamoDB 保存错误
-4. Skill mastery 变化
-5. Plan 基于弱点生成
-6. Practice 基于最低 mastery skill 生成
-7. 练习后 mastery 再次更新
+上线顺序应是：后端 API → health/models/memory probe → 前端 Vercel。
 
----
+## 17. 想改某个功能时从哪里开始
 
-# 26. 黑客松展示重点
+| 目标 | 先看这些文件 |
+| --- | --- |
+| 新增 API | `app/api/routes/`、`app/main.py`、对应 Pydantic model |
+| 修改诊断 prompt | `services/diagnose_service.py`、`models/diagnostic.py` |
+| 修改模型选择 | `services/model_catalog.py`、`api/deps.py`、前端 `llm-settings.ts` |
+| 修改 Memory 合并/召回 | `services/memory_service.py` |
+| 修改 embedding | `services/embedding_client.py` |
+| 修改下一练习策略 | `services/decision_service.py` |
+| 修改 DynamoDB 查询 | `db/keys.py`、`db/repositories.py` |
+| 修改 mastery | `core/mastery.py` |
+| 修改前端 API | `apps/web/lib/api-client.ts`、`types.ts` |
+| 修改页面 | `apps/web/app/.../page.tsx` 和相关 component |
+| 修改中英文 | `apps/web/lib/i18n.ts` |
+| 修改登录/限流 | `api/deps.py`、`routes/auth.py`、前端 auth components |
 
-评委最需要看到的不是你做了一个聊天机器人，而是你做了一个自适应学习系统。
+修改顺序建议：先更新 schema/纯规则，再 service/repository，再 route，最后前端和测试。
 
-重点展示：
+## 18. 当前实现的工程取舍与继续学习点
 
-1. AI 不是只回答问题，而是提取结构化错误。
-2. 每个错误都会影响用户画像。
-3. 用户画像会影响下一步学习计划。
-4. 练习不是随机生成，而是来自用户真实弱点。
-5. 前端、后端、数据库、AI 构成完整闭环。
+这些不是“项目不能用”，而是适合作为下一阶段工程学习的问题。
 
-Demo 话术：
+### 18.1 DynamoDB 并发更新
 
-> Most AI English tools wait for the learner to ask the right question. Our system observes the learner’s actual mistakes, builds a weakness profile, and automatically turns those mistakes into a personalized learning path.
+部分 Memory merge 和 strategy stats 是 read-modify-put。两个并发请求可能产生重复 canonical memory 或覆盖一次计数。进一步学习方向：conditional expression、optimistic locking 和 transaction。
 
----
+### 18.2 Token 是估算值
 
-# 27. 给 Codex / Claude Code 的执行指令
+Memory Pack 使用轻量字符估算器，不是 Qwen 官方 tokenizer。它适合控制上界和回归测试，但 benchmark 不应被描述成大规模精确 token 研究。
 
-把下面这段作为第一条 prompt：
+### 18.3 Benchmark 数据量较小
 
-```txt
-Read PROJECT_SPEC_SEPARATED.md carefully.
+Recall@6 1.00 来自确定性 fixture，适合防回归，不等于真实用户大样本评估。进一步应加入匿名真实 query、人工 relevance label 和线上指标。
 
-Build this project as a apps/web/backend separated app.
+### 18.4 忘记是业务立即、物理稍后
 
-Architecture:
-- apps/web/ is a Next.js app deployed to Vercel.
-- apps/api/ is a FastAPI app deployed to a Linux server.
-- Frontend must not contain OpenAI or AWS secrets.
-- Frontend must call backend using NEXT_PUBLIC_API_BASE_URL.
-- Backend owns all AI, DynamoDB, learner profile, plan, and practice logic.
+API forget 后不会再召回，但 DynamoDB 行通过 TTL 稍后物理删除。产品隐私文案需要准确说明这一点。
 
-Implement phase by phase:
-1. Backend skeleton
-2. Frontend skeleton
-3. DynamoDB repositories
-4. Diagnose API
-5. Connect frontend diagnose page
-6. Dashboard
-7. Plan
-8. Practice
-9. Deployment files
+### 18.5 同步 SDK 和 async server
 
-Do not use Next.js API routes.
-Do not put backend logic inside frontend.
-Do not skip error handling.
-Keep the app demo-ready for a hackathon.
-```
+项目通过线程池隔离部分阻塞工作。进一步可以学习 async HTTP client、aioboto3 的收益与复杂度，不要为了“全 async”盲目改写。
 
-End of spec.
+## 19. 给初学者的四周学习顺序
 
-````
+### 第 1 周：Python 和 FastAPI 边界
 
----
+1. 跑 `scripts.dev_server`。
+2. 学会读 list/dict/function/type hint。
+3. 用 `/docs` 调 health、models、memory。
+4. 跟读 `main.py`、`config.py`、`models/memory.py`、`routes/memory.py`。
 
-你现在应该把上一版文档里的 **Next.js API Routes** 全部删掉，改成这版的：
+练习：新增一个不访问数据库的 `GET /api/v1/debug/hello`，写完后删除它。
 
-```txt
-frontend -> fetch -> Linux FastAPI backend -> OpenAI + DynamoDB
-````
+### 第 2 周：Repository 和业务闭环
 
-这个架构更干净，也更符合你“前端 Vercel，后端 Linux 服务器”的要求。
+1. 跟读 `keys.py`、`repositories.py`。
+2. 跟读 Diagnose 的完整链路。
+3. 观察诊断前后 profile/skills/history 的变化。
+4. 阅读 mastery 和 taxonomy。
 
-[1]: https://nextjs.org/docs/app/guides/environment-variables "Guides: Environment Variables | Next.js"
-[2]: https://fastapi.tiangolo.com/tutorial/cors/ "CORS (Cross-Origin Resource Sharing) - FastAPI"
-[3]: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-general-nosql-design.html "NoSQL design for DynamoDB - Amazon DynamoDB"
-[4]: https://platform.openai.com/docs/guides/structured-outputs "Structured model outputs | OpenAI API"
+练习：给一个 repository list 函数增加 limit，并在 integration test 验证。
+
+### 第 3 周：AI 和 MemoryAgent
+
+1. 阅读 Pydantic AI result。
+2. 跟读 `parse_with_model`。
+3. 手工创建两条 Memory 并调用 retrieve。
+4. 查看 trace score breakdown。
+5. 修改一个 retrieval weight，只跑 benchmark 观察变化，然后恢复。
+
+### 第 4 周：前端、测试和部署
+
+1. 跟读 `api-client.ts` 到一个 page。
+2. 理解 loading/error/retry state。
+3. 跑全部测试。
+4. 理解 Docker、Nginx、CORS、Vercel build-time env。
+5. 在 feature branch 上走一次 Preview，不直接改 main。
+
+## 20. 常见误区
+
+- “FastAPI 会自动让所有代码异步。”——不会，阻塞 SDK 仍然阻塞执行它的线程。
+- “Pydantic 验证过就代表 AI 内容事实正确。”——只代表结构和约束正确。
+- “前端传了 userId 就是这个用户。”——身份必须由后端解析。
+- “DynamoDB TTL 到时间就立刻删除。”——不是。
+- “build 通过就没有 TypeScript 错误。”——本项目必须单独跑 `tsc`。
+- “Server default 只有一个模型。”——它是 Auto，内部有 Deep/Fast 路由。
+- “Memory 越多越好。”——检索质量和有界上下文比全量塞入更重要。
+- “把 secret 放进 `NEXT_PUBLIC_` 只是方便。”——这会公开给所有浏览器用户。
+
+## 21. 术语表
+
+| 术语 | 简单解释 |
+| --- | --- |
+| ASGI | Python 异步 Web server 和 app 的接口标准 |
+| Uvicorn | 运行 FastAPI 的 ASGI server |
+| Route/Endpoint | 某个 method + path 对应的处理函数 |
+| Middleware | 请求进入 route 前后统一执行的处理层 |
+| Dependency Injection | FastAPI 自动先执行依赖并把结果传入 route |
+| Pydantic | Python 数据验证和 schema 工具 |
+| Repository | 封装数据库访问的层 |
+| OpenAI-compatible | 使用相似 Chat Completions API 的模型服务 |
+| Embedding | 把文本变成向量以比较语义相似度 |
+| Cosine similarity | 比较两个向量方向接近程度的指标 |
+| TTL | 数据库用于最终清理过期数据的时间戳 |
+| CORS | 浏览器跨 origin 读取资源的规则 |
+| OAuth | 通过 GitHub/Google 完成第三方登录的协议流程 |
+| BYOK | Bring Your Own Key，用户使用自己的模型 key |
+| Graceful degradation | 增强能力失败时核心功能继续工作 |
+| Idempotent | 重复执行不会造成重复副作用 |
+
+## 22. 以后怎样维护这份笔记
+
+每次新增跨层功能时，至少检查：
+
+1. `README.md` 的功能/架构是否要更新。
+2. 本文的请求链、文件入口和术语是否仍正确。
+3. `apps/api/README.md` 的 endpoints/env 是否完整。
+4. `apps/web/README.md` 的页面和 API 连接是否完整。
+5. `LOCAL_TESTING.md` 是否覆盖新功能。
+6. 架构算法细节是否应该进入 `docs/` 专门设计文档。
+
+学习项目时不要试图一次读完所有文件。选择一条用户行为，从前端按钮一路跟到 DynamoDB，再跟着 response 回到页面；这是从“会写代码”走向“理解工程”的最快方法。

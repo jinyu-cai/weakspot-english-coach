@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 
 MemoryKind = Literal["preference", "goal", "strategy", "weakness", "episode"]
-MemoryStatus = Literal["active", "superseded", "expired", "forgotten"]
+MemoryStatus = Literal["active", "resolved", "superseded", "expired", "forgotten"]
 MemorySourceType = Literal[
     "manual",
     "diagnosis",

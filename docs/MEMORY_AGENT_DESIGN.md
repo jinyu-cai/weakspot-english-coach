@@ -1,5 +1,10 @@
 # MemoryAgent Design
 
+This document is the concise algorithm reference. For a step-by-step explanation
+of Python/FastAPI, the original learning loop, and how MemoryAgent connects to
+the rest of the application, start with the
+[beginner learning guide](../development.md#11-新功能memoryagent-详细讲解).
+
 WeakSpot's MemoryAgent turns isolated tutoring sessions into a learner model
 that persists across diagnosis, text/voice chat, imported conversations,
 planning, and practice. It is designed around four properties required by the
@@ -50,6 +55,42 @@ though DynamoDB TTL deletion is asynchronous.
 
 Users can inspect, edit, pin, and forget memories from `/memory`. The current
 message always overrides recalled memory.
+
+## Evidence-based weakness graduation
+
+A weakness is not hard-deleted after one correct answer. Each practice result
+for the same `weakness.{skillCode}` appends bounded evidence (the latest 20
+events). The weakness moves from `active` to `resolved` only when all of these
+conditions hold:
+
+| Evidence | Threshold |
+| --- | --- |
+| total attempts | at least 5 |
+| distinct practice days | at least 3 |
+| time between first and latest retained attempt | at least 14 days |
+| success in the latest 5 attempts | at least 80%; success means correct and score >= 80 |
+| average of the latest 3 scores | at least 85 |
+| current skill mastery | at least 85 |
+| successful exercise formats | at least 2 |
+| time since the weakness was last observed | at least 14 days |
+
+This combines repeated retrieval, spacing, transfer across formats, recent
+performance, the aggregate skill model, and a recurrence-free interval. It is
+a conservative product policy rather than a clinical proof that learning can
+never decay.
+
+The policy is motivated by research on
+[retrieval practice](https://doi.org/10.1126/science.1152408),
+[distributed practice](https://doi.org/10.1037/0033-2909.132.3.354), and
+[knowledge tracing](https://doi.org/10.1007/BF01099821). The papers support the
+general evidence signals, not these exact product thresholds; the constants are
+kept together so production data can calibrate them later.
+
+`resolved` rows immediately stop participating in retrieval and next-practice
+decisions, but remain auditable for 180 days (or indefinitely when pinned).
+Fresh error or diagnosis evidence for the same canonical key reactivates the
+same row, increments `reopenedCount`, and keeps a short `resolutionHistory`.
+This preserves a relapse history without creating duplicate weaknesses.
 
 ## Hybrid retrieval
 
@@ -109,7 +150,7 @@ supporting strategy-memory IDs, and a human-readable reason.
 ## API
 
 ```text
-GET    /api/v1/memory?status=active|all
+GET    /api/v1/memory?status=active|resolved|superseded|expired|forgotten|all
 POST   /api/v1/memory
 PATCH  /api/v1/memory/{memoryId}
 DELETE /api/v1/memory/{memoryId}
