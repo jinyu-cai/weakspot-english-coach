@@ -143,6 +143,7 @@ def _record_practice_outcome(
             is_correct=grade.isCorrect,
             attempt_id=attempt["id"],
             created_at=now,
+            mastery=float(updated_skill.get("mastery", 0)),
         )
     except Exception:
         logger.exception("practice memory_persist_error user_id=%s attempt=%s", user_id, attempt["id"])

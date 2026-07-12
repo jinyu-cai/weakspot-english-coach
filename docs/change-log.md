@@ -18,6 +18,42 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-12 — Independent Fast / Deep server-model pairing
+
+Date: 2026-07-12
+
+Branch: `release/memory-graduation-model-pairing`
+
+GitHub status: Not pushed.
+
+Deploy status: Not deployed. Deploy the backend before the frontend because
+the new browser sends paired server-model headers.
+
+Summary:
+
+- Kept the default pair on Qwen 3.7 Max for deep work and Qwen 3.7 Plus for
+  fast work.
+- Added independent Deep and Fast selectors so either slot can use its matching
+  Qwen or DeepSeek model, including mixed-provider combinations.
+- Kept provider API keys and endpoints on the server; the browser sends only
+  allowlisted deep/fast model IDs.
+- Saved both IDs with new text-chat sessions so conversation/prediction uses
+  the Fast slot and end-of-session analysis uses the Deep slot.
+- Migrated legacy browser single-model settings and retained the legacy
+  `X-LLM-Server-Model` backend header for older clients.
+
+Tests run:
+
+- `uv run python -m scripts.smoke_test` passed.
+- `DYNAMODB_ENDPOINT_URL= uv run python -m scripts.integration_test` passed,
+  including Qwen/DeepSeek mixed routing and saved-session behavior.
+- `pnpm exec tsc --noEmit` passed.
+- `pnpm build` passed with all application routes generated.
+- `git diff --check` passed.
+
+Next step: Commit and push the combined local work, deploy both backend
+containers, then deploy the Vercel frontend and run live Fast/Deep probes.
+
 ## 2026-07-10 — Qwen Track 1 MemoryAgent
 
 Date: 2026-07-10

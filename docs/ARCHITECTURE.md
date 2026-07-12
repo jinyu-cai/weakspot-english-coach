@@ -1,5 +1,9 @@
 # WeakSpot English Coach — Architecture
 
+New to Python, FastAPI, or production Web architecture? Read the
+[source-guided beginner learning guide](../development.md) first, then return
+here for the compact production-system view.
+
 ## Deployment architecture
 
 ```mermaid

@@ -1,11 +1,14 @@
 # Backend Deployment (Linux + Docker + Nginx + HTTPS)
 
-Deploys the FastAPI backend on your Linux server, behind Nginx with a real HTTPS
-certificate, talking to **real DeepSeek + real AWS DynamoDB**. Assumes Ubuntu/Debian
-(`apt`). The frontend is on Vercel and calls this over HTTPS.
+Deploys the FastAPI backend on a Linux server, behind Nginx with a real HTTPS
+certificate, talking to a configured OpenAI-compatible text provider and real
+AWS DynamoDB. The primary deployment uses Alibaba Model Studio Qwen; DeepSeek
+remains supported as a provider or standby. This guide assumes Ubuntu/Debian
+(`apt`). The frontend is on Vercel and calls this backend over HTTPS.
 
-Text diagnosis/chat/analysis uses DeepSeek by default. Realtime voice uses the
-official OpenAI Realtime API, so production also needs an OpenAI API key on the
+Text diagnosis/chat/analysis uses the configured Qwen, provider-neutral, or
+DeepSeek profile. Realtime voice is separate and uses the official OpenAI
+Realtime API, so voice-enabled production also needs an OpenAI API key on the
 backend server.
 
 ## 0. Prerequisites (once)
@@ -44,11 +47,27 @@ cp deploy/.env.production.example .env
 nano .env
 ```
 
-Set **real** values — and make sure the local-testing toggles are OFF. The
-provider-neutral `OPENAI_COMPAT_*` variables are preferred for new deployments;
-the original `DEEPSEEK_*` names are still supported.
+Set **real** values and make sure local-testing toggles are off. For Alibaba
+Model Studio, use the Qwen profile (the key and endpoint must come from the same
+workspace/region):
 
 ```bash
+QWEN_MODEL_STUDIO_API_KEY=<model-studio-api-key>
+QWEN_MODEL_STUDIO_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+QWEN_MODEL_STUDIO_MODEL=qwen3.7-max
+QWEN_MODEL_STUDIO_FAST_MODEL=qwen3.7-plus
+QWEN_EMBEDDING_MODEL=text-embedding-v4
+QWEN_EMBEDDING_DIMENSIONS=256
+
+# MemoryAgent defaults; set explicitly in production for clarity.
+MEMORY_ENABLED=true
+MEMORY_CONTEXT_TOKEN_BUDGET=700
+MEMORY_RETRIEVAL_LIMIT=6
+MEMORY_MAX_ITEMS_PER_USER=200
+MEMORY_CHAT_RECENT_MESSAGES=12
+
+# Optional additional/standby provider. The safe model catalog exposes every
+# provider whose key, endpoint, and model are configured.
 DEEPSEEK_API_KEY=<deepseek-api-key>
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 LLM_MODEL=deepseek-v4-pro
@@ -69,17 +88,25 @@ CORS_ORIGINS=https://your-vercel-app.vercel.app
 
 # Leave these UNSET in production:
 # DYNAMODB_ENDPOINT_URL=   (empty -> real AWS)
-# USE_FAKE_AI=false        (real DeepSeek)
+# USE_FAKE_AI=false        (real configured provider)
 ```
+
+Provider-neutral `OPENAI_COMPAT_*` variables are also supported. When a Qwen
+key is present it becomes the server default; otherwise provider-neutral config
+or the backwards-compatible DeepSeek config is used.
 
 > Prefer an IAM role over static AWS keys if the server is an EC2 instance — then
 > omit `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` and the SDK uses the role.
 
-## 3. Create the DynamoDB table (once)
+## 3. Create/update the DynamoDB table
 
 ```bash
 docker compose run --rm api python -m scripts.create_table
 ```
+
+The command is idempotent. It also requests the DynamoDB `ttl` attribute used
+for Memory and recall-trace cleanup, so run it again after deploying
+MemoryAgent even when the table already exists.
 
 ## 4. Start the backend
 
@@ -126,15 +153,28 @@ Confirm `CORS_ORIGINS` in the backend `.env` contains that exact Vercel origin.
 
 ## 7. Smoke-test the full chain
 
-Open the Vercel site, run a diagnosis, and confirm it persists (DynamoDB console
-shows new items — that's also your required submission screenshot).
+Verify health, the safe model catalog, and the Memory routes before testing the
+browser:
+
+```bash
+curl -s https://api.your-domain.com/api/v1/health
+curl -s https://api.your-domain.com/api/v1/llm/models
+```
+
+Then open the Vercel site, run a diagnosis, inspect `/memory`, and confirm the
+result persists. The model catalog must never contain API keys or provider base
+URLs.
 
 ## Updating after changes
 
 ```bash
 git pull            # or re-scp the apps/api dir
-docker compose up -d --build --force-recreate api
+bash deploy/start_backend.sh
 ```
+
+The helper rebuilds the image, runs the idempotent table/TTL setup, recreates
+the service, and checks local health. Deploy the backend before a frontend that
+depends on new endpoints.
 
 ## Logs / restart
 

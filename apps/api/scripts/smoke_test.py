@@ -76,8 +76,8 @@ def main() -> None:
     print("Sample DiagnosticAIResult validated OK.")
 
     from app.config import Settings
-    from app.services.ai_client import _uses_model_studio_qwen
-    from app.services.model_catalog import catalog_payload, server_model_by_id
+    from app.services.ai_client import _provider_connection, _uses_model_studio_qwen
+    from app.services.model_catalog import catalog_payload, server_model_by_id, server_model_pair
 
     qwen_settings = Settings(
         qwen_model_studio_api_key="test-qwen-key",
@@ -94,6 +94,24 @@ def main() -> None:
     assert selected_qwen and selected_qwen.config.model == "qwen3.7-max"
     assert selected_qwen.config.fast_model == "qwen3.7-max"
     assert server_model_by_id("deepseek-deep", qwen_settings) is None
+    mixed_settings = Settings(
+        qwen_model_studio_api_key="test-qwen-key",
+        deepseek_api_key="test-deepseek-key",
+    )
+    mixed_provider = server_model_pair("qwen-deep", "deepseek-fast", mixed_settings)
+    assert mixed_provider is not None
+    assert mixed_provider.model == "qwen3.7-max"
+    assert mixed_provider.fast_model == "deepseek-v4-flash"
+    assert mixed_provider.server_deep_model_id == "qwen-deep"
+    assert mixed_provider.server_fast_model_id == "deepseek-fast"
+    assert _provider_connection(mixed_provider, mixed_provider.model) == (
+        "test-qwen-key",
+        mixed_settings.qwen_model_studio_base_url,
+    )
+    assert _provider_connection(mixed_provider, mixed_provider.fast_model) == (
+        "test-deepseek-key",
+        mixed_settings.deepseek_base_url,
+    )
     print("Qwen Model Studio defaults + safe model catalog + JSON routing OK.")
 
     from app.core.mastery import update_skill_from_error

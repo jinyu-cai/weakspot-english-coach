@@ -155,6 +155,91 @@ def main() -> int:
         assert decision["supportingMemoryIds"]
         print("4. adaptive decision      -> fill_blank selected from outcome history")
 
+        # 5. A weakness graduates only after spaced, varied, successful
+        # practice. It leaves active recall without being deleted, and the
+        # same record reopens if fresh error evidence appears later.
+        graduation_candidate = MemoryCandidate(
+            kind="weakness",
+            canonicalKey="weakness.grammar.article",
+            content="The learner needs recurring practice with English articles.",
+            evidence="The learner omitted an article before a singular noun.",
+            confidence=0.9,
+            importance=0.85,
+        )
+        graduating = remember_candidates(
+            user_id,
+            [graduation_candidate],
+            source_type="diagnosis",
+            source_id="graduation-source",
+        )[0]
+        observed_at = datetime.now(timezone.utc) - timedelta(days=20)
+        stored = get_memory(user_id, graduating["id"])
+        assert stored
+        stored["lastObservedAt"] = observed_at.isoformat().replace("+00:00", "Z")
+        save_memory(stored)
+
+        practice_now = datetime.now(timezone.utc)
+        for index, days_ago in enumerate((15, 10, 5, 1, 0)):
+            attempt_at = practice_now - timedelta(days=days_ago)
+            record_practice_outcome_memory(
+                user_id=user_id,
+                skill_code="grammar.article",
+                exercise_type="fix_sentence" if index % 2 == 0 else "fill_blank",
+                score=90 + index,
+                is_correct=True,
+                attempt_id=f"att_grad_{uuid.uuid4().hex[:10]}",
+                created_at=attempt_at.isoformat().replace("+00:00", "Z"),
+                mastery=90,
+            )
+
+        resolved = get_memory(user_id, graduating["id"])
+        assert resolved and resolved["status"] == "resolved", resolved
+        assert resolved["graduation"]["eligible"] is True
+        assert all(resolved["graduation"]["criteria"].values())
+        pack = retrieve_memory_pack(
+            user_id,
+            "article weakness singular noun",
+            token_budget=200,
+            limit=8,
+            purpose="test_resolved_suppression",
+        )
+        assert graduating["id"] not in [item["id"] for item in pack["items"]]
+
+        reopened = remember_candidates(
+            user_id,
+            [graduation_candidate],
+            source_type="diagnosis",
+            source_id="relapse-source",
+        )[0]
+        assert reopened["id"] == graduating["id"]
+        assert reopened["status"] == "active"
+        assert reopened["reopenedCount"] == 1
+        assert reopened["graduation"]["eligible"] is False
+
+        # Exercise the practice-error relapse path independently of diagnosis.
+        stored = get_memory(user_id, graduating["id"])
+        assert stored
+        stored["status"] = "resolved"
+        stored["resolvedAt"] = practice_now.isoformat().replace("+00:00", "Z")
+        stored["resolutionReason"] = "spaced-evidence-v1"
+        save_memory(stored)
+        relapse_attempt = f"att_relapse_{uuid.uuid4().hex[:10]}"
+        record_practice_outcome_memory(
+            user_id=user_id,
+            skill_code="grammar.article",
+            exercise_type="rewrite_sentence",
+            score=45,
+            is_correct=False,
+            attempt_id=relapse_attempt,
+            created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            mastery=80,
+        )
+        practice_reopened = get_memory(user_id, graduating["id"])
+        assert practice_reopened and practice_reopened["status"] == "active"
+        assert practice_reopened["reopenedCount"] == 2
+        assert practice_reopened["sourceId"] == relapse_attempt
+        print("5. weakness graduation    -> resolved after spaced evidence; diagnosis/practice relapse reopens")
+
         # Source deletion retracts only that source's evidence. A corroborated
         # memory survives until its final independent source is removed.
         shared_candidate = MemoryCandidate(
@@ -175,9 +260,9 @@ def main() -> int:
         assert get_memory(user_id, shared["id"])["status"] == "active"
         forget_memories_from_source(user_id, "source-b")
         assert get_memory(user_id, shared["id"])["status"] == "forgotten"
-        print("5. source retraction      -> corroborated memory survives, final source forgets")
+        print("6. source retraction      -> corroborated memory survives, final source forgets")
 
-        # 6. API surface supports learner-owned create/edit/retrieve/forget and
+        # 7. API surface supports learner-owned create/edit/retrieve/forget and
         # emits an explainable retrieval trace.
         client = TestClient(app, headers={"X-Owner-Token": "memory-test-owner-token"})
         response = client.post("/api/v1/memory", json={
@@ -201,7 +286,7 @@ def main() -> int:
         assert api_pack["items"] and api_pack["items"][0].get("scoreBreakdown")
         response = client.delete(f"/api/v1/memory/{api_memory['id']}")
         assert response.status_code == 200 and response.json()["forgotten"] is True
-        print("6. Memory API             -> create/edit/retrieve/trace/forget passed")
+        print("7. Memory API             -> create/edit/retrieve/trace/forget passed")
 
         traces = list_memory_traces(user_id, limit=10)
         assert traces and traces[0].get("selected") is not None

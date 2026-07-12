@@ -25,7 +25,7 @@ from app.db.repositories import (
 from app.models.chat import AnalyzeSessionRequest, ChatCreateSessionRequest, ChatPredictRequest, ChatSendRequest
 from app.services.ai_client import LLMProviderConfig
 from app.services.chat_service import chat_reply, predict_completion
-from app.services.model_catalog import server_model_by_id, server_model_for_name
+from app.services.model_catalog import server_model_by_id, server_model_for_name, server_model_pair
 from app.services.memory_service import (
     heuristic_memory_candidates,
     memory_candidates_from_errors,
@@ -83,19 +83,29 @@ def _validate_text_model(model: str | None) -> str:
 def _new_session_model(
     requested_model: str | None,
     llm_provider: LLMProviderConfig | None,
-) -> tuple[str, str | None]:
+) -> tuple[str, str | None, str | None, str | None]:
     """Resolve a new session to its exact server model when possible."""
     if llm_provider is not None:
-        return llm_provider.model, llm_provider.server_model_id
+        text_model = (
+            llm_provider.model
+            if llm_provider.is_byok
+            else llm_provider.fast_model or llm_provider.model
+        )
+        return (
+            text_model,
+            llm_provider.server_model_id,
+            llm_provider.server_deep_model_id,
+            llm_provider.server_fast_model_id,
+        )
 
     # Kept for backwards-compatible clients that send an actual model name in
     # the request body. Resolve it to the provider that owns it, rather than
     # forwarding a DeepSeek model name to a Qwen endpoint (or vice versa).
     selected = server_model_for_name(requested_model or "")
     if selected is not None:
-        return selected.model, selected.id
+        return selected.model, selected.id, None, None
 
-    return _validate_text_model(requested_model), None
+    return _validate_text_model(requested_model), None, None, None
 
 
 def _session_provider(
@@ -109,6 +119,13 @@ def _session_provider(
     """
     if request_provider is not None and request_provider.is_byok:
         return request_provider
+
+    deep_model_id = str(session.get("llmServerDeepModelId") or "").strip()
+    fast_model_id = str(session.get("llmServerFastModelId") or "").strip()
+    if deep_model_id and fast_model_id:
+        selected_pair = server_model_pair(deep_model_id, fast_model_id)
+        if selected_pair is not None:
+            return selected_pair
 
     server_model_id = str(session.get("llmServerModelId") or "").strip()
     if server_model_id:
@@ -125,7 +142,9 @@ def _session_provider(
 
 def _session_text_model(session: dict, llm_provider: LLMProviderConfig | None) -> str:
     if llm_provider is not None:
-        return llm_provider.model
+        if llm_provider.is_byok:
+            return llm_provider.model
+        return llm_provider.fast_model or llm_provider.model
     stored = str(session.get("textModel") or "").strip()
     return stored if stored in _allowed_text_models() else _default_text_model()
 
@@ -137,7 +156,7 @@ def create_session(
     identity: Identity = Depends(rate_limited("chat")),
 ):
     req.userId = identity.user_id
-    text_model, server_model_id = _new_session_model(req.textModel, llm_provider)
+    text_model, server_model_id, deep_model_id, fast_model_id = _new_session_model(req.textModel, llm_provider)
     now = now_iso()
     session_id = f"cs_{uuid4().hex[:12]}"
     session = {
@@ -147,6 +166,8 @@ def create_session(
         "scenarioPrompt": req.scenarioPrompt,
         "textModel": text_model,
         "llmServerModelId": server_model_id,
+        "llmServerDeepModelId": deep_model_id,
+        "llmServerFastModelId": fast_model_id,
         "messageCount": 0,
         "summary": None,
         "createdAt": now,
@@ -234,7 +255,7 @@ def send_message(
             user_text=req.text,
             topic=session.get("topic"),
             llm_provider=effective_provider,
-            model=None if effective_provider else text_model,
+            model=text_model,
             max_tokens=None if _unlimited_llm_output(identity) else 2000,
             trace_id=request_id,
             memory_context=memory_pack.get("text"),

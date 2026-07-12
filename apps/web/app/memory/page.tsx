@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import {
   Archive,
   BrainCircuit,
+  CheckCircle2,
   Crosshair,
   Flag,
   Lightbulb,
@@ -70,6 +71,10 @@ export default function MemoryPage() {
   )
   const archived = useMemo(
     () => memories.filter((memory) => memory.status !== "active"),
+    [memories],
+  )
+  const resolved = useMemo(
+    () => memories.filter((memory) => memory.status === "resolved"),
     [memories],
   )
 
@@ -178,8 +183,9 @@ export default function MemoryPage() {
         </div>
       </header>
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <SummaryCard label={t.memory.active} value={active.length} icon={BrainCircuit} />
+        <SummaryCard label={t.memory.resolved} value={resolved.length} icon={CheckCircle2} />
         <SummaryCard label={t.memory.pinned} value={active.filter((memory) => memory.pinned).length} icon={Pin} />
         <SummaryCard label={t.memory.tokenBudget} value={preview ? `${preview.estimatedTokens}/${preview.tokenBudget}` : "700"} icon={Archive} />
         <SummaryCard label={t.memory.nextAction} value={decision?.targetSkillCode ?? "—"} icon={Target} compact />
@@ -281,8 +287,19 @@ export default function MemoryPage() {
             {visible.map((memory) => {
               const Icon = KIND_ICONS[memory.kind]
               const isEditing = editingId === memory.id
+              const graduation = memory.kind === "weakness" ? memory.graduation : undefined
+              const thresholds = graduation?.thresholds
               return (
-                <Card key={memory.id} className={memory.status === "active" ? "" : "opacity-70"}>
+                <Card
+                  key={memory.id}
+                  className={
+                    memory.status === "active"
+                      ? ""
+                      : memory.status === "resolved"
+                        ? "border-emerald-500/40 bg-emerald-500/[0.03]"
+                        : "opacity-70"
+                  }
+                >
                   <CardHeader>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={`flex size-8 items-center justify-center rounded-lg ${KIND_STYLES[memory.kind]}`}>
@@ -332,6 +349,41 @@ export default function MemoryPage() {
                     {memory.evidence && (
                       <div className="rounded-lg bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground">
                         <span className="font-medium text-foreground">{t.memory.evidence}: </span>{memory.evidence}
+                      </div>
+                    )}
+
+                    {graduation && (
+                      <div className="rounded-lg border border-border bg-muted/30 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium">{t.memory.graduationTitle}</p>
+                            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                              {memory.status === "resolved"
+                                ? t.memory.graduationResolved
+                                : t.memory.graduationDescription}
+                            </p>
+                          </div>
+                          {memory.status === "resolved" && <CheckCircle2 className="size-5 shrink-0 text-emerald-600" />}
+                        </div>
+                        <div className="mt-3">
+                          <div className="mb-1.5 flex justify-between text-xs text-muted-foreground">
+                            <span>{t.memory.graduationProgress}</span>
+                            <span>{Math.round((graduation.progress ?? 0) * 100)}%</span>
+                          </div>
+                          <Progress value={(graduation.progress ?? 0) * 100} />
+                        </div>
+                        {thresholds && (
+                          <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-4">
+                            <EvidenceMetric label={t.memory.attempts} value={`${graduation.attempts ?? 0}/${thresholds.minAttempts}`} passed={graduation.criteria?.attempts} />
+                            <EvidenceMetric label={t.memory.distinctDays} value={`${graduation.distinctDays ?? 0}/${thresholds.minDistinctDays}`} passed={graduation.criteria?.distinctDays} />
+                            <EvidenceMetric label={t.memory.spanDays} value={`${graduation.spanDays ?? 0}/${thresholds.minSpanDays} ${t.memory.days}`} passed={graduation.criteria?.spanDays} />
+                            <EvidenceMetric label={t.memory.recentSuccess} value={`${Math.round((graduation.recentSuccessRate ?? 0) * 100)}%/${Math.round(thresholds.minRecentSuccessRate * 100)}%`} passed={graduation.criteria?.recentSuccessRate} />
+                            <EvidenceMetric label={t.memory.recentAverage} value={`${graduation.recentAverageScore ?? 0}/${thresholds.minRecentAverageScore}`} passed={graduation.criteria?.recentAverageScore} />
+                            <EvidenceMetric label={t.memory.mastery} value={`${Math.round(graduation.mastery ?? 0)}/${thresholds.minMastery}`} passed={graduation.criteria?.mastery} />
+                            <EvidenceMetric label={t.memory.exerciseTypes} value={`${graduation.exerciseTypeCount ?? 0}/${thresholds.minExerciseTypes}`} passed={graduation.criteria?.exerciseTypes} />
+                            <EvidenceMetric label={t.memory.recurrenceFree} value={`${graduation.daysSinceLastObserved ?? 0}/${thresholds.recurrenceFreeDays} ${t.memory.days}`} passed={graduation.criteria?.recurrenceFree} />
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -452,6 +504,18 @@ function Metric({ label, value }: { label: string; value: number }) {
         <span>{Math.round(value * 100)}%</span>
       </div>
       <Progress value={value * 100} />
+    </div>
+  )
+}
+
+
+function EvidenceMetric({ label, value, passed }: { label: string; value: string; passed?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <p className="truncate text-muted-foreground">{label}</p>
+      <p className={passed ? "font-medium tabular-nums text-emerald-600" : "font-medium tabular-nums"}>
+        {value}
+      </p>
     </div>
   )
 }

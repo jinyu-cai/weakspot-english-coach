@@ -10,7 +10,7 @@ from fastapi import Header, HTTPException, Request, Response
 from app.config import settings
 from app.db.repositories import get_access_role, incr_rate_counter
 from app.services.ai_client import LLMProviderConfig
-from app.services.model_catalog import server_model_by_id
+from app.services.model_catalog import server_model_by_id, server_model_pair
 
 
 def get_llm_provider(
@@ -19,17 +19,46 @@ def get_llm_provider(
     x_llm_model: Annotated[Optional[str], Header(alias="X-LLM-Model")] = None,
     x_llm_fast_model: Annotated[Optional[str], Header(alias="X-LLM-Fast-Model")] = None,
     x_llm_server_model: Annotated[Optional[str], Header(alias="X-LLM-Server-Model")] = None,
+    x_llm_server_deep_model: Annotated[Optional[str], Header(alias="X-LLM-Server-Deep-Model")] = None,
+    x_llm_server_fast_model: Annotated[Optional[str], Header(alias="X-LLM-Server-Fast-Model")] = None,
 ) -> Optional[LLMProviderConfig]:
     """Build a selected server model or optional per-request BYOK config.
 
-    ``X-LLM-Server-Model`` is an opaque allowlisted ID. It selects a model whose
-    key and base URL stay on the server. BYOK remains separate and requires both
-    an API key and model, so it can never accidentally pair a user key with a
-    server-side model name.
+    The deep/fast server headers are opaque allowlisted IDs whose keys and base
+    URLs stay on the server. ``X-LLM-Server-Model`` remains as a legacy
+    single-model option. BYOK stays separate and requires both an API key and
+    model, so it can never accidentally pair a user key with a server model.
     """
     raw_values = [x_llm_api_key, x_llm_base_url, x_llm_model, x_llm_fast_model]
     requested_server_model = (x_llm_server_model or "").strip()
+    requested_server_deep_model = (x_llm_server_deep_model or "").strip()
+    requested_server_fast_model = (x_llm_server_fast_model or "").strip()
     has_byok_values = any(value and value.strip() for value in raw_values)
+
+    if requested_server_deep_model or requested_server_fast_model:
+        if has_byok_values or requested_server_model:
+            raise HTTPException(
+                status_code=400,
+                detail="Choose either a server model pair, a legacy server model, or a custom LLM provider.",
+            )
+        if not requested_server_deep_model or not requested_server_fast_model:
+            raise HTTPException(
+                status_code=400,
+                detail="Both server deep and fast model IDs are required.",
+            )
+        selected_pair = server_model_pair(
+            requested_server_deep_model,
+            requested_server_fast_model,
+        )
+        if selected_pair is None:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "invalid_server_model_pair",
+                    "message": "The selected server model combination is unavailable.",
+                },
+            )
+        return selected_pair
 
     if requested_server_model:
         if has_byok_values:

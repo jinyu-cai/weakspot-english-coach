@@ -23,11 +23,14 @@ import {
 import { DEMO_USER_ID } from "@/lib/mock-data"
 import type { ChatMessage, ChatSession, SessionAnalysis } from "@/lib/types"
 import {
+  DEFAULT_SERVER_DEEP_MODEL_ID,
+  DEFAULT_SERVER_FAST_MODEL_ID,
   formatServerModelOption,
   loadLLMSettings,
   LLM_SETTINGS_CHANGE_EVENT,
+  normalizeServerModelSettings,
   saveLLMSettings,
-  SERVER_DEFAULT_MODEL_ID,
+  serverModelsForMode,
   type ServerLLMModel,
 } from "@/lib/llm-settings"
 import { Button } from "@/components/ui/button"
@@ -69,8 +72,11 @@ export default function ChatPage() {
   const [serverModels, setServerModels] = useState<ServerLLMModel[]>([])
   const [loadingModels, setLoadingModels] = useState(true)
   const [modelsError, setModelsError] = useState(false)
-  const [selectedServerModelId, setSelectedServerModelId] = useState(
-    () => loadLLMSettings().serverModelId || SERVER_DEFAULT_MODEL_ID,
+  const [selectedServerDeepModelId, setSelectedServerDeepModelId] = useState(
+    () => loadLLMSettings().serverDeepModelId || DEFAULT_SERVER_DEEP_MODEL_ID,
+  )
+  const [selectedServerFastModelId, setSelectedServerFastModelId] = useState(
+    () => loadLLMSettings().serverFastModelId || DEFAULT_SERVER_FAST_MODEL_ID,
   )
   const [viewState, setViewState] = useState<ViewState>("chat")
   const [analysis, setAnalysis] = useState<SessionAnalysis | null>(null)
@@ -107,9 +113,9 @@ export default function ChatPage() {
       const models = await getServerLLMModels()
       if (models.length === 0) throw new Error("No server models available.")
       setServerModels(models)
-      setSelectedServerModelId((current) => (
-        models.some((model) => model.id === current) ? current : SERVER_DEFAULT_MODEL_ID
-      ))
+      const normalized = normalizeServerModelSettings(loadLLMSettings(), models)
+      setSelectedServerDeepModelId(normalized.serverDeepModelId)
+      setSelectedServerFastModelId(normalized.serverFastModelId)
     } catch {
       setServerModels([])
       setModelsError(true)
@@ -125,9 +131,9 @@ export default function ChatPage() {
         if (!active) return
         if (models.length === 0) throw new Error("No server models available.")
         setServerModels(models)
-        setSelectedServerModelId((current) => (
-          models.some((model) => model.id === current) ? current : SERVER_DEFAULT_MODEL_ID
-        ))
+        const normalized = normalizeServerModelSettings(loadLLMSettings(), models)
+        setSelectedServerDeepModelId(normalized.serverDeepModelId)
+        setSelectedServerFastModelId(normalized.serverFastModelId)
       })
       .catch(() => {
         if (!active) return
@@ -144,34 +150,29 @@ export default function ChatPage() {
 
   useEffect(() => {
     const syncServerModel = () => {
-      setSelectedServerModelId(loadLLMSettings().serverModelId || SERVER_DEFAULT_MODEL_ID)
+      const settings = loadLLMSettings()
+      setSelectedServerDeepModelId(settings.serverDeepModelId || DEFAULT_SERVER_DEEP_MODEL_ID)
+      setSelectedServerFastModelId(settings.serverFastModelId || DEFAULT_SERVER_FAST_MODEL_ID)
     }
     window.addEventListener(LLM_SETTINGS_CHANGE_EVENT, syncServerModel)
     return () => window.removeEventListener(LLM_SETTINGS_CHANGE_EVENT, syncServerModel)
   }, [])
 
-  const selectableServerModels = serverModels.length > 0
-    ? serverModels
-    : [{
-      id: selectedServerModelId || SERVER_DEFAULT_MODEL_ID,
-      label: selectedServerModelId === SERVER_DEFAULT_MODEL_ID
-        ? t.settings.serverDefault
-        : selectedServerModelId,
-      provider: "Server",
-      model: "",
-      adaptive: true,
-    }]
+  const deepServerModels = serverModelsForMode(serverModels, "deep")
+  const fastServerModels = serverModelsForMode(serverModels, "fast")
 
-  function selectServerModel(serverModelId: string) {
+  function selectServerModel(mode: "deep" | "fast", serverModelId: string) {
     const current = loadLLMSettings()
-    saveLLMSettings({
+    const next = {
       ...current,
-      serverModelId,
+      [mode === "deep" ? "serverDeepModelId" : "serverFastModelId"]: serverModelId,
       apiKey: "",
       model: "",
       fastModel: "",
-    })
-    setSelectedServerModelId(serverModelId)
+    }
+    saveLLMSettings(next)
+    setSelectedServerDeepModelId(next.serverDeepModelId)
+    setSelectedServerFastModelId(next.serverFastModelId)
   }
 
   function resetSession() {
@@ -293,21 +294,47 @@ export default function ChatPage() {
           </div>
           <div className="grid gap-1 text-xs font-medium text-muted-foreground">
             <span>{t.settings.serverModel}</span>
-            <div className="flex items-center gap-1">
+            <div className="grid gap-1 sm:grid-cols-2">
               <select
-                value={selectedServerModelId}
-                onChange={(event) => selectServerModel(event.target.value)}
+                aria-label={t.settings.deepModel}
+                value={selectedServerDeepModelId}
+                onChange={(event) => selectServerModel("deep", event.target.value)}
                 disabled={loadingModels && serverModels.length === 0}
-                className="h-8 min-w-52 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-60"
+                className="h-8 min-w-44 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-60"
               >
                 {loadingModels && serverModels.length === 0 ? (
-                  <option value={selectedServerModelId}>{t.settings.serverModelsLoading}</option>
-                ) : selectableServerModels.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {formatServerModelOption(model, modelLabels)}
-                  </option>
-                ))}
+                  <option value={selectedServerDeepModelId}>{t.settings.serverModelsLoading}</option>
+                ) : deepServerModels.length === 0 ? (
+                  <option value={selectedServerDeepModelId}>{selectedServerDeepModelId}</option>
+                ) : (
+                  deepServerModels.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {t.settings.serverDeep}: {formatServerModelOption(model, modelLabels)}
+                    </option>
+                  ))
+                )}
               </select>
+              <select
+                aria-label={t.settings.fastModel}
+                value={selectedServerFastModelId}
+                onChange={(event) => selectServerModel("fast", event.target.value)}
+                disabled={loadingModels && serverModels.length === 0}
+                className="h-8 min-w-44 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-60"
+              >
+                {loadingModels && serverModels.length === 0 ? (
+                  <option value={selectedServerFastModelId}>{t.settings.serverModelsLoading}</option>
+                ) : fastServerModels.length === 0 ? (
+                  <option value={selectedServerFastModelId}>{selectedServerFastModelId}</option>
+                ) : (
+                  fastServerModels.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {t.settings.serverFast}: {formatServerModelOption(model, modelLabels)}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+            <div className="flex justify-end">
               {modelsError && (
                 <Button
                   type="button"

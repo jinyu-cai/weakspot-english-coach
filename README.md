@@ -18,7 +18,7 @@ Primary API: [enapi.jinxxx.de/api/v1/health](https://enapi.jinxxx.de/api/v1/heal
 | Autonomous experience accumulation | Qwen extracts durable memory candidates during diagnosis/chat; practice outcomes update strategy statistics automatically |
 | Preferences and goals | Remembers feedback style, explanation language, learning focus, IELTS/career goals, and explicit manual memories |
 | Efficient retrieval | Qwen `text-embedding-v4` (256d) + lexical hybrid ranking + importance, recency, and access signals |
-| Timely forgetting | Kind-specific expiration, recency decay, conflict replacement, capacity pruning, user-controlled forget, DynamoDB TTL |
+| Timely forgetting | Kind-specific expiration, evidence-based weakness graduation and relapse, conflict replacement, capacity pruning, user-controlled forget, DynamoDB TTL |
 | Limited-context recall | At most six memories in a default 700-token Memory Pack; text chat keeps 12 recent turns |
 | Improving decisions | Next skill and exercise format use mastery, error density, spacing, historical score, productive difficulty, and exploration |
 | Explainability | Memory Center shows every memory; recall traces show selected IDs, component scores, and token use |
@@ -32,7 +32,7 @@ diagnose / chat / import / practice
   -> store MEMORY# rows in DynamoDB
   -> hybrid retrieve into a bounded Memory Pack
   -> personalize chat, diagnosis, plan, and exercise generation
-  -> grade outcome and update strategy effectiveness
+  -> grade outcome, update strategy effectiveness, and evaluate spaced mastery evidence
   -> make the next decision with more evidence
 ```
 
@@ -62,7 +62,7 @@ online as a manual standby and shares the same DynamoDB learner state. See
   history import.
 - Persistent learner weakness/mastery model and daily progress dashboard.
 - Memory Center at `/memory`: add, inspect, edit, pin, forget, preview recall,
-  inspect recall traces, and see the next-action decision.
+  inspect mastery evidence and recall traces, and see the next-action decision.
 - Seven-day plan built from bounded recent evidence plus goals, preferences,
   strategies, and memories.
 - Targeted practice whose skill and format adapt from actual learning outcomes.
@@ -86,6 +86,19 @@ apps/api/   FastAPI, Qwen integration, DynamoDB, MemoryAgent, tests, deploy
 apps/web/   Next.js application and Memory Center
 docs/       architecture, MemoryAgent design, submission, demo, deployment
 ```
+
+## Learn the codebase
+
+If you have some CS/programming background but are new to Python, FastAPI, and
+production Web engineering, start with the Chinese
+[beginner learning guide](development.md). It explains the required Python
+syntax, HTTP/FastAPI request lifecycle, route/service/repository layering,
+DynamoDB key design, the original diagnosis-plan-practice loop, server model
+selection, and the complete MemoryAgent flow using the current source code.
+
+After that, use [Architecture](docs/ARCHITECTURE.md) for the production view,
+[MemoryAgent Design](docs/MEMORY_AGENT_DESIGN.md) for algorithm details, and
+[Local Testing](LOCAL_TESTING.md) while making changes.
 
 ## Quickstart
 

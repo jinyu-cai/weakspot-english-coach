@@ -152,12 +152,28 @@ export async function getServerLLMModels(): Promise<ServerLLMModel[]> {
         label: "Qwen 3.7 Max",
         provider: "Qwen Model Studio",
         model: QWEN_37_MAX_MODEL,
+        mode: "deep",
       },
       {
         id: "qwen-fast",
         label: "Qwen 3.7 Plus",
         provider: "Qwen Model Studio",
         model: QWEN_37_PLUS_MODEL,
+        mode: "fast",
+      },
+      {
+        id: "deepseek-deep",
+        label: "DeepSeek · Deep",
+        provider: "DeepSeek",
+        model: "deepseek-v4-pro",
+        mode: "deep",
+      },
+      {
+        id: "deepseek-fast",
+        label: "DeepSeek · Fast",
+        provider: "DeepSeek",
+        model: "deepseek-v4-flash",
+        mode: "fast",
       },
     ]
   }
