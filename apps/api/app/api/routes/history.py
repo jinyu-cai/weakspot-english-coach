@@ -39,7 +39,7 @@ def get_history(user_id: str, identity: Identity = Depends(resolve_identity)):
     return {
         "submissions": list_recent_submissions(identity.user_id, limit=20),
         "errors": list_recent_errors(identity.user_id, limit=20),
-        "notes": list_notes(identity.user_id, limit=50),
+        "notes": list_notes(identity.user_id),
     }
 
 

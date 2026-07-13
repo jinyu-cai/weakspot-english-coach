@@ -224,13 +224,25 @@ def save_note(note: dict) -> None:
     _put(item)
 
 
-def list_notes(user_id: str, limit: int = 50) -> list:
-    res = table.query(
-        KeyConditionExpression=Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("NOTE#"),
-        ScanIndexForward=False,
-        Limit=limit,
-    )
-    return [clean(i) for i in res.get("Items", [])]
+def list_notes(user_id: str, limit: Optional[int] = None) -> list:
+    if limit is not None and limit <= 0:
+        return []
+
+    notes: list[dict] = []
+    query_kwargs = {
+        "KeyConditionExpression": Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("NOTE#"),
+        "ScanIndexForward": False,
+    }
+    while limit is None or len(notes) < limit:
+        if limit is not None:
+            query_kwargs["Limit"] = limit - len(notes)
+        res = table.query(**query_kwargs)
+        notes.extend(clean(item) for item in res.get("Items", []))
+        last_key = res.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_kwargs["ExclusiveStartKey"] = last_key
+    return notes if limit is None else notes[:limit]
 
 
 def get_note(user_id: str, created_at: str, note_id: str) -> Optional[dict]:
