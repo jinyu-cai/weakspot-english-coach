@@ -27,7 +27,7 @@ export function ErrorCard({ error }: { error: EnglishError }) {
     <Card className="overflow-hidden">
       <CardContent className="flex flex-col gap-4 pt-6">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-lg bg-secondary px-2.5 py-1 text-xs font-semibold text-secondary-foreground">
+          <span className="min-w-0 rounded-lg bg-secondary px-2.5 py-1 text-xs font-semibold text-secondary-foreground [overflow-wrap:anywhere]">
             {error.category}
           </span>
           <span className={cn("rounded-lg border px-2 py-0.5 text-xs font-medium", severity.chip)}>
@@ -36,12 +36,12 @@ export function ErrorCard({ error }: { error: EnglishError }) {
         </div>
 
         <div className="flex flex-col gap-2 rounded-xl bg-muted/50 p-3 text-sm sm:flex-row sm:items-center sm:gap-3">
-          <span className="font-mono text-danger line-through decoration-danger/50">{error.originalText}</span>
+          <span className="min-w-0 font-mono text-danger line-through decoration-danger/50 [overflow-wrap:anywhere]">{error.originalText}</span>
           <ArrowRight className="hidden size-4 shrink-0 text-muted-foreground sm:block" />
-          <span className="font-mono font-medium text-success">{error.correctedText}</span>
+          <span className="min-w-0 font-mono font-medium text-success [overflow-wrap:anywhere]">{error.correctedText}</span>
         </div>
 
-        <p className="text-sm leading-relaxed text-foreground">{error.explanationZh}</p>
+        <p className="text-sm leading-relaxed text-foreground [overflow-wrap:anywhere]">{error.explanationZh}</p>
 
         <Collapsible open={open} onOpenChange={setOpen}>
           <CollapsibleTrigger
@@ -56,7 +56,7 @@ export function ErrorCard({ error }: { error: EnglishError }) {
             <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", open && "rotate-180")} />
           </CollapsibleTrigger>
           <CollapsibleContent className="overflow-hidden data-ending-style:h-0 data-starting-style:h-0">
-            <p className="mt-3 rounded-lg bg-accent/40 p-3 text-sm leading-relaxed text-foreground">
+            <p className="mt-3 rounded-lg bg-accent/40 p-3 text-sm leading-relaxed text-foreground [overflow-wrap:anywhere]">
               {error.microLessonZh}
             </p>
           </CollapsibleContent>
@@ -64,7 +64,7 @@ export function ErrorCard({ error }: { error: EnglishError }) {
 
         <div className="flex items-center gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
           <Target className="size-3.5 text-primary" />
-          <span>
+          <span className="min-w-0 [overflow-wrap:anywhere]">
             {t.diagnose.report.practiceGoal} <span className="text-foreground">{error.practiceGoal}</span>
           </span>
         </div>

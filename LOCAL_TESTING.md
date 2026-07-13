@@ -96,6 +96,17 @@ Login
 
 Daily Wins should load at `/stats` with mock 7-day stats.
 
+For Notebook, verify both filter layers:
+
+```text
+Current / Previous / All counts match the visible cards
+Expression / Vocabulary / Grammar filters apply inside the selected state
+Previous cards explain that resolved-weakness notes are retained for reference
+The previous mock note moves into the Previous view
+Markdown export contains Current and Previous notes, not only the visible filter
+History delete opens a confirmation dialog and names associated corrections/notes
+```
+
 ## Backend smoke and integration tests
 
 These tests do not need real AWS, Docker, or an LLM key.
@@ -104,6 +115,7 @@ These tests do not need real AWS, Docker, or an LLM key.
 cd apps/api
 uv run python -m scripts.smoke_test
 uv run python -m scripts.integration_test
+uv run python -m scripts.dedup_test
 DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_agent_test
 DYNAMODB_ENDPOINT_URL= uv run python -m scripts.stealth_input_test
 DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
@@ -111,7 +123,11 @@ DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
 
 The integration test covers diagnose, profile, plan, practice generation,
 practice submit, history, auth/rate limiting, server model routing, realtime
-session rules, chat import, session analysis, and daily stats. The dedicated
+session rules, chat import, session analysis, daily stats, an unbounded
+multi-page Notebook, and reversible current/previous note classification. Run
+`uv run python -m scripts.dedup_test` as the focused gate for confirmed manual
+History deletion; it verifies associated Notebook notes are removed from the
+backend together with the submission and errors. The dedicated
 MemoryAgent test covers merge, conflict replacement, expiry, bounded recall,
 source retraction, adaptive decisions, and Memory APIs.
 
@@ -157,6 +173,8 @@ Chat quietly exercises a due weakness and reveals the result only in the
 post-session learning summary; no-opportunity exchanges do not lower mastery
 Daily Wins shows real backend stats
 Dashboard and History still load
+Notebook separates Current and Previous notes; resolving a weakness retains its
+note, while confirmed manual History deletion removes the associated note
 ```
 
 Local HTTP is fine for local testing. Production Vercel is HTTPS, so the backend

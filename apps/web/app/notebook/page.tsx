@@ -1,14 +1,16 @@
 "use client"
 
+import { useState } from "react"
 import useSWR, { mutate } from "swr"
 import { toast } from "sonner"
-import { BookOpen, Lightbulb, BookA, GraduationCap, Download } from "lucide-react"
+import { Archive, BookOpen, Lightbulb, BookA, GraduationCap, Download } from "lucide-react"
 import { deleteNote, getNotes } from "@/lib/api-client"
 import type { LearningNote } from "@/lib/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { EmptyState } from "@/components/empty-state"
 import { NoteCard } from "@/components/note-card"
 import { useLanguage } from "@/components/language-provider"
@@ -17,18 +19,22 @@ export default function NotebookPage() {
   const { data, isLoading } = useSWR("notes", () => getNotes())
   const notes = data?.notes ?? []
   const { language, t } = useLanguage()
+  const [noteView, setNoteView] = useState<"current" | "previous" | "all">("current")
 
-  const expressionNotes = notes.filter((n) => n.type === "expression")
-  const vocabularyNotes = notes.filter((n) => n.type === "vocabulary")
-  const grammarNotes = notes.filter((n) => n.type === "grammar")
+  const currentNotes = notes.filter((note) => note.learningState !== "previous")
+  const previousNotes = notes.filter((note) => note.learningState === "previous")
+  const visibleNotes = noteView === "all" ? notes : noteView === "previous" ? previousNotes : currentNotes
+  const expressionNotes = visibleNotes.filter((n) => n.type === "expression")
+  const vocabularyNotes = visibleNotes.filter((n) => n.type === "vocabulary")
+  const grammarNotes = visibleNotes.filter((n) => n.type === "grammar")
 
   function exportNotes() {
     if (!notes.length) return
 
     const sections: [string, LearningNote[]][] = [
-      [t.notebook.expression, expressionNotes],
-      [t.notebook.vocabulary, vocabularyNotes],
-      [t.notebook.grammar, grammarNotes],
+      [t.notebook.expression, notes.filter((note) => note.type === "expression")],
+      [t.notebook.vocabulary, notes.filter((note) => note.type === "vocabulary")],
+      [t.notebook.grammar, notes.filter((note) => note.type === "grammar")],
     ]
 
     const locale = language === "zh-CN" ? "zh-CN" : "en-US"
@@ -77,7 +83,13 @@ export default function NotebookPage() {
 
   function renderNoteList(items: LearningNote[]) {
     if (!items.length) {
-      return <EmptyState icon={BookOpen} title={t.notebook.noNotes} description={t.notebook.noNotesDescription} />
+      return (
+        <EmptyState
+          icon={noteView === "previous" ? Archive : BookOpen}
+          title={noteView === "previous" ? t.notebook.noPreviousNotes : t.notebook.noNotes}
+          description={noteView === "previous" ? t.notebook.noPreviousNotesDescription : t.notebook.noNotesDescription}
+        />
+      )
     }
     return (
       <div className="flex flex-col gap-4">
@@ -91,10 +103,10 @@ export default function NotebookPage() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
       <header className="flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <h1 className="font-heading text-3xl font-bold tracking-tight">{t.notebook.title}</h1>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h1 className="min-w-0 break-words font-heading text-3xl font-bold tracking-tight">{t.notebook.title}</h1>
           {notes.length > 0 && (
-            <Button variant="outline" size="sm" onClick={exportNotes}>
+            <Button variant="outline" size="sm" className="shrink-0" onClick={exportNotes}>
               <Download data-icon="inline-start" />
               {t.notebook.export}
             </Button>
@@ -112,35 +124,73 @@ export default function NotebookPage() {
           <Skeleton className="h-40 w-full rounded-xl" />
         </div>
       ) : (
-        <Tabs defaultValue="all">
-          <TabsList>
-            <TabsTrigger value="all">
-              <BookOpen data-icon="inline-start" />
-              {t.notebook.all}
-              <Badge variant="secondary" className="ml-1 tabular-nums">{notes.length}</Badge>
-            </TabsTrigger>
-            <TabsTrigger value="expression">
-              <Lightbulb data-icon="inline-start" />
-              {t.notebook.expression}
-              <Badge variant="secondary" className="ml-1 tabular-nums">{expressionNotes.length}</Badge>
-            </TabsTrigger>
-            <TabsTrigger value="vocabulary">
-              <BookA data-icon="inline-start" />
-              {t.notebook.vocabulary}
-              <Badge variant="secondary" className="ml-1 tabular-nums">{vocabularyNotes.length}</Badge>
-            </TabsTrigger>
-            <TabsTrigger value="grammar">
-              <GraduationCap data-icon="inline-start" />
-              {t.notebook.grammar}
-              <Badge variant="secondary" className="ml-1 tabular-nums">{grammarNotes.length}</Badge>
-            </TabsTrigger>
-          </TabsList>
+        <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="text-sm font-medium">{t.notebook.viewLabel}</div>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t.notebook.viewDescription}</p>
+            </div>
+            <ToggleGroup
+              value={[noteView]}
+              onValueChange={(values) => {
+                const selected = values.find((value) => value === "current" || value === "previous" || value === "all")
+                if (selected) setNoteView(selected)
+              }}
+              size="sm"
+              className="grid w-full grid-cols-1 sm:flex sm:w-fit"
+            >
+              <ToggleGroupItem className="w-full justify-start sm:w-auto sm:justify-center" value="current">
+                {t.notebook.currentView} · {currentNotes.length}
+              </ToggleGroupItem>
+              <ToggleGroupItem className="w-full justify-start sm:w-auto sm:justify-center" value="previous">
+                {t.notebook.previousView} · {previousNotes.length}
+              </ToggleGroupItem>
+              <ToggleGroupItem className="w-full justify-start sm:w-auto sm:justify-center" value="all">
+                {t.notebook.allView} · {notes.length}
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </div>
 
-          <TabsContent value="all" className="mt-6">{renderNoteList(notes)}</TabsContent>
-          <TabsContent value="expression" className="mt-6">{renderNoteList(expressionNotes)}</TabsContent>
-          <TabsContent value="vocabulary" className="mt-6">{renderNoteList(vocabularyNotes)}</TabsContent>
-          <TabsContent value="grammar" className="mt-6">{renderNoteList(grammarNotes)}</TabsContent>
-        </Tabs>
+          {noteView === "previous" ? (
+            <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4">
+              <Archive className="mt-0.5 size-5 shrink-0 text-primary" />
+              <div className="min-w-0">
+                <div className="font-medium">{t.notebook.previousInfoTitle}</div>
+                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{t.notebook.previousInfoDescription}</p>
+              </div>
+            </div>
+          ) : null}
+
+          <Tabs defaultValue="all">
+            <TabsList className="grid w-full grid-cols-1 gap-1 group-data-horizontal/tabs:h-auto min-[360px]:grid-cols-2 sm:inline-flex sm:w-fit sm:gap-0 sm:group-data-horizontal/tabs:h-8">
+              <TabsTrigger className="h-auto min-h-8 py-1.5 sm:h-[calc(100%-1px)] sm:min-h-0 sm:py-0.5" value="all">
+                <BookOpen data-icon="inline-start" />
+                {t.notebook.all}
+                <Badge variant="secondary" className="ml-1 tabular-nums">{visibleNotes.length}</Badge>
+              </TabsTrigger>
+              <TabsTrigger className="h-auto min-h-8 py-1.5 sm:h-[calc(100%-1px)] sm:min-h-0 sm:py-0.5" value="expression">
+                <Lightbulb data-icon="inline-start" />
+                {t.notebook.expression}
+                <Badge variant="secondary" className="ml-1 tabular-nums">{expressionNotes.length}</Badge>
+              </TabsTrigger>
+              <TabsTrigger className="h-auto min-h-8 py-1.5 sm:h-[calc(100%-1px)] sm:min-h-0 sm:py-0.5" value="vocabulary">
+                <BookA data-icon="inline-start" />
+                {t.notebook.vocabulary}
+                <Badge variant="secondary" className="ml-1 tabular-nums">{vocabularyNotes.length}</Badge>
+              </TabsTrigger>
+              <TabsTrigger className="h-auto min-h-8 py-1.5 sm:h-[calc(100%-1px)] sm:min-h-0 sm:py-0.5" value="grammar">
+                <GraduationCap data-icon="inline-start" />
+                {t.notebook.grammar}
+                <Badge variant="secondary" className="ml-1 tabular-nums">{grammarNotes.length}</Badge>
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="all" className="mt-6">{renderNoteList(visibleNotes)}</TabsContent>
+            <TabsContent value="expression" className="mt-6">{renderNoteList(expressionNotes)}</TabsContent>
+            <TabsContent value="vocabulary" className="mt-6">{renderNoteList(vocabularyNotes)}</TabsContent>
+            <TabsContent value="grammar" className="mt-6">{renderNoteList(grammarNotes)}</TabsContent>
+          </Tabs>
+        </div>
       )}
     </div>
   )

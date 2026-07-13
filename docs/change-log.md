@@ -18,16 +18,86 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-13 — Notebook lifecycle and confirmed History deletion
+
+Date: 2026-07-13
+
+Branch: `feature/note-lifecycle-ui`
+
+GitHub status: Local branch; not pushed.
+
+Deploy status: Not deployed.
+
+Summary:
+
+- Kept automatic weakness graduation non-destructive: notes linked only to
+  resolved weaknesses appear in a reversible Previous view and return to
+  Current if later evidence reopens a weakness.
+- Added Current / Previous / All Notebook state filters above the existing
+  expression / vocabulary / grammar filters, with explicit model-uncertainty
+  messaging on retained previous notes.
+- Replaced the History delete dropdown with a confirmation dialog that explains
+  the permanent effect and names the related correction/note counts.
+- Made confirmed manual History deletion remove associated Notebook rows in the
+  backend and return `removedNotes`, while keeping automatic graduation separate.
+- Expanded frontend, backend, learning-guide, and local-testing documentation
+  for note sources, unbounded DynamoDB reads, export, deletion, and retention.
+- Fixed narrow-screen clipping in the global header, Notebook state/category
+  controls, Notebook/History cards, and long learner-generated text.
+- Documented Oracle as the normal production origin and Alibaba/Qwen as a
+  release-matched origin used only for the final submission demo. The stable
+  API hostname remains unchanged while Cloudflare switches the origin.
+
+Files changed:
+
+- `apps/api/app/api/routes/history.py`
+- `apps/api/app/api/routes/notes.py`
+- `apps/api/app/db/repositories.py`
+- `apps/api/app/services/notebook_service.py`
+- `apps/api/scripts/dedup_test.py`
+- `apps/api/scripts/integration_test.py`
+- Notebook/History frontend components, types, mock data, and localized copy
+- `apps/web/components/app-shell.tsx`, `auth-button.tsx`, and `error-card.tsx`
+- `apps/api/README.md`, `apps/web/README.md`, `LOCAL_TESTING.md`, and
+  `development.md`
+- `README.md`, `docs/ARCHITECTURE.md`,
+  `docs/ALIBABA_QWEN_DEPLOYMENT.md`, and `docs/project-structure-plan.md`
+
+Tests run:
+
+- `scripts.smoke_test` passed.
+- `scripts.dedup_test` passed manual deletion, note cascade, weakness rollback,
+  and fresh re-diagnosis after deletion.
+- `scripts.integration_test` passed the full loop, 57-note multi-page retrieval,
+  and reversible Current/Previous classification.
+- TypeScript, ESLint, and the Next.js production build passed.
+- Code-level responsive audit passed; controls no longer depend on content
+  width below the `sm` breakpoint and long content uses explicit wrapping.
+
+Known issues:
+
+- Current/Previous classification depends on retained weakness source
+  references. Physical cleanup of old resolved notes is intentionally not yet
+  enabled and needs a separately reviewed retention policy.
+- Automated browser visual QA was unavailable in the local tool session; the
+  Vercel Preview still needs a manual narrow-screen review.
+- The current public API origin is still Alibaba. This machine has no Cloudflare
+  API credential, so returning `enapi.jinxxx.de` to Oracle requires the DNS
+  change in the Cloudflare dashboard after both deployments are verified.
+
+Next step: Complete the production build/tests, review the Vercel Preview, deploy
+the same merged commit to both servers, then return the Cloudflare origin to
+Oracle and verify the request reaches Oracle.
+
 ## 2026-07-12 — Stealth practice and authentic Input Learning
 
 Date: 2026-07-12
 
 Branch: `feature/stealth-input-learning`
 
-GitHub status: Not pushed.
+GitHub status: Merged in PR #32.
 
-Deploy status: Not deployed. Backend and frontend must be deployed together
-after local and preview validation.
+Deploy status: LIVE on Vercel and the Alibaba ECS primary backend.
 
 Summary:
 
@@ -132,8 +202,8 @@ Known issues:
   pre-consumption attention mission; the server does not bypass media access or
   copyright controls.
 
-Next step: Push a PR, validate GitHub/Vercel Preview, merge, and deploy the same
-commit to the primary and standby backend servers.
+Next step: Completed in PR #32 and deployed; continue monitoring the live
+stealth/Input Learning flows.
 
 ## 2026-07-12 — Independent Fast / Deep server-model pairing
 
@@ -141,10 +211,9 @@ Date: 2026-07-12
 
 Branch: `release/memory-graduation-model-pairing`
 
-GitHub status: Not pushed.
+GitHub status: Merged in PR #31.
 
-Deploy status: Not deployed. Deploy the backend before the frontend because
-the new browser sends paired server-model headers.
+Deploy status: LIVE on Vercel and the Alibaba ECS primary backend.
 
 Summary:
 
@@ -168,8 +237,8 @@ Tests run:
 - `pnpm build` passed with all application routes generated.
 - `git diff --check` passed.
 
-Next step: Commit and push the combined local work, deploy both backend
-containers, then deploy the Vercel frontend and run live Fast/Deep probes.
+Next step: Completed in PR #31; keep the model catalog and mixed-provider
+routing covered by release tests.
 
 ## 2026-07-10 — Qwen Track 1 MemoryAgent
 

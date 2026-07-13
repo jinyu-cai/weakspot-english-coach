@@ -710,7 +710,7 @@ export async function deleteSubmission(
 ): Promise<DeleteSubmissionResponse> {
   if (USE_MOCK) {
     await delay(400)
-    return { deleted: true, submissionId, removedErrors: 0, updatedSkills: [], profile: null }
+    return { deleted: true, submissionId, removedErrors: 0, removedNotes: 0, updatedSkills: [], profile: null }
   }
   const params = new URLSearchParams({ createdAt })
   return apiFetch<DeleteSubmissionResponse>(`/history/${submissionId}?${params.toString()}`, {

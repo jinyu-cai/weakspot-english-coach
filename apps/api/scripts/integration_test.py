@@ -65,7 +65,7 @@ def main() -> int:
 
         from app.api.deps import _client_ip, make_session_jwt
         from app.config import settings
-        from app.db.repositories import list_chat_messages, save_note, update_chat_session_fields
+        from app.db.repositories import list_chat_messages, save_memory, save_note, update_chat_session_fields
         from app.main import app
         from app.services.realtime_sideband import RealtimeSidebandState, _handle_realtime_event
         from scripts.create_table import create_table
@@ -210,6 +210,8 @@ def main() -> int:
 
         # Notebook is intentionally unbounded. Seed enough notes to catch the
         # former repository default of 50 and verify the API returns them all.
+        resolved_only_source = "resolved-note-source"
+        mixed_source = "active-and-resolved-note-source"
         seeded_note_ids = set()
         for index in range(55):
             note_id = f"note-unbounded-{index:03d}"
@@ -217,6 +219,11 @@ def main() -> int:
             save_note({
                 "id": note_id,
                 "userId": "owner",
+                "submissionId": (
+                    resolved_only_source if index == 0
+                    else mixed_source if index == 1
+                    else f"unbounded-note-source-{index:03d}"
+                ),
                 "type": "expression",
                 "topic": f"Unbounded notebook note {index}",
                 "original": f"Original {index}",
@@ -224,8 +231,41 @@ def main() -> int:
                 # The combined rows exceed DynamoDB's 1 MB Query page, so this
                 # also verifies that list_notes follows LastEvaluatedKey.
                 "explanation": "Notebook pagination regression coverage. " + ("x" * 24000),
+                "context": "Integration test",
                 "examples": [],
                 "createdAt": f"2026-07-13T12:{index:02d}:00Z",
+            })
+
+        for memory_id, status, source_id, skill_code in [
+            ("resolved-note-memory", "resolved", resolved_only_source, "grammar.resolved_note"),
+            ("mixed-resolved-note-memory", "resolved", mixed_source, "grammar.mixed_resolved"),
+            ("mixed-active-note-memory", "active", mixed_source, "grammar.mixed_active"),
+        ]:
+            save_memory({
+                "id": memory_id,
+                "userId": "owner",
+                "kind": "weakness",
+                "canonicalKey": f"weakness.{skill_code}",
+                "content": f"Notebook lifecycle coverage for {skill_code}.",
+                "evidence": "Integration test evidence.",
+                "confidence": 0.9,
+                "importance": 0.8,
+                "status": status,
+                "pinned": False,
+                "sourceType": "diagnosis",
+                "sourceId": source_id,
+                "sourceRefs": [{
+                    "sourceType": "diagnosis",
+                    "sourceId": source_id,
+                    "evidence": "Integration test evidence.",
+                    "createdAt": "2026-07-13T12:00:00Z",
+                }],
+                "errorFingerprint": {"skillCode": skill_code},
+                "observationCount": 1,
+                "accessCount": 0,
+                "createdAt": "2026-07-13T12:00:00Z",
+                "updatedAt": "2026-07-13T12:00:00Z",
+                **({"resolvedAt": "2026-07-13T12:30:00Z"} if status == "resolved" else {}),
             })
         r = client.get("/api/v1/notes")
         assert r.status_code == 200, r.text
@@ -233,6 +273,10 @@ def main() -> int:
         returned_note_ids = {note["id"] for note in returned_notes}
         assert seeded_note_ids <= returned_note_ids, len(returned_notes)
         assert len(returned_notes) > 50, len(returned_notes)
+        notes_by_id = {note["id"]: note for note in returned_notes}
+        assert notes_by_id["note-unbounded-000"]["learningState"] == "previous"
+        assert notes_by_id["note-unbounded-001"]["learningState"] == "current"
+        assert notes_by_id["note-unbounded-002"]["learningState"] == "current"
         print(f"   GET  /notes             -> {len(returned_notes)} notes, no 50-note cap")
 
         r = client.get(f"/api/v1/history/{user}")

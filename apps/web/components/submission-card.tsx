@@ -9,13 +9,15 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { ErrorCard } from "@/components/error-card"
 import { NoteCard } from "@/components/note-card"
 import { useLanguage } from "@/components/language-provider"
@@ -49,6 +51,7 @@ export function SubmissionCard({
   const changed = submission.correctedText && submission.correctedText !== submission.originalText
   const [deleting, setDeleting] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   const errorCount = errors?.length ?? 0
   const noteCount = notes?.length ?? 0
@@ -59,6 +62,9 @@ export function SubmissionCard({
     setDeleting(true)
     try {
       await onDelete(submission)
+      setDeleteOpen(false)
+    } catch {
+      // The page owns the error toast; keep this dialog open for a retry.
     } finally {
       setDeleting(false)
     }
@@ -97,12 +103,12 @@ export function SubmissionCard({
             <ModeIcon className="size-3.5" />
             {modeLabel}
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             {submission.cefrEstimate ? <CefrBadge level={submission.cefrEstimate} size="sm" showLabel={false} /> : null}
             <span className="text-xs text-muted-foreground">{formatDate(submission.createdAt, locale, t.common.unknownDate)}</span>
             {onDelete ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger
+              <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+                <DialogTrigger
                   render={
                     <Button
                       variant="ghost"
@@ -115,34 +121,45 @@ export function SubmissionCard({
                     </Button>
                   }
                 />
-                <DropdownMenuContent align="end" className="max-w-64">
-                  <DropdownMenuLabel>{t.history.deleteEntry}</DropdownMenuLabel>
-                  <p className="px-1.5 pb-1 text-xs leading-snug text-muted-foreground">
-                    {t.history.deleteDescription}
-                  </p>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem variant="destructive" onClick={handleDelete}>
-                    <Trash2 />
-                    {t.history.deletePermanently}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>{t.history.deleteEntry}</DialogTitle>
+                    <DialogDescription>{t.history.deleteDescription}</DialogDescription>
+                  </DialogHeader>
+                  {detailParts.length ? (
+                    <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive [overflow-wrap:anywhere]">
+                      <span className="font-medium">{t.history.deleteIncludes}</span> {detailParts.join(" · ")}
+                    </div>
+                  ) : null}
+                  <DialogFooter>
+                    <DialogClose render={<Button variant="outline" disabled={deleting} />}>
+                      {t.common.cancel}
+                    </DialogClose>
+                    <Button variant="destructive" disabled={deleting} onClick={handleDelete}>
+                      <Trash2 />
+                      {deleting ? t.common.removing : t.history.deletePermanently}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             ) : null}
           </div>
         </div>
 
         <div className="flex flex-col gap-2 rounded-xl bg-muted/50 p-3 text-sm leading-relaxed">
-          <p className={changed ? "text-danger" : "text-foreground"}>{submission.originalText}</p>
+          <p className={cn("[overflow-wrap:anywhere]", changed ? "text-danger" : "text-foreground")}>
+            {submission.originalText}
+          </p>
           {changed ? (
             <>
               <ArrowRight className="size-4 text-muted-foreground" />
-              <p className="text-success">{submission.correctedText}</p>
+              <p className="text-success [overflow-wrap:anywhere]">{submission.correctedText}</p>
             </>
           ) : null}
         </div>
 
         {submission.summaryZh ? (
-          <p className="text-sm leading-relaxed text-muted-foreground">{submission.summaryZh}</p>
+          <p className="text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">{submission.summaryZh}</p>
         ) : null}
 
         {hasDetails ? (
@@ -152,11 +169,11 @@ export function SubmissionCard({
                 "flex w-full items-center justify-between rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium transition-colors hover:bg-muted",
               )}
             >
-              <span className="flex items-center gap-2 text-foreground">
-                <Lightbulb className="size-4 text-primary" />
+              <span className="flex min-w-0 items-center gap-2 text-left text-foreground [overflow-wrap:anywhere]">
+                <Lightbulb className="size-4 shrink-0 text-primary" />
                 {detailParts.join(" · ")}
               </span>
-              <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", expanded && "rotate-180")} />
+              <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-180")} />
             </CollapsibleTrigger>
             <CollapsibleContent className="overflow-hidden data-ending-style:h-0 data-starting-style:h-0">
               <div className="mt-3 flex flex-col gap-3">

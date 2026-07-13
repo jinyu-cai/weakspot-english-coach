@@ -56,4 +56,7 @@ Confirm `https://englearning.jinxxx.de` loads the frontend and uses
 - Keep real secrets out of GitHub. Only `.env.example` templates should be tracked.
 - If v0 pushes directly to this repo, confirm it targets `apps/web`.
 - Rebuild the backend only when backend files change:
-  `ssh oracle-us-west 'cd ~/weakspot-backend && docker compose up -d --build'`
+  `ssh oracle-us-sj 'cd ~/weakspot-backend && docker compose up -d --build'`.
+- Keep Oracle as the normal Cloudflare origin. Keep Alibaba on the same release,
+  and switch the stable API hostname to Alibaba only for the final submission
+  demonstration; switch it back to Oracle afterwards.

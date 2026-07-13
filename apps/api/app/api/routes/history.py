@@ -7,6 +7,7 @@ from app.core.mastery import reverse_skill_from_error
 from app.core.text_hash import normalized_text_hash
 from app.db.repositories import (
     delete_error,
+    delete_note,
     delete_skill,
     delete_submission,
     delete_submission_hash,
@@ -14,6 +15,7 @@ from app.db.repositories import (
     get_submission,
     list_errors_for_submission,
     list_notes,
+    list_notes_for_submission,
     list_recent_errors,
     list_recent_submissions,
     list_skills,
@@ -52,9 +54,11 @@ def delete_history_entry(
     """Delete one submission and roll back its contribution to the weakness model.
 
     `createdAt` (the submission's ISO timestamp, which the client already has)
-    pins the exact item. Each error this submission recorded is removed and its
-    skill penalty reversed, so the learner profile reflects only kept writing.
-    Identity is server-resolved, so a caller can only delete their own data.
+    pins the exact item. Each error and Notebook note this submission recorded
+    is permanently removed, and its skill penalty is reversed so the learner
+    profile reflects only kept writing. Identity is server-resolved, so a
+    caller can only delete their own data. Automatic weakness graduation never
+    calls this route and does not delete notes.
     """
     user_id = identity.user_id
     createdAt = _fix_tz(createdAt)
@@ -64,6 +68,7 @@ def delete_history_entry(
 
     now = now_iso()
     errors = list_errors_for_submission(user_id, createdAt, submission_id)
+    notes = list_notes_for_submission(user_id, createdAt, submission_id)
     skills_by_code = {s["skillCode"]: s for s in list_skills(user_id)}
 
     for err in errors:
@@ -80,6 +85,9 @@ def delete_history_entry(
                 skills_by_code[code] = reverted
         delete_error(user_id, err.get("createdAt", createdAt), err["id"])
 
+    for note in notes:
+        delete_note(user_id, note.get("createdAt", createdAt), note["id"])
+
     delete_submission(user_id, createdAt, submission_id)
     text_hash = submission.get("textHash") or normalized_text_hash(submission.get("originalText", ""))
     delete_submission_hash(user_id, text_hash)
@@ -95,6 +103,7 @@ def delete_history_entry(
         "deleted": True,
         "submissionId": submission_id,
         "removedErrors": len(errors),
+        "removedNotes": len(notes),
         "updatedSkills": list(skills_by_code.values()),
         "profile": profile,
         "updatedMemories": updated_memories,

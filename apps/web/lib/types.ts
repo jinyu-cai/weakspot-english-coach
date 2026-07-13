@@ -409,6 +409,14 @@ export interface NextActionDecision {
 }
 
 export type NoteType = "expression" | "vocabulary" | "grammar"
+export type NoteLearningState = "current" | "previous"
+
+export interface NoteRelatedWeakness {
+  id?: string | null
+  skillCode: string
+  status: "active" | "resolved"
+  resolvedAt?: string | null
+}
 
 export interface LearningNote {
   id: string
@@ -422,6 +430,8 @@ export interface LearningNote {
   context: string
   examples: string[]
   createdAt: string
+  learningState?: NoteLearningState
+  relatedWeaknesses?: NoteRelatedWeakness[]
 }
 
 /* ---- Input Learning types ---- */
@@ -691,6 +701,7 @@ export interface DeleteSubmissionResponse {
   deleted: boolean
   submissionId: string
   removedErrors: number
+  removedNotes: number
   updatedSkills: SkillState[]
   profile: LearnerProfile | null
 }

@@ -40,17 +40,21 @@ diagnose / chat / import / practice
 
 ```mermaid
 flowchart LR
-    Browser[Next.js on Vercel] -->|HTTPS| Ali[Alibaba Cloud ECS\nNginx + FastAPI]
+    Browser[Next.js on Vercel] -->|HTTPS| Stable[enapi.jinxxx.de\nCloudflare]
+    Stable -->|daily origin| Oracle[Oracle Cloud\nNginx + FastAPI + DeepSeek]
+    Stable -. final demo origin .-> Ali[Alibaba Cloud ECS\nNginx + FastAPI + Qwen]
     Ali -->|structured generation| Qwen[Qwen 3.7 Max / Plus]
     Ali -->|256d embeddings| Embed[Qwen text-embedding-v4]
-    Ali --> Memory[Memory lifecycle + hybrid ranker]
+    Oracle --> Memory[Memory lifecycle + hybrid ranker]
+    Ali --> Memory
     Memory <--> DB[(DynamoDB single table)]
-    Memory -->|<= 700-token pack| Qwen
-    Oracle[Oracle Cloud standby\nFastAPI + DeepSeek] -. rollback .-> DB
 ```
 
-Alibaba Cloud ECS is the primary backend for the hackathon. Oracle Cloud stays
-online as a manual standby and shares the same DynamoDB learner state. See
+Oracle Cloud is the normal production origin. Alibaba Cloud ECS stays healthy
+and on the same release, but receives production traffic only during the final
+Qwen Cloud Hackathon demonstration/evidence window. The stable API hostname and
+Vercel environment variable do not change; Cloudflare switches only the origin,
+and both servers share the same DynamoDB learner state. See
 [Architecture](docs/ARCHITECTURE.md) and the
 [Alibaba/Qwen deployment runbook](docs/ALIBABA_QWEN_DEPLOYMENT.md).
 
@@ -72,10 +76,11 @@ online as a manual standby and shares the same DynamoDB learner state. See
 | Layer | Technology |
 | --- | --- |
 | Frontend | Next.js 16, TypeScript, Tailwind CSS, shadcn/ui, Vercel |
-| Primary backend | FastAPI/Python 3.11 in Docker on Alibaba Cloud ECS, Nginx, TLS |
+| Daily backend | FastAPI/Python 3.11 in Docker on Oracle Cloud, Nginx, TLS, DeepSeek |
+| Final-demo backend | Same FastAPI release on Alibaba Cloud ECS with Qwen Model Studio |
 | Qwen | Model Studio `qwen3.7-max`, `qwen3.7-plus`, `text-embedding-v4` |
 | Persistence | Amazon DynamoDB single-table design with TTL |
-| Standby | Oracle Cloud FastAPI deployment with DeepSeek |
+| Traffic switch | Stable Cloudflare API hostname; Oracle normally, Alibaba only for final demo |
 | Voice | OpenAI Realtime API with backend sideband transcript capture |
 | Auth | GitHub/Google OAuth, server-resolved identity, per-tier limits |
 

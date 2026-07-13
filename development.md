@@ -2,7 +2,7 @@
 
 > 适合读者：学过一点数据结构、网络、操作系统或编程基础，但没有 Python、FastAPI、云部署和完整 Web 工程经验的人。
 >
-> 最后核对日期：2026-07-11。本文以当前 `main` 分支代码为准，不再作为“让 AI 生成项目的规格”，而是作为读懂真实实现的学习笔记。
+> 最后核对日期：2026-07-13。本文以当前代码为准，不再作为“让 AI 生成项目的规格”，而是作为读懂真实实现的学习笔记。
 
 ## 0. 先说明：原来的笔记有什么问题
 
@@ -685,17 +685,28 @@ Practice 分三种题型：
 
 ### 10.4 History 删除不是只删一行
 
-删除 submission 时还要：
+History 删除是用户点击删除、阅读影响说明并再次确认后的手动永久操作，不是弱点模型的自动毕业动作。删除 submission 时还要：
 
 - 删除对应 errors 和 hash。
+- 删除该 submission 生成的 Notebook notes。
 - 回滚这些 error 对 mastery 的影响。
 - 撤销该 submission 对 Memory 的 evidence。
 
-这体现了工程中的“数据一致性”：删除上游证据，派生状态也要更新。
+接口返回 `removedErrors` 和 `removedNotes`，让 UI 可以准确告诉用户删除了什么。这体现了工程中的“数据一致性”：用户主动删除上游证据时，派生状态和关联学习资产也要同步更新。
 
 ### 10.5 Notes 和 Notebook
 
-诊断和对话分析可以产生 expression、vocabulary、grammar 笔记。Notebook 页面展示这些可复用知识，而不是只保留一次性 AI 回复。
+诊断、对话结束分析和 ChatGPT 导入都可以产生 expression、vocabulary、grammar 笔记。每条记录用 `NOTE#<createdAt>#<noteId>` 作为排序键，并用 `submissionId` 指向产生它的诊断、导入或会话来源。
+
+`GET /notes` 不限制笔记数量。repository 会沿着 DynamoDB 的 `LastEvaluatedKey` 读取所有页，再按最新优先返回。前端导出 Markdown 时也导出全部笔记，而不是只导出当前筛选结果。
+
+Notebook 先按学习状态分成“当前 / 以前 / 全部”，再按表达、词汇、语法分类：
+
+- 同一来源仍关联 active weakness：当前笔记。
+- 同一来源只关联 resolved weakness、没有 active weakness：以前的笔记。
+- 没有关联到 weakness：默认仍是当前参考资料。
+
+“以前”只是可逆视图，不会改写或删除 NOTE 行。系统的证据毕业机制把 weakness Memory 标记为 `resolved`，笔记继续保留，避免模型误判让用户失去资料；新错误让 weakness 重新 active 后，同一笔记会自动回到“当前”。未来可以基于更长时间的数据设计物理清理策略，但当前没有启用自动删除旧笔记。
 
 ### 10.6 Daily Wins
 

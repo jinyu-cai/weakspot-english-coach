@@ -21,6 +21,11 @@ The backend URL is configured via `NEXT_PUBLIC_API_BASE_URL`:
 - **Vercel**: set `NEXT_PUBLIC_API_BASE_URL=https://<your-backend-domain>` in
   Project Settings → Environment Variables, then redeploy (it's inlined at build time).
 
+Production keeps `NEXT_PUBLIC_API_BASE_URL=https://enapi.jinxxx.de`. Cloudflare
+normally routes that stable hostname to Oracle; only the final hackathon demo
+window routes it to the release-matched Alibaba/Qwen server. Origin switching
+does not require rebuilding the frontend or changing its API-cookie hostname.
+
 If `NEXT_PUBLIC_API_BASE_URL` is unset, the app falls back to built-in mock data
 (`apps/web/lib/mock-data.ts`) — handy for previewing the UI. The backend's `CORS_ORIGINS`
 must include this app's origin.
@@ -33,6 +38,35 @@ manual add/edit/pin/forget; previews the bounded Memory Pack and score
 breakdown; lists recall traces; and displays the explainable next-practice
 decision. Mock mode includes representative memory data so the complete page
 can be reviewed without a backend.
+
+## Notebook lifecycle
+
+`/notebook` collects reusable expression, vocabulary, and grammar notes from
+writing diagnoses, end-of-conversation analysis, and ChatGPT imports. The API
+returns the learner's complete Notebook; DynamoDB pages are joined by the
+backend, so there is no 50-note display cap. Export always writes every note to
+one Markdown file, regardless of the currently selected filters.
+
+Notebook has two independent filters. The first selects **Current**,
+**Previous**, or **All** learning states; the second selects expression,
+vocabulary, or grammar. A note is Previous when its source is linked to one or
+more resolved weakness memories and no active weakness memory. The note remains
+stored because automatic mastery judgments can be imperfect. If later evidence
+reopens a related weakness, the note automatically returns to Current.
+
+On narrow screens, the state selector becomes a full-width vertical control and
+the four note categories use one or two columns according to available width.
+Card headers and learner text wrap rather than overflowing, so long notes,
+counts, and deletion details remain fully visible without horizontal page
+scrolling.
+
+Deleting a History submission is different from automatic weakness resolution.
+It is an explicit, confirmed learner action that permanently deletes the
+submission, its error rows, and the Notebook notes generated from that source,
+then retracts that source from the weakness and Memory models. Automatic
+weakness graduation never deletes Notebook notes. A future retention policy may
+physically clean up sufficiently old resolved evidence, but that policy is not
+enabled today.
 
 ## Input Learning
 

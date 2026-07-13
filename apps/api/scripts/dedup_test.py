@@ -8,7 +8,8 @@ Asserts:
   - Re-submitting the SAME text is detected as a duplicate and does NOT re-record
     errors or move skill mastery (so accidental resubmissions can't inflate it).
   - A DIFFERENT text is still recorded (a real, separately-counted data point).
-  - Deleting a submission removes its errors and rolls back its skill penalties.
+  - Deleting a submission removes its errors and Notebook notes, then rolls
+    back its skill penalties.
   - Deleting also clears the de-dup marker, so the text can be diagnosed fresh.
 """
 
@@ -60,6 +61,8 @@ def main() -> int:
         d1 = r.json()
         assert d1.get("duplicate") is False, "first submission must not be a duplicate"
         n1 = len(d1["diagnostic"]["errors"])
+        note_count_1 = len(d1["notes"])
+        assert note_count_1 > 0, "fake diagnosis should create Notebook notes"
         sub1_id = d1["submission"]["id"]
         sub1_created = d1["submission"]["createdAt"]
         ec_after_1 = _sum_error_count(client.get(f"/api/v1/profile/{user}").json()["skills"])
@@ -97,12 +100,18 @@ def main() -> int:
         assert r.status_code == 200, r.text
         dele = r.json()
         assert dele["deleted"] is True and dele["removedErrors"] == n1, dele
+        assert dele["removedNotes"] == note_count_1, dele
         ec_after_del = _sum_error_count(client.get(f"/api/v1/profile/{user}").json()["skills"])
         assert ec_after_del == ec_after_3 - n1, f"reversal wrong: {ec_after_del} != {ec_after_3}-{n1}"
         hist = client.get(f"/api/v1/history/{user}").json()
         assert all(s["id"] != sub1_id for s in hist["submissions"]), "deleted submission still in history"
+        assert all(n.get("submissionId") != sub1_id for n in hist["notes"]), "deleted submission notes still exist"
         assert hist["profile"]["totalSubmissions"] == 1 if "profile" in hist else True
-        print(f"4. delete submission #1     -> removedErrors={dele['removedErrors']}, sum(errorCount) {ec_after_3}->{ec_after_del}, gone from history ✅")
+        print(
+            "4. delete submission #1     -> "
+            f"removedErrors={dele['removedErrors']}, removedNotes={dele['removedNotes']}, "
+            f"sum(errorCount) {ec_after_3}->{ec_after_del}, gone from history ✅"
+        )
 
         # 5. The deleted text is no longer a duplicate (marker cleared).
         r = client.post("/api/v1/diagnose", json={"userId": user, "text": SAMPLE})
