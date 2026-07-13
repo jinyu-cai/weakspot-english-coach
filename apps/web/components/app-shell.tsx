@@ -9,10 +9,9 @@ import { AuthButton } from "@/components/auth-button"
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { LLMProviderSettings } from "@/components/llm-provider-settings"
 import { NavSidebar } from "@/components/nav-sidebar"
-import { ThemeToggle } from "@/components/theme-toggle"
-import { PaletteSwitcher } from "@/components/palette-switcher"
-import { LanguageSwitcher } from "@/components/language-switcher"
+import { AppPreferences } from "@/components/app-preferences"
 import { useLanguage } from "@/components/language-provider"
+import { NAV_ITEMS } from "@/lib/nav"
 import {
   isVoiceNavigationLocked,
   VOICE_NAVIGATION_LOCK_EVENT,
@@ -74,6 +73,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
   const { t } = useLanguage()
+  const activeNavItem = [...NAV_ITEMS]
+    .sort((a, b) => b.href.length - a.href.length)
+    .find((item) => item.href === "/" ? pathname === "/" : pathname.startsWith(item.href))
   const voiceHistoryGuardRef = useRef<VoiceHistoryGuard | null>(null)
   const historyTrackerRef = useRef({ initialized: false, position: 0 })
   const restoringHistoryRef = useRef(false)
@@ -228,14 +230,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen w-full">
       {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 left-0 hidden w-64 overflow-y-auto border-r border-sidebar-border bg-sidebar lg:block">
+      <aside className="fixed inset-y-0 left-0 hidden w-[17rem] overflow-y-auto border-r border-sidebar-border bg-sidebar/95 lg:block">
         <NavSidebar />
       </aside>
 
-      <div className="flex w-full flex-col lg:pl-64">
+      <div className="flex min-w-0 w-full flex-col lg:pl-[17rem]">
         {/* Top bar */}
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-2 border-b border-border bg-background/80 px-3 backdrop-blur-md sm:gap-4 sm:px-6">
-          <div className="flex items-center gap-2">
+        <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-3 border-b border-border/80 bg-background/88 px-3 py-2 backdrop-blur-xl sm:px-5 lg:px-7">
+          <div className="flex min-w-0 items-center gap-2.5">
             <Sheet open={open} onOpenChange={setOpen}>
               <SheetTrigger
                 render={
@@ -249,19 +251,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <NavSidebar onNavigate={() => setOpen(false)} />
               </SheetContent>
             </Sheet>
-            <span className="hidden text-sm font-medium text-muted-foreground sm:inline lg:hidden">WeakSpot</span>
+            <div className="min-w-0">
+              <p className="truncate font-heading text-sm font-semibold text-foreground sm:text-base">
+                {activeNavItem ? t.nav.items[activeNavItem.key][0] : "WeakSpot"}
+              </p>
+              {activeNavItem ? (
+                <p className="hidden truncate text-[11px] text-muted-foreground sm:block">
+                  {t.nav.items[activeNavItem.key][1]}
+                </p>
+              ) : null}
+            </div>
           </div>
 
-          <div className="flex min-w-0 items-center gap-1 sm:gap-3">
-            <LanguageSwitcher />
+          <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2">
             <LLMProviderSettings />
             <AuthButton />
-            <PaletteSwitcher />
-            <ThemeToggle />
+            <AppPreferences />
           </div>
         </header>
 
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">{children}</main>
+        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8 xl:px-10">{children}</main>
       </div>
     </div>
   )

@@ -9,6 +9,15 @@ export const copy = {
     },
     nav: {
       tagline: "It finds what you need to practice instead of asking what you want to practice.",
+      startHere: "Recommended place to start",
+      groups: {
+        start: "Start here",
+        learn: "Learn",
+        progress: "Progress",
+        library: "Library",
+        coach: "Your coach",
+        admin: "Manage",
+      },
       items: {
         diagnose: ["Diagnose", "Analyze your writing"],
         chat: ["Chat", "Practice conversations"],
@@ -86,6 +95,31 @@ export const copy = {
       title: "Discover what you need to practice",
       description:
         "Instead of asking what you want to practice, WeakSpot diagnoses your real English writing - verb tense, agreement, vocabulary, clarity and more - then builds an evolving weakness profile.",
+      onboarding: {
+        eyebrow: "A gentle place to begin",
+        title: "Start with English you already use",
+        description:
+          "Paste a few sentences and your coach will turn them into clear feedback and a useful next step. You do not need to understand the rest of the app first.",
+        time: "About 2 minutes",
+        steps: [
+          { title: "Share a few sentences", description: "A message, email, journal entry, or short paragraph is enough." },
+          { title: "See what matters", description: "Get a friendly explanation of the patterns worth improving." },
+          { title: "Practice the next step", description: "Your plan, practice, notes, and memory update together." },
+        ],
+        promptTitle: "Write or paste your English",
+        promptHint: "Two or three sentences is enough. It does not need to be perfect - that is what the coach is here for.",
+        examplesLabel: "Not sure what to write? Try an example",
+        exampleLabels: ["Work email", "Everyday story", "Essay paragraph"],
+        otherWays: "Prefer another way to begin?",
+        otherWaysDescription: "Every path contributes to the same learning profile, so nothing is lost or separated.",
+        shortcuts: {
+          chat: { title: "Start a conversation", description: "Practice naturally by text or voice." },
+          input: { title: "Learn from real content", description: "Turn something you watched or read into useful English." },
+          import: { title: "Bring past conversations", description: "Learn from your existing ChatGPT history." },
+        },
+        privacyNote: "This text is used to generate your feedback and, under your current settings, your learning history.",
+        minimumHint: "At least 20 characters",
+      },
       duplicate:
         "This is identical to a previous submission, so it wasn't recorded again - your weakness profile stays accurate. Edit the text to analyze something new.",
       inputLabel: "Your English writing",
@@ -654,6 +688,17 @@ export const copy = {
       hasBeenRemoved: "has been removed.",
     },
     settings: {
+      preferences: "Preferences",
+      appearance: "Appearance",
+      lightMode: "Light",
+      darkModeLabel: "Dark",
+      change: "Change",
+      palettes: {
+        cream: "Oat",
+        green: "Sage",
+        sky: "Sky",
+        blossom: "Blossom",
+      },
       aiProvider: "AI Provider",
       aiProviderAria: "AI provider settings",
       aiDescription: "Choose separate server models for fast and deep tasks, or use your own OpenAI-compatible provider.",
@@ -697,6 +742,15 @@ export const copy = {
     },
     nav: {
       tagline: "它会发现你需要练什么，而不是先问你想练什么。",
+      startHere: "推荐从这里开始",
+      groups: {
+        start: "开始学习",
+        learn: "学习内容",
+        progress: "查看进步",
+        library: "学习资料",
+        coach: "你的教练",
+        admin: "管理",
+      },
       items: {
         diagnose: ["诊断", "分析你的写作"],
         chat: ["对话", "练习真实交流"],
@@ -774,6 +828,31 @@ export const copy = {
       title: "发现你真正需要练习的内容",
       description:
         "WeakSpot 不先问你想练什么，而是诊断你的真实英文写作，包括时态、主谓一致、词汇、清晰度等，并持续建立你的薄弱项画像。",
+      onboarding: {
+        eyebrow: "从这里轻松开始",
+        title: "从你已经在用的英文开始",
+        description:
+          "贴上几句英文，教练会把它变成清楚的反馈和一个可执行的下一步。你不需要先弄懂应用里的其他功能。",
+        time: "大约 2 分钟",
+        steps: [
+          { title: "分享几句英文", description: "消息、邮件、日记或一小段文章都可以。" },
+          { title: "看懂关键问题", description: "只解释这次最值得改善的表达规律。" },
+          { title: "继续针对练习", description: "计划、练习、笔记和教练记忆会一起更新。" },
+        ],
+        promptTitle: "写下或粘贴你的英文",
+        promptHint: "两三句话就够了，也不需要先写得完美——这正是教练可以帮你的地方。",
+        examplesLabel: "暂时不知道写什么？试试示例",
+        exampleLabels: ["工作邮件", "日常经历", "考试段落"],
+        otherWays: "想换一种方式开始？",
+        otherWaysDescription: "每种方式都会更新同一份学习画像，信息不会被拆散或丢失。",
+        shortcuts: {
+          chat: { title: "开始一段对话", description: "通过文字或语音自然练习。" },
+          input: { title: "从真实内容学习", description: "把看过或读过的内容变成可用英文。" },
+          import: { title: "导入以前的对话", description: "继续利用已有的 ChatGPT 历史。" },
+        },
+        privacyNote: "这段内容会用于生成反馈，并按照你当前的设置记录到学习历史中。",
+        minimumHint: "至少需要 20 个字符",
+      },
       duplicate:
         "这次内容和之前的提交完全相同，所以没有重复记录，避免影响你的薄弱项画像。修改文本后可以分析新的内容。",
       inputLabel: "你的英文写作",
@@ -1340,6 +1419,17 @@ export const copy = {
       hasBeenRemoved: "已被移除。",
     },
     settings: {
+      preferences: "偏好设置",
+      appearance: "外观",
+      lightMode: "浅色",
+      darkModeLabel: "深色",
+      change: "切换",
+      palettes: {
+        cream: "燕麦",
+        green: "鼠尾草",
+        sky: "天空",
+        blossom: "花瓣",
+      },
       aiProvider: "AI 提供方",
       aiProviderAria: "AI 提供方设置",
       aiDescription: "分别选择快速和深度任务的服务器模型，或使用你自己的 OpenAI 兼容提供方。",

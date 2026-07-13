@@ -1,10 +1,10 @@
 // label is kept for accessibility (aria-label / hover tooltip); the dropdown
 // shows a visual preview chip (bg + primary + accent) rather than the name.
 export const PALETTES = [
-  { id: "cream", label: "Cream", bg: "oklch(0.985 0.014 85)", primary: "oklch(0.78 0.16 82)", accent: "oklch(0.7 0.15 165)" },
-  { id: "green", label: "Light Green", bg: "oklch(0.975 0.02 95)", primary: "oklch(0.72 0.11 150)", accent: "oklch(0.8 0.13 85)" },
-  { id: "sky", label: "Sky", bg: "oklch(0.975 0.02 95)", primary: "oklch(0.71 0.1 220)", accent: "oklch(0.8 0.13 85)" },
-  { id: "blossom", label: "Blossom", bg: "oklch(0.975 0.02 95)", primary: "oklch(0.75 0.12 12)", accent: "oklch(0.66 0.12 155)" },
+  { id: "cream", label: "Warm Oat", bg: "oklch(0.982 0.01 78)", primary: "oklch(0.58 0.13 48)", accent: "oklch(0.58 0.11 145)" },
+  { id: "green", label: "Sage", bg: "oklch(0.98 0.012 82)", primary: "oklch(0.53 0.105 145)", accent: "oklch(0.92 0.045 145)" },
+  { id: "sky", label: "Soft Sky", bg: "oklch(0.98 0.012 82)", primary: "oklch(0.52 0.1 230)", accent: "oklch(0.92 0.04 225)" },
+  { id: "blossom", label: "Blossom", bg: "oklch(0.98 0.012 82)", primary: "oklch(0.57 0.13 15)", accent: "oklch(0.93 0.045 15)" },
 ] as const
 
 export type PaletteId = (typeof PALETTES)[number]["id"]

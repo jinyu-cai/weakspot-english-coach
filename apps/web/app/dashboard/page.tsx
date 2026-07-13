@@ -92,7 +92,6 @@ export default function DashboardPage() {
             {!data
               ? null
               : sortByMasteryAsc(data.skills)
-                  .slice(0, 5)
                   .map((skill) => (
                     <div key={skill.skillCode} className="flex flex-col gap-2">
                       <div className="flex items-center justify-between gap-2">
@@ -137,7 +136,7 @@ export default function DashboardPage() {
           <CardContent className="flex flex-col gap-3">
             {!data
               ? null
-              : data.recentErrors.slice(0, 5).map((err) => (
+              : data.recentErrors.map((err) => (
                   <div key={err.id} className="flex flex-col gap-1 rounded-xl border border-border p-3">
                     <div className="flex items-center justify-between gap-2">
                       <Badge variant="secondary">{err.category}</Badge>
