@@ -12,6 +12,7 @@ MemorySourceType = Literal[
     "chat_import",
     "session_analysis",
     "practice",
+    "input_learning",
     "system",
 ]
 

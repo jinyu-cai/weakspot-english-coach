@@ -105,6 +105,7 @@ cd apps/api
 uv run python -m scripts.smoke_test
 uv run python -m scripts.integration_test
 DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_agent_test
+DYNAMODB_ENDPOINT_URL= uv run python -m scripts.stealth_input_test
 DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
 ```
 
@@ -113,6 +114,14 @@ practice submit, history, auth/rate limiting, server model routing, realtime
 session rules, chat import, session analysis, and daily stats. The dedicated
 MemoryAgent test covers merge, conflict replacement, expiry, bounded recall,
 source retraction, adaptive decisions, and Memory APIs.
+
+`stealth_input_test` is the focused release gate for personalized learning. It
+uses moto and fake AI, so it needs no AWS or model key. It verifies retention
+scheduling, the no-penalty opportunity gate, all stealth outcomes, modality
+mastery separation, replay/variation/transfer progression, memory verification,
+relapse/due behavior, hidden-until-summary chat integration, grounded Input
+Learning capture, single-event penalty de-duplication, attention missions,
+derivative cleanup, CRUD, and cross-user isolation.
 
 ## Full local frontend + backend
 
@@ -142,6 +151,10 @@ Practice submit creates attempts
 Memory Center recalls and forgets a manual memory
 Chat model selector shows independent Deep and Fast choices (Qwen defaults,
 mixed Qwen/DeepSeek combinations available when both providers are configured)
+Input Learning `/input` saves grounded material, creates an attention mission
+without pasted material, opens a saved capture, and deletes it
+Chat quietly exercises a due weakness and reveals the result only in the
+post-session learning summary; no-opportunity exchanges do not lower mastery
 Daily Wins shows real backend stats
 Dashboard and History still load
 ```
@@ -181,6 +194,7 @@ Before merging:
 cd apps/api && uv run python -m scripts.smoke_test
 cd apps/api && uv run python -m scripts.integration_test
 cd apps/api && DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_agent_test
+cd apps/api && DYNAMODB_ENDPOINT_URL= uv run python -m scripts.stealth_input_test
 cd apps/api && DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
 cd apps/web && pnpm exec tsc --noEmit
 cd apps/web && pnpm build
@@ -192,6 +206,7 @@ Then verify the PR's Vercel Preview:
 Daily Wins /stats
 Diagnose /
 Chat /chat
+Input Learning /input
 Memory /memory
 Login /login
 Practice /practice

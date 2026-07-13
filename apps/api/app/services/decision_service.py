@@ -138,6 +138,54 @@ def _type_scores(user_id: str, skill_code: str) -> tuple[list[dict], list[str]]:
     return type_scores, supporting
 
 
+def _progression_context(user_id: str, skill_code: str) -> dict:
+    weakness = next(
+        (
+            memory
+            for memory in list_active_memory_records(user_id)
+            if memory.get("kind") == "weakness"
+            and (
+                (memory.get("errorFingerprint") or {}).get("skillCode") == skill_code
+                if isinstance(memory.get("errorFingerprint"), dict)
+                else str(memory.get("canonicalKey") or "").endswith(skill_code)
+            )
+        ),
+        None,
+    )
+    if not weakness:
+        return {
+            "stage": "replay",
+            "reason": "No independent retrieval evidence exists yet, so begin close to a known error.",
+            "memoryId": None,
+            "errorFingerprint": None,
+        }
+    stage = str(weakness.get("progressionStage") or "")
+    if stage not in {"replay", "variation", "transfer"}:
+        cold = [row for row in weakness.get("probeHistory") or [] if row.get("outcome") == "success"]
+        contexts = {str(row.get("context") or "").strip().lower() for row in cold if row.get("context")}
+        stage = "replay" if not cold else "variation" if len(cold) < 2 or len(contexts) < 2 else "transfer"
+    reasons = {
+        "replay": "Rebuild the correct form near the learner's original error before adding novelty.",
+        "variation": "The learner has one cold success; vary surface details while preserving the skill.",
+        "transfer": "The learner has repeated cold success; require independent use in a new real-world context.",
+    }
+    return {
+        "stage": stage,
+        "reason": reasons[stage],
+        "memoryId": weakness.get("id"),
+        "errorFingerprint": weakness.get("errorFingerprint"),
+    }
+
+
+def _stage_practice_type(skill_code: str, stage: str, ranked_types: list[dict]) -> str:
+    """Keep evidence-based format selection until open transfer is warranted."""
+    if stage == "transfer":
+        return "rewrite_sentence"
+    # Replay and variation are prompt-level transformations; the strategy
+    # memory still chooses the format that has the best observed learning fit.
+    return ranked_types[0]["practiceType"]
+
+
 def recommend_next_action(
     user_id: str,
     *,
@@ -147,7 +195,8 @@ def recommend_next_action(
     skills = _skill_scores(user_id)
     target = requested_skill_code or skills[0]["skillCode"]
     type_scores, memory_ids = _type_scores(user_id, target)
-    practice_type = requested_practice_type or type_scores[0]["practiceType"]
+    progression = _progression_context(user_id, target)
+    practice_type = requested_practice_type or _stage_practice_type(target, progression["stage"], type_scores)
     chosen_skill = next((item for item in skills if item["skillCode"] == target), None)
 
     if requested_skill_code:
@@ -170,16 +219,23 @@ def recommend_next_action(
         )
     else:
         type_reason = f"{practice_type} is the best cold-start format for this skill."
+    progression_reason = progression["reason"]
 
     return {
         "targetSkillCode": target,
         "practiceType": practice_type,
-        "reason": f"{skill_reason} {type_reason}",
+        "reason": f"{skill_reason} {type_reason} {progression_reason}",
         "skillReason": skill_reason,
         "practiceTypeReason": type_reason,
-        "supportingMemoryIds": memory_ids,
+        "supportingMemoryIds": [
+            *memory_ids,
+            *([progression["memoryId"]] if progression.get("memoryId") else []),
+        ],
+        "progressionStage": progression["stage"],
+        "progressionReason": progression_reason,
+        "errorFingerprint": progression.get("errorFingerprint"),
         "skillScores": skills[:8],
         "practiceTypeScores": type_scores,
-        "policy": "hybrid-need-effectiveness-exploration-v1",
+        "policy": "hybrid-need-effectiveness-progression-v2",
         "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }

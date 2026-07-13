@@ -82,11 +82,32 @@ class SessionWeaknessAI(BaseModel):
     explanationZh: str
     practiceGoal: str
 
+
+class StealthProbeAssessmentAI(BaseModel):
+    """End-of-session evidence gate for a hidden practice opportunity."""
+
+    opportunityPresent: bool
+    outcome: Literal[
+        "success",
+        "hinted_success",
+        "failure",
+        "avoided",
+        "no_opportunity",
+    ]
+    evidenceQuote: str = ""
+    rationale: str = ""
+    confidence: float = Field(default=0.0, ge=0, le=1)
+    hintLevel: int = Field(default=0, ge=0, le=3)
+
+
 class SessionAnalysisAI(BaseModel):
     summaryZh: str
-    corrections: List[SessionCorrectionAI] = []
-    naturalExpressions: List[SessionNaturalExpressionAI] = []
-    weaknesses: List[SessionWeaknessAI] = []
-    strengthsZh: List[str] = []
-    recommendedNextActionsZh: List[str] = []
-    memoryCandidates: List[MemoryCandidate] = Field(default_factory=list)
+    # Bounded collections keep the atomic DynamoDB finalization below its
+    # 100-item transaction limit even if a provider tries to over-generate.
+    corrections: List[SessionCorrectionAI] = Field(default_factory=list, max_length=20)
+    naturalExpressions: List[SessionNaturalExpressionAI] = Field(default_factory=list, max_length=20)
+    weaknesses: List[SessionWeaknessAI] = Field(default_factory=list, max_length=20)
+    strengthsZh: List[str] = Field(default_factory=list, max_length=20)
+    recommendedNextActionsZh: List[str] = Field(default_factory=list, max_length=20)
+    memoryCandidates: List[MemoryCandidate] = Field(default_factory=list, max_length=20)
+    stealthProbeAssessment: Optional[StealthProbeAssessmentAI] = None

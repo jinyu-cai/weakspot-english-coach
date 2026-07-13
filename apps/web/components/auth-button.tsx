@@ -5,6 +5,8 @@ import { LogIn, LogOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getMe, loginPageUrl, logout, type Me } from "@/lib/auth"
 import { useLanguage } from "@/components/language-provider"
+import { isVoiceNavigationLocked } from "@/lib/voice-navigation-guard"
+import { toast } from "sonner"
 
 export function AuthButton() {
   const [me, setMe] = useState<Me | null>(null)
@@ -21,6 +23,10 @@ export function AuthButton() {
         size="sm"
         className="gap-1.5"
         onClick={() => {
+          if (isVoiceNavigationLocked()) {
+            toast.error(t.chat.voicePanel.finishBeforeLeaving)
+            return
+          }
           window.location.href = loginPageUrl()
         }}
       >
@@ -46,6 +52,10 @@ export function AuthButton() {
         aria-label={t.settings.signOut}
         title={t.settings.signOut}
         onClick={async () => {
+          if (isVoiceNavigationLocked()) {
+            toast.error(t.chat.voicePanel.finishBeforeLeaving)
+            return
+          }
           await logout()
           location.reload()
         }}

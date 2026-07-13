@@ -9,15 +9,38 @@ import { getOutputLanguage } from "@/lib/language"
 export type ConnectionStatus = "idle" | "connecting" | "connected" | "error"
 
 interface TranscriptEntry {
+  id: string
   role: "user" | "assistant"
   text: string
   final: boolean
+}
+
+interface StoredVoiceTranscript {
+  sessionId: string
+  transcript: TranscriptEntry[]
+}
+
+const TRANSCRIPT_SETTLE_MS = 1500
+
+function pendingTranscriptStorageKey(userId: string) {
+  return `weakspot:pending-voice-transcript:${userId}`
+}
+
+function transcriptMessageId(message: Record<string, unknown>, role: TranscriptEntry["role"]) {
+  for (const key of ["item_id", "response_id", "event_id"]) {
+    const value = message[key]
+    if (typeof value === "string" && value.trim()) return `${role}:${value.trim()}`
+  }
+  const randomId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
+  return `${role}:${randomId}`
 }
 
 export function useRealtimeChat(userId: string) {
   const [status, setStatus] = useState<ConnectionStatus>("idle")
   const [isMicOn, setIsMicOn] = useState(true)
   const [isAiSpeaking, setIsAiSpeaking] = useState(false)
+  const [isSavingTranscript, setIsSavingTranscript] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(null)
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([])
   const [completions, setCompletions] = useState<VoiceCompletion | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -27,9 +50,37 @@ export function useRealtimeChat(userId: string) {
   const streamRef = useRef<MediaStream | null>(null)
   const sessionIdRef = useRef<string | null>(null)
   const modelRef = useRef<string>("")
+  const transcriptRef = useRef<TranscriptEntry[]>([])
+  const disconnectPromiseRef = useRef<Promise<string | undefined> | null>(null)
 
   const aiTranscriptBufferRef = useRef("")
   const fnCallBufferRef = useRef<Record<string, { name: string; args: string }>>({})
+
+  const persistPendingTranscript = useCallback((sessionId: string, entries: TranscriptEntry[]) => {
+    try {
+      const pending: StoredVoiceTranscript = { sessionId, transcript: entries }
+      window.sessionStorage.setItem(pendingTranscriptStorageKey(userId), JSON.stringify(pending))
+    } catch {
+      // Storage can be unavailable in privacy modes; the in-memory retry still works.
+    }
+  }, [userId])
+
+  const clearPendingTranscript = useCallback(() => {
+    try {
+      window.sessionStorage.removeItem(pendingTranscriptStorageKey(userId))
+    } catch {
+      // Ignore unavailable storage.
+    }
+  }, [userId])
+
+  const appendTranscript = useCallback((entry: TranscriptEntry) => {
+    const next = [...transcriptRef.current, entry]
+    transcriptRef.current = next
+    setTranscript(next)
+    if (sessionIdRef.current) {
+      persistPendingTranscript(sessionIdRef.current, next)
+    }
+  }, [persistPendingTranscript])
 
   const handleDataChannelMessage = useCallback((event: MessageEvent) => {
     let msg: Record<string, unknown>
@@ -43,7 +94,12 @@ export function useRealtimeChat(userId: string) {
     if (type === "conversation.item.input_audio_transcription.completed") {
       const text = (msg.transcript as string) || ""
       if (text.trim()) {
-        setTranscript((prev) => [...prev, { role: "user", text: text.trim(), final: true }])
+        appendTranscript({
+          id: transcriptMessageId(msg, "user"),
+          role: "user",
+          text: text.trim(),
+          final: true,
+        })
       }
     }
 
@@ -53,7 +109,12 @@ export function useRealtimeChat(userId: string) {
     if (type === "response.audio_transcript.done") {
       const text = aiTranscriptBufferRef.current.trim()
       if (text) {
-        setTranscript((prev) => [...prev, { role: "assistant", text, final: true }])
+        appendTranscript({
+          id: transcriptMessageId(msg, "assistant"),
+          role: "assistant",
+          text,
+          final: true,
+        })
       }
       aiTranscriptBufferRef.current = ""
     }
@@ -113,23 +174,48 @@ export function useRealtimeChat(userId: string) {
       console.error("[realtime] server error:", detail)
       setError(String(detail))
     }
+  }, [appendTranscript])
+
+  const stopMicrophone = useCallback(() => {
+    streamRef.current?.getTracks().forEach((track) => track.stop())
+    streamRef.current = null
   }, [])
+
+  const cleanup = useCallback(() => {
+    dcRef.current?.close()
+    dcRef.current = null
+    pcRef.current?.close()
+    pcRef.current = null
+    stopMicrophone()
+  }, [stopMicrophone])
 
   const connect = useCallback(
     async (topic?: string, realtimeModel: RealtimeVoiceModel = "gpt-realtime-mini-2025-12-15") => {
       if (status === "connecting" || status === "connected") return
+      if (sessionIdRef.current && transcriptRef.current.length > 0) {
+        setStatus("error")
+        setError(getCopy(getOutputLanguage()).chat.voicePanel.saveTranscriptFailed)
+        return
+      }
       setStatus("connecting")
       setError(null)
+      transcriptRef.current = []
       setTranscript([])
       setCompletions(null)
+      clearPendingTranscript()
+      sessionIdRef.current = null
+      setSessionId(null)
 
       try {
         const { clientSecret, sessionId, model } = await createRealtimeSession(userId, topic, realtimeModel)
         sessionIdRef.current = sessionId
+        setSessionId(sessionId)
         modelRef.current = model
+        persistPendingTranscript(sessionId, [])
 
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
         streamRef.current = stream
+        setIsMicOn(true)
 
         const pc = new RTCPeerConnection()
         pcRef.current = pc
@@ -169,6 +255,9 @@ export function useRealtimeChat(userId: string) {
           if (pc.connectionState === "connected") {
             setStatus("connected")
           } else if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
+            cleanup()
+            setIsAiSpeaking(false)
+            setIsMicOn(false)
             setStatus("error")
             setError(getCopy(getOutputLanguage()).chat.voicePanel.connectionLost)
           }
@@ -180,37 +269,71 @@ export function useRealtimeChat(userId: string) {
         setStatus("error")
         setError(err instanceof Error ? err.message : getCopy(getOutputLanguage()).chat.voicePanel.failedConnect)
         cleanup()
+        if (transcriptRef.current.length === 0) {
+          sessionIdRef.current = null
+          setSessionId(null)
+          clearPendingTranscript()
+        }
       }
     },
-    [userId, status, handleDataChannelMessage],
+    [userId, status, handleDataChannelMessage, cleanup, clearPendingTranscript, persistPendingTranscript],
   )
 
-  function cleanup() {
-    dcRef.current?.close()
-    dcRef.current = null
-    pcRef.current?.close()
-    pcRef.current = null
-    streamRef.current?.getTracks().forEach((t) => t.stop())
-    streamRef.current = null
-  }
+  const disconnect = useCallback((): Promise<string | undefined> => {
+    if (disconnectPromiseRef.current) return disconnectPromiseRef.current
 
-  const disconnect = useCallback(async () => {
-    const sid = sessionIdRef.current
-    if (sid && transcript.length > 0) {
-      try {
-        await saveVoiceTranscript(userId, sid, transcript.map((t) => ({
-          role: t.role,
-          content: t.text,
-        })))
-      } catch {
-        // best-effort
+    const pending = (async () => {
+      const sid = sessionIdRef.current
+
+      // Stop recording immediately, but keep the data channel briefly alive so
+      // the final transcription-completed event can arrive before we snapshot.
+      stopMicrophone()
+      setIsMicOn(false)
+      setIsSavingTranscript(true)
+      setError(null)
+      if (sid && dcRef.current?.readyState === "open") {
+        await new Promise((resolve) => window.setTimeout(resolve, TRANSCRIPT_SETTLE_MS))
       }
-    }
 
-    cleanup()
-    setStatus("idle")
-    setIsAiSpeaking(false)
-  }, [userId, transcript])
+      const snapshot = [...transcriptRef.current]
+      const hasUserTranscript = snapshot.some((entry) => entry.role === "user" && entry.text.trim())
+      cleanup()
+      setIsAiSpeaking(false)
+
+      if (sid && snapshot.length > 0) {
+        try {
+          await saveVoiceTranscript(userId, sid, snapshot.map((entry) => ({
+            role: entry.role,
+            content: entry.text,
+            clientMessageId: entry.id,
+          })))
+        } catch (err) {
+          persistPendingTranscript(sid, snapshot)
+          setStatus("error")
+          setError(getCopy(getOutputLanguage()).chat.voicePanel.saveTranscriptFailed)
+          throw err
+        } finally {
+          setIsSavingTranscript(false)
+        }
+      } else {
+        setIsSavingTranscript(false)
+      }
+
+      clearPendingTranscript()
+      sessionIdRef.current = null
+      setSessionId(null)
+      transcriptRef.current = []
+      setTranscript([])
+      setStatus("idle")
+      return hasUserTranscript ? sid ?? undefined : undefined
+    })()
+
+    const guarded = pending.finally(() => {
+      disconnectPromiseRef.current = null
+    })
+    disconnectPromiseRef.current = guarded
+    return guarded
+  }, [userId, cleanup, clearPendingTranscript, persistPendingTranscript, stopMicrophone])
 
   const toggleMic = useCallback(() => {
     const stream = streamRef.current
@@ -227,10 +350,72 @@ export function useRealtimeChat(userId: string) {
   }, [])
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const raw = window.sessionStorage.getItem(pendingTranscriptStorageKey(userId))
+        if (!raw) return
+        const stored = JSON.parse(raw) as Partial<StoredVoiceTranscript>
+        const restored: TranscriptEntry[] = Array.isArray(stored.transcript)
+          ? stored.transcript.flatMap((entry, index) => {
+              if (
+                !entry
+                || (entry.role !== "user" && entry.role !== "assistant")
+                || typeof entry.text !== "string"
+                || !entry.text.trim()
+              ) {
+                return []
+              }
+              return [{
+                id: typeof entry.id === "string" && entry.id
+                  ? entry.id
+                  : `recovered:${entry.role}:${index}`,
+                role: entry.role,
+                text: entry.text.trim(),
+                final: true,
+              }]
+            })
+          : []
+        if (typeof stored.sessionId !== "string" || !stored.sessionId || restored.length === 0) {
+          clearPendingTranscript()
+          return
+        }
+        sessionIdRef.current = stored.sessionId
+        setSessionId(stored.sessionId)
+        transcriptRef.current = restored
+        setTranscript(restored)
+        setStatus("error")
+        setError(getCopy(getOutputLanguage()).chat.voicePanel.recoveredTranscript)
+      } catch {
+        clearPendingTranscript()
+      }
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [userId, clearPendingTranscript])
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      const sid = sessionIdRef.current
+      const pendingEntries = transcriptRef.current
+      if (!sid || (pendingEntries.length === 0 && !pcRef.current)) return
+      if (pendingEntries.length > 0) {
+        persistPendingTranscript(sid, pendingEntries)
+      }
+      event.preventDefault()
+      event.returnValue = ""
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload)
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload)
+  }, [persistPendingTranscript])
+
+  useEffect(() => {
     return () => {
+      const sid = sessionIdRef.current
+      if (sid && transcriptRef.current.length > 0) {
+        persistPendingTranscript(sid, transcriptRef.current)
+      }
       cleanup()
     }
-  }, [])
+  }, [cleanup, persistPendingTranscript])
 
   return {
     status,
@@ -240,9 +425,11 @@ export function useRealtimeChat(userId: string) {
     toggleMic,
     isMicOn,
     isAiSpeaking,
+    isSavingTranscript,
+    hasPendingTranscript: Boolean(sessionId && transcript.length > 0),
     transcript,
     completions,
     dismissCompletions,
-    sessionId: sessionIdRef.current,
+    sessionId,
   }
 }

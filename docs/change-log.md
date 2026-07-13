@@ -18,6 +18,123 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-12 — Stealth practice and authentic Input Learning
+
+Date: 2026-07-12
+
+Branch: `feature/stealth-input-learning`
+
+GitHub status: Not pushed.
+
+Deploy status: Not deployed. Backend and frontend must be deployed together
+after local and preview validation.
+
+Summary:
+
+- Extended weakness memory with retention scheduling, difficulty/stability,
+  due checks, transfer context, error fingerprints, bounded probe history, and
+  separate evidence by learning modality.
+- Added stealth weakness missions to text and voice conversation: the agent
+  naturally elicits a due target, evaluates it only after a fair opportunity,
+  and records `success`, `hinted_success`, `failure`, `avoided`, or
+  `no_opportunity` without revealing the target beforehand.
+- Added a strict opportunity gate so an irrelevant or unobservable response
+  cannot lower mastery, stability, or retention evidence; no-op attempts are
+  audited with a 12-hour reselection cooldown.
+- Added replay → variation → transfer progression, delayed cold-recall
+  scheduling, avoidance detection, relapse reopening, and post-session stealth
+  summaries.
+- Added memory verification states (`candidate`, `observed`, `confirmed`, and
+  `contradicted`), candidate-aware retrieval discounting, natural confirmation
+  guidance, and preserved conflict audit history.
+- Coalesced duplicate same-batch memory candidates and prevented a matching
+  stealth assessment plus ordinary chat correction from charging retention or
+  modality mastery twice for one learner event.
+- Added Input Learning for authentic material from shows, films, videos,
+  podcasts, articles, books, meetings, messages, travel, games, or daily life.
+  It creates source-grounded vocabulary/phrase/pattern items when text is
+  supplied and an attention mission when the learner wants guidance before
+  consuming material.
+- Added Input Learning create/list/read/delete operations and learner-owned
+  identity enforcement, plus the `/input` frontend experience and navigation.
+- Exposed verification state, due date, stability, relapse risk, progression,
+  and modality-specific mastery in the Memory Center.
+- Added an immutable analysis draft plus an atomic DynamoDB effects/finalize
+  transaction, probe/source idempotency, and failure-retry coverage so
+  concurrent, repeated, or partially failed end-session requests cannot create
+  duplicate errors, notes, memory observations, or mastery penalties.
+- Added a mutually exclusive text-turn claim and atomic user/assistant message
+  transaction. Analysis claims the session before reading its message snapshot,
+  so a concurrent End action cannot omit an in-flight final turn and an AI
+  failure cannot leave a lone learner message.
+- Applied the same claim to voice transcript upload. Byte-budgeted staging
+  chunks stay invisible until one final DynamoDB transaction publishes the
+  entire batch; failed or crashed staging is deleted or expires automatically.
+- Added a learner-scoped, re-entrant Memory writer lease with stale-worker
+  fencing, preventing concurrent independent sources from losing canonical
+  source references, observations, verification, or retention updates.
+- Added end-to-end practice retry keys, a durable grade draft/result, stable
+  attempt/error/probe IDs, and per-effect idempotency so an HTTP retry cannot
+  re-grade or double-change skill, profile, strategy, weakness, or retention.
+- Enforced text/voice session boundaries on the API, restricted transcript
+  roles, and changed voice teardown to retain/recover and retry a failed
+  transcript save before analysis. A settle window protects the last turn,
+  active/pending voice locks local controls, app-wide links, sign-out, browser
+  history, and unload; stable turn IDs preserve legitimate repeated utterances
+  while keeping upload retries idempotent.
+- Restricted the hidden-target preview to owner-only QA. Active missions remain
+  absent from normal learner session and memory responses.
+- Made identical Input Learning client retries address the same deterministic
+  capture and return the completed result without duplicating durable memories;
+  a conditional claim serializes concurrent requests, and interrupted captures
+  retain a cleanup/recovery anchor. Claim-fenced item and memory transactions
+  prevent an expired worker from writing after a newer retry takes ownership.
+- Added focused deterministic regression coverage and expanded the MemoryAgent,
+  backend, frontend, and local-testing documentation.
+
+Files changed:
+
+- MemoryAgent models/services, chat/session integration, and Memory APIs
+- Learner-scoped Memory write leases and practice request idempotency
+- Input Learning models/service/repositories/routes
+- `/input`, API client/types/navigation, and mock learning data
+- `apps/api/scripts/stealth_input_test.py`
+- `docs/MEMORY_AGENT_DESIGN.md`, backend/frontend READMEs,
+  `LOCAL_TESTING.md`, and this change log
+
+Tests run:
+
+- `scripts.stealth_input_test` passed all 11 deterministic sections with moto +
+  fake AI: due-only scheduling, the opportunity gate, all scored outcomes,
+  replay/variation/transfer, candidate verification, modality separation,
+  concurrent canonical merge and writer fencing, relapse, practice replay and
+  grade-draft recovery, atomic partial-failure retry, text/voice upload-analysis
+  exclusion and half-turn/batch rollback, hidden-target privacy, strict
+  modality, single-event de-duplication, grounded capture, retry idempotency,
+  stale-worker fencing and cross-source evidence merging, attention missions,
+  derivative cleanup, CRUD, and cross-user isolation.
+- `scripts.smoke_test` passed imports, schemas, model catalog/routing, mastery,
+  and serialization with the new routes mounted.
+- `scripts.memory_agent_test` passed the existing seven lifecycle, retrieval,
+  adaptive-decision, graduation/relapse, source-retraction, and API sections.
+- `scripts.integration_test` passed the complete diagnose → profile → plan →
+  practice → chat/realtime/auth loop.
+- `scripts.dedup_test` passed repeated diagnosis and deletion reversal.
+- `scripts.memory_benchmark` passed with recall@6 `1.0`, stale suppression,
+  budget compliance, and `82.7%` estimated context reduction.
+- Python compile, `git diff --check`, TypeScript, ESLint, and the Next.js
+  production build all passed; `/input` and `/memory` prerender successfully.
+
+Known issues:
+
+- Authentic streaming-media playback and third-party subtitle fetching are
+  intentionally out of scope. Learners paste text/transcripts or create a
+  pre-consumption attention mission; the server does not bypass media access or
+  copyright controls.
+
+Next step: Push a PR, validate GitHub/Vercel Preview, merge, and deploy the same
+commit to the primary and standby backend servers.
+
 ## 2026-07-12 — Independent Fast / Deep server-model pairing
 
 Date: 2026-07-12

@@ -9,6 +9,16 @@ export type TextChatModel = string
 export type RealtimeVoiceModel = string
 export type MemoryKind = "preference" | "goal" | "strategy" | "weakness" | "episode"
 export type MemoryStatus = "active" | "resolved" | "superseded" | "expired" | "forgotten"
+export type InputLearningSourceType =
+  | "series"
+  | "movie"
+  | "video"
+  | "podcast"
+  | "article"
+  | "book"
+  | "work"
+  | "conversation"
+  | "other"
 
 export interface LearnerProfile {
   userId: string
@@ -224,6 +234,45 @@ export interface MemoryScoreBreakdown {
   recency: number
   frequency: number
   critical: number
+  verification?: "candidate" | "observed" | "confirmed" | "contradicted" | "legacy"
+  verificationFactor?: number
+}
+
+export interface MemoryVerification {
+  state: "candidate" | "observed" | "confirmed" | "contradicted"
+  reason?: string
+  independentSourceCount?: number
+  needsConfirmation?: boolean
+  updatedAt?: string
+  contradictedAt?: string
+  contradictedBy?: string
+}
+
+export interface WeaknessRetention {
+  stabilityDays: number
+  difficulty: number
+  dueAt?: string | null
+  lastColdRecallAt?: string | null
+  lastReviewedAt?: string | null
+  lastOutcome?: string
+  attempts?: number
+  successes?: number
+  hintedSuccesses?: number
+  failures?: number
+  avoided?: number
+  observedErrors?: number
+  relapseRisk?: number
+}
+
+export interface ModalityMasteryState {
+  mastery: number
+  attempts?: number
+  coldSuccesses?: number
+  hintedSuccesses?: number
+  failures?: number
+  avoided?: number
+  lastOutcome?: string
+  lastEvidenceAt?: string
 }
 
 export interface WeaknessGraduation {
@@ -280,6 +329,18 @@ export interface MemoryItem {
   resolutionReason?: string | null
   reopenedCount?: number
   graduation?: WeaknessGraduation
+  verification?: MemoryVerification
+  retention?: WeaknessRetention
+  modalityMastery?: Record<string, ModalityMasteryState>
+  progressionStage?: "replay" | "variation" | "transfer"
+  transferContexts?: string[]
+  errorFingerprint?: {
+    skillCode?: string
+    originalExamples?: string[]
+    correctedExamples?: string[]
+    contexts?: string[]
+    description?: string
+  } | string
   retrievalScore?: number
   scoreBreakdown?: MemoryScoreBreakdown
   stats?: {
@@ -363,11 +424,96 @@ export interface LearningNote {
   createdAt: string
 }
 
+/* ---- Input Learning types ---- */
+
+export type InputLearningMode = "grounded_capture" | "attention_mission"
+export type InputLearningItemKind =
+  | "word"
+  | "phrase"
+  | "collocation"
+  | "grammar_pattern"
+  | "pronunciation"
+  | "culture"
+
+export interface InputLearningItem {
+  id: string
+  sourceId: string
+  position: number
+  memoryId?: string | null
+  kind: InputLearningItemKind
+  expression: string
+  meaning: string
+  whyUseful: string
+  personalizedReason?: string | null
+  example: string
+  sourceEvidence?: string | null
+  grounded: boolean
+  createdAt: string
+  /** Compatibility with early versions of the Input Learning API. */
+  register?: string | null
+  difficulty?: string | null
+  examples?: string[]
+  tags?: string[]
+}
+
+export interface InputAttentionMission {
+  objective: string
+  beforeYouStart: string[]
+  focusTargets: string[]
+  whileConsuming: string[]
+  afterYouFinish: string[]
+}
+
+export interface InputLearningSource {
+  id: string
+  sourceType: InputLearningSourceType
+  title: string
+  goal?: string | null
+  mode: InputLearningMode
+  status?: "processing" | "complete"
+  outputLanguage: OutputLanguage
+  summary: string
+  contentProvided: boolean
+  contentCharacters: number
+  itemCount: number
+  createdAt: string
+  updatedAt: string
+  memoryRecall?: {
+    traceId?: string | null
+    memoryIds: string[]
+    estimatedTokens?: number
+  } | null
+  savedMemoryIds?: string[]
+  items?: InputLearningItem[]
+  attentionMission?: InputAttentionMission | null
+}
+
+export interface InputLearningAnalyzeRequest {
+  sourceType: InputLearningSourceType
+  title: string
+  content?: string
+  transcript?: string
+  notes?: string
+  goal?: string
+  targetItemCount: number
+  outputLanguage: OutputLanguage
+}
+
+export interface InputLearningSourcesResponse {
+  sources: InputLearningSource[]
+  count: number
+}
+
+export interface InputLearningAnalyzeResponse {
+  source: InputLearningSource
+}
+
 /* ---- Chat types ---- */
 
 export interface ChatSession {
   id: string
   userId: string
+  mode?: "text" | "voice"
   topic?: string | null
   scenarioPrompt?: string | null
   textModel?: TextChatModel | null
@@ -375,6 +521,8 @@ export interface ChatSession {
   voiceModel?: RealtimeVoiceModel | null
   messageCount: number
   summary?: string | null
+  analysis?: SessionAnalysis | null
+  stealthPractice?: StealthPracticeResult | null
   createdAt: string
   updatedAt: string
 }
@@ -483,8 +631,38 @@ export interface SessionAnalysis {
   recommendedNextActionsZh: string[]
 }
 
+export type StealthPracticeOutcome =
+  | "success"
+  | "hinted_success"
+  | "failure"
+  | "avoided"
+  | "no_opportunity"
+
+export interface StealthPracticeResult {
+  probeId?: string | null
+  memoryId?: string | null
+  targetSkillCode: string
+  targetDescription?: string | null
+  modality?: string | null
+  context?: string | null
+  elicitationStrategy?: string | null
+  progressionStage?: string | null
+  outcome: StealthPracticeOutcome
+  messageZh?: string | null
+  opportunityPresent?: boolean
+  evidenceQuote?: string | null
+  rationale?: string | null
+  confidence?: number
+  hintLevel?: number
+  stateChanged?: boolean
+  nextReviewAt?: string | null
+  masteryBefore?: number | null
+  masteryAfter?: number | null
+}
+
 export interface SessionAnalysisResponse {
   analysis: SessionAnalysis
+  stealthPractice?: StealthPracticeResult | null
   savedNotes: LearningNote[]
   savedErrors?: EnglishError[]
   updatedSkills: SkillState[]

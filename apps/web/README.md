@@ -34,6 +34,48 @@ breakdown; lists recall traces; and displays the explainable next-practice
 decision. Mock mode includes representative memory data so the complete page
 can be reviewed without a backend.
 
+## Input Learning
+
+`/input` turns authentic material into personalized language intake and later
+output. Learners can paste a short excerpt or transcript from a show, film,
+video, podcast, article, book, meeting, message, or everyday encounter and add
+optional source details. The page shows the saved capture, source-grounded
+items, or a pre-input attention mission when no material is supplied yet.
+
+The page has two input flows. Grounded Capture extracts a small set of useful
+items from supplied material. Attention Mission creates before/during/after
+noticing and retelling guidance when the learner has not pasted material yet.
+The learner is not locked into a fixed vocabulary list: selection considers
+their goals, due weaknesses, existing memory, and phrases already seen.
+Each grounded item keeps a short source excerpt so the explanation is auditable.
+
+Input captures can be listed, opened, and deleted. Deletion also removes or
+archives dependent phrase and mission records; the UI should refresh Memory
+Center and Input Learning after the operation. In mock mode, `/input` contains
+the same Grounded Capture and Attention Mission flows so the full page can be
+reviewed without a backend.
+
+The related stealth mission flow runs primarily inside text chat. A normal
+conversation may create a fair opportunity to use a due weakness,
+but the app records a learning outcome only after the backend opportunity gate
+confirms the target was actually observable. `no_opportunity` never lowers a
+learner's mastery or retention estimate and puts that target on a 12-hour
+selection cooldown. Voice teardown now waits for the transcript API to confirm
+the save before starting analysis. A failed save keeps the transcript in the
+current browser tab's session storage and presents a retry action; it can be
+recovered after client navigation or refresh. Active/pending voice state locks
+the chat's back, new-session, and mode controls, plus app-wide links, sign-out,
+and browser-history navigation. A short settle window captures the last
+transcription event. Stable per-turn IDs make a retry idempotent without
+deleting legitimate repeated utterances. Text turns are also UI-locked while a
+reply is pending, and continuing after a completed analysis creates a fresh
+same-topic session because analyzed sessions are immutable.
+
+Practice submission uses a per-answer `clientAttemptId`. The ID is retained
+when a request fails and replaced only when the learner edits the answer or
+moves to another exercise, so retrying a lost response cannot create a second
+attempt or apply mastery changes twice.
+
 ## Text-model selection
 
 The header AI settings button loads the backend's safe server-model catalog.

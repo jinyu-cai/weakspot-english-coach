@@ -12,9 +12,11 @@
  *  POST /plan              { userId, errorScope? }             -> { plan }
  *  GET  /plan/{userId}                                        -> { plan|null }
  *  POST /practice/generate { userId, targetSkillCode? }      -> { exercise }
- *  POST /practice/submit   { userId, exerciseId, userAnswer } -> PracticeSubmitResponse
+ *  POST /practice/submit   { userId, exerciseId, userAnswer, clientAttemptId } -> PracticeSubmitResponse
  *  GET  /history/{userId}                                    -> HistoryResponse
  *  GET  /stats/daily/{userId}?timezone=<IANA>&days=7         -> DailyStatsResponse
+ *  POST /input-learning/analyze { sourceType, title, ... }    -> { source }
+ *  GET  /input-learning                                      -> { sources, count }
  */
 
 import type {
@@ -32,6 +34,12 @@ import type {
   DiagnoseResponse,
   DiagnosisMode,
   HistoryResponse,
+  InputAttentionMission,
+  InputLearningAnalyzeRequest,
+  InputLearningAnalyzeResponse,
+  InputLearningItem,
+  InputLearningSource,
+  InputLearningSourcesResponse,
   LearningPlan,
   MemoryItem,
   MemoryKind,
@@ -264,6 +272,8 @@ let mockMemoryStore: MemoryItem[] = [
     expiresAt: new Date(Date.now() + 60 * 86400000).toISOString(),
   },
 ]
+
+let mockInputLearningSources: InputLearningSource[] = []
 
 export async function diagnose(
   userId: string,
@@ -634,6 +644,7 @@ export async function generatePractice(
 export async function gradePracticeAdhoc(
   userId: string = DEMO_USER_ID,
   params: {
+    clientAttemptId: string
     targetSkillCode: string
     question: string
     expectedAnswer: string
@@ -671,6 +682,7 @@ export async function submitPractice(
   userId: string = DEMO_USER_ID,
   exerciseId: string,
   userAnswer: string,
+  clientAttemptId: string,
 ): Promise<PracticeGrade> {
   if (USE_MOCK) {
     await delay(900)
@@ -679,7 +691,7 @@ export async function submitPractice(
   }
   const { grade } = await apiFetch<PracticeSubmitResponse>("/practice/submit", {
     method: "POST",
-    body: JSON.stringify(withOutputLanguage({ userId, exerciseId, userAnswer })),
+    body: JSON.stringify(withOutputLanguage({ userId, exerciseId, userAnswer, clientAttemptId })),
   })
   return grade
 }
@@ -723,6 +735,207 @@ export async function deleteNote(noteId: string, createdAt: string): Promise<{ d
   return apiFetch<{ deleted: boolean; noteId: string }>(`/notes/${noteId}?${params.toString()}`, {
     method: "DELETE",
   })
+}
+
+/* ---- Input Learning ---- */
+
+export async function analyzeInputLearning(
+  input: Omit<InputLearningAnalyzeRequest, "outputLanguage">,
+): Promise<InputLearningSource> {
+  if (USE_MOCK) {
+    await delay(1100)
+    const now = new Date().toISOString()
+    const id = `input-${Date.now()}`
+    const material = [input.content?.trim(), input.transcript?.trim()].filter(Boolean).join("\n\n")
+    const grounded = Boolean(material)
+    const language = getOutputLanguage()
+    const sampleItems: Array<Omit<InputLearningItem, "id" | "sourceId" | "position" | "memoryId" | "createdAt">> = [
+      {
+        kind: "phrase",
+        expression: "It turns out that...",
+        meaning: language === "zh-CN" ? "结果发现……；原来……" : "Used when the real result is different from what you expected.",
+        whyUseful: language === "zh-CN" ? "能让你讲经历时更自然地制造转折。" : "It gives stories a natural turn and helps you explain discoveries.",
+        personalizedReason: language === "zh-CN" ? "它能替代你常用的简单 but 转折。" : "It expands beyond the simple contrast words you usually rely on.",
+        example: "It turns out that the meeting had been moved to Friday.",
+        sourceEvidence: null,
+        grounded: false,
+      },
+      {
+        kind: "collocation",
+        expression: "raise a concern",
+        meaning: language === "zh-CN" ? "提出担忧或问题" : "To mention a worry or possible problem for discussion.",
+        whyUseful: language === "zh-CN" ? "适合工作会议和礼貌表达异议。" : "A useful, diplomatic phrase for meetings and professional conversations.",
+        personalizedReason: language === "zh-CN" ? "与你的职场英语目标直接相关。" : "It directly supports your workplace-English goal.",
+        example: "I'd like to raise a concern about the current timeline.",
+        sourceEvidence: null,
+        grounded: false,
+      },
+      {
+        kind: "word",
+        expression: "awkward",
+        meaning: language === "zh-CN" ? "尴尬的；不自然的；棘手的" : "Uncomfortable, difficult, or not smooth and natural.",
+        whyUseful: language === "zh-CN" ? "可以精确描述社交场面、措辞或局面。" : "It precisely describes social moments, wording, and difficult situations.",
+        personalizedReason: language === "zh-CN" ? "帮助你减少 very bad 这类宽泛表达。" : "It helps you replace broad phrases such as very bad.",
+        example: "There was an awkward silence after the question.",
+        sourceEvidence: null,
+        grounded: false,
+      },
+      {
+        kind: "grammar_pattern",
+        expression: "I wish I had + past participle",
+        meaning: language === "zh-CN" ? "表达对过去事情的遗憾" : "A pattern for expressing regret about a past action or event.",
+        whyUseful: language === "zh-CN" ? "能让复盘经历时的表达更准确。" : "It makes reflection on past experiences more precise.",
+        personalizedReason: language === "zh-CN" ? "顺带强化你对过去时间的表达。" : "It also reinforces your control of past-time forms.",
+        example: "I wish I had prepared a clearer answer.",
+        sourceEvidence: null,
+        grounded: false,
+      },
+      {
+        kind: "phrase",
+        expression: "What do you make of it?",
+        meaning: language === "zh-CN" ? "你怎么看？你如何理解这件事？" : "A natural way to ask for someone's opinion or interpretation.",
+        whyUseful: language === "zh-CN" ? "比 What do you think 更有变化。" : "It adds variety beyond What do you think?",
+        personalizedReason: language === "zh-CN" ? "适合你想加强的自然对话。" : "It supports your goal of sounding more natural in conversation.",
+        example: "The client changed the brief again. What do you make of it?",
+        sourceEvidence: null,
+        grounded: false,
+      },
+      {
+        kind: "pronunciation",
+        expression: "going to → gonna (casual speech)",
+        meaning: language === "zh-CN" ? "非正式口语中 going to 的常见弱读" : "A common reduced form of going to in informal speech.",
+        whyUseful: language === "zh-CN" ? "有助于听懂快速自然对白，但正式写作中不要使用。" : "It helps you follow fast dialogue, but should not be used in formal writing.",
+        personalizedReason: language === "zh-CN" ? "训练真实语速下的听力识别。" : "It trains recognition at natural speaking speed.",
+        example: "What are you gonna do?",
+        sourceEvidence: null,
+        grounded: false,
+      },
+    ]
+    const stopwords = new Set([
+      "about", "after", "again", "because", "before", "could", "from", "have", "into",
+      "just", "more", "other", "should", "that", "their", "then", "there", "these", "they",
+      "this", "those", "very", "want", "were", "what", "when", "where", "which", "while",
+      "with", "would", "your",
+    ])
+    const seenExpressions = new Set<string>()
+    const groundedItems: typeof sampleItems = []
+    for (const match of material.matchAll(/[A-Za-z][A-Za-z'-]{3,}/g)) {
+      const expression = match[0]
+      const normalized = expression.toLowerCase()
+      if (stopwords.has(normalized) || seenExpressions.has(normalized)) continue
+      seenExpressions.add(normalized)
+      const start = Math.max(0, (match.index ?? 0) - 80)
+      const end = Math.min(material.length, (match.index ?? 0) + expression.length + 120)
+      groundedItems.push({
+        kind: "word",
+        expression,
+        meaning: language === "zh-CN"
+          ? "这是你提供的素材中值得结合上下文理解并复用的词。"
+          : "A useful word from your material to understand and reuse in context.",
+        whyUseful: language === "zh-CN"
+          ? "它确实出现在原文中；观察周围搭配会比孤立背诵更容易迁移。"
+          : "It appears in your source; noticing the surrounding words makes it easier to transfer.",
+        personalizedReason: language === "zh-CN"
+          ? "先用自己的句子复述原场景，再在下一次对话中主动用一次。"
+          : "Retell the original moment in your own words, then reuse it once in a later conversation.",
+        example: language === "zh-CN"
+          ? `试着用 ${expression} 写一句与你生活相关的新句子。`
+          : `Write a new sentence with ${expression} that relates to your life.`,
+        sourceEvidence: material.slice(start, end).trim(),
+        grounded: true,
+      })
+      if (groundedItems.length >= input.targetItemCount) break
+    }
+    const selectedItems = grounded ? groundedItems : sampleItems.slice(0, input.targetItemCount)
+    const items = selectedItems.map((item, index) => ({
+      ...item,
+      id: `${id}-item-${index + 1}`,
+      sourceId: id,
+      position: index + 1,
+      memoryId: `memory-${id}-${index + 1}`,
+      createdAt: now,
+    }))
+    const attentionMission: InputAttentionMission | null = grounded
+      ? null
+      : {
+          objective: language === "zh-CN"
+            ? `观看或阅读《${input.title}》时，找到能替代你常用简单表达的真实英语。`
+            : `While enjoying ${input.title}, notice real English that can replace your usual simple wording.`,
+          beforeYouStart: language === "zh-CN"
+            ? ["先预测故事或内容中可能出现的三个场景。", "不要暂停查每一个生词。"]
+            : ["Predict three situations that may appear.", "Do not pause to look up every unknown word."],
+          focusTargets: ["a phrase for disagreement", "one past-tense story", "a useful word repeated twice"],
+          whileConsuming: language === "zh-CN"
+            ? ["听到目标表达时只记一句上下文。", "留意人物在什么语气和关系中使用它。"]
+            : ["Save one line of context when you notice a target.", "Notice the speaker's tone and relationship."],
+          afterYouFinish: language === "zh-CN"
+            ? ["用英文复述最重要的一幕。", "回来粘贴 3–8 句对白或写下笔记，生成个性化表达。"]
+            : ["Retell the most important moment in English.", "Come back with 3–8 lines or your notes to capture personalized expressions."],
+        }
+    const source: InputLearningSource = {
+      id,
+      sourceType: input.sourceType,
+      title: input.title,
+      goal: input.goal ?? null,
+      mode: grounded ? "grounded_capture" : "attention_mission",
+      outputLanguage: language,
+      summary: grounded
+        ? language === "zh-CN"
+          ? "已从你提供的真实内容中挑选出少量高价值表达，并结合薄弱项说明它们为何值得学。"
+          : "A small set of high-value expressions was selected from your real input and connected to your learning needs."
+        : language === "zh-CN"
+          ? "这不是词表，而是一项看剧、阅读或收听前的注意力任务：先带着目标享受内容，再回来收集真实表达。"
+          : "This is an attention mission, not a vocabulary list: enjoy the content with a few targets, then return to capture real expressions.",
+      contentProvided: grounded,
+      contentCharacters: (input.content?.length ?? 0) + (input.transcript?.length ?? 0),
+      itemCount: items.length,
+      createdAt: now,
+      updatedAt: now,
+      memoryRecall: { traceId: `trace-${Date.now()}`, memoryIds: ["mem-pref-business", "mem-weak-tense"] },
+      savedMemoryIds: items.map((item) => item.memoryId).filter((memoryId): memoryId is string => Boolean(memoryId)),
+      items,
+      attentionMission,
+    }
+    mockInputLearningSources = [source, ...mockInputLearningSources]
+    return source
+  }
+
+  const payload = await apiFetch<InputLearningAnalyzeResponse>("/input-learning/analyze", {
+    method: "POST",
+    body: JSON.stringify({ ...input, outputLanguage: getOutputLanguage() }),
+  })
+  return payload.source
+}
+
+export async function getInputLearningSources(): Promise<InputLearningSourcesResponse> {
+  if (USE_MOCK) {
+    await delay(350)
+    return {
+      sources: mockInputLearningSources.map(({ items: _items, ...source }) => source),
+      count: mockInputLearningSources.length,
+    }
+  }
+  return apiFetch<InputLearningSourcesResponse>("/input-learning")
+}
+
+export async function getInputLearningSource(sourceId: string): Promise<InputLearningSource> {
+  if (USE_MOCK) {
+    await delay(250)
+    const source = mockInputLearningSources.find((item) => item.id === sourceId)
+    if (!source) throw new Error("Input source not found")
+    return source
+  }
+  const payload = await apiFetch<InputLearningAnalyzeResponse>(`/input-learning/${sourceId}`)
+  return payload.source
+}
+
+export async function deleteInputLearningSource(sourceId: string): Promise<{ deleted: boolean; id: string }> {
+  if (USE_MOCK) {
+    await delay(250)
+    mockInputLearningSources = mockInputLearningSources.filter((source) => source.id !== sourceId)
+    return { deleted: true, id: sourceId }
+  }
+  return apiFetch<{ deleted: boolean; id: string }>(`/input-learning/${sourceId}`, { method: "DELETE" })
 }
 
 /* ---- Chat ---- */
@@ -896,6 +1109,13 @@ export async function analyzeSession(
       savedErrors: [],
       updatedSkills: [],
       sessionId,
+      stealthPractice: {
+        targetSkillCode: "grammar.verb_tense",
+        outcome: "success",
+        opportunityPresent: true,
+        evidenceQuote: "You described a past event with “went” and “was” without a correction or hint.",
+        nextReviewAt: new Date(Date.now() + 4 * 86400000).toISOString(),
+      },
     }
   }
   return apiFetch<SessionAnalysisResponse>(`/chat/sessions/${sessionId}/analyze`, {
@@ -946,9 +1166,9 @@ export async function kickRealtimeSession(
 export async function saveVoiceTranscript(
   userId: string = DEMO_USER_ID,
   sessionId: string,
-  messages: { role: string; content: string }[],
-): Promise<{ saved: number }> {
-  return apiFetch<{ saved: number }>(`/chat/sessions/${sessionId}/transcript`, {
+  messages: { role: "user" | "assistant"; content: string; clientMessageId?: string }[],
+): Promise<{ saved: number; skippedDuplicates: number; sessionId: string }> {
+  return apiFetch<{ saved: number; skippedDuplicates: number; sessionId: string }>(`/chat/sessions/${sessionId}/transcript`, {
     method: "POST",
     body: JSON.stringify({ userId, messages }),
   })

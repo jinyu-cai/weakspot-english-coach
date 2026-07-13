@@ -37,6 +37,7 @@ def build_chat_messages(
     user_text: str,
     topic: Optional[str] = None,
     memory_context: Optional[str] = None,
+    hidden_practice_instruction: Optional[str] = None,
 ) -> list:
     messages = [{"role": "system", "content": f"{CHAT_SYSTEM_PROMPT}\n\n{MEMORY_EXTRACTION_INSTRUCTION}"}]
 
@@ -50,7 +51,15 @@ def build_chat_messages(
         messages.append({
             "role": "system",
             "content": memory_context
-            + "\nPersonalize naturally, but never claim a memory if it conflicts with the current message.",
+            + "\nPersonalize naturally, but never claim a memory if it conflicts with the current message. "
+            "When a relevant input-learning expression appears in memory, model at most one naturally and "
+            "create a light chance to notice or reuse it; exposure alone is never proof of mastery.",
+        })
+
+    if hidden_practice_instruction:
+        messages.append({
+            "role": "system",
+            "content": hidden_practice_instruction,
         })
 
     for msg in history[-settings.memory_chat_recent_messages:]:
@@ -72,8 +81,15 @@ def chat_reply(
     max_tokens: Optional[int] = 2000,
     trace_id: Optional[str] = None,
     memory_context: Optional[str] = None,
+    hidden_practice_instruction: Optional[str] = None,
 ) -> ChatReplyAI:
-    messages = build_chat_messages(history, user_text, topic, memory_context)
+    messages = build_chat_messages(
+        history,
+        user_text,
+        topic,
+        memory_context,
+        hidden_practice_instruction,
+    )
     return parse_with_model(
         messages=messages,
         response_model=ChatReplyAI,

@@ -11,6 +11,13 @@ planning, and practice. It is designed around four properties required by the
 Qwen Cloud Hackathon MemoryAgent track: autonomous accumulation, efficient
 retrieval, timely forgetting, and critical recall under a bounded context.
 
+The learner model is also used as an active teaching policy. It can create a
+natural opportunity to use a due skill during ordinary conversation, observe
+whether the learner used or avoided it, and schedule a later cold-recall check.
+Alongside output practice, Input Learning lets a learner bring material from a
+show, video, article, podcast, transcript, meeting, or daily-life encounter and
+turn grounded phrases into personalized noticing and reuse plans.
+
 ## What the agent remembers
 
 | Kind | Example | Default lifetime |
@@ -35,6 +42,8 @@ The existing single-table partition remains `PK=USER#{userId}`:
 ```text
 SK=MEMORY#{memoryId}                 durable memory
 SK=MEMTRACE#{timestamp}#{traceId}    recall audit trail (30-day TTL)
+SK=INPUT_SOURCE#{sourceId}           Input Learning source metadata
+SK=INPUT_ITEM#{sourceId}#{itemId}    grounded or attention target
 ```
 
 Active memory rows use `expiresAt` for synchronous filtering and `ttl` for
@@ -53,8 +62,29 @@ though DynamoDB TTL deletion is asynchronous.
 5. If a user exceeds the configured capacity (default 200 active memories),
    forget the lowest-importance, oldest non-pinned episodes first.
 
+Candidates from one analyzer response are coalesced by kind and normalized
+canonical key before persistence. A correction, weakness summary, and explicit
+memory candidate that describe the same learner event therefore add one
+observation instead of three.
+
 Users can inspect, edit, pin, and forget memories from `/memory`. The current
 message always overrides recalled memory.
+
+Every durable fact also carries a verification state:
+
+```text
+candidate -> observed -> confirmed
+active fact + newer conflict -> contradicted (archived audit row)
+```
+
+A low-confidence single observation is `candidate`; it is discounted during
+retrieval and the Memory Pack explicitly tells the coach to confirm it
+naturally before relying on it. A stronger single observation is `observed`.
+Two independent sources with sufficient confidence make it `confirmed`, as
+does a direct learner edit or manual memory. When newer evidence conflicts on
+the same canonical key, the prior row becomes `superseded` with verification
+state `contradicted` and a pointer to the replacement. This separates
+uncertainty about a fact from its storage lifecycle.
 
 ## Evidence-based weakness graduation
 
@@ -92,6 +122,156 @@ Fresh error or diagnosis evidence for the same canonical key reactivates the
 same row, increments `reopenedCount`, and keeps a short `resolutionHistory`.
 This preserves a relapse history without creating duplicate weaknesses.
 
+## Retention scheduling and modality mastery
+
+Each active weakness carries a compact retention state in addition to its
+graduation evidence:
+
+- `stabilityDays`: the estimated interval over which the learner can retain the
+  skill;
+- `difficulty`: a learner-specific estimate of how hard the skill is to retain;
+- `dueAt`: the earliest time for a useful cold-recall or transfer check;
+- `lastColdRecallAt`: the latest unprompted success after a meaningful delay;
+- `lastOutcome` in retention plus hint levels in bounded mission evidence;
+- mastery by `exercise`, `writing`, `text_chat`, and `voice`, so success in one
+  channel is not treated as proof of spontaneous use in every channel;
+- contexts in which the learner has transferred the skill successfully.
+
+The scheduler rewards delayed, unprompted success more than same-session
+repetition. Hinted success grows stability less; failure shortens the next
+interval; avoidance keeps the weakness due without fabricating a wrong grammar
+attempt. A new error after resolution reopens the same weakness and brings its
+next check forward. `dueAt` is a prioritization signal, not a notification
+promise, and the agent still waits for an appropriate conversational context.
+
+## Stealth weakness missions
+
+A stealth mission turns a due weakness into a natural conversational
+opportunity. For example, a learner with a past-tense weakness may be asked
+what happened in a recent meeting without being told that grammar is being
+tested. The lifecycle is:
+
+```text
+due weakness + learner goal/preferences + current conversation
+  -> bounded mission brief
+  -> natural prompt with no answer leakage
+  -> opportunity gate
+  -> outcome: success | hinted_success | failure | avoided | no_opportunity
+  -> retention + modality + transfer update
+  -> next due check
+```
+
+The opportunity gate is essential. A message is scored only when the prompt
+and response genuinely made the target form or concept useful. If there was no
+fair opportunity, the result is `no_opportunity`: attempts, mastery, stability,
+and failure counts are unchanged. The attempt is still audited and suppresses
+that weakness from probe selection for 12 hours, preventing an unsuitable
+target from being injected repeatedly. This prevents silence, a topic change,
+or an irrelevant short answer from becoming a fabricated mistake.
+
+Outcomes have distinct meanings:
+
+| Outcome | Meaning | Scheduling effect |
+| --- | --- | --- |
+| `success` | spontaneous, unhinted target use | strongest stability/mastery gain; schedule later transfer |
+| `hinted_success` | correct after a cue or partial scaffold | smaller gain; schedule a nearer cold check |
+| `failure` | fair opportunity, attempted target, materially incorrect | record weakness evidence and shorten interval |
+| `avoided` | fair opportunity, but learner consistently routes around the target | keep due and vary the next context; do not label it a grammar error |
+| `no_opportunity` | target was not reasonably elicited or observable | no learner penalty and no attempt counted |
+
+Mission records keep the source weakness, `progressionStage` (`replay`,
+`variation`, or `transfer`), modality, context, elicitation strategy, outcome,
+evidence, hint level, and timestamps. The stage advances only after independent
+cold success: first a context close to the original error, then changed details,
+then a genuinely new goal-relevant setting. Guided exercises cannot advance the
+ladder. The hidden teaching objective is never shown before the response; only
+the post-session evidence summary is returned to the learner.
+
+End-of-session analysis may also emit an ordinary correction for the same skill
+as the stealth assessment. The durable source evidence is still merged, but the
+matching skill code is skipped for the second retention/modality update. One
+utterance cannot become two mastery penalties.
+
+Analysis itself is retry-safe. The exact model output is saved as an internal
+draft before learning state changes. Errors, expression notes, skill rows, and
+the final public session result are then committed in one DynamoDB transaction.
+If finalization fails, the claim is released but the draft remains; a retry
+reuses it without another model call. Probe outcomes and memory source evidence
+are independently idempotent. A stealth or durable-memory persistence error
+also aborts finalization, so a retry completes missing evidence without double
+counting. Text messages and voice transcripts are accepted only by their
+matching session modality, and a session stops accepting new input once
+analysis starts. Voice turns carry stable client IDs so an upload retry does
+not collapse two legitimate repeated utterances. Text turn generation and
+analysis use mutually exclusive claims; a complete user/assistant pair is
+committed atomically, and analysis takes its claim before reading messages.
+The browser also blocks app links, sign-out, history navigation, and local chat
+controls while a voice session is active or has an unsaved transcript.
+Voice transcript batches share the session turn claim and are published through
+a commit marker: staged chunks remain invisible to chat history and analysis,
+fit below DynamoDB item/transaction byte limits, and retain a cleanup TTL until
+the final publish transaction atomically makes the complete batch durable.
+
+All canonical Memory read-modify-write paths use a learner-scoped, re-entrant
+write lease. A stale holder is fenced at the DynamoDB write itself, while two
+valid sources serialize and re-read the latest canonical row before merging.
+This prevents concurrent input captures or chat analyses from losing source
+references, observation counts, verification, or retention state.
+
+Visible practice uses a client-generated attempt key. Its model grade is saved
+before learner-state effects, and the stable attempt ID is carried through
+skill/profile counters, strategy evidence, weakness evidence, and the guided
+retention probe. A lost HTTP response can therefore return the same completed
+result without calling the model again or changing mastery twice.
+
+## Input Learning: personalized intake, not another worksheet
+
+Input Learning complements output practice by starting from material the
+learner actually encountered. A capture may include pasted text or a transcript,
+plus a source type and title, with an optional goal and learner note.
+Source text is treated as data, never as model instructions. The resulting
+items retain short source excerpts so the selected expression is auditable;
+meanings and coaching explanations remain model-generated guidance.
+
+The agent selects a small set of useful phrases based on relevant goals,
+preferences, remembered weaknesses, and learning strategies. The public flow
+has two modes:
+
+- `grounded_capture`: notice meaning, collocation, grammar, pronunciation, and
+  reuse value in text the learner supplied; every item keeps exact evidence;
+- `attention_mission`: before/during/after guidance for what to notice and how
+  to retell the content when no source material has been supplied yet.
+
+Selected items are also stored as 180-day episode memories. They can therefore
+inform later planning and conversation through the normal bounded Memory Pack,
+without pretending that a suggested attention target was a quote from the
+source.
+
+Each validated capture request has a deterministic learner-scoped ID and a
+conditional processing claim. Sequential retries return the completed result;
+concurrent identical requests cannot mix model outputs or duplicate memory
+evidence. If a worker fails, the retained processing anchor lets the next retry
+retract partial item/memory derivatives before completing.
+
+This is not limited to television. The same flow supports films, YouTube,
+podcasts, news, books, emails, meeting transcripts, signs, menus, games, and
+phrases heard in real life. The capture is durable and queryable; generated
+items and missions are bounded. Deleting a capture removes or archives
+its dependent learning items so orphaned excerpts are not recalled later.
+
+Input Learning and weakness missions share one feedback loop:
+
+```text
+authentic input
+  -> grounded phrase capture
+  -> notice in context / attention mission
+  -> learner retells or reuses selected language
+  -> later bounded recall can personalize practice and conversation
+```
+
+This lets the agent use interesting content as comprehensible input while still
+quietly targeting the learner's durable weak spots.
+
 ## Hybrid retrieval
 
 Production vectors come from Alibaba Cloud Model Studio
@@ -108,6 +288,7 @@ For memory `m` and query `q`, the score is:
 + 0.05 access-frequency signal
 + 0.05 critical-kind signal (preference or goal)
 + 0.15 when pinned
+then x 0.75 when verification state is candidate
 ```
 
 The ranker reserves up to two important preferences/goals, then fills the rest
@@ -145,7 +326,9 @@ The skill score combines:
 The exercise-format score combines learning need, closeness to a productive
 difficulty around 75/100, exploration of under-sampled formats, and reliability
 from repeated attempts. Every recommendation returns its component scores,
-supporting strategy-memory IDs, and a human-readable reason.
+supporting strategy-memory IDs, progression stage, error fingerprint, and a
+human-readable reason. Replay and variation keep the outcome-aware format
+choice; transfer moves to open rewriting.
 
 ## API
 
@@ -157,6 +340,12 @@ DELETE /api/v1/memory/{memoryId}
 POST   /api/v1/memory/retrieve
 GET    /api/v1/memory/traces
 GET    /api/v1/memory/next-action
+GET    /api/v1/memory/stealth-next?modality=text_chat&topic=...  # owner-only QA
+
+POST   /api/v1/input-learning/analyze
+GET    /api/v1/input-learning
+GET    /api/v1/input-learning/{sourceId}
+DELETE /api/v1/input-learning/{sourceId}
 ```
 
 Identity is resolved server-side; a client cannot read or mutate another
@@ -167,6 +356,7 @@ learner's memories by changing `userId`.
 ```bash
 cd apps/api
 DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_agent_test
+DYNAMODB_ENDPOINT_URL= uv run python -m scripts.stealth_input_test
 DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
 ```
 

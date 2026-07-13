@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
+import { toast } from "sonner"
 import type { PracticeExercise, PracticeGrade } from "@/lib/types"
 import { submitPractice } from "@/lib/api-client"
 import { practiceTypeLabel, skillLabel as localizedSkillLabel } from "@/lib/practice"
@@ -33,6 +34,7 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
   const [answer, setAnswer] = useState("")
   const [grade, setGrade] = useState<PracticeGrade | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const clientAttemptIdRef = useRef<string | null>(null)
   const { language, t } = useLanguage()
 
   const typeLabel = practiceTypeLabel(exercise.type, language)
@@ -42,9 +44,13 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
     if (submitting || grade) return
     setSubmitting(true)
     try {
-      const result = await submitPractice(exercise.userId, exercise.id, answer)
+      const clientAttemptId = clientAttemptIdRef.current ?? crypto.randomUUID()
+      clientAttemptIdRef.current = clientAttemptId
+      const result = await submitPractice(exercise.userId, exercise.id, answer, clientAttemptId)
       setGrade(result)
       onGraded(result)
+    } catch {
+      toast.error(t.plan.gradeFailed)
     } finally {
       setSubmitting(false)
     }
@@ -53,6 +59,7 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
   function handleNext() {
     setAnswer("")
     setGrade(null)
+    clientAttemptIdRef.current = null
     onNext()
   }
 
@@ -80,7 +87,10 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
 
         <Textarea
           value={answer}
-          onChange={(e) => setAnswer(e.target.value)}
+          onChange={(e) => {
+            setAnswer(e.target.value)
+            clientAttemptIdRef.current = null
+          }}
           disabled={!!grade || submitting}
           placeholder={t.common.typeAnswer}
           className="min-h-28 resize-none"

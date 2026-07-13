@@ -7,6 +7,7 @@ import {
   MicOff,
   Phone,
   PhoneOff,
+  RefreshCw,
   Volume2,
   X,
 } from "lucide-react"
@@ -23,9 +24,15 @@ import { useLanguage } from "@/components/language-provider"
 interface VoiceChatPanelProps {
   topic?: string
   onEnd: (sessionId?: string) => void
+  onLifecycleChange?: (state: VoiceChatLifecycle) => void
 }
 
-export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
+export interface VoiceChatLifecycle {
+  active: boolean
+  pending: boolean
+}
+
+export function VoiceChatPanel({ topic, onEnd, onLifecycleChange }: VoiceChatPanelProps) {
   const [voiceModel, setVoiceModel] = useState<RealtimeVoiceModel>("gpt-realtime-mini-2025-12-15")
   const { t } = useLanguage()
   const {
@@ -36,10 +43,11 @@ export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
     toggleMic,
     isMicOn,
     isAiSpeaking,
+    isSavingTranscript,
+    hasPendingTranscript,
     transcript,
     completions,
     dismissCompletions,
-    sessionId,
   } = useRealtimeChat(DEMO_USER_ID)
 
   const transcriptEndRef = useRef<HTMLDivElement>(null)
@@ -48,14 +56,27 @@ export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
     transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [transcript])
 
+  const voiceActive = status === "connecting" || status === "connected" || isSavingTranscript
+
+  useEffect(() => {
+    onLifecycleChange?.({ active: voiceActive, pending: hasPendingTranscript })
+  }, [hasPendingTranscript, onLifecycleChange, voiceActive])
+
+  useEffect(() => {
+    return () => onLifecycleChange?.({ active: false, pending: false })
+  }, [onLifecycleChange])
+
   async function handleConnect() {
     await connect(topic, voiceModel)
   }
 
   async function handleEnd() {
-    const sid = sessionId
-    await disconnect()
-    onEnd(sid ?? undefined)
+    try {
+      const savedSessionId = await disconnect()
+      onEnd(savedSessionId)
+    } catch {
+      // The hook retains the transcript and exposes a retry action below.
+    }
   }
 
   // ---- Not connected: show start button ----
@@ -84,10 +105,19 @@ export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
             Realtime 2
           </ToggleGroupItem>
         </ToggleGroup>
-        <Button size="lg" onClick={handleConnect} className="gap-2">
-          <Phone className="size-5" />
-          {t.chat.voicePanel.start}
-        </Button>
+        {hasPendingTranscript ? (
+          <Button size="lg" onClick={handleEnd} disabled={isSavingTranscript} className="gap-2">
+            {isSavingTranscript ? <Spinner className="size-5" /> : <RefreshCw className="size-5" />}
+            {isSavingTranscript
+              ? t.chat.voicePanel.savingTranscript
+              : t.chat.voicePanel.retrySaveTranscript}
+          </Button>
+        ) : (
+          <Button size="lg" onClick={handleConnect} className="gap-2">
+            <Phone className="size-5" />
+            {t.chat.voicePanel.start}
+          </Button>
+        )}
       </div>
     )
   }
@@ -114,9 +144,9 @@ export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
           </div>
         )}
         <div className="flex flex-col gap-3">
-          {transcript.map((entry, i) => (
+          {transcript.map((entry) => (
             <div
-              key={i}
+              key={entry.id}
               className={cn(
                 "flex flex-col gap-0.5",
                 entry.role === "user" ? "items-end" : "items-start",
@@ -161,7 +191,10 @@ export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
                 {t.chat.voicePanel.maybe}
               </div>
               <button
+                type="button"
                 onClick={dismissCompletions}
+                aria-label={t.chat.voicePanel.closeSuggestions}
+                title={t.chat.voicePanel.closeSuggestions}
                 className="rounded p-0.5 hover:bg-muted"
               >
                 <X className="size-3.5 text-muted-foreground" />
@@ -194,6 +227,12 @@ export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
               !isMicOn && "border-destructive/50 bg-destructive/10",
             )}
             onClick={toggleMic}
+            aria-label={isMicOn
+              ? t.chat.voicePanel.muteMicrophone
+              : t.chat.voicePanel.unmuteMicrophone}
+            title={isMicOn
+              ? t.chat.voicePanel.muteMicrophone
+              : t.chat.voicePanel.unmuteMicrophone}
           >
             {isMicOn ? <Mic className="size-5" /> : <MicOff className="size-5 text-destructive" />}
           </Button>
@@ -210,8 +249,11 @@ export function VoiceChatPanel({ topic, onEnd }: VoiceChatPanelProps) {
             size="icon"
             className="size-12 rounded-full"
             onClick={handleEnd}
+            disabled={isSavingTranscript}
+            aria-label={t.chat.voicePanel.endVoice}
+            title={t.chat.voicePanel.endVoice}
           >
-            <PhoneOff className="size-5" />
+            {isSavingTranscript ? <Spinner className="size-5" /> : <PhoneOff className="size-5" />}
           </Button>
         </div>
         <div className="mt-2 flex items-center justify-center gap-3">

@@ -4,6 +4,7 @@ import { useState } from "react"
 import {
   ArrowRight,
   BookOpen,
+  Clock3,
   CheckCircle2,
   ChevronDown,
   Lightbulb,
@@ -13,7 +14,7 @@ import {
   Wrench,
   X,
 } from "lucide-react"
-import type { SessionAnalysis } from "@/lib/types"
+import type { SessionAnalysis, StealthPracticeResult } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
@@ -22,13 +23,14 @@ import { useLanguage } from "@/components/language-provider"
 
 interface SessionSummaryProps {
   analysis: SessionAnalysis | null
+  stealthPractice?: StealthPracticeResult | null
   analyzing: boolean
   onClose: () => void
 }
 
-export function SessionSummary({ analysis, analyzing, onClose }: SessionSummaryProps) {
+export function SessionSummary({ analysis, stealthPractice, analyzing, onClose }: SessionSummaryProps) {
   const [expandedSection, setExpandedSection] = useState<string | null>("corrections")
-  const { t } = useLanguage()
+  const { language, t } = useLanguage()
 
   if (analyzing) {
     return (
@@ -78,7 +80,13 @@ export function SessionSummary({ analysis, analyzing, onClose }: SessionSummaryP
           <CheckCircle2 className="size-5 text-success" />
           <span className="text-sm font-medium">{t.chat.summary.title}</span>
         </div>
-        <Button variant="ghost" size="sm" onClick={onClose}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onClose}
+          aria-label={t.chat.summary.close}
+          title={t.chat.summary.close}
+        >
           <X className="size-4" />
         </Button>
       </div>
@@ -98,6 +106,54 @@ export function SessionSummary({ analysis, analyzing, onClose }: SessionSummaryP
             </div>
           )}
         </div>
+
+        {stealthPractice && (
+          <div className="border-b border-border bg-primary/5 px-4 py-4">
+            <div className="rounded-xl border border-primary/20 bg-background p-3.5">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="flex items-center gap-1.5 text-sm font-medium">
+                    <Target className="size-4 text-primary" />
+                    {t.chat.summary.stealthTitle}
+                  </p>
+                  <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground">
+                    {t.chat.summary.stealthDescription}
+                  </p>
+                </div>
+                <Badge
+                  variant={stealthPractice.outcome === "failure" ? "destructive" : "secondary"}
+                  className="shrink-0"
+                >
+                  {t.chat.summary.stealthOutcomes[stealthPractice.outcome]}
+                </Badge>
+              </div>
+              <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3 text-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline">
+                    {t.labels.skills[stealthPractice.targetSkillCode as keyof typeof t.labels.skills]
+                      ?? stealthPractice.targetSkillCode}
+                  </Badge>
+                </div>
+                {stealthPractice.evidenceQuote && (
+                  <p className="leading-relaxed text-muted-foreground">
+                    <span className="font-medium text-foreground">{t.chat.summary.stealthEvidence}: </span>
+                    {stealthPractice.evidenceQuote}
+                  </p>
+                )}
+                {stealthPractice.nextReviewAt && (
+                  <p className="flex items-center gap-1.5 text-muted-foreground">
+                    <Clock3 className="size-3.5 text-primary" />
+                    <span className="font-medium text-foreground">{t.chat.summary.stealthNext}:</span>
+                    {new Date(stealthPractice.nextReviewAt).toLocaleDateString(
+                      language === "zh-CN" ? "zh-CN" : "en-US",
+                      { year: "numeric", month: "short", day: "numeric" },
+                    )}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Section tabs */}
         <div className="flex border-b border-border">
