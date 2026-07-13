@@ -330,7 +330,7 @@ export default function ImportPage() {
             </CardHeader>
             <CardContent className="flex max-h-[360px] flex-col gap-3 overflow-auto">
               {selectedConversations.length ? (
-                selectedConversations.slice(0, 8).map((conversation) => (
+                selectedConversations.map((conversation) => (
                   <div key={conversation.id ?? conversation.title} className="rounded-lg border border-border p-3">
                     <div className="line-clamp-1 text-sm font-medium">{conversation.title || t.import.untitled}</div>
                     <div className="mt-1 text-xs text-muted-foreground">

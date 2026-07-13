@@ -458,7 +458,7 @@ export default function ChatPage() {
           <div className="flex flex-col gap-3">
             <h2 className="text-sm font-medium text-muted-foreground">{t.chat.recent}</h2>
             <div className="flex flex-col gap-2">
-              {sessions.slice(0, 5).map((s) => (
+              {sessions.map((s) => (
                 <Card
                   key={s.id}
                   className="relative transition-colors hover:bg-muted/50"

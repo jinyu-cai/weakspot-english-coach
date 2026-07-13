@@ -23,6 +23,13 @@ export interface NavItem {
   ownerOnly?: boolean
 }
 
+export type NavGroupKey = "start" | "learn" | "progress" | "library" | "coach" | "admin"
+
+export interface NavGroup {
+  key: NavGroupKey
+  items: NavItem["key"][]
+}
+
 export const NAV_ITEMS: NavItem[] = [
   { href: "/", key: "diagnose", label: "Diagnose", description: "Analyze your writing", icon: Stethoscope },
   { href: "/chat", key: "chat", label: "Chat", description: "Practice conversations", icon: MessageCircle },
@@ -36,4 +43,16 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/practice", key: "practice", label: "Practice", description: "Targeted exercises", icon: Dumbbell },
   { href: "/history", key: "history", label: "History", description: "Past submissions", icon: History },
   { href: "/admin", key: "admin", label: "Admin", description: "Manage members", icon: Shield, ownerOnly: true },
+]
+
+// Grouping keeps every feature visible while giving first-time learners a
+// clear path through the product. The order inside each group is intentional:
+// the most useful next action comes first.
+export const NAV_GROUPS: NavGroup[] = [
+  { key: "start", items: ["diagnose", "chat", "practice"] },
+  { key: "learn", items: ["input", "plan", "import"] },
+  { key: "progress", items: ["dashboard", "stats"] },
+  { key: "library", items: ["notebook", "history"] },
+  { key: "coach", items: ["memory"] },
+  { key: "admin", items: ["admin"] },
 ]

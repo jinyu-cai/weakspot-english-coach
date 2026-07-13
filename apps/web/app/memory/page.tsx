@@ -505,7 +505,7 @@ export default function MemoryPage() {
           <CardContent className="flex max-h-[520px] flex-col gap-3 overflow-y-auto">
             {traces.length === 0 ? (
               <p className="text-sm text-muted-foreground">{t.memory.noTraces}</p>
-            ) : traces.slice(0, 8).map((trace) => (
+            ) : traces.map((trace) => (
               <div key={trace.id} className="rounded-lg border border-border p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -517,7 +517,7 @@ export default function MemoryPage() {
                   </span>
                 </div>
                 <div className="mt-3 flex flex-col gap-2">
-                  {trace.selected?.slice(0, 3).map((selected) => (
+                  {trace.selected?.map((selected) => (
                     <div key={selected.id} className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
                       <span className="line-clamp-1">{selected.content}</span>
                       <span className="shrink-0 font-medium text-foreground">{Math.round(selected.score * 100)}%</span>

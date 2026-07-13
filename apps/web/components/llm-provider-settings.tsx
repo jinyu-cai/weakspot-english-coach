@@ -158,8 +158,14 @@ export function LLMProviderSettings() {
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetTrigger
         render={
-          <Button variant="outline" size="icon" aria-label={t.settings.aiProviderAria} title={t.settings.aiProviderAria}>
+          <Button
+            variant="outline"
+            className="px-3"
+            aria-label={t.settings.aiProviderAria}
+            title={t.settings.aiProviderAria}
+          >
             <KeyRound />
+            <span className="hidden xl:inline">{t.settings.aiProvider}</span>
           </Button>
         }
       />
