@@ -74,6 +74,7 @@ function RunnerCard({
   const [answer, setAnswer] = useState("")
   const [grade, setGrade] = useState<PracticeGrade | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const clientAttemptIdRef = useRef<string | null>(null)
   const { language, t } = useLanguage()
 
   const skillLabel = localizedSkillLabel(skillCode, language)
@@ -83,7 +84,10 @@ function RunnerCard({
     if (submitting || grade) return
     setSubmitting(true)
     try {
+      const clientAttemptId = clientAttemptIdRef.current ?? crypto.randomUUID()
+      clientAttemptIdRef.current = clientAttemptId
       const result = await gradePracticeAdhoc(DEMO_USER_ID, {
+        clientAttemptId,
         targetSkillCode: skillCode,
         question: exercise.question,
         expectedAnswer: exercise.answer,
@@ -125,7 +129,10 @@ function RunnerCard({
 
         <Textarea
           value={answer}
-          onChange={(e) => setAnswer(e.target.value)}
+          onChange={(e) => {
+            setAnswer(e.target.value)
+            clientAttemptIdRef.current = null
+          }}
           disabled={!!grade || submitting}
           placeholder={t.common.typeAnswer}
           className="min-h-28 resize-none"
@@ -161,10 +168,12 @@ function RunnerCard({
       </CardContent>
 
       <CardFooter className="flex flex-wrap justify-end gap-2">
-        <Button variant="outline" onClick={onRegenerate} disabled={submitting || regenerating}>
-          {regenerating ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
-          {t.plan.newSameType}
-        </Button>
+        {!grade && (
+          <Button variant="outline" onClick={onRegenerate} disabled={submitting || regenerating}>
+            {regenerating ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
+            {t.plan.newSameType}
+          </Button>
+        )}
         {!grade ? (
           <Button onClick={handleSubmit} disabled={!canSubmit || submitting}>
             {submitting ? (
@@ -390,7 +399,7 @@ function PlanPracticeFlow() {
       </div>
 
       <RunnerCard
-        key={exercise.id}
+        key={`${current}:${exercise.id}:${exercise.question}`}
         exercise={exercise}
         skillCode={skillCode}
         practiceType={practiceType}

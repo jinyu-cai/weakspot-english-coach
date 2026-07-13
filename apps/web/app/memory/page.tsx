@@ -289,6 +289,8 @@ export default function MemoryPage() {
               const isEditing = editingId === memory.id
               const graduation = memory.kind === "weakness" ? memory.graduation : undefined
               const thresholds = graduation?.thresholds
+              const retention = memory.kind === "weakness" ? memory.retention : undefined
+              const modalityMastery = Object.entries(memory.modalityMastery ?? {})
               return (
                 <Card
                   key={memory.id}
@@ -309,6 +311,14 @@ export default function MemoryPage() {
                       <Badge variant={memory.status === "active" ? "secondary" : "outline"}>
                         {t.memory.statuses[memory.status]}
                       </Badge>
+                      {memory.verification && (
+                        <Badge
+                          variant={memory.verification.state === "candidate" ? "secondary" : "outline"}
+                          title={t.memory.verification}
+                        >
+                          {t.memory.verificationStates[memory.verification.state]}
+                        </Badge>
+                      )}
                       {memory.pinned && <Pin className="size-3.5 text-primary" aria-label={t.memory.pinned} />}
                     </div>
                     {memory.status === "active" && (
@@ -349,6 +359,51 @@ export default function MemoryPage() {
                     {memory.evidence && (
                       <div className="rounded-lg bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground">
                         <span className="font-medium text-foreground">{t.memory.evidence}: </span>{memory.evidence}
+                      </div>
+                    )}
+
+                    {memory.kind === "weakness" && (retention || memory.progressionStage || modalityMastery.length > 0) && (
+                      <div className="rounded-lg border border-primary/15 bg-primary/[0.03] p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm font-medium">{t.memory.retentionTitle}</p>
+                          {memory.progressionStage && (
+                            <Badge variant="outline">
+                              {t.memory.progression}: {t.memory.progressionStages[memory.progressionStage]}
+                            </Badge>
+                          )}
+                        </div>
+                        {retention && (
+                          <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
+                            <div>
+                              <p className="text-muted-foreground">{t.memory.nextReview}</p>
+                              <p className="mt-0.5 font-medium">{formatDate(retention.dueAt)}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">{t.memory.stability}</p>
+                              <p className="mt-0.5 font-medium tabular-nums">
+                                {retention.stabilityDays.toFixed(1)} {t.memory.days}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">{t.memory.relapseRisk}</p>
+                              <p className="mt-0.5 font-medium tabular-nums">
+                                {Math.round((retention.relapseRisk ?? 0) * 100)}%
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                        {modalityMastery.length > 0 && (
+                          <div className="mt-3 border-t border-border pt-3">
+                            <p className="mb-2 text-xs text-muted-foreground">{t.memory.modalityMastery}</p>
+                            <div className="flex flex-wrap gap-2">
+                              {modalityMastery.map(([modality, state]) => (
+                                <Badge key={modality} variant="secondary" className="tabular-nums">
+                                  {t.memory.modalities[modality as keyof typeof t.memory.modalities] ?? modality}: {Math.round(state.mastery)}%
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 

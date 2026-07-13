@@ -14,6 +14,11 @@ Requirements:
 5. The exercise `type` must be one of: fix_sentence, fill_blank, rewrite_sentence.
 6. `question` is the English prompt the student sees; `answer` is the model answer.
 7. Always include every field required by the schema.
+8. Follow the requested learning progression:
+   - replay: stay close to a real prior error and rebuild the correct form;
+   - variation: change surface details/context while preserving the same underlying skill;
+   - transfer: require independent production in a genuinely new, useful real-life context.
+   Never copy personal details that are not needed for the exercise.
 """.strip()
 
 GRADE_SYSTEM_PROMPT = """
@@ -42,6 +47,8 @@ def generate_practice_exercise(
     output_language: OutputLanguage = "en",
     memory_context: str | None = None,
     decision_reason: str | None = None,
+    progression_stage: str = "replay",
+    error_fingerprint: dict | str | None = None,
 ) -> PracticeExerciseAIResult:
     type_line = (
         f"Required exercise type:\n{practice_type} (the `type` field MUST be exactly this)\n\n"
@@ -52,8 +59,11 @@ def generate_practice_exercise(
         f"Target skill:\n{skill_code} / {zh_label}\n\n"
         f"{type_line}"
         f"Estimated CEFR level:\n{cefr_level}\n\n"
+        f"Learning progression stage:\n{progression_stage}\n\n"
         f"Recent learner error examples:\n{recent_error_examples}"
     )
+    if error_fingerprint:
+        user_prompt += f"\n\nPersistent error fingerprint:\n{error_fingerprint}"
     if decision_reason:
         user_prompt += f"\n\nAdaptive selection rationale:\n{decision_reason}"
     if memory_context:

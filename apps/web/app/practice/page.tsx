@@ -91,7 +91,7 @@ function PracticeFlow() {
         </div>
 
         <PracticeCard
-          key={exercises[current].id}
+          key={`${current}:${exercises[current].id}`}
           exercise={exercises[current]}
           index={current}
           total={exercises.length}

@@ -1,4 +1,6 @@
 from uuid import uuid4
+import hashlib
+import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -7,6 +9,11 @@ from app.api.deps import Identity, get_llm_provider, rate_limited
 from app.core.mastery import DEFAULT_MASTERY, update_skill_from_practice
 from app.core.taxonomy import ERROR_TAXONOMY
 from app.db.repositories import (
+    MemoryWriteClaimLostError,
+    PracticeAttemptClaimLostError,
+    PracticeAttemptConflictError,
+    claim_practice_attempt_request,
+    complete_practice_attempt_request,
     get_exercise,
     get_or_create_profile,
     get_skill,
@@ -16,17 +23,22 @@ from app.db.repositories import (
     save_error,
     save_exercise,
     save_practice_attempt,
+    save_practice_attempt_grade_draft,
     save_profile,
+    release_practice_attempt_request,
 )
 from app.models.practice import (
     GeneratePracticeRequest,
     GradePracticeRequest,
+    PracticeGradeAIResult,
     SubmitPracticeRequest,
 )
 from app.services.ai_client import LLMProviderConfig
 from app.services.practice_service import generate_practice_exercise, grade_practice
 from app.services.decision_service import recommend_next_action
 from app.services.memory_service import record_practice_outcome_memory, retrieve_memory_pack
+from app.services.memory_write_service import MemoryWriteBusyError, memory_write_locked
+from app.services.stealth_practice_service import record_guided_practice_retention
 
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
@@ -63,6 +75,7 @@ def _get_or_default_skill(user_id: str, skill_code: str, now: str) -> dict:
     }
 
 
+@memory_write_locked
 def _record_practice_outcome(
     *,
     user_id: str,
@@ -70,6 +83,7 @@ def _record_practice_outcome(
     user_answer: str,
     grade,
     now: str,
+    attempt_id: str,
     exercise_id: str | None = None,
     prompt_zh: str | None = None,
     explanation_zh: str | None = None,
@@ -84,7 +98,7 @@ def _record_practice_outcome(
     plan exercises). Returns {attempt, updatedSkill, recordedError}.
     """
     attempt = {
-        "id": f"att_{uuid4().hex[:12]}",
+        "id": attempt_id,
         "userId": user_id,
         "exerciseId": exercise_id,
         "targetSkillCode": skill_code,
@@ -98,19 +112,28 @@ def _record_practice_outcome(
     }
     save_practice_attempt(attempt)
 
-    updated_skill = update_skill_from_practice(
-        existing=_get_or_default_skill(user_id, skill_code, now),
-        is_correct=grade.isCorrect,
-        mastery_delta=grade.skillMasteryDelta,
-        now=now,
-    )
-    put_skill(updated_skill)
+    existing_skill = _get_or_default_skill(user_id, skill_code, now)
+    skill_attempt_ids = list(existing_skill.get("recentPracticeAttemptIds") or [])
+    if attempt_id in skill_attempt_ids:
+        updated_skill = existing_skill
+    else:
+        updated_skill = update_skill_from_practice(
+            existing=existing_skill,
+            is_correct=grade.isCorrect,
+            mastery_delta=grade.skillMasteryDelta,
+            now=now,
+        )
+        updated_skill["recentPracticeAttemptIds"] = [
+            *skill_attempt_ids,
+            attempt_id,
+        ][-50:]
+        put_skill(updated_skill)
 
     recorded_error = None
     if not grade.isCorrect:
         taxonomy = ERROR_TAXONOMY.get(skill_code, {"label": skill_code, "zhLabel": skill_code})
         recorded_error = {
-            "id": f"err_{uuid4().hex[:12]}",
+            "id": "err_" + hashlib.sha256(attempt_id.encode("utf-8")).hexdigest()[:20],
             "userId": user_id,
             # Practice mistakes aren't tied to a writing submission, but the
             # ERROR shape needs the field — use a synthetic, self-referential id.
@@ -130,31 +153,86 @@ def _record_practice_outcome(
         save_error(recorded_error)
 
     profile = get_or_create_profile(user_id)
-    profile["totalPracticeAttempts"] = int(profile.get("totalPracticeAttempts", 0)) + 1
-    profile["updatedAt"] = now
-    save_profile(profile)
+    profile_attempt_ids = list(profile.get("recentPracticeAttemptIds") or [])
+    if attempt_id not in profile_attempt_ids:
+        profile["totalPracticeAttempts"] = int(profile.get("totalPracticeAttempts", 0)) + 1
+        profile["recentPracticeAttemptIds"] = [
+            *profile_attempt_ids,
+            attempt_id,
+        ][-50:]
+        profile["updatedAt"] = now
+        save_profile(profile)
 
-    try:
-        memory_updates = record_practice_outcome_memory(
-            user_id=user_id,
-            skill_code=skill_code,
-            exercise_type=exercise_type,
-            score=grade.score,
-            is_correct=grade.isCorrect,
-            attempt_id=attempt["id"],
-            created_at=now,
-            mastery=float(updated_skill.get("mastery", 0)),
-        )
-    except Exception:
-        logger.exception("practice memory_persist_error user_id=%s attempt=%s", user_id, attempt["id"])
-        memory_updates = []
+    # These functions are independently idempotent by attempt/probe id. Let a
+    # persistence failure abort this request so a retry can finish any missing
+    # side effect instead of durably returning an incomplete learner update.
+    memory_updates = record_practice_outcome_memory(
+        user_id=user_id,
+        skill_code=skill_code,
+        exercise_type=exercise_type,
+        score=grade.score,
+        is_correct=grade.isCorrect,
+        attempt_id=attempt["id"],
+        created_at=now,
+        mastery=float(updated_skill.get("mastery", 0)),
+    )
+
+    retention_update = record_guided_practice_retention(
+        user_id=user_id,
+        skill_code=skill_code,
+        score=grade.score,
+        is_correct=grade.isCorrect,
+        modality="exercise",
+        context=exercise_type,
+        attempt_id=attempt["id"],
+        now=now,
+    )
 
     return {
         "attempt": attempt,
         "updatedSkill": updated_skill,
         "recordedError": recorded_error,
         "memoryUpdates": memory_updates,
+        "retentionUpdate": retention_update,
     }
+
+
+def _practice_request_hash(endpoint: str, payload: dict) -> str:
+    canonical = json.dumps(
+        {"endpoint": endpoint, **payload},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _claim_practice_request(
+    *,
+    user_id: str,
+    client_attempt_id: str | None,
+    endpoint: str,
+    payload: dict,
+) -> tuple[str, str, dict]:
+    stable_client_id = client_attempt_id or f"server_{uuid4().hex}"
+    claim_id = f"pcl_{uuid4().hex}"
+    claim = claim_practice_attempt_request(
+        user_id,
+        stable_client_id,
+        _practice_request_hash(endpoint, payload),
+        claim_id,
+    )
+    if claim.get("claimState") == "complete":
+        return stable_client_id, claim_id, claim
+    if claim.get("claimState") != "acquired":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "practice_attempt_in_progress",
+                "message": "This practice attempt is already being processed.",
+            },
+        )
+    return stable_client_id, claim_id, claim
 
 
 @router.post("/practice/generate")
@@ -210,6 +288,8 @@ def generate(
             output_language=req.outputLanguage,
             memory_context=memory_pack.get("text"),
             decision_reason=decision.get("reason"),
+            progression_stage=decision.get("progressionStage", "replay"),
+            error_fingerprint=decision.get("errorFingerprint"),
         )
 
         exercise = {
@@ -224,6 +304,7 @@ def generate(
             "outputLanguage": req.outputLanguage,
             "createdAt": now,
             "decision": decision,
+            "progressionStage": decision.get("progressionStage", "replay"),
             "memoryRecall": {
                 "traceId": memory_pack.get("traceId"),
                 "memoryIds": [item.get("id") for item in memory_pack.get("items", [])],
@@ -246,8 +327,10 @@ def submit(
     identity: Identity = Depends(rate_limited("practice_submit")),
 ):
     req.userId = identity.user_id
+    stable_client_id: str | None = None
+    claim_id: str | None = None
+    claim_acquired = False
     try:
-        now = now_iso()
         if (
             not identity.has_unlimited_llm_quota
             and len(req.userAnswer) > PLATFORM_PRACTICE_ANSWER_CHAR_LIMIT
@@ -260,14 +343,38 @@ def submit(
         if not exercise:
             raise HTTPException(status_code=404, detail="Exercise not found")
 
-        grade = grade_practice(
-            question=exercise["question"],
-            expected_answer=exercise.get("answer", ""),
-            user_answer=req.userAnswer,
-            target_skill_code=exercise["targetSkillCode"],
-            llm_provider=llm_provider,
-            output_language=req.outputLanguage,
+        stable_client_id, claim_id, claim = _claim_practice_request(
+            user_id=req.userId,
+            client_attempt_id=req.clientAttemptId,
+            endpoint="submit",
+            payload={
+                "exerciseId": req.exerciseId,
+                "userAnswer": req.userAnswer,
+                "outputLanguage": req.outputLanguage,
+            },
         )
+        if claim.get("claimState") == "complete":
+            return claim["result"]
+        claim_acquired = True
+        now = str(claim["attemptCreatedAt"])
+
+        if isinstance(claim.get("gradeDraft"), dict):
+            grade = PracticeGradeAIResult.model_validate(claim["gradeDraft"])
+        else:
+            grade = grade_practice(
+                question=exercise["question"],
+                expected_answer=exercise.get("answer", ""),
+                user_answer=req.userAnswer,
+                target_skill_code=exercise["targetSkillCode"],
+                llm_provider=llm_provider,
+                output_language=req.outputLanguage,
+            )
+            save_practice_attempt_grade_draft(
+                req.userId,
+                stable_client_id,
+                claim_id,
+                grade.model_dump(mode="json"),
+            )
 
         outcome = _record_practice_outcome(
             user_id=req.userId,
@@ -275,26 +382,50 @@ def submit(
             user_answer=req.userAnswer,
             grade=grade,
             now=now,
+            attempt_id=str(claim["attemptId"]),
             exercise_id=req.exerciseId,
             prompt_zh=exercise.get("promptZh"),
             explanation_zh=exercise.get("explanationZh"),
             exercise_type=exercise.get("type", "fix_sentence"),
         )
 
-        return {
+        result = {
             "grade": grade.model_dump(mode="json"),
             "attempt": outcome["attempt"],
             "updatedSkill": outcome["updatedSkill"],
             "recordedError": outcome["recordedError"],
             "memoryUpdates": outcome["memoryUpdates"],
+            "retentionUpdate": outcome["retentionUpdate"],
+            "clientAttemptId": stable_client_id,
         }
+        complete_practice_attempt_request(
+            req.userId,
+            stable_client_id,
+            claim_id,
+            result,
+        )
+        claim_acquired = False
+        return result
 
     except HTTPException:
         raise
+    except PracticeAttemptConflictError as e:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "practice_attempt_conflict", "message": str(e)},
+        ) from e
+    except (PracticeAttemptClaimLostError, MemoryWriteBusyError, MemoryWriteClaimLostError) as e:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "practice_attempt_retry", "message": str(e)},
+        ) from e
     except ValueError as e:
         raise HTTPException(status_code=502, detail=f"AI error: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if claim_acquired and stable_client_id and claim_id:
+            release_practice_attempt_request(req.userId, stable_client_id, claim_id)
 
 
 @router.post("/practice/grade")
@@ -310,8 +441,10 @@ def grade_adhoc(
     weakness library so plan-exercise mistakes feed the next plan / analysis.
     """
     req.userId = identity.user_id
+    stable_client_id: str | None = None
+    claim_id: str | None = None
+    claim_acquired = False
     try:
-        now = now_iso()
         if (
             not identity.has_unlimited_llm_quota
             and len(req.userAnswer) > PLATFORM_PRACTICE_ANSWER_CHAR_LIMIT
@@ -321,14 +454,43 @@ def grade_adhoc(
                 detail=f"Practice answers are limited to {PLATFORM_PRACTICE_ANSWER_CHAR_LIMIT} characters for the current access tier.",
             )
 
-        grade = grade_practice(
-            question=req.question,
-            expected_answer=req.expectedAnswer,
-            user_answer=req.userAnswer,
-            target_skill_code=req.targetSkillCode,
-            llm_provider=llm_provider,
-            output_language=req.outputLanguage,
+        stable_client_id, claim_id, claim = _claim_practice_request(
+            user_id=req.userId,
+            client_attempt_id=req.clientAttemptId,
+            endpoint="grade",
+            payload={
+                "targetSkillCode": req.targetSkillCode,
+                "question": req.question,
+                "expectedAnswer": req.expectedAnswer,
+                "userAnswer": req.userAnswer,
+                "outputLanguage": req.outputLanguage,
+                "exerciseType": req.exerciseType.value if req.exerciseType else None,
+                "promptZh": req.promptZh,
+                "explanationZh": req.explanationZh,
+            },
         )
+        if claim.get("claimState") == "complete":
+            return claim["result"]
+        claim_acquired = True
+        now = str(claim["attemptCreatedAt"])
+
+        if isinstance(claim.get("gradeDraft"), dict):
+            grade = PracticeGradeAIResult.model_validate(claim["gradeDraft"])
+        else:
+            grade = grade_practice(
+                question=req.question,
+                expected_answer=req.expectedAnswer,
+                user_answer=req.userAnswer,
+                target_skill_code=req.targetSkillCode,
+                llm_provider=llm_provider,
+                output_language=req.outputLanguage,
+            )
+            save_practice_attempt_grade_draft(
+                req.userId,
+                stable_client_id,
+                claim_id,
+                grade.model_dump(mode="json"),
+            )
 
         outcome = _record_practice_outcome(
             user_id=req.userId,
@@ -336,22 +498,46 @@ def grade_adhoc(
             user_answer=req.userAnswer,
             grade=grade,
             now=now,
+            attempt_id=str(claim["attemptId"]),
             prompt_zh=req.promptZh,
             explanation_zh=req.explanationZh,
             exercise_type=req.exerciseType.value if req.exerciseType else "fix_sentence",
         )
 
-        return {
+        result = {
             "grade": grade.model_dump(mode="json"),
             "attempt": outcome["attempt"],
             "updatedSkill": outcome["updatedSkill"],
             "recordedError": outcome["recordedError"],
             "memoryUpdates": outcome["memoryUpdates"],
+            "retentionUpdate": outcome["retentionUpdate"],
+            "clientAttemptId": stable_client_id,
         }
+        complete_practice_attempt_request(
+            req.userId,
+            stable_client_id,
+            claim_id,
+            result,
+        )
+        claim_acquired = False
+        return result
 
     except HTTPException:
         raise
+    except PracticeAttemptConflictError as e:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "practice_attempt_conflict", "message": str(e)},
+        ) from e
+    except (PracticeAttemptClaimLostError, MemoryWriteBusyError, MemoryWriteClaimLostError) as e:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "practice_attempt_retry", "message": str(e)},
+        ) from e
     except ValueError as e:
         raise HTTPException(status_code=502, detail=f"AI error: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if claim_acquired and stable_client_id and claim_id:
+            release_practice_attempt_request(req.userId, stable_client_id, claim_id)

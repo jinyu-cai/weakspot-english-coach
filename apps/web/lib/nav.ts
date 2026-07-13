@@ -7,6 +7,7 @@ import {
   Inbox,
   LayoutDashboard,
   MessageCircle,
+  Radio,
   Shield,
   Stethoscope,
   Trophy,
@@ -15,7 +16,7 @@ import {
 
 export interface NavItem {
   href: string
-  key: "diagnose" | "chat" | "import" | "dashboard" | "memory" | "notebook" | "stats" | "plan" | "practice" | "history" | "admin"
+  key: "diagnose" | "chat" | "input" | "import" | "dashboard" | "memory" | "notebook" | "stats" | "plan" | "practice" | "history" | "admin"
   label: string
   description: string
   icon: LucideIcon
@@ -25,6 +26,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { href: "/", key: "diagnose", label: "Diagnose", description: "Analyze your writing", icon: Stethoscope },
   { href: "/chat", key: "chat", label: "Chat", description: "Practice conversations", icon: MessageCircle },
+  { href: "/input", key: "input", label: "Input Lab", description: "Watch, read & listen", icon: Radio },
   { href: "/import", key: "import", label: "Import", description: "ChatGPT conversations", icon: Inbox },
   { href: "/dashboard", key: "dashboard", label: "Dashboard", description: "Your weakness model", icon: LayoutDashboard },
   { href: "/memory", key: "memory", label: "Memory", description: "What your coach remembers", icon: BrainCircuit },

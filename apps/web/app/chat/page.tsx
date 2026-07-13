@@ -21,7 +21,7 @@ import {
   sendChatMessage,
 } from "@/lib/api-client"
 import { DEMO_USER_ID } from "@/lib/mock-data"
-import type { ChatMessage, ChatSession, SessionAnalysis } from "@/lib/types"
+import type { ChatMessage, ChatSession, SessionAnalysis, StealthPracticeResult } from "@/lib/types"
 import {
   DEFAULT_SERVER_DEEP_MODEL_ID,
   DEFAULT_SERVER_FAST_MODEL_ID,
@@ -38,10 +38,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { VoiceChatPanel } from "@/components/voice-chat-panel"
+import { VoiceChatPanel, type VoiceChatLifecycle } from "@/components/voice-chat-panel"
 import { SessionSummary } from "@/components/session-summary"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/components/language-provider"
+import { setVoiceNavigationLocked } from "@/lib/voice-navigation-guard"
 
 type ChatMode = "text" | "voice"
 type ViewState = "chat" | "analyzing" | "summary"
@@ -80,6 +81,8 @@ export default function ChatPage() {
   )
   const [viewState, setViewState] = useState<ViewState>("chat")
   const [analysis, setAnalysis] = useState<SessionAnalysis | null>(null)
+  const [stealthPractice, setStealthPractice] = useState<StealthPracticeResult | null>(null)
+  const [voiceLifecycle, setVoiceLifecycle] = useState<VoiceChatLifecycle>({ active: false, pending: false })
   const { t } = useLanguage()
 
   const modelLabels = {
@@ -90,6 +93,7 @@ export default function ChatPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const sessionSelectionRef = useRef(0)
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -160,6 +164,12 @@ export default function ChatPage() {
 
   const deepServerModels = serverModelsForMode(serverModels, "deep")
   const fastServerModels = serverModelsForMode(serverModels, "fast")
+  const voiceNavigationLocked = voiceLifecycle.active || voiceLifecycle.pending
+
+  useEffect(() => {
+    setVoiceNavigationLocked(voiceNavigationLocked)
+    return () => setVoiceNavigationLocked(false)
+  }, [voiceNavigationLocked])
 
   function selectServerModel(mode: "deep" | "fast", serverModelId: string) {
     const current = loadLLMSettings()
@@ -176,18 +186,37 @@ export default function ChatPage() {
   }
 
   function resetSession() {
+    sessionSelectionRef.current += 1
+    setVoiceLifecycle({ active: false, pending: false })
     setActiveSession(null)
     setMessages([])
     setViewState("chat")
     setAnalysis(null)
+    setStealthPractice(null)
   }
 
   async function triggerAnalysis(sessionId: string) {
     setViewState("analyzing")
     setAnalysis(null)
+    setStealthPractice(null)
     try {
       const result = await analyzeSession(sessionId)
       setAnalysis(result.analysis)
+      setStealthPractice(result.stealthPractice ?? null)
+      setActiveSession((current) => current?.id === sessionId
+        ? {
+            ...current,
+            analysis: result.analysis,
+            stealthPractice: result.stealthPractice ?? null,
+          }
+        : current)
+      setSessions((current) => current.map((session) => session.id === sessionId
+        ? {
+            ...session,
+            analysis: result.analysis,
+            stealthPractice: result.stealthPractice ?? null,
+          }
+        : session))
       setViewState("summary")
     } catch {
       toast.error(t.chat.analyzeFailed)
@@ -196,15 +225,23 @@ export default function ChatPage() {
   }
 
   async function handleNewSession(topic?: string) {
+    if (voiceNavigationLocked) {
+      toast.error(t.chat.voicePanel.finishBeforeLeaving)
+      return
+    }
+    if (sending) return
+    sessionSelectionRef.current += 1
     setCreatingSession(true)
     try {
       const session = await createChatSession(DEMO_USER_ID, topic)
       setSessions((prev) => [session, ...prev])
       setActiveSession(session)
+      setMode("text")
       setMessages([])
       setInput("")
       setViewState("chat")
       setAnalysis(null)
+      setStealthPractice(null)
     } catch {
       toast.error(t.chat.createFailed)
     } finally {
@@ -213,15 +250,26 @@ export default function ChatPage() {
   }
 
   async function handleSelectSession(session: ChatSession) {
+    const selectionId = ++sessionSelectionRef.current
     setActiveSession(session)
+    setMode(session.mode === "voice" ? "voice" : "text")
     setMessages([])
     setInput("")
-    setViewState("chat")
-    setAnalysis(null)
+    setViewState(session.analysis ? "summary" : "chat")
+    setAnalysis(session.analysis ?? null)
+    setStealthPractice(session.stealthPractice ?? null)
     try {
-      const { messages: msgs } = await getChatMessages(session.id, DEMO_USER_ID)
+      const { session: refreshedSession, messages: msgs } = await getChatMessages(session.id, DEMO_USER_ID)
+      if (sessionSelectionRef.current !== selectionId) return
+      setActiveSession(refreshedSession)
+      setSessions((current) => current.map((item) => item.id === refreshedSession.id ? refreshedSession : item))
+      setMode(refreshedSession.mode === "voice" ? "voice" : "text")
       setMessages(msgs)
+      setViewState(refreshedSession.analysis ? "summary" : "chat")
+      setAnalysis(refreshedSession.analysis ?? null)
+      setStealthPractice(refreshedSession.stealthPractice ?? null)
     } catch {
+      if (sessionSelectionRef.current !== selectionId) return
       toast.error(t.chat.loadFailed)
     }
   }
@@ -271,16 +319,30 @@ export default function ChatPage() {
   }
 
   async function handleEndTextChat() {
-    if (!activeSession) return
+    if (!activeSession || sending) return
     await triggerAnalysis(activeSession.id)
   }
 
   async function handleVoiceEnd(sessionId?: string) {
+    setVoiceLifecycle({ active: false, pending: false })
     if (sessionId) {
       await triggerAnalysis(sessionId)
     } else {
       resetSession()
     }
+  }
+
+  function handleModeChange(nextMode: ChatMode) {
+    if (voiceNavigationLocked) {
+      toast.error(t.chat.voicePanel.finishBeforeLeaving)
+      return
+    }
+    if (sending) return
+    if (nextMode === "text" && activeSession?.mode === "voice") {
+      void handleNewSession(activeSession.topic ?? undefined)
+      return
+    }
+    setMode(nextMode)
   }
 
   // ---- No active session: show session picker ----
@@ -358,16 +420,23 @@ export default function ChatPage() {
             return (
               <Card
                 key={s.key}
-                className="cursor-pointer transition-all hover:border-primary/40 hover:shadow-md"
-                onClick={() => handleNewSession(s.topic)}
+                className="relative transition-all hover:border-primary/40 hover:shadow-md"
               >
-                <CardHeader className="pb-2">
+                <button
+                  type="button"
+                  aria-label={`${localized[0]}: ${localized[1]}`}
+                  title={`${localized[0]}: ${localized[1]}`}
+                  disabled={creatingSession}
+                  className="absolute inset-0 z-0 cursor-pointer rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-wait"
+                  onClick={() => handleNewSession(s.topic)}
+                />
+                <CardHeader className="pointer-events-none relative z-10 pb-2">
                   <CardTitle className="flex items-center gap-2 text-base">
-                    <span className="text-xl">{s.emoji}</span>
+                    <span className="text-xl" aria-hidden="true">{s.emoji}</span>
                     {localized[0]}
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="pointer-events-none relative z-10">
                   <CardDescription>{localized[1]}</CardDescription>
                 </CardContent>
               </Card>
@@ -388,10 +457,16 @@ export default function ChatPage() {
               {sessions.slice(0, 5).map((s) => (
                 <Card
                   key={s.id}
-                  className="cursor-pointer transition-colors hover:bg-muted/50"
-                  onClick={() => handleSelectSession(s)}
+                  className="relative transition-colors hover:bg-muted/50"
                 >
-                  <CardContent className="flex items-center justify-between py-3">
+                  <button
+                    type="button"
+                    aria-label={`${s.topic || s.summary || t.chat.freeChat}: ${s.messageCount} ${t.chat.messages}`}
+                    title={`${s.topic || s.summary || t.chat.freeChat}: ${s.messageCount} ${t.chat.messages}`}
+                    className="absolute inset-0 z-0 cursor-pointer rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                    onClick={() => handleSelectSession(s)}
+                  />
+                  <CardContent className="pointer-events-none relative z-10 flex items-center justify-between py-3">
                     <div className="flex items-center gap-3">
                       <MessageCircle className="size-4 text-muted-foreground" />
                       <div className="flex flex-col">
@@ -432,6 +507,8 @@ export default function ChatPage() {
             variant="ghost"
             size="sm"
             onClick={resetSession}
+            disabled={voiceNavigationLocked || sending}
+            title={voiceNavigationLocked ? t.chat.voicePanel.finishBeforeLeaving : undefined}
           >
             <ChevronDown className="size-4 rotate-90" />
             {t.chat.back}
@@ -460,8 +537,10 @@ export default function ChatPage() {
           {viewState === "chat" && (
             <ToggleGroup
               value={[mode]}
-              onValueChange={(v) => v[0] && setMode(v[0] as ChatMode)}
+              onValueChange={(v) => v[0] && handleModeChange(v[0] as ChatMode)}
+              disabled={voiceNavigationLocked || sending}
               className="rounded-lg border border-border p-0.5"
+              title={voiceNavigationLocked ? t.chat.voicePanel.finishBeforeLeaving : undefined}
             >
               <ToggleGroupItem value="voice" className="h-7 gap-1 rounded-md px-2.5 text-xs">
                 <Mic className="size-3.5" />
@@ -477,7 +556,8 @@ export default function ChatPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => { setViewState("chat"); setAnalysis(null) }}
+              onClick={() => void handleNewSession(activeSession.topic ?? undefined)}
+              disabled={creatingSession}
             >
               {t.chat.continueChat}
             </Button>
@@ -486,7 +566,8 @@ export default function ChatPage() {
             variant="outline"
             size="sm"
             onClick={() => handleNewSession(activeSession.topic ?? undefined)}
-            disabled={creatingSession}
+            disabled={creatingSession || voiceNavigationLocked || sending}
+            title={voiceNavigationLocked ? t.chat.voicePanel.finishBeforeLeaving : undefined}
           >
             <Plus className="size-4" />
             {t.chat.new}
@@ -498,6 +579,7 @@ export default function ChatPage() {
       {(viewState === "analyzing" || viewState === "summary") && (
         <SessionSummary
           analysis={analysis}
+          stealthPractice={stealthPractice}
           analyzing={viewState === "analyzing"}
           onClose={resetSession}
         />
@@ -508,6 +590,7 @@ export default function ChatPage() {
         <VoiceChatPanel
           topic={activeSession.topic ?? undefined}
           onEnd={handleVoiceEnd}
+          onLifecycleChange={setVoiceLifecycle}
         />
       )}
 
@@ -573,6 +656,8 @@ export default function ChatPage() {
                 className="size-11 shrink-0 rounded-xl"
                 onClick={handleSend}
                 disabled={!input.trim() || sending}
+                aria-label={t.chat.sendMessage}
+                title={t.chat.sendMessage}
               >
                 <ArrowUp className="size-5" />
               </Button>
@@ -584,6 +669,7 @@ export default function ChatPage() {
                   size="sm"
                   className="h-6 gap-1 px-2 text-[10px]"
                   onClick={handleEndTextChat}
+                  disabled={sending}
                 >
                   <ClipboardCheck className="size-3" />
                   {t.chat.endAnalyze}

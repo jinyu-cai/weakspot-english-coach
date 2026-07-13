@@ -31,6 +31,7 @@ Managing dependencies: `uv add <pkg>` / `uv remove <pkg>` (updates the lockfile)
 uv run python -m scripts.smoke_test          # imports + schemas + validation
 uv run python -m scripts.integration_test    # full loop end-to-end (moto + fake AI)
 uv run python -m scripts.memory_agent_test   # lifecycle/graduation/relapse/API/decision
+uv run python -m scripts.stealth_input_test  # stealth retention + grounded input + identity
 uv run python -m scripts.memory_benchmark    # recall, stale suppression, context budget
 ```
 
@@ -91,6 +92,12 @@ DELETE /memory/{memory_id}
 POST /memory/retrieve
 GET  /memory/traces
 GET  /memory/next-action
+GET  /memory/stealth-next?modality=text_chat&topic=... # owner-only due-target QA preview
+
+POST /input-learning/analyze       # grounded capture or pre-consumption attention mission
+GET  /input-learning               # list the current learner's captures
+GET  /input-learning/{source_id}   # capture, grounded items, and optional mission
+DELETE /input-learning/{source_id} # remove the learner-owned capture and derivatives
 
 GET  /auth/github/login
 GET  /auth/github/callback
@@ -113,6 +120,115 @@ delete rule. Five attempts across at least three days and 14 days, stable recent
 scores, mastery >= 85, two successful exercise formats, and 14 recurrence-free
 days are all required. The row then becomes `resolved` and stops being recalled;
 fresh evidence for the same weakness reactivates the same row.
+
+MemoryAgent also tracks retention and modality-specific evidence from stealth
+missions. A due weakness can be woven into normal chat, but an outcome is
+recorded only after an opportunity gate establishes that the target was fairly
+elicited and observable. Supported outcomes are `success`, `hinted_success`,
+`failure`, `avoided`, and `no_opportunity`; the last outcome never changes attempts,
+mastery, stability, or failure counts. Delayed unprompted success has the
+strongest scheduling effect, while hinted success schedules a nearer cold
+check. A no-op audit adds a 12-hour selection cooldown so the same unsuitable
+target is not injected into every conversation. A fresh error after resolution reopens
+the same weakness and advances
+its next due check. See
+[`../../docs/MEMORY_AGENT_DESIGN.md`](../../docs/MEMORY_AGENT_DESIGN.md) for the
+full lifecycle and field semantics.
+
+Stealth probes progress from `replay` to `variation` to `transfer` only after
+independent cold success; visible exercises count as hinted evidence and cannot
+advance that ladder. Memories separately track `candidate`, `observed`,
+`confirmed`, and `contradicted` verification states. Candidate facts are
+discounted in retrieval and explicitly marked for natural confirmation instead
+of being asserted as known truth.
+
+Same-batch memory candidates are coalesced by normalized canonical key. When a
+chat's ordinary correction matches a scored stealth target, its evidence may
+still merge but retention and modality counters are not decremented twice.
+End-session analysis first persists an immutable model draft, then atomically
+commits errors, notes, skill updates, and the final session result. A failed
+finalization can retry without calling the model again or applying a
+partial/double mastery penalty. Stealth and durable-memory write failures also
+leave that draft retryable instead of finalizing with missing MemoryAgent
+evidence. Text sends and realtime transcript uploads are rejected when their
+session modality does not match. Realtime turns carry stable client message IDs
+so upload retries are idempotent without collapsing two legitimate identical
+utterances. A text send owns a short-lived session turn claim; its user and
+assistant messages plus summary commit in one transaction. End-session analysis
+claims the session before reading its snapshot, so it cannot omit a reply that
+is still being generated or leave a lone user message after an AI failure.
+Realtime transcript uploads use the same turn claim. Large uploads are packed
+below DynamoDB item and 4 MB transaction budgets, staged with a 24-hour cleanup
+TTL, and made visible only when one final transaction removes those TTLs,
+publishes the commit marker, updates the session, and releases the claim.
+
+Canonical Memory read-modify-write operations use a learner-scoped, re-entrant
+`MEMORY_WRITE` lease with stale-writer fencing. Independent sources therefore
+merge serially from the latest row instead of overwriting one another's source
+references or verification evidence. Input Learning memory writes check both
+the source-processing claim and the Memory lease in the same transaction.
+
+`POST /practice/submit` and `POST /practice/grade` accept `clientAttemptId`.
+The browser reuses it after a failed network response. The server stores a
+stable attempt ID, processing claim, immutable grade draft, and final response;
+attempt, error, skill, profile, strategy, weakness, and guided-retention effects
+are idempotent, so a retry neither re-grades nor rewards/penalizes twice.
+
+## Input Learning API
+
+`POST /api/v1/input-learning/analyze` accepts authentic material the learner
+encountered or a topic they plan to consume:
+
+```json
+{
+  "sourceType": "series",
+  "title": "A scene from a workplace comedy",
+  "content": "I wanted to run that by you before we commit.",
+  "notes": "I want useful meeting English.",
+  "goal": "Use natural phrases in project updates.",
+  "targetItemCount": 6,
+  "outputLanguage": "en"
+}
+```
+
+`content` or `transcript` creates `mode: "grounded_capture"`. Extracted items
+have kind `word`, `phrase`, `collocation`, `grammar_pattern`, `pronunciation`,
+or `culture`. A grounded item includes `sourceEvidence`, which must be an exact
+substring of the submitted material; the service drops unsupported evidence
+instead of presenting an invented quotation as sourced fact. Source text is
+handled as untrusted data and cannot override the analysis instruction.
+`notes` and `goal` personalize either mode but are context only: they are never
+presented as verified source quotations.
+
+When neither content nor transcript is supplied, the request creates
+`mode: "attention_mission"`: an optional `attentionMission` guides what to
+notice before, during, and after watching, listening, or reading. This supports
+shows and films, but also videos, podcasts, articles, books, meetings, messages,
+games, travel, and real-life encounters.
+
+`sourceType` is one of `series`, `movie`, `video`, `podcast`, `article`, `book`,
+`work`, `conversation`, or `other`. `targetItemCount` is 3–12 (default 6), and
+`outputLanguage` is `en` or `zh-CN`. The response includes:
+
+```text
+source metadata + summary + itemCount
+  + items[] with personalization and source grounding
+  + attentionMission when applicable
+  + memoryRecall and savedMemoryIds for auditability
+```
+
+The validated request has a learner-scoped deterministic capture ID. Retrying
+the same request returns the completed capture without adding another memory
+observation. A conditional processing claim makes concurrent identical requests
+return `409 input_learning_in_progress` instead of mixing items. If persistence
+was interrupted, the processing row is used to retract partial derivatives
+before the request resumes.
+
+`GET /api/v1/input-learning` lists only the authenticated learner's sources;
+`GET` and `DELETE /api/v1/input-learning/{source_id}` return 404 for another
+learner's ID. Any client-supplied user identity is ignored: the account or guest
+session resolved by the server owns every capture and derivative. Deleting a
+capture removes its dependent items and prevents them from later memory recall.
 
 ## Deploy (Linux)
 

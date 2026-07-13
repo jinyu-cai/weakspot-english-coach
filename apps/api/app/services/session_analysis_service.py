@@ -1,3 +1,4 @@
+import json
 from typing import List, Optional
 
 from app.config import settings
@@ -64,6 +65,7 @@ def analyze_session(
     max_tokens: Optional[int] = 16384,
     trace_id: Optional[str] = None,
     memory_context: Optional[str] = None,
+    stealth_probe: Optional[dict] = None,
 ) -> SessionAnalysisAI:
     transcript_lines = []
     for msg in messages:
@@ -78,6 +80,37 @@ def analyze_session(
     system = f"{SESSION_ANALYSIS_PROMPT}\n\n{language_instruction(output_language)}\n\n{MEMORY_EXTRACTION_INSTRUCTION}"
     if topic:
         system += f"\n\nConversation topic: {topic}"
+    if stealth_probe:
+        safe_probe = {
+            key: stealth_probe.get(key)
+            for key in (
+                "probeId",
+                "targetSkillCode",
+                "targetDescription",
+                "errorFingerprint",
+                "modality",
+                "context",
+                "elicitationStrategy",
+            )
+        }
+        system += """
+
+7. **stealthProbeAssessment** — Internally evaluate the hidden target below using only the
+   learner's messages in this transcript. This assessment is evidence-gated:
+   - Set `opportunityPresent=false` and outcome `no_opportunity` unless the coach actually
+     created a fair, natural situation where the learner could use the target.
+   - `success`: the learner independently demonstrated the target without a supplied answer.
+   - `hinted_success`: the learner succeeded only after wording, a sentence frame, or another hint.
+   - `failure`: a fair opportunity occurred and the learner attempted it but repeated the target error.
+   - `avoided`: at least one clear opportunity occurred, but the learner repeatedly worked around,
+     abandoned, or redirected the exact target instead of attempting it. Ordinary brevity is not avoidance.
+   - Quote the learner's exact relevant words in `evidenceQuote`. Never use the coach's wording as evidence.
+   - If the evidence is ambiguous, choose `no_opportunity`; do not guess.
+
+The hidden target is internal evaluation context, not a fact to add as a new memory candidate:
+""" + json.dumps(safe_probe, ensure_ascii=False)
+    else:
+        system += "\n\nNo hidden practice target was active. Return `stealthProbeAssessment` as null."
 
     user_prompt = f'Conversation transcript:\n"""\n{transcript_text}\n"""'
 
@@ -95,7 +128,7 @@ def analyze_session(
             + "\nUse prior memory only as context; base corrections on this transcript.",
         })
     request_messages.append({"role": "user", "content": user_prompt})
-    return parse_with_model(
+    result = parse_with_model(
         messages=request_messages,
         response_model=SessionAnalysisAI,
         max_tokens=max_tokens,
@@ -103,3 +136,6 @@ def analyze_session(
         provider=llm_provider,
         trace_id=trace_id,
     )
+    if not stealth_probe:
+        result.stealthProbeAssessment = None
+    return result

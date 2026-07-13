@@ -16,6 +16,7 @@ from app.models.chat import (
     SessionAnalysisAI,
     SessionCorrectionAI,
     SessionNaturalExpressionAI,
+    StealthProbeAssessmentAI,
     SessionWeaknessAI,
 )
 from app.models.chat_import import ChatImportAIResult, ChatWeaknessAI
@@ -272,6 +273,14 @@ def _fake_session_analysis() -> SessionAnalysisAI:
         ],
         strengthsZh=["You are willing to keep the conversation going", "You can express basic ideas in complete sentences"],
         recommendedNextActionsZh=["Focus on simple-past practice", "Collect natural phrases for describing weather and experiences"],
+        stealthProbeAssessment=StealthProbeAssessmentAI(
+            opportunityPresent=True,
+            outcome="failure",
+            evidenceQuote="I go to the park yesterday",
+            rationale="A past-event prompt created a fair opportunity, and the learner used present tense.",
+            confidence=0.98,
+            hintLevel=0,
+        ),
     )
 
 

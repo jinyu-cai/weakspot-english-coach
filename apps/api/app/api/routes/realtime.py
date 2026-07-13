@@ -1,7 +1,7 @@
 import hashlib
 import logging
 import time
-from typing import List, Optional
+from typing import List, Literal, Optional
 from uuid import uuid4
 
 import httpx
@@ -12,12 +12,13 @@ from app.api.deps import Identity, rate_limited, resolve_identity
 from app.config import settings
 from app.models.common import OutputLanguage
 from app.db.repositories import (
+    claim_chat_session_turn,
+    finalize_chat_session_transcript_batch,
     get_chat_session,
     list_chat_messages,
     now_iso,
-    save_chat_message,
+    release_chat_session_turn_claim,
     save_chat_session,
-    update_chat_session_summary,
 )
 from app.services.realtime_prompts import REALTIME_FUNCTION_TOOLS, REALTIME_SYSTEM_PROMPT, realtime_hint_instruction
 from app.services.realtime_sideband import (
@@ -29,6 +30,10 @@ from app.services.memory_service import (
     heuristic_memory_candidates,
     remember_candidates,
     retrieve_memory_pack,
+)
+from app.services.stealth_practice_service import (
+    build_stealth_probe_instruction,
+    select_stealth_probe,
 )
 
 router = APIRouter(prefix="/chat")
@@ -43,14 +48,15 @@ class RealtimeSessionRequest(BaseModel):
 
 
 class TranscriptMessage(BaseModel):
-    role: str
-    content: str
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=16000)
+    clientMessageId: Optional[str] = Field(default=None, min_length=1, max_length=160)
     createdAt: Optional[str] = None
 
 
 class SaveTranscriptRequest(BaseModel):
     userId: str
-    messages: List[TranscriptMessage]
+    messages: List[TranscriptMessage] = Field(min_length=1, max_length=500)
 
 
 class RealtimeSidebandAttachRequest(BaseModel):
@@ -132,7 +138,15 @@ def _realtime_audit_payload(session: dict, active_sideband: bool) -> dict:
     }
 
 
-def _message_dedupe_key(role: str, content: str) -> tuple[str, str]:
+def _message_dedupe_key(
+    role: str,
+    content: str,
+    client_message_id: Optional[str] = None,
+) -> tuple[str, str]:
+    # New clients send a stable per-turn ID, which makes network retries
+    # idempotent without collapsing two legitimate identical utterances.
+    if client_message_id and client_message_id.strip():
+        return "client_message", client_message_id.strip()
     return role, " ".join(content.strip().split())
 
 
@@ -163,6 +177,15 @@ def create_realtime_session(
     except Exception:
         logger.exception("realtime memory_retrieval_error user_id=%s", req.userId)
         memory_pack = {"text": "", "items": [], "estimatedTokens": 0, "traceId": None}
+    try:
+        stealth_probe = select_stealth_probe(
+            req.userId,
+            modality="voice",
+            topic=req.topic,
+        )
+    except Exception:
+        logger.exception("realtime stealth_selection_error user_id=%s", req.userId)
+        stealth_probe = None
     session = {
         "id": session_id,
         "userId": req.userId,
@@ -195,6 +218,8 @@ def create_realtime_session(
             "estimatedTokens": memory_pack.get("estimatedTokens", 0),
         },
     }
+    if stealth_probe:
+        session["stealthProbe"] = stealth_probe
     save_chat_session(session)
 
     topic_text = req.topic or "Free conversation — talk about anything"
@@ -204,8 +229,13 @@ def create_realtime_session(
     )
     if memory_pack.get("text"):
         instructions += (
-            f"\n\n{memory_pack['text']}\nPersonalize naturally. The learner's current statement always overrides memory."
+            f"\n\n{memory_pack['text']}\nPersonalize naturally. The learner's current statement always overrides memory. "
+            "If a relevant input-learning expression is present, model at most one naturally and give the learner "
+            "a light chance to notice or reuse it; hearing it is not evidence of mastery."
         )
+    hidden_practice_instruction = build_stealth_probe_instruction(stealth_probe)
+    if hidden_practice_instruction:
+        instructions += f"\n\n{hidden_practice_instruction}"
 
     try:
         safety_identifier = hashlib.sha256(req.userId.encode("utf-8")).hexdigest()
@@ -351,71 +381,168 @@ def save_transcript(
     identity: Identity = Depends(rate_limited("chat")),
 ):
     req.userId = identity.user_id
+    request_id = f"transcript_{uuid4().hex[:12]}"
+    turn_claimed = False
 
     session = get_chat_session(req.userId, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found.")
+    if session.get("mode") != "voice":
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "session_mode_mismatch",
+                "message": "Transcript uploads are only accepted for realtime voice sessions.",
+            },
+        )
+    if session.get("analysis") or session.get("analysisDraft") or session.get("analysisClaimId"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "session_closed_for_analysis",
+                "message": "This voice session has ended or is being analyzed.",
+            },
+        )
 
-    existing_messages = list_chat_messages(req.userId, session_id, limit=500)
-    existing_keys = {
-        _message_dedupe_key(str(msg.get("role") or ""), str(msg.get("content") or ""))
-        for msg in existing_messages
-        if str(msg.get("content") or "").strip()
-    }
-    saved = 0
-    skipped_duplicates = 0
-    new_user_texts: list[str] = []
-    for msg in req.messages:
-        content = msg.content.strip()
-        if not content:
-            continue
-        dedupe_key = _message_dedupe_key(msg.role, content)
-        if dedupe_key in existing_keys:
-            skipped_duplicates += 1
-            continue
-        existing_keys.add(dedupe_key)
-        msg_id = f"cm_{uuid4().hex[:12]}"
-        message = {
-            "id": msg_id,
-            "userId": req.userId,
-            "sessionId": session_id,
-            "role": msg.role,
-            "content": content,
-            "corrections": None,
-            "betterExpression": None,
-            "source": "client_transcript",
-            "createdAt": msg.createdAt or now_iso(),
-        }
-        save_chat_message(message)
-        saved += 1
-        if msg.role == "user":
-            new_user_texts.append(content)
-
-    if saved > 0:
-        first_text = next((msg.content.strip() for msg in req.messages if msg.content.strip()), "")
-        summary = session.get("summary") or first_text[:80] or None
-        update_chat_session_summary(req.userId, session_id, summary, len(existing_messages) + saved)
+    if not claim_chat_session_turn(req.userId, session_id, request_id):
+        current = get_chat_session(req.userId, session_id)
+        if current and (
+            current.get("analysis")
+            or current.get("analysisDraft")
+            or current.get("analysisClaimId")
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "session_closed_for_analysis",
+                    "message": "This voice session has ended or is being analyzed.",
+                },
+            )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "transcript_in_progress",
+                "message": "Another transcript upload is already being processed. Try again shortly.",
+            },
+        )
+    turn_claimed = True
 
     try:
-        saved_memories = remember_candidates(
-            req.userId,
-            heuristic_memory_candidates(" ".join(new_user_texts)),
-            source_type="chat",
-            source_id=session_id,
-        )
-    except Exception:
-        logger.exception("realtime transcript memory_persist_error session=%s", session_id)
-        saved_memories = []
+        # Re-read all state only after the claim.  This makes deduplication and
+        # the analysis snapshot share one serial ordering.
+        session = get_chat_session(req.userId, session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Chat session not found.")
+        if session.get("mode") != "voice":
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "session_mode_mismatch",
+                    "message": "Transcript uploads are only accepted for realtime voice sessions.",
+                },
+            )
+        if session.get("analysis") or session.get("analysisDraft") or session.get("analysisClaimId"):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "session_closed_for_analysis",
+                    "message": "This voice session has ended or is being analyzed.",
+                },
+            )
 
-    logger.info(
-        "transcript saved session=%s messages=%d skipped_duplicates=%d",
-        session_id,
-        saved,
-        skipped_duplicates,
-    )
-    return {
-        "saved": saved,
-        "skippedDuplicates": skipped_duplicates,
-        "sessionId": session_id,
-        "memoriesSaved": saved_memories,
-    }
+        existing_messages = list_chat_messages(req.userId, session_id, limit=None)
+        existing_keys = {
+            _message_dedupe_key(
+                str(msg.get("role") or ""),
+                str(msg.get("content") or ""),
+                str(msg.get("clientMessageId") or "") or None,
+            )
+            for msg in existing_messages
+            if str(msg.get("content") or "").strip()
+        }
+        skipped_duplicates = 0
+        new_user_texts: list[str] = []
+        messages_to_save: list[dict] = []
+        for msg in req.messages:
+            content = msg.content.strip()
+            if not content:
+                continue
+            dedupe_key = _message_dedupe_key(msg.role, content, msg.clientMessageId)
+            if dedupe_key in existing_keys:
+                skipped_duplicates += 1
+                continue
+            existing_keys.add(dedupe_key)
+            message = {
+                "id": f"cm_{uuid4().hex[:12]}",
+                "userId": req.userId,
+                "sessionId": session_id,
+                "role": msg.role,
+                "content": content,
+                "clientMessageId": msg.clientMessageId,
+                "corrections": None,
+                "betterExpression": None,
+                "source": "client_transcript",
+                "createdAt": msg.createdAt or now_iso(),
+            }
+            messages_to_save.append(message)
+            if msg.role == "user":
+                new_user_texts.append(content)
+
+        saved = len(messages_to_save)
+        batch_id = f"tb_{uuid4().hex[:16]}"
+        if saved:
+            first_text = messages_to_save[0]["content"]
+            summary = session.get("summary") or first_text[:80]
+            finalize_chat_session_transcript_batch(
+                req.userId,
+                session_id,
+                request_id,
+                batch_id,
+                messages_to_save,
+                summary,
+                len(existing_messages) + saved,
+            )
+        else:
+            release_chat_session_turn_claim(req.userId, session_id, request_id)
+        turn_claimed = False
+
+        try:
+            saved_memories = remember_candidates(
+                req.userId,
+                heuristic_memory_candidates(" ".join(new_user_texts)),
+                source_type="chat",
+                source_id=batch_id,
+            )
+        except Exception:
+            logger.exception("realtime transcript memory_persist_error session=%s", session_id)
+            saved_memories = []
+
+        logger.info(
+            "transcript saved session=%s messages=%d skipped_duplicates=%d",
+            session_id,
+            saved,
+            skipped_duplicates,
+        )
+        return {
+            "saved": saved,
+            "skippedDuplicates": skipped_duplicates,
+            "sessionId": session_id,
+            "memoriesSaved": saved_memories,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("realtime transcript save_error session=%s", session_id)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Transcript upload failed: {exc}",
+        ) from exc
+    finally:
+        if turn_claimed:
+            try:
+                release_chat_session_turn_claim(req.userId, session_id, request_id)
+            except Exception:
+                logger.exception(
+                    "realtime transcript claim_release_error session=%s",
+                    session_id,
+                )

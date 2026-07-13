@@ -1,3 +1,4 @@
+from contextlib import ExitStack
 import logging
 import time
 from uuid import uuid4
@@ -9,20 +10,27 @@ from app.config import settings
 from app.core.mastery import update_skill_from_error
 from app.core.taxonomy import ERROR_TAXONOMY
 from app.db.repositories import (
+    claim_chat_session_analysis,
+    claim_chat_session_turn,
+    finalize_chat_session_turn,
     get_chat_session,
     list_chat_messages,
     list_chat_sessions,
     list_skills,
     now_iso,
-    put_skill,
-    save_error,
-    save_chat_message,
     save_chat_session,
-    save_note,
+    release_chat_session_analysis_claim,
+    release_chat_session_turn_claim,
+    save_chat_session_analysis_draft,
     update_chat_session_analysis,
-    update_chat_session_summary,
 )
-from app.models.chat import AnalyzeSessionRequest, ChatCreateSessionRequest, ChatPredictRequest, ChatSendRequest
+from app.models.chat import (
+    AnalyzeSessionRequest,
+    ChatCreateSessionRequest,
+    ChatPredictRequest,
+    ChatSendRequest,
+    SessionAnalysisAI,
+)
 from app.services.ai_client import LLMProviderConfig
 from app.services.chat_service import chat_reply, predict_completion
 from app.services.model_catalog import server_model_by_id, server_model_for_name, server_model_pair
@@ -32,7 +40,13 @@ from app.services.memory_service import (
     remember_candidates,
     retrieve_memory_pack,
 )
+from app.services.memory_write_service import memory_write_lease
 from app.services.session_analysis_service import analyze_session
+from app.services.stealth_practice_service import (
+    build_stealth_probe_instruction,
+    record_stealth_probe_outcome,
+    select_stealth_probe,
+)
 
 router = APIRouter(prefix="/chat")
 logger = logging.getLogger("uvicorn.error")
@@ -63,6 +77,56 @@ def _elapsed_ms(started: float) -> int:
 
 def _unlimited_llm_output(identity: Identity) -> bool:
     return identity.is_unlimited
+
+
+def _public_session(session: dict) -> dict:
+    """Never leak an active adaptive-practice target before analysis."""
+    public = dict(session)
+    for internal_key in (
+        "stealthProbe",
+        "stealthProbeHistory",
+        "analysisDraft",
+        "analysisDraftCreatedAt",
+        "analysisClaimId",
+        "analysisClaimedAt",
+        "analysisClaimedAtEpoch",
+        "turnClaimId",
+        "turnClaimedAt",
+        "turnClaimedAtEpoch",
+    ):
+        public.pop(internal_key, None)
+    return public
+
+
+def _has_exact_user_evidence(messages: list[dict], quote: str) -> bool:
+    normalized_quote = " ".join((quote or "").casefold().split())
+    if not normalized_quote:
+        return False
+    return any(
+        normalized_quote in " ".join(str(message.get("content") or "").casefold().split())
+        for message in messages
+        if message.get("role") == "user"
+    )
+
+
+def _ensure_text_session_writable(session: dict) -> None:
+    """Reject cross-modality writes and writes after end-session analysis."""
+    if session.get("mode") == "voice":
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "session_mode_mismatch",
+                "message": "Realtime voice sessions only accept transcript uploads.",
+            },
+        )
+    if session.get("analysis") or session.get("analysisDraft") or session.get("analysisClaimId"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "session_closed_for_analysis",
+                "message": "This session has ended or is being analyzed. Start a new text session.",
+            },
+        )
 
 
 def _validate_text_model(model: str | None) -> str:
@@ -159,11 +223,21 @@ def create_session(
     text_model, server_model_id, deep_model_id, fast_model_id = _new_session_model(req.textModel, llm_provider)
     now = now_iso()
     session_id = f"cs_{uuid4().hex[:12]}"
+    try:
+        stealth_probe = select_stealth_probe(
+            req.userId,
+            modality="text_chat",
+            topic=req.topic or req.scenarioPrompt,
+        )
+    except Exception:
+        logger.exception("chat session stealth_selection_error user_id=%s", req.userId)
+        stealth_probe = None
     session = {
         "id": session_id,
         "userId": req.userId,
         "topic": req.topic,
         "scenarioPrompt": req.scenarioPrompt,
+        "mode": "text",
         "textModel": text_model,
         "llmServerModelId": server_model_id,
         "llmServerDeepModelId": deep_model_id,
@@ -173,8 +247,10 @@ def create_session(
         "createdAt": now,
         "updatedAt": now,
     }
+    if stealth_probe:
+        session["stealthProbe"] = stealth_probe
     save_chat_session(session)
-    return {"session": session}
+    return {"session": _public_session(session)}
 
 
 @router.get("/sessions")
@@ -182,7 +258,7 @@ def get_sessions(
     identity: Identity = Depends(rate_limited("chat")),
 ):
     sessions = list_chat_sessions(identity.user_id)
-    return {"sessions": sessions}
+    return {"sessions": [_public_session(session) for session in sessions]}
 
 
 @router.get("/sessions/{session_id}/messages")
@@ -195,7 +271,7 @@ def get_messages(
         raise HTTPException(status_code=404, detail="Chat session not found.")
     messages = list_chat_messages(identity.user_id, session_id, limit=None)
     session["messageCount"] = len(messages)
-    return {"session": session, "messages": messages}
+    return {"session": _public_session(session), "messages": messages}
 
 
 @router.post("/send")
@@ -211,8 +287,24 @@ def send_message(
     session = get_chat_session(req.userId, req.sessionId)
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found.")
+    _ensure_text_session_writable(session)
     effective_provider = _session_provider(session, llm_provider)
     text_model = _session_text_model(session, effective_provider)
+    turn_claimed = False
+
+    if not claim_chat_session_turn(req.userId, req.sessionId, request_id):
+        current = get_chat_session(req.userId, req.sessionId)
+        if not current:
+            raise HTTPException(status_code=404, detail="Chat session not found.")
+        _ensure_text_session_writable(current)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "turn_in_progress",
+                "message": "Another message is already being processed. Try again shortly.",
+            },
+        )
+    turn_claimed = True
 
     try:
         logger.info(
@@ -248,7 +340,6 @@ def send_message(
             "betterExpression": None,
             "createdAt": now,
         }
-        save_chat_message(user_msg)
 
         ai_result = chat_reply(
             history=history_for_ai,
@@ -259,6 +350,7 @@ def send_message(
             max_tokens=None if _unlimited_llm_output(identity) else 2000,
             trace_id=request_id,
             memory_context=memory_pack.get("text"),
+            hidden_practice_instruction=build_stealth_probe_instruction(session.get("stealthProbe")),
         )
 
         assistant_now = now_iso()
@@ -273,18 +365,28 @@ def send_message(
             "betterExpression": ai_result.betterExpression.model_dump() if ai_result.betterExpression else None,
             "createdAt": assistant_now,
         }
-        save_chat_message(assistant_msg)
 
         msg_count = len(history) + 2
         summary_text = session.get("summary") or req.text[:80]
-        update_chat_session_summary(req.userId, req.sessionId, summary_text, msg_count)
+        finalize_chat_session_turn(
+            req.userId,
+            req.sessionId,
+            request_id,
+            user_msg,
+            assistant_msg,
+            summary_text,
+            msg_count,
+        )
+        turn_claimed = False
 
         try:
             saved_memories = remember_candidates(
                 req.userId,
                 [*ai_result.memoryCandidates, *heuristic_memory_candidates(req.text)],
                 source_type="chat",
-                source_id=req.sessionId,
+                # Each learner turn is an evidence event; retries of that same
+                # event remain idempotent while later turns can corroborate it.
+                source_id=user_msg_id,
             )
         except Exception:
             logger.exception("chat[%s] memory_persist_error", request_id)
@@ -314,6 +416,12 @@ def send_message(
     except Exception as e:
         logger.exception("chat[%s] server_error total_ms=%d", request_id, _elapsed_ms(started))
         raise HTTPException(status_code=500, detail=f"Request {request_id} failed: {e}") from e
+    finally:
+        if turn_claimed:
+            try:
+                release_chat_session_turn_claim(req.userId, req.sessionId, request_id)
+            except Exception:
+                logger.exception("chat[%s] turn_claim_release_error", request_id)
 
 
 @router.post("/predict")
@@ -329,6 +437,7 @@ def predict(
     session = get_chat_session(req.userId, req.sessionId)
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found.")
+    _ensure_text_session_writable(session)
     effective_provider = _session_provider(session, llm_provider)
 
     try:
@@ -380,6 +489,7 @@ def analyze_chat_session(
     user_id = identity.user_id
     request_id = uuid4().hex[:10]
     started = time.perf_counter()
+    learning_effects_stack = ExitStack()
 
     session = get_chat_session(user_id, session_id)
     if not session:
@@ -392,15 +502,40 @@ def analyze_chat_session(
             "updatedSkills": session.get("analysisUpdatedSkills") or [],
             "sessionId": session_id,
             "duplicate": True,
+            "stealthPractice": session.get("stealthPractice"),
         }
 
-    messages = list_chat_messages(user_id, session_id, limit=None)
-    user_messages = [m for m in messages if m.get("role") == "user"]
-    if not user_messages:
-        raise HTTPException(status_code=400, detail="No user messages to analyze.")
     effective_provider = _session_provider(session, llm_provider)
 
+    if not claim_chat_session_analysis(user_id, session_id, request_id):
+        current = get_chat_session(user_id, session_id)
+        if current and current.get("analysis"):
+            return {
+                "analysis": current.get("analysis"),
+                "savedNotes": current.get("analysisSavedNotes") or [],
+                "savedErrors": current.get("analysisSavedErrors") or [],
+                "updatedSkills": current.get("analysisUpdatedSkills") or [],
+                "sessionId": session_id,
+                "duplicate": True,
+                "stealthPractice": current.get("stealthPractice"),
+            }
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "analysis_in_progress",
+                "message": "This session is already being analyzed. Try again shortly.",
+            },
+        )
+    analysis_claimed = True
+
     try:
+        # Claim before reading so the analysis snapshot cannot omit a turn
+        # that was still generating when this request began.
+        messages = list_chat_messages(user_id, session_id, limit=None)
+        user_messages = [m for m in messages if m.get("role") == "user"]
+        if not user_messages:
+            raise HTTPException(status_code=400, detail="No user messages to analyze.")
+
         logger.info(
             "analyze[%s] start user_id=%s session=%s messages=%d",
             request_id, user_id, session_id, len(messages),
@@ -422,19 +557,39 @@ def analyze_chat_session(
             logger.exception("analyze[%s] memory_retrieval_error", request_id)
             memory_pack = {"text": "", "items": [], "estimatedTokens": 0, "traceId": None}
 
-        analysis = analyze_session(
-            messages=messages_for_ai,
-            topic=session.get("topic"),
-            output_language=req.outputLanguage,
-            llm_provider=effective_provider,
-            max_tokens=None if _unlimited_llm_output(identity) else identity.max_output_tokens,
-            trace_id=request_id,
-            memory_context=memory_pack.get("text"),
-        )
+        if session.get("analysisDraft"):
+            analysis = SessionAnalysisAI.model_validate(session["analysisDraft"])
+        else:
+            analysis = analyze_session(
+                messages=messages_for_ai,
+                topic=session.get("topic"),
+                output_language=req.outputLanguage,
+                llm_provider=effective_provider,
+                max_tokens=None if _unlimited_llm_output(identity) else identity.max_output_tokens,
+                trace_id=request_id,
+                memory_context=memory_pack.get("text"),
+                stealth_probe=session.get("stealthProbe"),
+            )
+            # Store the exact LLM result before any learning state is changed.
+            # If a later write fails, the retry reuses this draft verbatim.
+            save_chat_session_analysis_draft(
+                user_id,
+                session_id,
+                request_id,
+                analysis.model_dump(mode="json"),
+            )
 
+        # The LLM call and durable draft stay outside the learner write lease.
+        # From this fresh skill snapshot through the final effects transaction,
+        # however, every learner-model mutation shares one fenced owner. This
+        # prevents a concurrent practice attempt or second chat analysis from
+        # being overwritten by a stale skill snapshot.
+        memory_claim_id = learning_effects_stack.enter_context(
+            memory_write_lease(user_id)
+        )
         now = now_iso()
         existing_skills = {s["skillCode"]: s for s in list_skills(user_id)}
-        updated_skills = []
+        skills_to_persist: dict[str, dict] = {}
         correction_codes = set()
 
         def apply_skill_update(code: str, category: str, severity: str):
@@ -448,9 +603,8 @@ def analyze_chat_session(
                 severity=severity,
                 now=now,
             )
-            put_skill(skill)
             existing_skills[code] = skill
-            updated_skills.append(skill)
+            skills_to_persist[code] = skill
 
         saved_errors = []
         for correction in analysis.corrections:
@@ -470,7 +624,6 @@ def analyze_chat_session(
                 "practiceGoal": correction.practiceGoal,
                 "createdAt": now,
             }
-            save_error(error)
             saved_errors.append(error)
             correction_codes.add(correction.code)
             apply_skill_update(correction.code, correction.category, severity)
@@ -495,34 +648,81 @@ def analyze_chat_session(
                 "examples": expr.examples,
                 "createdAt": now,
             }
-            save_note(note)
             saved_notes.append(note)
 
+        updated_skills = list(skills_to_persist.values())
         analysis_json = analysis.model_dump(mode="json")
-
-        try:
-            weakness_evidence = [
-                {
-                    "code": weakness.code,
-                    "category": weakness.category,
-                    "severity": weakness.severity,
-                    "evidenceQuote": weakness.evidenceQuote,
+        stealth_practice = None
+        if session.get("stealthProbe"):
+            assessment = analysis.stealthProbeAssessment
+            assessment_payload = (
+                assessment.model_dump(mode="json")
+                if assessment is not None
+                else {
+                    "opportunityPresent": False,
+                    "outcome": "no_opportunity",
+                    "evidenceQuote": "",
+                    "rationale": "The analyzer returned no reliable evidence for the hidden target.",
+                    "confidence": 0.0,
+                    "hintLevel": 0,
                 }
-                for weakness in analysis.weaknesses
-            ]
-            saved_memories = remember_candidates(
-                user_id,
-                [
-                    *analysis.memoryCandidates,
-                    *heuristic_memory_candidates(" ".join(m.get("content", "") for m in user_messages)),
-                    *memory_candidates_from_errors([*saved_errors, *weakness_evidence]),
-                ],
-                source_type="session_analysis",
-                source_id=session_id,
             )
-        except Exception:
-            logger.exception("analyze[%s] memory_persist_error", request_id)
-            saved_memories = []
+            if (
+                assessment_payload.get("opportunityPresent")
+                and not _has_exact_user_evidence(
+                    messages_for_ai,
+                    str(assessment_payload.get("evidenceQuote") or ""),
+                )
+            ):
+                assessment_payload.update({
+                    "opportunityPresent": False,
+                    "outcome": "no_opportunity",
+                    "rationale": (
+                        "The proposed evidence quote was not found verbatim in a learner message; "
+                        "no mastery update was applied."
+                    ),
+                    "confidence": 0.0,
+                })
+            stealth_practice = record_stealth_probe_outcome(
+                user_id,
+                session["stealthProbe"],
+                assessment_payload,
+            )
+            assessment_payload.update({
+                "outcome": stealth_practice["outcome"],
+                "opportunityPresent": stealth_practice["opportunityPresent"],
+            })
+            analysis_json["stealthProbeAssessment"] = assessment_payload
+            analysis_json["stealthPractice"] = stealth_practice
+
+        weakness_evidence = [
+            {
+                "code": weakness.code,
+                "category": weakness.category,
+                "severity": weakness.severity,
+                "evidenceQuote": weakness.evidenceQuote,
+            }
+            for weakness in analysis.weaknesses
+        ]
+        # Durable memory is part of analysis completion. A transient write
+        # failure keeps the immutable draft retryable instead of finalizing a
+        # session that permanently lost its learning evidence.
+        saved_memories = remember_candidates(
+            user_id,
+            [
+                *analysis.memoryCandidates,
+                *heuristic_memory_candidates(" ".join(m.get("content", "") for m in user_messages)),
+                *memory_candidates_from_errors([*saved_errors, *weakness_evidence]),
+            ],
+            source_type="session_analysis",
+            source_id=session_id,
+            weakness_learning_skip_codes=(
+                {str(stealth_practice.get("targetSkillCode"))}
+                if stealth_practice and stealth_practice.get("stateChanged")
+                else None
+            ),
+            weakness_modality="voice" if session.get("mode") == "voice" else "text_chat",
+        )
         update_chat_session_analysis(
             user_id=user_id,
             session_id=session_id,
@@ -531,7 +731,15 @@ def analyze_chat_session(
             saved_errors=saved_errors,
             updated_skills=updated_skills,
             analyzed_at=now,
+            stealth_practice=stealth_practice,
+            claim_id=request_id,
+            errors_to_persist=saved_errors,
+            notes_to_persist=saved_notes,
+            skills_to_persist=updated_skills,
+            memory_claim_id=memory_claim_id,
         )
+        analysis_claimed = False
+        learning_effects_stack.close()
 
         logger.info(
             "analyze[%s] complete total_ms=%d corrections=%d expressions=%d weaknesses=%d notes=%d errors=%d skills=%d",
@@ -547,6 +755,7 @@ def analyze_chat_session(
             "updatedSkills": updated_skills,
             "sessionId": session_id,
             "duplicate": False,
+            "stealthPractice": stealth_practice,
             "memoriesSaved": saved_memories,
             "memoryRecall": {
                 "traceId": memory_pack.get("traceId"),
@@ -563,3 +772,15 @@ def analyze_chat_session(
     except Exception as e:
         logger.exception("analyze[%s] server_error total_ms=%d", request_id, _elapsed_ms(started))
         raise HTTPException(status_code=500, detail=f"Request {request_id} failed: {e}") from e
+    finally:
+        # A learner-lease release error must not skip the independent session
+        # claim cleanup. The nested finally preserves the lease close
+        # exception while still making a best-effort attempt at both releases.
+        try:
+            learning_effects_stack.close()
+        finally:
+            if analysis_claimed:
+                try:
+                    release_chat_session_analysis_claim(user_id, session_id, request_id)
+                except Exception:
+                    logger.exception("analyze[%s] claim_release_error", request_id)

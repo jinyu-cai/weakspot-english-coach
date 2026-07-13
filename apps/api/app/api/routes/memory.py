@@ -14,6 +14,7 @@ from app.services.memory_service import (
     retrieve_memory_pack,
     update_memory,
 )
+from app.services.stealth_practice_service import select_stealth_probe
 
 
 router = APIRouter(prefix="/memory")
@@ -87,6 +88,28 @@ def traces(
 @router.get("/next-action")
 def next_action(identity: Identity = Depends(resolve_identity)):
     return {"decision": recommend_next_action(identity.user_id)}
+
+
+@router.get("/stealth-next")
+def stealth_next(
+    modality: str = Query(default="text_chat", min_length=2, max_length=40),
+    topic: Optional[str] = Query(default=None, max_length=300),
+    identity: Identity = Depends(resolve_identity),
+):
+    """Explain the next due target to owners for QA only.
+
+    Active probes contain the learner's hidden teaching objective, so this
+    endpoint must never be available to ordinary learner sessions.
+    """
+    if not identity.is_owner:
+        raise HTTPException(status_code=403, detail="Owner access required.")
+    return {
+        "probe": select_stealth_probe(
+            identity.user_id,
+            modality=modality,
+            topic=topic,
+        )
+    }
 
 
 @router.patch("/{memory_id}")

@@ -7,7 +7,7 @@ from difflib import SequenceMatcher
 import hashlib
 import math
 import re
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 from uuid import uuid4
 
 from app.config import settings
@@ -15,11 +15,11 @@ from app.db.repositories import (
     get_memory,
     list_memories,
     now_iso,
-    save_memory,
     save_memory_trace,
 )
 from app.models.memory import MemoryCandidate
 from app.services.embedding_client import embed_text, embed_texts
+from app.services.memory_write_service import memory_write_locked, save_memory
 
 
 MEMORY_EXTRACTION_INSTRUCTION = """
@@ -78,6 +78,7 @@ WEAKNESS_GRADUATION_THRESHOLDS = {
 }
 WEAKNESS_PRACTICE_EVIDENCE_LIMIT = 20
 RESOLVED_WEAKNESS_RETENTION_DAYS = 180
+WEAKNESS_PROBE_HISTORY_LIMIT = 20
 
 
 def utc_now() -> datetime:
@@ -162,6 +163,217 @@ def _source_ref(source_type: str, source_id: str, evidence: str, created_at: str
     }
 
 
+def _verification_snapshot(
+    *,
+    confidence: float,
+    source_refs: Iterable[dict],
+    source_type: str,
+    now: datetime,
+) -> dict:
+    """Track whether a memory is tentative, observed, or corroborated."""
+    refs = list(source_refs)
+    independent_sources = {
+        (str(ref.get("sourceType") or ""), str(ref.get("sourceId") or ""))
+        for ref in refs
+        if ref.get("sourceId")
+    }
+    if source_type == "manual":
+        state = "confirmed"
+        reason = "learner_confirmed"
+    elif len(independent_sources) >= 2 and confidence >= 0.7:
+        state = "confirmed"
+        reason = "corroborated_sources"
+    elif confidence >= 0.7:
+        state = "observed"
+        reason = "single_strong_observation"
+    else:
+        state = "candidate"
+        reason = "tentative_observation"
+    return {
+        "state": state,
+        "reason": reason,
+        "independentSourceCount": len(independent_sources),
+        "needsConfirmation": state == "candidate",
+        "updatedAt": iso_at(now),
+    }
+
+
+def _error_evidence_pairs(evidence: str) -> list[tuple[str, str]]:
+    compact = " ".join((evidence or "").split())
+    pairs: list[tuple[str, str]] = []
+    for segment in re.split(r"\s+\|\s+", compact):
+        if "→" in segment:
+            original, corrected = (part.strip() for part in segment.split("→", 1))
+        elif "->" in segment:
+            original, corrected = (part.strip() for part in segment.split("->", 1))
+        else:
+            original, corrected = segment.strip(), ""
+        if original or corrected:
+            pairs.append((original, corrected))
+    return pairs or [("", "")]
+
+
+def _error_evidence_parts(evidence: str) -> tuple[str, str]:
+    return _error_evidence_pairs(evidence)[0]
+
+
+def _weakness_skill_code(canonical_key: str) -> str:
+    for prefix in ("weakness.", "weakness:"):
+        if canonical_key.startswith(prefix):
+            return canonical_key[len(prefix):]
+    return canonical_key or "clarity.expression"
+
+
+def _source_modality(source_type: str) -> Optional[str]:
+    return {
+        "diagnosis": "writing",
+        "chat": "text_chat",
+        "chat_import": "text_chat",
+        "session_analysis": "text_chat",
+    }.get(source_type)
+
+
+def _append_unique(values: Iterable[str], value: str, *, limit: int) -> list[str]:
+    rows = [str(item) for item in values if str(item).strip()]
+    compact = " ".join((value or "").split()).strip()
+    if compact and compact.lower() not in {item.lower() for item in rows}:
+        rows.append(compact)
+    return rows[-limit:]
+
+
+def _initialize_weakness_learning_state(
+    canonical_key: str,
+    evidence: str,
+    source_type: str,
+    importance: float,
+    now: datetime,
+    modality_override: Optional[str] = None,
+) -> dict:
+    """Create backward-compatible scheduling and evidence fields."""
+    now_text = iso_at(now)
+    evidence_pairs = _error_evidence_pairs(evidence)
+    original, _ = evidence_pairs[0]
+    skill_code = _weakness_skill_code(canonical_key)
+    difficulty = round(max(3.0, min(8.0, 4.0 + float(importance) * 3.0)), 3)
+    modality = modality_override or _source_modality(source_type)
+    modality_mastery = {}
+    if modality:
+        modality_mastery[modality] = {
+            "mastery": 30.0,
+            "attempts": 1,
+            "coldSuccesses": 0,
+            "hintedSuccesses": 0,
+            "failures": 1,
+            "avoided": 0,
+            "lastOutcome": "observed_error",
+            "lastEvidenceAt": now_text,
+            "lastEvidenceQuote": original[:300],
+        }
+    return {
+        "errorFingerprint": {
+            "skillCode": skill_code,
+            "originalExamples": [row[0][:400] for row in evidence_pairs if row[0]][-8:],
+            "correctedExamples": [row[1][:400] for row in evidence_pairs if row[1]][-8:],
+            "contexts": [source_type] if source_type else [],
+        },
+        "retention": {
+            "stabilityDays": 1.0,
+            "difficulty": difficulty,
+            "dueAt": iso_at(now + timedelta(days=1)),
+            "lastColdRecallAt": None,
+            "lastReviewedAt": None,
+            "lastOutcome": "observed_error",
+            "attempts": 0,
+            "successes": 0,
+            "hintedSuccesses": 0,
+            "failures": 0,
+            "avoided": 0,
+            "observedErrors": 1,
+            "relapseRisk": 0.8,
+        },
+        "modalityMastery": modality_mastery,
+        "probeHistory": [],
+        "transferContexts": [],
+        "progressionStage": "replay",
+    }
+
+
+def _merge_weakness_learning_state(
+    memory: dict,
+    canonical_key: str,
+    evidence: str,
+    source_type: str,
+    importance: float,
+    now: datetime,
+    modality_override: Optional[str] = None,
+) -> None:
+    defaults = _initialize_weakness_learning_state(
+        canonical_key,
+        evidence,
+        source_type,
+        importance,
+        now,
+        modality_override,
+    )
+    evidence_pairs = _error_evidence_pairs(evidence)
+    original, _ = evidence_pairs[0]
+    raw_fingerprint = memory.get("errorFingerprint")
+    fingerprint = (
+        dict(raw_fingerprint)
+        if isinstance(raw_fingerprint, dict)
+        else dict(defaults["errorFingerprint"])
+    )
+    if isinstance(raw_fingerprint, str) and raw_fingerprint.strip():
+        fingerprint["description"] = raw_fingerprint.strip()[:400]
+    fingerprint["skillCode"] = fingerprint.get("skillCode") or _weakness_skill_code(canonical_key)
+    originals = list(fingerprint.get("originalExamples") or [])
+    corrections = list(fingerprint.get("correctedExamples") or [])
+    for source_example, corrected_example in evidence_pairs:
+        originals = _append_unique(originals, source_example[:400], limit=8)
+        corrections = _append_unique(corrections, corrected_example[:400], limit=8)
+    fingerprint["originalExamples"] = originals
+    fingerprint["correctedExamples"] = corrections
+    fingerprint["contexts"] = _append_unique(
+        fingerprint.get("contexts") or [], source_type, limit=8,
+    )
+    memory["errorFingerprint"] = fingerprint
+
+    retention = dict(memory.get("retention") or defaults["retention"])
+    old_stability = max(0.25, float(retention.get("stabilityDays", 1.0)))
+    retention.update({
+        "stabilityDays": round(max(0.25, old_stability * 0.65), 3),
+        "difficulty": round(min(10.0, float(retention.get("difficulty", 5.0)) + 0.35), 3),
+        "dueAt": iso_at(now + timedelta(days=1)),
+        "lastOutcome": "observed_error",
+        "observedErrors": int(retention.get("observedErrors", 0)) + 1,
+        "relapseRisk": max(0.85, float(retention.get("relapseRisk", 0.0))),
+    })
+    for key, value in defaults["retention"].items():
+        retention.setdefault(key, value)
+    memory["retention"] = retention
+
+    modality_mastery = dict(memory.get("modalityMastery") or {})
+    modality = modality_override or _source_modality(source_type)
+    if modality:
+        state = dict(modality_mastery.get(modality) or defaults["modalityMastery"].get(modality) or {})
+        # Defaults already represent this observation; only increment an
+        # existing modality row.
+        if modality in modality_mastery:
+            state["attempts"] = int(state.get("attempts", 0)) + 1
+            state["failures"] = int(state.get("failures", 0)) + 1
+            state["mastery"] = round(max(0.0, float(state.get("mastery", 35.0)) - 4.0), 2)
+        state.update({
+            "lastOutcome": "observed_error",
+            "lastEvidenceAt": iso_at(now),
+            "lastEvidenceQuote": original[:300],
+        })
+        modality_mastery[modality] = state
+    memory["modalityMastery"] = modality_mastery
+    memory["probeHistory"] = list(memory.get("probeHistory") or [])[-WEAKNESS_PROBE_HISTORY_LIMIT:]
+    memory["transferContexts"] = list(memory.get("transferContexts") or [])[-12:]
+    memory.setdefault("progressionStage", "replay")
+
+
 def _expiry_fields(kind: str, expires_in_days: Optional[int], pinned: bool, now: datetime) -> dict:
     if pinned:
         return {"expiresAt": None}
@@ -172,7 +384,14 @@ def _expiry_fields(kind: str, expires_in_days: Optional[int], pinned: bool, now:
     return {"expiresAt": iso_at(expires), "ttl": _ttl_after(expires)}
 
 
-def _mark_archived(memory: dict, status: str, now: datetime, superseded_by: Optional[str] = None) -> dict:
+def _mark_archived(
+    memory: dict,
+    status: str,
+    now: datetime,
+    superseded_by: Optional[str] = None,
+    *,
+    persist_memory: Callable[[dict], None] = save_memory,
+) -> dict:
     memory = dict(memory)
     memory["status"] = status
     memory["updatedAt"] = iso_at(now)
@@ -180,11 +399,16 @@ def _mark_archived(memory: dict, status: str, now: datetime, superseded_by: Opti
     memory["ttl"] = _ttl_after(now)
     if superseded_by:
         memory["supersededBy"] = superseded_by
-    save_memory(memory)
+    persist_memory(memory)
     return memory
 
 
-def _active_memories(user_id: str, *, expire_due: bool = True) -> list[dict]:
+def _active_memories(
+    user_id: str,
+    *,
+    expire_due: bool = True,
+    persist_memory: Callable[[dict], None] = save_memory,
+) -> list[dict]:
     now = utc_now()
     result: list[dict] = []
     for memory in list_memories(user_id, limit=settings.memory_max_items_per_user + 100):
@@ -193,12 +417,13 @@ def _active_memories(user_id: str, *, expire_due: bool = True) -> list[dict]:
         expires_at = parse_iso(memory.get("expiresAt"))
         if expires_at and expires_at <= now and not memory.get("pinned"):
             if expire_due:
-                _mark_archived(memory, "expired", now)
+                _mark_archived(memory, "expired", now, persist_memory=persist_memory)
             continue
         result.append(memory)
     return result
 
 
+@memory_write_locked
 def list_active_memory_records(user_id: str) -> list[dict]:
     """Return lifecycle-synchronized active rows for internal policies."""
     return _active_memories(user_id, expire_due=True)
@@ -209,10 +434,11 @@ def _matching_memories(
     canonical_key: str,
     *,
     include_resolved: bool = False,
+    persist_memory: Callable[[dict], None] = save_memory,
 ) -> list[dict]:
     matches = [
         memory
-        for memory in _active_memories(user_id)
+        for memory in _active_memories(user_id, persist_memory=persist_memory)
         if memory.get("canonicalKey") == canonical_key
     ]
     if include_resolved:
@@ -417,6 +643,18 @@ def _record_weakness_practice_evidence(
         return None
 
     memory = dict(memory)
+    if any(
+        str(row.get("attemptId") or "") == attempt_id
+        for row in list(memory.get("practiceEvidence") or [])
+    ):
+        # A completed practice outcome may be replayed after the client missed
+        # the HTTP response. It must not alter graduation or learner state.
+        return public_memory(memory)
+    already_referenced = any(
+        str(ref.get("sourceType") or "") == "practice"
+        and str(ref.get("sourceId") or "") == attempt_id
+        for ref in list(memory.get("sourceRefs") or [])
+    )
     if not memory.get("lastObservedAt"):
         memory["lastObservedAt"] = (
             memory.get("createdAt") or memory.get("updatedAt") or now_text
@@ -441,7 +679,7 @@ def _record_weakness_practice_evidence(
 
     if not is_correct:
         memory["lastObservedAt"] = now_text
-        if not created:
+        if not created and not already_referenced:
             refs = list(memory.get("sourceRefs") or [])
             refs.append(_source_ref(
                 "practice",
@@ -476,6 +714,7 @@ def _record_weakness_practice_evidence(
     return public_memory(memory)
 
 
+@memory_write_locked
 def remember_candidates(
     user_id: str,
     candidates: Iterable[MemoryCandidate | dict],
@@ -483,6 +722,9 @@ def remember_candidates(
     source_type: str,
     source_id: str,
     pinned: bool = False,
+    weakness_learning_skip_codes: Optional[set[str]] = None,
+    weakness_modality: Optional[str] = None,
+    persist_memory: Callable[[dict], None] = save_memory,
 ) -> list[dict]:
     """Merge, replace, and persist durable candidate memories."""
     if not settings.memory_enabled:
@@ -500,6 +742,29 @@ def remember_candidates(
     if not validated:
         return []
 
+    # One analyzer response may describe the same durable fact in corrections,
+    # weaknesses, and memoryCandidates. Coalesce it so one learner event never
+    # becomes multiple mastery/retention penalties.
+    coalesced: dict[tuple[str, str], MemoryCandidate] = {}
+    for candidate in validated:
+        normalized_key = normalize_canonical_key(candidate.kind, candidate.canonicalKey, candidate.content)
+        key = (candidate.kind, normalized_key)
+        previous = coalesced.get(key)
+        if previous is None:
+            coalesced[key] = candidate.model_copy(update={"canonicalKey": normalized_key})
+            continue
+        evidence_parts = [part for part in (previous.evidence, candidate.evidence) if part]
+        evidence = " | ".join(dict.fromkeys(evidence_parts))[:800]
+        coalesced[key] = previous.model_copy(update={
+            "content": candidate.content if len(candidate.content) > len(previous.content) else previous.content,
+            "evidence": evidence,
+            "confidence": max(previous.confidence, candidate.confidence),
+            "importance": max(previous.importance, candidate.importance),
+            "expiresInDays": candidate.expiresInDays or previous.expiresInDays,
+        })
+    validated = list(coalesced.values())
+    skipped_learning_codes = set(weakness_learning_skip_codes or set())
+
     embeddings = embed_texts([candidate.content for candidate in validated])
     saved: list[dict] = []
     for index, candidate in enumerate(validated):
@@ -510,9 +775,20 @@ def remember_candidates(
             user_id,
             canonical_key,
             include_resolved=candidate.kind == "weakness",
+            persist_memory=persist_memory,
         )
         existing = max(matches, key=lambda m: m.get("updatedAt", ""), default=None)
         vector = embeddings[index] if index < len(embeddings) else None
+        # A source is one independent observation. Retrying a failed workflow
+        # must not raise confidence, increment observationCount, or apply the
+        # same weakness evidence twice.
+        if existing and any(
+            str(ref.get("sourceType") or "") == source_type
+            and str(ref.get("sourceId") or "") == source_id
+            for ref in existing.get("sourceRefs") or []
+        ):
+            saved.append(public_memory(existing))
+            continue
         resolved_weakness = bool(
             candidate.kind == "weakness"
             and existing
@@ -553,6 +829,12 @@ def remember_candidates(
                     "status": ACTIVE,
                 }
             )
+            memory["verification"] = _verification_snapshot(
+                confidence=float(memory.get("confidence", candidate.confidence)),
+                source_refs=memory.get("sourceRefs") or [],
+                source_type=source_type,
+                now=now,
+            )
             if candidate.kind == "weakness":
                 memory["lastObservedAt"] = now_text
                 graduation = dict(memory.get("graduation") or {})
@@ -563,13 +845,23 @@ def remember_candidates(
                     "lastObservedAt": now_text,
                 })
                 memory["graduation"] = graduation
+                if _weakness_skill_code(canonical_key) not in skipped_learning_codes:
+                    _merge_weakness_learning_state(
+                        memory,
+                        canonical_key,
+                        candidate.evidence,
+                        source_type,
+                        candidate.importance,
+                        now,
+                        weakness_modality,
+                    )
             if vector is not None:
                 memory["embedding"] = vector
                 memory["embeddingModel"] = settings.qwen_embedding_model
             memory.update(_expiry_fields(candidate.kind, candidate.expiresInDays, bool(memory.get("pinned")), now))
             if memory.get("expiresAt") is None:
                 memory.pop("ttl", None)
-            save_memory(memory)
+            persist_memory(memory)
             saved.append(public_memory(memory))
             continue
 
@@ -594,6 +886,12 @@ def remember_candidates(
             "createdAt": now_text,
             "updatedAt": now_text,
         }
+        memory["verification"] = _verification_snapshot(
+            confidence=candidate.confidence,
+            source_refs=memory["sourceRefs"],
+            source_type=source_type,
+            now=now,
+        )
         if candidate.kind == "weakness":
             memory["lastObservedAt"] = now_text
             memory["graduation"] = {
@@ -603,20 +901,45 @@ def remember_candidates(
                 "progress": 0.0,
                 "lastObservedAt": now_text,
             }
+            memory.update(_initialize_weakness_learning_state(
+                canonical_key,
+                candidate.evidence,
+                source_type,
+                candidate.importance,
+                now,
+                weakness_modality,
+            ))
         memory.update(_expiry_fields(candidate.kind, candidate.expiresInDays, pinned, now))
         if vector is not None:
             memory["embedding"] = vector
             memory["embeddingModel"] = settings.qwen_embedding_model
 
         for old in matches:
-            _mark_archived(old, "superseded", now, superseded_by=memory_id)
-        save_memory(memory)
+            archived = dict(old)
+            if _looks_conflicting(old.get("content", ""), candidate.content):
+                archived["verification"] = {
+                    "state": "contradicted",
+                    "reason": "newer_conflicting_evidence",
+                    "needsConfirmation": False,
+                    "contradictedAt": now_text,
+                    "contradictedBy": memory_id,
+                    "updatedAt": now_text,
+                }
+            _mark_archived(
+                archived,
+                "superseded",
+                now,
+                superseded_by=memory_id,
+                persist_memory=persist_memory,
+            )
+        persist_memory(memory)
         saved.append(public_memory(memory))
 
-    _enforce_capacity(user_id)
+    _enforce_capacity(user_id, persist_memory=persist_memory)
     return saved
 
 
+@memory_write_locked
 def create_manual_memory(
     user_id: str,
     *,
@@ -653,6 +976,7 @@ def create_manual_memory(
     return saved[-1]
 
 
+@memory_write_locked
 def update_memory(
     user_id: str,
     memory_id: str,
@@ -666,6 +990,19 @@ def update_memory(
         if field in fields and fields[field] is not None:
             memory[field] = fields[field]
     memory["updatedAt"] = iso_at(now)
+    # A direct learner edit is explicit confirmation of the resulting fact.
+    if any(field in fields for field in ("content", "evidence", "confidence")):
+        memory["verification"] = {
+            "state": "confirmed",
+            "reason": "learner_confirmed",
+            "independentSourceCount": len({
+                str(ref.get("sourceId"))
+                for ref in memory.get("sourceRefs") or []
+                if ref.get("sourceId")
+            }),
+            "needsConfirmation": False,
+            "updatedAt": iso_at(now),
+        }
     if fields.get("content") is not None:
         vector = embed_text(str(fields["content"]))
         if vector is not None:
@@ -682,6 +1019,7 @@ def update_memory(
     return public_memory(memory)
 
 
+@memory_write_locked
 def forget_memory(user_id: str, memory_id: str) -> Optional[dict]:
     memory = get_memory(user_id, memory_id)
     if not memory:
@@ -689,7 +1027,13 @@ def forget_memory(user_id: str, memory_id: str) -> Optional[dict]:
     return public_memory(_mark_archived(memory, "forgotten", utc_now()))
 
 
-def forget_memories_from_source(user_id: str, source_id: str) -> list[dict]:
+@memory_write_locked
+def forget_memories_from_source(
+    user_id: str,
+    source_id: str,
+    *,
+    persist_memory: Callable[[dict], None] = save_memory,
+) -> list[dict]:
     """Retract evidence when its submission is deleted.
 
     A memory with other independent observations survives; a memory supported
@@ -699,7 +1043,7 @@ def forget_memories_from_source(user_id: str, source_id: str) -> list[dict]:
         return []
     changed: list[dict] = []
     now = utc_now()
-    for memory in _active_memories(user_id):
+    for memory in _active_memories(user_id, persist_memory=persist_memory):
         refs = list(memory.get("sourceRefs") or [])
         referenced = memory.get("sourceId") == source_id or any(
             ref.get("sourceId") == source_id for ref in refs
@@ -708,7 +1052,12 @@ def forget_memories_from_source(user_id: str, source_id: str) -> list[dict]:
             continue
         remaining = [ref for ref in refs if ref.get("sourceId") != source_id]
         if not remaining:
-            changed.append(public_memory(_mark_archived(memory, "forgotten", now)))
+            changed.append(public_memory(_mark_archived(
+                memory,
+                "forgotten",
+                now,
+                persist_memory=persist_memory,
+            )))
             continue
         memory = dict(memory)
         memory["sourceRefs"] = remaining
@@ -717,14 +1066,24 @@ def forget_memories_from_source(user_id: str, source_id: str) -> list[dict]:
         memory["sourceId"] = remaining[-1].get("sourceId", memory.get("sourceId"))
         memory["evidence"] = remaining[-1].get("evidence", memory.get("evidence", ""))
         memory["updatedAt"] = iso_at(now)
-        save_memory(memory)
+        memory["verification"] = _verification_snapshot(
+            confidence=float(memory.get("confidence", 0.5)),
+            source_refs=remaining,
+            source_type=str(memory.get("sourceType") or "system"),
+            now=now,
+        )
+        persist_memory(memory)
         changed.append(public_memory(memory))
     return changed
 
 
-def _enforce_capacity(user_id: str) -> None:
+def _enforce_capacity(
+    user_id: str,
+    *,
+    persist_memory: Callable[[dict], None] = save_memory,
+) -> None:
     maximum = max(20, settings.memory_max_items_per_user)
-    active = _active_memories(user_id)
+    active = _active_memories(user_id, persist_memory=persist_memory)
     if len(active) <= maximum:
         return
     kind_rank = {"episode": 0, "weakness": 1, "strategy": 2, "goal": 3, "preference": 4}
@@ -737,7 +1096,12 @@ def _enforce_capacity(user_id: str) -> None:
         ),
     )
     for memory in removable[: max(0, len(active) - maximum)]:
-        _mark_archived(memory, "forgotten", utc_now())
+        _mark_archived(
+            memory,
+            "forgotten",
+            utc_now(),
+            persist_memory=persist_memory,
+        )
 
 
 def memory_candidates_from_errors(errors: Iterable[dict]) -> list[MemoryCandidate]:
@@ -870,6 +1234,7 @@ def _recency(memory: dict, now: datetime) -> float:
     return math.pow(0.5, age_days / half_life)
 
 
+@memory_write_locked
 def retrieve_memory_pack(
     user_id: str,
     query: str,
@@ -907,6 +1272,13 @@ def retrieve_memory_pack(
         recency = _recency(memory, now)
         frequency = min(1.0, math.log1p(int(memory.get("accessCount", 0))) / math.log(11))
         critical = 1.0 if memory.get("kind") in {"preference", "goal"} else 0.0
+        raw_verification = memory.get("verification")
+        verification_state = (
+            str(raw_verification.get("state") or "legacy")
+            if isinstance(raw_verification, dict)
+            else "legacy"
+        )
+        verification_factor = 0.75 if verification_state == "candidate" else 1.0
         score = (
             0.50 * semantic
             + 0.15 * lexical
@@ -914,7 +1286,7 @@ def retrieve_memory_pack(
             + 0.10 * recency
             + 0.05 * frequency
             + 0.05 * critical
-        )
+        ) * verification_factor
         if memory.get("pinned"):
             score += 0.15
         scored_memory = dict(memory)
@@ -926,6 +1298,8 @@ def retrieve_memory_pack(
             "recency": round(recency, 4),
             "frequency": round(frequency, 4),
             "critical": critical,
+            "verification": verification_state,
+            "verificationFactor": verification_factor,
         }
         scored.append(scored_memory)
 
@@ -945,13 +1319,25 @@ def retrieve_memory_pack(
             seen.add(memory["id"])
             ordered.append(memory)
 
-    header = "Relevant long-term learner memory (use only when helpful; current user input wins):"
+    header = (
+        "Relevant long-term learner memory (use only when helpful; current user input wins). "
+        "A [candidate] memory is tentative: confirm it naturally before relying on or asserting it:"
+    )
     lines = [header]
     selected: list[dict] = []
     for memory in ordered:
         if len(selected) >= result_limit:
             break
-        line = f"- [{memory.get('kind')} | {memory.get('id')}] {memory.get('content', '')}"
+        raw_verification = memory.get("verification")
+        verification_state = (
+            str(raw_verification.get("state") or "legacy")
+            if isinstance(raw_verification, dict)
+            else "legacy"
+        )
+        line = (
+            f"- [{memory.get('kind')} | {verification_state} | {memory.get('id')}] "
+            f"{memory.get('content', '')}"
+        )
         evidence = str(memory.get("evidence") or "").strip()
         if evidence:
             line += f" Evidence: {evidence}"
@@ -1015,6 +1401,7 @@ def retrieve_memory_pack(
     }
 
 
+@memory_write_locked
 def record_practice_outcome_memory(
     *,
     user_id: str,
@@ -1037,62 +1424,68 @@ def record_practice_outcome_memory(
     now = parse_iso(created_at) or utc_now()
     now_text = iso_at(now)
     memory = dict(existing or {})
-    stats = dict(memory.get("stats") or {})
-    attempts = int(stats.get("attempts", 0)) + 1
-    total_score = int(stats.get("totalScore", 0)) + int(score)
-    correct = int(stats.get("correct", 0)) + (1 if is_correct else 0)
-    average = round(total_score / attempts, 1)
-    success_rate = round(correct / attempts, 3)
-    content = (
-        f"For {skill_code}, {exercise_type} has {attempts} recorded attempt(s), "
-        f"an average score of {average}, and a {round(success_rate * 100)}% success rate."
+    strategy_already_recorded = bool(existing) and any(
+        str(ref.get("sourceType") or "") == "practice"
+        and str(ref.get("sourceId") or "") == attempt_id
+        for ref in list(existing.get("sourceRefs") or [])
     )
-    if not memory:
-        memory = {
-            "id": f"mem_{uuid4().hex[:12]}",
-            "userId": user_id,
-            "kind": "strategy",
-            "canonicalKey": canonical,
-            "createdAt": now_text,
-            "accessCount": 0,
-            "lastAccessedAt": None,
-            "observationCount": 0,
-            "sourceRefs": [],
-            "pinned": False,
-        }
-    memory.update(
-        {
-            "content": content,
-            "evidence": f"Latest score: {score}/100; correct={is_correct}.",
-            "confidence": round(min(0.95, 0.55 + 0.08 * math.sqrt(attempts)), 4),
-            "importance": round(min(0.9, 0.58 + 0.04 * math.sqrt(attempts)), 4),
-            "status": ACTIVE,
-            "sourceType": "practice",
-            "sourceId": attempt_id,
-            "updatedAt": now_text,
-            "observationCount": int(memory.get("observationCount", 0)) + 1,
-            "stats": {
-                "skillCode": skill_code,
-                "exerciseType": exercise_type,
-                "attempts": attempts,
-                "totalScore": total_score,
-                "correct": correct,
-                "averageScore": average,
-                "successRate": success_rate,
-                "lastScore": score,
-                "lastAttemptAt": now_text,
-            },
-        }
-    )
-    refs = list(memory.get("sourceRefs") or [])
-    refs.append(_source_ref("practice", attempt_id, memory["evidence"], now_text))
-    memory["sourceRefs"] = refs[-12:]
-    memory.update(_expiry_fields("strategy", 180, False, now))
-    vector = embed_text(content)
-    if vector is not None:
-        memory["embedding"] = vector
-        memory["embeddingModel"] = settings.qwen_embedding_model
-    save_memory(memory)
+    if not strategy_already_recorded:
+        stats = dict(memory.get("stats") or {})
+        attempts = int(stats.get("attempts", 0)) + 1
+        total_score = int(stats.get("totalScore", 0)) + int(score)
+        correct = int(stats.get("correct", 0)) + (1 if is_correct else 0)
+        average = round(total_score / attempts, 1)
+        success_rate = round(correct / attempts, 3)
+        content = (
+            f"For {skill_code}, {exercise_type} has {attempts} recorded attempt(s), "
+            f"an average score of {average}, and a {round(success_rate * 100)}% success rate."
+        )
+        if not memory:
+            memory = {
+                "id": f"mem_{uuid4().hex[:12]}",
+                "userId": user_id,
+                "kind": "strategy",
+                "canonicalKey": canonical,
+                "createdAt": now_text,
+                "accessCount": 0,
+                "lastAccessedAt": None,
+                "observationCount": 0,
+                "sourceRefs": [],
+                "pinned": False,
+            }
+        memory.update(
+            {
+                "content": content,
+                "evidence": f"Latest score: {score}/100; correct={is_correct}.",
+                "confidence": round(min(0.95, 0.55 + 0.08 * math.sqrt(attempts)), 4),
+                "importance": round(min(0.9, 0.58 + 0.04 * math.sqrt(attempts)), 4),
+                "status": ACTIVE,
+                "sourceType": "practice",
+                "sourceId": attempt_id,
+                "updatedAt": now_text,
+                "observationCount": int(memory.get("observationCount", 0)) + 1,
+                "stats": {
+                    "skillCode": skill_code,
+                    "exerciseType": exercise_type,
+                    "attempts": attempts,
+                    "totalScore": total_score,
+                    "correct": correct,
+                    "averageScore": average,
+                    "successRate": success_rate,
+                    "lastScore": score,
+                    "lastAttemptAt": now_text,
+                },
+            }
+        )
+        refs = list(memory.get("sourceRefs") or [])
+        refs.append(_source_ref("practice", attempt_id, memory["evidence"], now_text))
+        memory["sourceRefs"] = refs[-12:]
+        memory.update(_expiry_fields("strategy", 180, False, now))
+        vector = embed_text(content)
+        if vector is not None:
+            memory["embedding"] = vector
+            memory["embeddingModel"] = settings.qwen_embedding_model
+        save_memory(memory)
 
     episode = MemoryCandidate(
         kind="episode",

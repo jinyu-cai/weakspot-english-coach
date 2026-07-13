@@ -28,6 +28,12 @@ class SubmitPracticeRequest(BaseModel):
     exerciseId: str
     userAnswer: str = Field(min_length=1)
     outputLanguage: OutputLanguage = "en"
+    clientAttemptId: Optional[str] = Field(
+        default=None,
+        min_length=8,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )
 
 
 class GradePracticeRequest(BaseModel):
@@ -48,6 +54,12 @@ class GradePracticeRequest(BaseModel):
     exerciseType: Optional[PracticeType] = None
     promptZh: Optional[str] = None
     explanationZh: Optional[str] = None
+    clientAttemptId: Optional[str] = Field(
+        default=None,
+        min_length=8,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )
 
 
 class PracticeGradeAIResult(BaseModel):
