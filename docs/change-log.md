@@ -24,9 +24,10 @@ Date: 2026-07-13
 
 Branch: `fix/unbounded-history-ui`
 
-GitHub status: Local branch; not pushed.
+GitHub status: PR #35 open; Vercel Preview passed.
 
-Deploy status: Not deployed.
+Deploy status: Vercel Preview built successfully; production and backend
+deployments wait for merge.
 
 Summary:
 
@@ -67,7 +68,7 @@ Known issues:
   screenshots were used for diagnosis; final automatic visual screenshots are
   unavailable.
 
-Next step: Review the final diff, open a PR, and deploy after checks pass.
+Next step: Merge PR #35 and deploy the merged release.
 
 ## 2026-07-13 — Notebook lifecycle and confirmed History deletion
 
