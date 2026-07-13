@@ -11,6 +11,7 @@ const ROW_HEIGHT = 42
 const CHART_PADDING = 84
 const MIN_CHART_HEIGHT = 320
 const LABEL_LINE_LENGTH = 16
+const LABEL_WIDTH = 156
 
 type SkillTickProps = {
   x?: number
@@ -21,9 +22,18 @@ type SkillTickProps = {
 }
 
 function wrapSkillLabel(label: string): string[] {
-  const words = label.split(/\s+/).filter(Boolean)
+  const words = label
+    .split(/\s+/)
+    .filter(Boolean)
+    .flatMap((word) => {
+      if (word.length <= LABEL_LINE_LENGTH) return [word]
+      return Array.from(
+        { length: Math.ceil(word.length / LABEL_LINE_LENGTH) },
+        (_, index) => word.slice(index * LABEL_LINE_LENGTH, (index + 1) * LABEL_LINE_LENGTH),
+      )
+    })
 
-  if (words.length <= 1 || label.length <= LABEL_LINE_LENGTH) {
+  if (label.length <= LABEL_LINE_LENGTH) {
     return [label]
   }
 
@@ -40,16 +50,12 @@ function wrapSkillLabel(label: string): string[] {
     return wrapped
   }, [""])
 
-  if (lines.length <= 2) {
-    return lines
-  }
-
-  return [lines[0], `${lines.slice(1).join(" ").slice(0, LABEL_LINE_LENGTH - 3)}...`]
+  return lines
 }
 
 function SkillTick({ x = 0, y = 0, payload }: SkillTickProps) {
   const lines = wrapSkillLabel(String(payload?.value ?? ""))
-  const firstLineOffset = lines.length === 1 ? 4 : -5
+  const firstLineOffset = 4 - ((lines.length - 1) * 6)
 
   return (
     <text x={x} y={y + firstLineOffset} textAnchor="end" className="fill-muted-foreground text-[11px]">
@@ -71,7 +77,9 @@ export function SkillBarChart({ skills }: { skills: SkillState[] }) {
     skill: localizedSkillLabel(s.skillCode, language),
     mastery: s.mastery,
   }))
-  const chartHeight = Math.max(MIN_CHART_HEIGHT, data.length * ROW_HEIGHT + CHART_PADDING)
+  const maxLabelLines = Math.max(1, ...data.map((entry) => wrapSkillLabel(entry.skill).length))
+  const rowHeight = Math.max(ROW_HEIGHT, (maxLabelLines * 12) + 22)
+  const chartHeight = Math.max(MIN_CHART_HEIGHT, data.length * rowHeight + CHART_PADDING)
 
   return (
     <ChartContainer config={chartConfig} className="aspect-auto w-full" style={{ height: chartHeight }}>
@@ -79,7 +87,7 @@ export function SkillBarChart({ skills }: { skills: SkillState[] }) {
         accessibilityLayer
         data={data}
         layout="vertical"
-        margin={{ top: 8, right: 20, left: 4, bottom: 8 }}
+        margin={{ top: 8, right: 20, left: 12, bottom: 8 }}
         barCategoryGap={10}
       >
         <CartesianGrid horizontal={false} strokeDasharray="3 3" />
@@ -97,7 +105,7 @@ export function SkillBarChart({ skills }: { skills: SkillState[] }) {
           type="category"
           tickLine={false}
           axisLine={false}
-          width={128}
+          width={LABEL_WIDTH}
           interval={0}
           tick={<SkillTick />}
         />

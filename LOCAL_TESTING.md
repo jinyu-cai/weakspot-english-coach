@@ -105,6 +105,9 @@ Previous cards explain that resolved-weakness notes are retained for reference
 The previous mock note moves into the Previous view
 Markdown export contains Current and Previous notes, not only the visible filter
 History delete opens a confirmation dialog and names associated corrections/notes
+History shows more than 20 submissions and more than 20 corrections when present
+Dashboard bar-chart labels are readable in full, including legacy grammar.* codes
+Chat and AI settings show the complete selected provider and model name
 ```
 
 ## Backend smoke and integration tests
@@ -122,9 +125,9 @@ DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
 ```
 
 The integration test covers diagnose, profile, plan, practice generation,
-practice submit, history, auth/rate limiting, server model routing, realtime
-session rules, chat import, session analysis, daily stats, an unbounded
-multi-page Notebook, and reversible current/previous note classification. Run
+practice submit, unbounded multi-page History, auth/rate limiting, server model
+routing, realtime session rules, chat import, session analysis, daily stats, an
+unbounded multi-page Notebook, and reversible current/previous note classification. Run
 `uv run python -m scripts.dedup_test` as the focused gate for confirmed manual
 History deletion; it verifies associated Notebook notes are removed from the
 backend together with the submission and errors. The dedicated

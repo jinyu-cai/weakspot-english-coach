@@ -68,6 +68,19 @@ weakness graduation never deletes Notebook notes. A future retention policy may
 physically clean up sufficiently old resolved evidence, but that policy is not
 enabled today.
 
+## History and dense labels
+
+`/history` renders every submission and correction returned by the API; it does
+not slice the arrays or impose a 20-item UI limit. The backend also reads every
+DynamoDB page, so the visible counts reflect the learner's complete History.
+
+Dashboard skill codes are localized when known and converted to readable words
+when older data contains a code outside the current taxonomy. The horizontal
+bar chart reserves a wider label column and wraps every line without ellipsis.
+Chat and AI settings show server models as `provider · actual-model-name` in
+full-width responsive selectors instead of squeezing verbose names into narrow
+fixed-width controls.
+
 ## Input Learning
 
 `/input` turns authentic material into personalized language intake and later

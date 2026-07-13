@@ -65,7 +65,14 @@ def main() -> int:
 
         from app.api.deps import _client_ip, make_session_jwt
         from app.config import settings
-        from app.db.repositories import list_chat_messages, save_memory, save_note, update_chat_session_fields
+        from app.db.repositories import (
+            list_chat_messages,
+            save_error,
+            save_memory,
+            save_note,
+            save_submission,
+            update_chat_session_fields,
+        )
         from app.main import app
         from app.services.realtime_sideband import RealtimeSidebandState, _handle_realtime_event
         from scripts.create_table import create_table
@@ -198,14 +205,56 @@ def main() -> int:
             f"mastery {ex['targetSkillCode']} now {g['updatedSkill']['mastery']}"
         )
 
-        # 6. history
+        # 6. History is intentionally unbounded. Seed more than the former
+        # route cap of 20, with enough data to force DynamoDB pagination for
+        # both submissions and errors.
+        seeded_submission_ids = set()
+        seeded_error_ids = set()
+        for index in range(25):
+            submission_id = f"history-unbounded-submission-{index:03d}"
+            error_id = f"history-unbounded-error-{index:03d}"
+            created_at = f"2026-07-12T10:{index:02d}:00Z"
+            seeded_submission_ids.add(submission_id)
+            seeded_error_ids.add(error_id)
+            save_submission({
+                "id": submission_id,
+                "userId": "owner",
+                "mode": "writing",
+                "originalText": f"History pagination submission {index}. " + ("s" * 48000),
+                "correctedText": f"Corrected history submission {index}.",
+                "summaryZh": "History pagination regression coverage.",
+                "cefrEstimate": "B1",
+                "createdAt": created_at,
+            })
+            save_error({
+                "id": error_id,
+                "userId": "owner",
+                "submissionId": submission_id,
+                "code": "grammar.verb_tense",
+                "category": "Verb tense",
+                "severity": "medium",
+                "originalText": "I go yesterday.",
+                "correctedText": "I went yesterday.",
+                "explanationZh": "History pagination regression coverage. " + ("e" * 48000),
+                "microLessonZh": "Use past tense with yesterday.",
+                "practiceGoal": "Use the past tense consistently.",
+                "createdAt": created_at,
+            })
+
         r = client.get(f"/api/v1/history/{user}")
         assert r.status_code == 200, r.text
         h = r.json()
-        assert h["submissions"] and h["errors"], h
+        returned_submission_ids = {item["id"] for item in h["submissions"]}
+        returned_error_ids = {item["id"] for item in h["errors"]}
+        assert seeded_submission_ids <= returned_submission_ids, len(returned_submission_ids)
+        assert seeded_error_ids <= returned_error_ids, len(returned_error_ids)
+        assert len(h["submissions"]) > 20 and len(h["errors"]) > 20, (
+            len(h["submissions"]),
+            len(h["errors"]),
+        )
         print(
             f"6. GET  /history           -> {len(h['submissions'])} submissions, "
-            f"{len(h['errors'])} errors"
+            f"{len(h['errors'])} errors, no 20-item cap"
         )
 
         # Notebook is intentionally unbounded. Seed enough notes to catch the

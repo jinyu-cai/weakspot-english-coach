@@ -25,7 +25,7 @@ import type { ChatMessage, ChatSession, SessionAnalysis, StealthPracticeResult }
 import {
   DEFAULT_SERVER_DEEP_MODEL_ID,
   DEFAULT_SERVER_FAST_MODEL_ID,
-  formatServerModelOption,
+  formatServerModelSelection,
   loadLLMSettings,
   LLM_SETTINGS_CHANGE_EVENT,
   normalizeServerModelSettings,
@@ -84,12 +84,6 @@ export default function ChatPage() {
   const [stealthPractice, setStealthPractice] = useState<StealthPracticeResult | null>(null)
   const [voiceLifecycle, setVoiceLifecycle] = useState<VoiceChatLifecycle>({ active: false, pending: false })
   const { t } = useLanguage()
-
-  const modelLabels = {
-    automatic: t.settings.serverAuto,
-    deep: t.settings.serverDeep,
-    fast: t.settings.serverFast,
-  }
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -164,6 +158,8 @@ export default function ChatPage() {
 
   const deepServerModels = serverModelsForMode(serverModels, "deep")
   const fastServerModels = serverModelsForMode(serverModels, "fast")
+  const selectedDeepServerModel = deepServerModels.find((model) => model.id === selectedServerDeepModelId)
+  const selectedFastServerModel = fastServerModels.find((model) => model.id === selectedServerFastModelId)
   const voiceNavigationLocked = voiceLifecycle.active || voiceLifecycle.pending
 
   useEffect(() => {
@@ -349,52 +345,60 @@ export default function ChatPage() {
   if (!activeSession) {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-        <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <header className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <h1 className="font-heading text-3xl font-bold tracking-tight">{t.chat.title}</h1>
             <p className="text-muted-foreground">{t.chat.description}</p>
           </div>
-          <div className="grid gap-1 text-xs font-medium text-muted-foreground">
+          <div className="grid w-full min-w-0 gap-2 text-xs font-medium text-muted-foreground">
             <span>{t.settings.serverModel}</span>
-            <div className="grid gap-1 sm:grid-cols-2">
-              <select
-                aria-label={t.settings.deepModel}
-                value={selectedServerDeepModelId}
-                onChange={(event) => selectServerModel("deep", event.target.value)}
-                disabled={loadingModels && serverModels.length === 0}
-                className="h-8 min-w-44 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-60"
-              >
-                {loadingModels && serverModels.length === 0 ? (
-                  <option value={selectedServerDeepModelId}>{t.settings.serverModelsLoading}</option>
-                ) : deepServerModels.length === 0 ? (
-                  <option value={selectedServerDeepModelId}>{selectedServerDeepModelId}</option>
-                ) : (
-                  deepServerModels.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {t.settings.serverDeep}: {formatServerModelOption(model, modelLabels)}
-                    </option>
-                  ))
-                )}
-              </select>
-              <select
-                aria-label={t.settings.fastModel}
-                value={selectedServerFastModelId}
-                onChange={(event) => selectServerModel("fast", event.target.value)}
-                disabled={loadingModels && serverModels.length === 0}
-                className="h-8 min-w-44 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-60"
-              >
-                {loadingModels && serverModels.length === 0 ? (
-                  <option value={selectedServerFastModelId}>{t.settings.serverModelsLoading}</option>
-                ) : fastServerModels.length === 0 ? (
-                  <option value={selectedServerFastModelId}>{selectedServerFastModelId}</option>
-                ) : (
-                  fastServerModels.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {t.settings.serverFast}: {formatServerModelOption(model, modelLabels)}
-                    </option>
-                  ))
-                )}
-              </select>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="grid min-w-0 gap-1">
+                <span>{t.settings.deepModel}</span>
+                <select
+                  aria-label={t.settings.deepModel}
+                  value={selectedServerDeepModelId}
+                  onChange={(event) => selectServerModel("deep", event.target.value)}
+                  disabled={loadingModels && serverModels.length === 0}
+                  title={selectedDeepServerModel ? formatServerModelSelection(selectedDeepServerModel) : selectedServerDeepModelId}
+                  className="h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 pr-8 text-sm font-medium text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {loadingModels && serverModels.length === 0 ? (
+                    <option value={selectedServerDeepModelId}>{t.settings.serverModelsLoading}</option>
+                  ) : deepServerModels.length === 0 ? (
+                    <option value={selectedServerDeepModelId}>{selectedServerDeepModelId}</option>
+                  ) : (
+                    deepServerModels.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {formatServerModelSelection(model)}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+              <label className="grid min-w-0 gap-1">
+                <span>{t.settings.fastModel}</span>
+                <select
+                  aria-label={t.settings.fastModel}
+                  value={selectedServerFastModelId}
+                  onChange={(event) => selectServerModel("fast", event.target.value)}
+                  disabled={loadingModels && serverModels.length === 0}
+                  title={selectedFastServerModel ? formatServerModelSelection(selectedFastServerModel) : selectedServerFastModelId}
+                  className="h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 pr-8 text-sm font-medium text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {loadingModels && serverModels.length === 0 ? (
+                    <option value={selectedServerFastModelId}>{t.settings.serverModelsLoading}</option>
+                  ) : fastServerModels.length === 0 ? (
+                    <option value={selectedServerFastModelId}>{selectedServerFastModelId}</option>
+                  ) : (
+                    fastServerModels.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {formatServerModelSelection(model)}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
             </div>
             <div className="flex justify-end">
               {modelsError && (

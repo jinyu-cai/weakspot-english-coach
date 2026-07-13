@@ -15,12 +15,6 @@ import { Spinner } from "@/components/ui/spinner"
 import { CheckCircle2, XCircle, Lightbulb } from "lucide-react"
 import { useLanguage } from "@/components/language-provider"
 
-/** Turns a raw skill code like "vocabulary_range" or "grammar.verb_tense" into "Vocabulary range". */
-function prettifySkillCode(code: string): string {
-  const words = code.replace(/^[a-z]+\./, "").replace(/[._]/g, " ").trim()
-  return words.charAt(0).toUpperCase() + words.slice(1)
-}
-
 type Props = {
   exercise: PracticeExercise
   index: number
@@ -38,7 +32,7 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
   const { language, t } = useLanguage()
 
   const typeLabel = practiceTypeLabel(exercise.type, language)
-  const skillLabel = localizedSkillLabel(exercise.targetSkillCode, language) || prettifySkillCode(exercise.targetSkillCode)
+  const skillLabel = localizedSkillLabel(exercise.targetSkillCode, language)
 
   async function handleSubmit() {
     if (submitting || grade) return

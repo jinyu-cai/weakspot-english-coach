@@ -16,6 +16,15 @@ export const SKILL_LABELS: Record<string, string> = {
   "grammar.article": "Articles",
   "grammar.preposition": "Prepositions",
   "grammar.subject_verb_agreement": "Subject-verb agreement",
+  "grammar.phrasal_verb_object": "Phrasal verb object",
+  "grammar.preposition_phrase": "Prepositional phrases",
+  "grammar.question_word": "Question words",
+  "grammar.sentence_structure": "Sentence structure",
+  "grammar.verb_form": "Verb forms",
+  "grammar.word_order": "Word order",
+  "grammar.adjective": "Adjectives",
+  "grammar.be_missing": "Missing be verb",
+  "grammar.time_expression": "Time expressions",
   "vocab.word_choice": "Word choice",
   "vocab.repetition": "Word repetition",
   "sentence.structure": "Sentence structure",
@@ -25,11 +34,17 @@ export const SKILL_LABELS: Record<string, string> = {
   "clarity.expression": "Clarity of expression",
 }
 
+function humanizeSkillCode(code: string) {
+  const words = code.replace(/^[a-z]+\./, "").replace(/[._-]+/g, " ").trim()
+  if (!words) return code
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
 export function practiceTypeLabel(type: PracticeType, language: OutputLanguage) {
   return getCopy(language).labels.practiceTypes[type] ?? PRACTICE_TYPE_META[type].label
 }
 
 export function skillLabel(code: string, language: OutputLanguage) {
   const labels = getCopy(language).labels.skills as Record<string, string>
-  return labels[code] ?? SKILL_LABELS[code] ?? code
+  return labels[code] ?? SKILL_LABELS[code] ?? humanizeSkillCode(code)
 }
