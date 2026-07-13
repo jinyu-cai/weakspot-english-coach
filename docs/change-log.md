@@ -24,9 +24,10 @@ Date: 2026-07-13
 
 Branch: `feature/note-lifecycle-ui`
 
-GitHub status: Local branch; not pushed.
+GitHub status: PR #34 open; Vercel Preview passed.
 
-Deploy status: Not deployed.
+Deploy status: Vercel Preview built successfully; production and backend
+deployments wait for merge.
 
 Summary:
 
@@ -61,7 +62,8 @@ Files changed:
 - `apps/api/README.md`, `apps/web/README.md`, `LOCAL_TESTING.md`, and
   `development.md`
 - `README.md`, `docs/ARCHITECTURE.md`,
-  `docs/ALIBABA_QWEN_DEPLOYMENT.md`, and `docs/project-structure-plan.md`
+  `docs/ALIBABA_QWEN_DEPLOYMENT.md`, `docs/SUBMISSION.md`,
+  `docs/DEMO_VIDEO_SCRIPT.md`, and `docs/project-structure-plan.md`
 
 Tests run:
 
@@ -85,9 +87,8 @@ Known issues:
   API credential, so returning `enapi.jinxxx.de` to Oracle requires the DNS
   change in the Cloudflare dashboard after both deployments are verified.
 
-Next step: Complete the production build/tests, review the Vercel Preview, deploy
-the same merged commit to both servers, then return the Cloudflare origin to
-Oracle and verify the request reaches Oracle.
+Next step: Merge PR #34, deploy the same merged commit to both servers, then
+return the Cloudflare origin to Oracle and verify the request reaches Oracle.
 
 ## 2026-07-12 — Stealth practice and authentic Input Learning
 
