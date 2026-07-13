@@ -92,19 +92,22 @@ practice decision. They can edit, pin, or forget any memory.
 
 ```mermaid
 flowchart LR
-    User[Next.js / Vercel] -->|HTTPS| Ali[Alibaba ECS / FastAPI]
+    User[Next.js / Vercel] -->|stable API hostname| Edge[Cloudflare]
+    Edge -. final demo origin .-> Ali[Alibaba ECS / FastAPI]
+    Edge -->|normal origin before/after demo| Oracle[Oracle / FastAPI]
     Ali --> Qwen[Qwen 3.7 Max + Plus]
     Ali --> Emb[Qwen text-embedding-v4]
     Ali --> Agent[Memory lifecycle + hybrid ranker]
     Agent <--> DB[(DynamoDB)]
     Agent -->|bounded Memory Pack| Qwen
     Grade[Practice outcomes] --> Agent
-    Oracle[Oracle standby] -. rollback .-> DB
+    Oracle --> DB
 ```
 
-The primary FastAPI/Docker deployment runs on Alibaba Cloud ECS behind Nginx
-and TLS. The Vercel frontend calls that origin during the hackathon. Oracle
-Cloud remains a manual standby using the same DynamoDB state.
+During the final demonstration and evidence capture, the primary
+FastAPI/Docker origin runs on Alibaba Cloud ECS behind Nginx and TLS. Oracle is
+the normal origin before and after that window. Both serve the same stable API
+hostname and share DynamoDB state, so Vercel's API URL does not change.
 
 Important code links after the repository is public:
 
@@ -153,7 +156,7 @@ hackathon start date:
 - bounded cross-session Memory Packs;
 - practice-effectiveness accumulation and adaptive decisions;
 - a complete Memory Center, recall audit trail, tests, and benchmark;
-- Alibaba Cloud primary deployment and Qwen provider routing.
+- Alibaba Cloud final-demo deployment and Qwen provider routing.
 
 ## Under-three-minute demo outline
 
@@ -182,8 +185,9 @@ Use [DEMO_VIDEO_SCRIPT.md](DEMO_VIDEO_SCRIPT.md) for the narration.
 - [x] Visible MIT `LICENSE`
 - [x] MemoryAgent tests and benchmark
 - [x] Demo script under three minutes
-- [x] Deploy the final backend revision to Alibaba ECS
-- [x] Keep Oracle standby healthy after the same schema-compatible revision
+- [ ] Deploy the final backend revision to Oracle and Alibaba ECS
+- [ ] Switch the stable API origin to Alibaba only for evidence capture, then
+      return it to Oracle
 - [ ] Deploy the final frontend revision to Vercel
 - [ ] Make repository public and insert its URL above
 - [ ] Capture Alibaba ECS + Model Studio + DynamoDB proof without secrets

@@ -67,10 +67,12 @@ public `/api/v1/health`, safe backend log lines showing `qwen3.7-max` or
 `qwen3.7-plus`, Model Studio models, then DynamoDB rows beginning `MEMORY#` and
 `MEMTRACE#`.
 
-> The primary FastAPI backend runs in Docker on Alibaba Cloud ECS. Qwen 3.7 Max
+> For this final demo, the primary FastAPI origin runs in Docker on Alibaba
+> Cloud ECS. Qwen 3.7 Max
 > handles deep tasks, Plus handles fast paths, and text-embedding-v4 powers
 > memory retrieval. DynamoDB stores the cross-session memory and recall audit.
-> Oracle remains a standby, not the demo's primary server.
+> Oracle is the normal production origin outside this evidence window, not the
+> demo's primary server.
 
 ## 2:27–2:44 — Evidence and close
 
@@ -85,7 +87,7 @@ public `/api/v1/health`, safe backend log lines showing `qwen3.7-max` or
 
 - Use a test learner account with prepared data so no private content appears.
 - Keep the final recording under three minutes.
-- Show Alibaba ECS as the primary origin and the public health endpoint.
+- Show Alibaba ECS as the final-demo origin and the public health endpoint.
 - Show Qwen model names but never keys.
 - Show `MEMORY#` and `MEMTRACE#` rows in DynamoDB.
 - Show the public repository and visible MIT license.

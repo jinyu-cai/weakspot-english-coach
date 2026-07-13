@@ -245,6 +245,26 @@ def list_notes(user_id: str, limit: Optional[int] = None) -> list:
     return notes if limit is None else notes[:limit]
 
 
+def list_notes_for_submission(user_id: str, created_at: str, submission_id: str) -> list:
+    notes: list[dict] = []
+    query_kwargs = {
+        "KeyConditionExpression": Key("PK").eq(user_pk(user_id))
+        & Key("SK").begins_with(f"NOTE#{created_at}#"),
+    }
+    while True:
+        res = table.query(**query_kwargs)
+        notes.extend(
+            clean(item)
+            for item in res.get("Items", [])
+            if item.get("submissionId") == submission_id
+        )
+        last_key = res.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_kwargs["ExclusiveStartKey"] = last_key
+    return notes
+
+
 def get_note(user_id: str, created_at: str, note_id: str) -> Optional[dict]:
     res = table.get_item(Key={"PK": user_pk(user_id), "SK": note_sk(created_at, note_id)})
     item = res.get("Item")
@@ -375,14 +395,14 @@ def get_memory(user_id: str, memory_id: str) -> Optional[dict]:
     return clean(item) if item else None
 
 
-def list_memories(user_id: str, limit: int = 200) -> list:
-    if limit <= 0:
+def list_memories(user_id: str, limit: Optional[int] = 200) -> list:
+    if limit is not None and limit <= 0:
         return []
     memories: list[dict] = []
     query_kwargs = {
         "KeyConditionExpression": Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("MEMORY#"),
     }
-    while len(memories) < limit:
+    while limit is None or len(memories) < limit:
         res = table.query(**query_kwargs)
         memories.extend(clean(item) for item in res.get("Items", []))
         last_key = res.get("LastEvaluatedKey")
@@ -390,7 +410,7 @@ def list_memories(user_id: str, limit: int = 200) -> list:
             break
         query_kwargs["ExclusiveStartKey"] = last_key
     memories.sort(key=lambda item: item.get("updatedAt", item.get("createdAt", "")), reverse=True)
-    return memories[:limit]
+    return memories if limit is None else memories[:limit]
 
 
 def delete_memory(user_id: str, memory_id: str) -> None:

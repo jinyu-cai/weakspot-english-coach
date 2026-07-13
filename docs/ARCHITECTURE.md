@@ -9,32 +9,44 @@ here for the compact production-system view.
 ```mermaid
 flowchart TB
     User[Browser] -->|HTTPS| Web[Next.js 16 / Vercel\nenglearning.jinxxx.de]
-    Web -->|HTTPS + cookie identity| Nginx[Alibaba Cloud ECS / Nginx\nenapi.jinxxx.de]
-    Nginx --> API[FastAPI / Docker]
+    Web -->|HTTPS + cookie identity| Edge[Cloudflare\nenapi.jinxxx.de]
+    Edge -->|normal production origin| OracleNginx[Oracle Cloud / Nginx]
+    Edge -. final demo origin .-> AliNginx[Alibaba Cloud ECS / Nginx]
+    OracleNginx --> OracleAPI[FastAPI / Docker]
+    AliNginx --> AliAPI[FastAPI / Docker]
 
-    API --> Extract[Structured learner analysis]
-    Extract -->|deep| Max[Model Studio qwen3.7-max]
-    Extract -->|fast| Plus[Model Studio qwen3.7-plus]
+    OracleAPI -->|daily deep + fast| DeepSeek[DeepSeek]
+    AliAPI -->|deep| Max[Model Studio qwen3.7-max]
+    AliAPI -->|fast| Plus[Model Studio qwen3.7-plus]
 
-    API --> Mem[MemoryAgent service]
+    OracleAPI --> Mem[MemoryAgent service]
+    AliAPI --> Mem
     Mem -->|embeddings| Emb[Model Studio text-embedding-v4 / 256d]
     Mem <--> DB[(Amazon DynamoDB\nWeakSpotEnglishCoach)]
     Mem --> Pack[Bounded Memory Pack\n<= 700 estimated tokens]
-    Pack --> Extract
 
-    API --> Decide[Outcome-aware decision policy]
+    OracleAPI --> Decide[Outcome-aware decision policy]
+    AliAPI --> Decide
     Decide --> Mem
     Decide --> Practice[Plan and practice generation]
 
     Voice[OpenAI Realtime API] <-->|WebRTC audio| Web
-    API <-->|WebSocket sideband / transcript| Voice
-
-    Oracle[Oracle Cloud standby\nFastAPI + DeepSeek] -. manual rollback .-> DB
+    OracleAPI <-->|WebSocket sideband / transcript| Voice
+    AliAPI <-->|WebSocket sideband / transcript| Voice
 ```
 
-Alibaba Cloud ECS is the primary API origin for the Qwen Cloud Hackathon.
-Oracle remains a warm manual standby. Both deployments use the same DynamoDB
-table, so a rollback does not discard learner state.
+Oracle Cloud is the normal production API origin. Alibaba Cloud ECS remains a
+healthy, release-matched demo origin and becomes active only for the final Qwen
+Cloud Hackathon demonstration/evidence window. Both deployments serve the same
+`enapi.jinxxx.de` host and use the same DynamoDB table. Cloudflare changes the
+origin without changing Vercel's `NEXT_PUBLIC_API_BASE_URL`, OAuth callback URL,
+or API-cookie host; switching origins therefore does not discard learner state.
+
+Before either direction of a switch, deploy the same Git commit to both hosts,
+verify each local `/api/v1/health`, change the Cloudflare origin, then verify the
+public health endpoint and `/api/v1/llm/models`. There is no browser-side
+automatic failover because split origins would make diagnosis, session, and
+model-provider behavior harder to audit.
 
 ## Memory data flow
 

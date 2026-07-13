@@ -3,7 +3,8 @@ import re
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import Identity, rate_limited
-from app.db.repositories import delete_note, get_note, list_notes
+from app.db.repositories import delete_note, get_note
+from app.services.notebook_service import list_notebook_notes
 
 router = APIRouter()
 
@@ -17,7 +18,7 @@ def _fix_tz(value: str) -> str:
 
 @router.get("/notes")
 def get_notes(identity: Identity = Depends(rate_limited("notes"))):
-    notes = list_notes(identity.user_id)
+    notes = list_notebook_notes(identity.user_id)
     return {"notes": notes}
 
 

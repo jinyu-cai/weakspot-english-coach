@@ -234,7 +234,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex w-full flex-col lg:pl-64">
         {/* Top bar */}
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-border bg-background/80 px-4 backdrop-blur-md sm:px-6">
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-2 border-b border-border bg-background/80 px-3 backdrop-blur-md sm:gap-4 sm:px-6">
           <div className="flex items-center gap-2">
             <Sheet open={open} onOpenChange={setOpen}>
               <SheetTrigger
@@ -249,10 +249,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <NavSidebar onNavigate={() => setOpen(false)} />
               </SheetContent>
             </Sheet>
-            <span className="text-sm font-medium text-muted-foreground lg:hidden">WeakSpot</span>
+            <span className="hidden text-sm font-medium text-muted-foreground sm:inline lg:hidden">WeakSpot</span>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex min-w-0 items-center gap-1 sm:gap-3">
             <LanguageSwitcher />
             <LLMProviderSettings />
             <AuthButton />

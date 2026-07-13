@@ -40,7 +40,7 @@ export function AuthButton() {
     <div className="flex items-center gap-2">
       {me.avatarUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={me.avatarUrl} alt="" className="size-7 rounded-full border border-border" />
+        <img src={me.avatarUrl} alt="" className="hidden size-7 rounded-full border border-border sm:block" />
       ) : null}
       <span className="hidden max-w-[8rem] truncate text-sm font-medium sm:inline">
         {me.name || me.login}

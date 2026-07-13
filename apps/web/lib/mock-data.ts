@@ -748,5 +748,14 @@ export const mockNotes: LearningNote[] = [
     context: "Formal and informal writing; especially common in academic and business English.",
     examples: ["There are several options to consider.", "There is only one solution left."],
     createdAt: "2026-06-19T14:30:00.000Z",
+    learningState: "previous",
+    relatedWeaknesses: [
+      {
+        id: "mem-weakness-agreement",
+        skillCode: "grammar.subject_verb_agreement",
+        status: "resolved",
+        resolvedAt: "2026-06-24T14:30:00.000Z",
+      },
+    ],
   },
 ]

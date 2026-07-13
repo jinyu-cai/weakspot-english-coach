@@ -54,12 +54,14 @@ export default function HistoryPage() {
     }
 
     let removedErrors = 0
+    let removedNotes = 0
 
     try {
       await refreshHistory(
         async (currentHistory) => {
           const res = await deleteSubmission(submission.id, submission.createdAt)
           removedErrors = res.removedErrors
+          removedNotes = res.removedNotes ?? 0
           return removeSubmissionFromHistory(currentHistory, submission.id)
         },
         {
@@ -71,10 +73,9 @@ export default function HistoryPage() {
       )
 
       toast.success(t.history.deleted, {
-        description:
-          removedErrors > 0
-            ? `${t.history.rolledBack} ${removedErrors} ${t.history.fromProfile}`
-            : t.history.removedHistory,
+        description: removedErrors || removedNotes
+          ? `${t.history.removedRelated} ${removedErrors} ${t.history.correction} · ${removedNotes} ${t.history.note}`
+          : t.history.removedHistory,
       })
       // Refresh history (submissions + error log) and the dashboard profile/skills.
       void refreshHistory()
@@ -83,6 +84,7 @@ export default function HistoryPage() {
       toast.error(t.history.deleteFailed, {
         description: error instanceof Error ? error.message : t.import.tryShortly,
       })
+      throw error
     }
   }
 
@@ -115,15 +117,15 @@ export default function HistoryPage() {
             </div>
           ) : null}
 
-          <TabsList>
-            <TabsTrigger value="submissions">
+          <TabsList className="grid w-full grid-cols-2 group-data-horizontal/tabs:h-auto sm:inline-flex sm:w-fit sm:group-data-horizontal/tabs:h-8">
+            <TabsTrigger className="h-auto min-h-8 py-1.5 sm:h-[calc(100%-1px)] sm:min-h-0 sm:py-0.5" value="submissions">
               <FileText data-icon="inline-start" />
               {t.history.submissions}
               <Badge variant="secondary" className="ml-1 tabular-nums">
                 {submissions.length}
               </Badge>
             </TabsTrigger>
-            <TabsTrigger value="errors">
+            <TabsTrigger className="h-auto min-h-8 py-1.5 sm:h-[calc(100%-1px)] sm:min-h-0 sm:py-0.5" value="errors">
               <AlertCircle data-icon="inline-start" />
               {t.history.errorLog}
               <Badge variant="secondary" className="ml-1 tabular-nums">
