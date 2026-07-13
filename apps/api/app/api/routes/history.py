@@ -39,8 +39,8 @@ def _fix_tz(value: str) -> str:
 @router.get("/history/{user_id}")
 def get_history(user_id: str, identity: Identity = Depends(resolve_identity)):
     return {
-        "submissions": list_recent_submissions(identity.user_id, limit=20),
-        "errors": list_recent_errors(identity.user_id, limit=20),
+        "submissions": list_recent_submissions(identity.user_id, limit=None),
+        "errors": list_recent_errors(identity.user_id, limit=None),
         "notes": list_notes(identity.user_id),
     }
 

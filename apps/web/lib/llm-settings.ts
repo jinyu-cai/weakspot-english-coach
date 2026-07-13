@@ -36,6 +36,13 @@ export function formatServerModelOption(
   return `${name} · ${labels.deep}: ${model.model} / ${labels.fast}: ${fastModel}`
 }
 
+export function formatServerModelSelection(model: ServerLLMModel): string {
+  const provider = model.provider.trim()
+  const modelName = model.model.trim()
+  if (provider && modelName) return `${provider} · ${modelName}`
+  return modelName || provider || model.label || model.id
+}
+
 export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 export const QWEN_MODEL_STUDIO_INTERNATIONAL_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 export const QWEN_37_MAX_MODEL = "qwen3.7-max"

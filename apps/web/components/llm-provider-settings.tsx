@@ -20,6 +20,7 @@ import {
   DEFAULT_SERVER_DEEP_MODEL_ID,
   DEFAULT_SERVER_FAST_MODEL_ID,
   DEFAULT_OPENAI_BASE_URL,
+  formatServerModelSelection,
   hasCustomLLMSettings,
   loadLLMSettings,
   normalizeServerModelSettings,
@@ -187,7 +188,7 @@ export function LLMProviderSettings() {
                 {t.settings.serverModelsLoading}
               </p>
             ) : (
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3">
                 <ServerModelSelect
                   label={t.settings.deepModel}
                   value={settings.serverDeepModelId}
@@ -297,19 +298,22 @@ function ServerModelSelect({
   disabled: boolean
   onChange: (value: string) => void
 }) {
+  const selectedModel = models.find((model) => model.id === value)
+
   return (
-    <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
+    <label className="grid min-w-0 gap-1.5 text-xs font-medium text-muted-foreground">
       {label}
       <select
         value={value}
         disabled={disabled || models.length === 0}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-60"
+        title={selectedModel ? formatServerModelSelection(selectedModel) : value}
+        className="h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 pr-8 text-sm font-medium text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-60"
       >
         {models.length === 0 && <option value={value}>{value}</option>}
         {models.map((model) => (
           <option key={model.id} value={model.id}>
-            {model.label} · {model.model}
+            {formatServerModelSelection(model)}
           </option>
         ))}
       </select>

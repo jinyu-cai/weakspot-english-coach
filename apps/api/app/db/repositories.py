@@ -121,13 +121,26 @@ def save_submission(submission: dict) -> None:
     _put(item)
 
 
-def list_recent_submissions(user_id: str, limit: int = 10) -> list:
-    res = table.query(
-        KeyConditionExpression=Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("SUBMISSION#"),
-        ScanIndexForward=False,
-        Limit=limit,
-    )
-    return [clean(i) for i in res.get("Items", [])]
+def list_recent_submissions(user_id: str, limit: Optional[int] = 10) -> list:
+    if limit is not None and limit <= 0:
+        return []
+
+    submissions: list[dict] = []
+    query_kwargs = {
+        "KeyConditionExpression": Key("PK").eq(user_pk(user_id))
+        & Key("SK").begins_with("SUBMISSION#"),
+        "ScanIndexForward": False,
+    }
+    while limit is None or len(submissions) < limit:
+        if limit is not None:
+            query_kwargs["Limit"] = limit - len(submissions)
+        res = table.query(**query_kwargs)
+        submissions.extend(clean(item) for item in res.get("Items", []))
+        last_key = res.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_kwargs["ExclusiveStartKey"] = last_key
+    return submissions if limit is None else submissions[:limit]
 
 
 def get_submission(user_id: str, created_at: str, submission_id: str) -> Optional[dict]:
@@ -152,13 +165,26 @@ def save_error(error: dict) -> None:
     _put(item)
 
 
-def list_recent_errors(user_id: str, limit: int = 20) -> list:
-    res = table.query(
-        KeyConditionExpression=Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("ERROR#"),
-        ScanIndexForward=False,
-        Limit=limit,
-    )
-    return [clean(i) for i in res.get("Items", [])]
+def list_recent_errors(user_id: str, limit: Optional[int] = 20) -> list:
+    if limit is not None and limit <= 0:
+        return []
+
+    errors: list[dict] = []
+    query_kwargs = {
+        "KeyConditionExpression": Key("PK").eq(user_pk(user_id))
+        & Key("SK").begins_with("ERROR#"),
+        "ScanIndexForward": False,
+    }
+    while limit is None or len(errors) < limit:
+        if limit is not None:
+            query_kwargs["Limit"] = limit - len(errors)
+        res = table.query(**query_kwargs)
+        errors.extend(clean(item) for item in res.get("Items", []))
+        last_key = res.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_kwargs["ExclusiveStartKey"] = last_key
+    return errors if limit is None else errors[:limit]
 
 
 def list_weekly_errors(user_id: str, limit: int = 100) -> list:

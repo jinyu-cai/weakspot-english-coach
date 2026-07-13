@@ -683,7 +683,9 @@ Practice 分三种题型：
 
 生成时可以由用户指定技能/题型；否则使用新的 decision policy 自动选择。提交后保存 attempt、更新 mastery，并积累 strategy/episode memory。
 
-### 10.4 History 删除不是只删一行
+### 10.4 History 展示不截断，删除也不是只删一行
+
+`GET /history/{userId}` 是用户查看自己长期学习记录的界面，因此 submissions、errors 和 notes 都不设固定条数上限。`list_recent_submissions(..., limit=None)` 和 `list_recent_errors(..., limit=None)` 会循环读取 DynamoDB 的 `LastEvaluatedKey`，直到所有页完成。Dashboard、计划和 AI prompt 仍可以明确传入数字 limit 来控制摘要和上下文成本；这些内部有界读取不能影响用户在 History 中查看完整数据。
 
 History 删除是用户点击删除、阅读影响说明并再次确认后的手动永久操作，不是弱点模型的自动毕业动作。删除 submission 时还要：
 

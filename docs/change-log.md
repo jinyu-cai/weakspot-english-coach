@@ -18,6 +18,58 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-13 — Unbounded History and complete dense labels
+
+Date: 2026-07-13
+
+Branch: `fix/unbounded-history-ui`
+
+GitHub status: PR #35 open; Vercel Preview passed.
+
+Deploy status: Vercel Preview built successfully; production and backend
+deployments wait for merge.
+
+Summary:
+
+- Removed the fixed 20-item History cap for submissions and corrections.
+  Repository reads now follow every DynamoDB query page when History requests
+  `limit=None`; bounded callers such as dashboard/AI summaries keep their
+  explicit limits.
+- Added integration coverage with more than 20 submissions and errors and
+  payloads large enough to cross DynamoDB's 1 MB query-page boundary.
+- Localized the legacy grammar skill codes reported in the screenshot and
+  humanized any unknown future code instead of displaying raw dotted keys.
+- Widened and fully wrapped the weakness-chart label axis without ellipsis.
+- Changed Chat and AI-settings model selectors to responsive full-width controls
+  with concise, complete `provider · actual-model-name` values.
+
+Files changed:
+
+- `apps/api/app/api/routes/history.py`
+- `apps/api/app/db/repositories.py`
+- `apps/api/scripts/integration_test.py`
+- `apps/web/components/skill-bar-chart.tsx`
+- `apps/web/app/chat/page.tsx`
+- `apps/web/components/llm-provider-settings.tsx`
+- `apps/web/lib/practice.ts`, `llm-settings.ts`, and `i18n.ts`
+- Backend/frontend README, local-testing guide, and `development.md`
+
+Tests run:
+
+- TypeScript, ESLint, and backend smoke test passed.
+- Full integration passed with 26 submissions, 27 errors, no 20-item cap,
+  cross-page DynamoDB payloads, and the existing 57-note Notebook coverage.
+- Confirmed manual History deletion/dedup regression passed.
+- Next.js production build passed.
+
+Known issues:
+
+- The in-app browser has no available instance in this session. The supplied
+  screenshots were used for diagnosis; final automatic visual screenshots are
+  unavailable.
+
+Next step: Merge PR #35 and deploy the merged release.
+
 ## 2026-07-13 — Notebook lifecycle and confirmed History deletion
 
 Date: 2026-07-13
