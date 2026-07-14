@@ -1062,7 +1062,12 @@ Date: 2026-07-13
 
 Branch: `prototype/coach-mode-p0`
 
-Deploy status: local preview only; not pushed, merged, or deployed.
+GitHub status: owner completed local UI acceptance and approved push, merge,
+and production deployment. The release branch is ready for its reviewed PR.
+
+Deploy status: approved for the normal production path: Oracle backend plus
+Vercel frontend. Cloudflare stays on Oracle; Alibaba is not changed for this
+release.
 
 Summary:
 
@@ -1100,11 +1105,10 @@ Tests run:
 - Backend: Coach contract test ✅, smoke test ✅, full moto/fake-AI integration
   loop ✅ (including unlimited History and Notebook regression coverage).
 - Frontend: ESLint ✅, `tsc --noEmit` ✅, production build ✅.
-- Browser visual QA remains an explicit manual check because no in-app browser
-  instance was available in this session; no alternate screenshot was presented
-  as if it were the running application.
+- Owner completed the local interaction review and accepted the UI. No in-app
+  browser instance was available to add a separate automated screenshot pass.
 
-Next step: owner reviews `/coach`, `/vocabulary`, `/chat`, and
-`/input/experimental` locally. Only after
-explicit approval should this branch be pushed, opened as a preview PR, merged,
-or deployed.
+Next step: push the reviewed branch, merge its PR into `main`, deploy the exact
+merged backend archive to Oracle, let Vercel deploy the frontend from `main`,
+and verify the public health, CORS, model catalog, and new routes. Do not deploy
+Alibaba or switch the Cloudflare origin in this release.

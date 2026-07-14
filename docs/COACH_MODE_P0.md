@@ -1,6 +1,6 @@
 # Coach Mode / Input Lab 2.0 P0 说明
 
-> 当前状态：本文件描述 `prototype/coach-mode-p0` 预览分支中的 P0 交互原型。它没有部署到 Oracle、Alibaba Cloud 或 Vercel，也没有获得合并到 `main` 的批准。先完成本地评审，再由 owner 决定是否采用和上线。
+> 当前状态：owner 已于 2026-07-13 完成本地交互验收并决定采用本版 P0，批准合并到 `main`，按日常发布路径部署到 Oracle 与 Vercel。Alibaba Cloud 仍只保留为最终展示环境，本次发布不切换 Cloudflare，也不改动 Alibaba Cloud。
 
 ## 1. 要解决的用户问题
 
@@ -362,14 +362,15 @@ pnpm build
 
 ### 当前发布状态
 
-- 分支：`prototype/coach-mode-p0`。
-- 目的：仅本地/预览评审。
-- 数据迁移：无。
-- Oracle / Alibaba Cloud / Cloudflare / Vercel 变更：无。
-- `main` 合并：未批准。
-- 生产部署：未批准，也不应由本原型任务自动执行。
+- 发布来源：`prototype/coach-mode-p0`，owner 已完成本地验收。
+- 数据迁移：无；发布会对现有 DynamoDB 表执行幂等建表/TTL 检查。
+- `main` 合并：已批准。
+- 日常后端：批准部署到 Oracle，Cloudflare 保持 Oracle origin。
+- 前端：批准由 `main` 触发 Vercel Production 部署。
+- Alibaba Cloud：本次不部署、不重启、不切流量，留到最终展示前同步同一 release commit。
 
-自动检查和人工检查的实际通过结果应写入最终交付说明；本文件中的测试清单本身不等于测试已经通过。
+自动检查和人工检查的实际结果同时记录在本文件测试表与
+[`change-log.md`](change-log.md)；后续修改 Coach、Chat、Auth 或 API 合同时仍需重新运行发布门禁。
 
 ## 12. P1 后续
 
