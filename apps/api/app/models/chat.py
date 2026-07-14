@@ -3,6 +3,7 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 from app.models.common import OutputLanguage, Severity
+from app.models.coach import CoachScenarioFamily
 from app.models.memory import MemoryCandidate
 
 
@@ -11,9 +12,12 @@ RealtimeVoiceModel = Literal["gpt-realtime-mini-2025-12-15", "gpt-realtime-2"]
 
 class ChatCreateSessionRequest(BaseModel):
     userId: str
-    topic: Optional[str] = None
-    scenarioPrompt: Optional[str] = None
-    textModel: Optional[str] = None
+    topic: Optional[str] = Field(default=None, max_length=300)
+    scenarioPrompt: Optional[str] = Field(default=None, max_length=4000)
+    starterMessage: Optional[str] = Field(default=None, max_length=1200)
+    scenarioFamily: Optional[CoachScenarioFamily] = None
+    scenarioKey: Optional[str] = Field(default=None, max_length=160)
+    textModel: Optional[str] = Field(default=None, max_length=200)
 
 
 class ChatSendRequest(BaseModel):
@@ -30,6 +34,9 @@ class ChatPredictRequest(BaseModel):
 
 class AnalyzeSessionRequest(BaseModel):
     outputLanguage: OutputLanguage = "en"
+    # The UI reports the highest progressive hint revealed in this mission.
+    # A non-zero value can only make mastery attribution more conservative.
+    hintLevel: int = Field(default=0, ge=0, le=4)
 
 
 class CorrectionAI(BaseModel):
@@ -97,7 +104,7 @@ class StealthProbeAssessmentAI(BaseModel):
     evidenceQuote: str = ""
     rationale: str = ""
     confidence: float = Field(default=0.0, ge=0, le=1)
-    hintLevel: int = Field(default=0, ge=0, le=3)
+    hintLevel: int = Field(default=0, ge=0, le=4)
 
 
 class SessionAnalysisAI(BaseModel):

@@ -25,6 +25,8 @@ import type {
   ChatImportConversation,
   ChatMessage,
   ChatMessagesResponse,
+  CoachMission,
+  CoachMissionRequest,
   ChatSendResponse,
   ChatSession,
   RealtimeVoiceModel,
@@ -41,6 +43,7 @@ import type {
   InputLearningItem,
   InputLearningSource,
   InputLearningSourcesResponse,
+  InputLab2TranscriptMissionRequest,
   LearningPlan,
   MemoryItem,
   MemoryKind,
@@ -83,7 +86,6 @@ import { getOutputLanguage } from "./language"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
 const USE_MOCK = !API_BASE_URL
-const OWNER_BYPASS_TOKEN = process.env.NEXT_PUBLIC_OWNER_BYPASS_TOKEN
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const withOutputLanguage = <T extends Record<string, unknown>>(body: T) => ({
@@ -120,7 +122,6 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       "Content-Type": "application/json",
       ...getLLMProviderHeaders(),
-      ...(OWNER_BYPASS_TOKEN ? { "X-Owner-Token": OWNER_BYPASS_TOKEN } : {}),
       ...(init?.headers ?? {}),
     },
     ...init,
@@ -293,6 +294,7 @@ export async function diagnose(
   userId: string,
   text: string,
   diagnosisMode: DiagnosisMode = "fast",
+  analysisContext?: string,
 ): Promise<DiagnoseResponse> {
   if (USE_MOCK) {
     await delay(diagnosisMode === "fast" ? 700 : 1400)
@@ -314,7 +316,12 @@ export async function diagnose(
   }
   return apiFetch<DiagnoseResponse>("/diagnose", {
     method: "POST",
-    body: JSON.stringify(withOutputLanguage({ userId, text, diagnosisMode })),
+    body: JSON.stringify(withOutputLanguage({
+      userId,
+      text,
+      diagnosisMode,
+      ...(analysisContext ? { analysisContext } : {}),
+    })),
   })
 }
 
@@ -963,12 +970,180 @@ export async function deleteInputLearningSource(sourceId: string): Promise<{ del
   return apiFetch<{ deleted: boolean; id: string }>(`/input-learning/${sourceId}`, { method: "DELETE" })
 }
 
+/* ---- Coach missions ---- */
+
+const MOCK_COACH_MISSIONS: Record<CoachMission["type"], CoachMission> = {
+  guided_scene: {
+    id: "mission-preview-scene",
+    type: "guided_scene",
+    title: "The last seat on the train",
+    eyebrow: "A small real-life moment",
+    briefing: "You are travelling to a new city. Another passenger thinks the empty seat beside you is reserved, but your ticket says otherwise.",
+    estimatedMinutes: 5,
+    difficulty: "Gentle stretch",
+    targetSkills: ["polite clarification", "explaining evidence"],
+    taskPrompt: "Clarify the situation politely and reach an agreement without sounding confrontational.",
+    successCriteria: ["Explain what your ticket shows", "Ask one polite question", "Respond to a small change in the situation"],
+    hints: ["Start by acknowledging the other passenger.", "Useful phrase: I may be mistaken, but…", "Try: Excuse me, I may be mistaken, but my ticket shows seat 18A."],
+    scene: {
+      setting: "A busy train just before departure",
+      userRole: "A passenger holding a ticket for seat 18A",
+      aiRole: "A polite but uncertain passenger",
+      goal: "Resolve the seat mix-up calmly",
+      scenarioPrompt: "Role-play a passenger on a busy train. The learner has a ticket for seat 18A, but you believe it is reserved for your friend. Begin uncertain but polite. After the learner explains, reveal that your friend's ticket is actually for the next carriage. Stay in role, let the learner drive the resolution, and do not correct their English during the conversation.",
+      starterMessage: "Oh—sorry, I think this seat is saved for my friend. Are you sure this is your seat?",
+      scenarioFamily: "travel_disruption",
+      scenarioKey: "travel_disruption:mock",
+    },
+  },
+  picture_story: {
+    id: "mission-preview-picture",
+    type: "picture_story",
+    title: "A rainy wait",
+    eyebrow: "Notice, describe, then infer",
+    briefing: "Look at the scene for a moment. Describe what is happening, then make one reasonable guess about what might happen next.",
+    estimatedMinutes: 5,
+    difficulty: "Gentle stretch",
+    targetSkills: ["present continuous", "position and place", "making inferences"],
+    taskPrompt: "Write 3–5 English sentences: two things you can clearly see and one careful inference.",
+    successCriteria: ["Describe at least two visible actions", "Use one place expression", "Mark your guess as a possibility, not a fact"],
+    hints: ["Separate what you see from what you think.", "Useful words: shelter, puddle, across from, might", "Try: A woman is standing under the shelter while…"],
+    picture: { assetKey: "rainy_bus_stop" },
+  },
+  listen_retell: {
+    id: "mission-preview-listen",
+    type: "listen_retell",
+    title: "The forgotten lunch",
+    eyebrow: "Listen for meaning, not every word",
+    briefing: "Listen to a short original story. Then retell the important events in your own English without trying to repeat it word for word.",
+    estimatedMinutes: 5,
+    difficulty: "Gentle stretch",
+    targetSkills: ["past tense", "event sequence", "key-detail recall"],
+    taskPrompt: "Listen once or twice, then retell what happened in 3–5 sentences.",
+    successCriteria: ["State the main problem", "Include two events in order", "Explain how the situation ended"],
+    hints: ["Think: problem → action → result.", "Useful connectors: at first, so, in the end", "Try: On her way to work, Maya realized that…"],
+    listening: {
+      script: "On her way to work, Maya realized that she had left her lunch on the kitchen table. She did not have time to turn back, so she sent a message to her neighbor. At noon, the neighbor surprised her by bringing the lunch to the office reception desk.",
+      playLimit: 2,
+    },
+  },
+  decision_response: {
+    id: "mission-preview-decision",
+    type: "decision_response",
+    title: "Choose a fair meeting plan",
+    eyebrow: "Decide and explain",
+    briefing: "Two teammates have competing schedules. Make a workable choice and communicate it with care.",
+    estimatedMinutes: 5,
+    difficulty: "Gentle stretch",
+    targetSkills: ["clarity.expression", "style.register", "discourse.coherence"],
+    taskPrompt: "Write the short message you would send after choosing a plan.",
+    successCriteria: ["State the decision clearly", "Acknowledge both constraints", "Offer one practical next step"],
+    hints: ["Lead with the decision, then give the reason.", "Useful frame: Given that…, the fairest option is…", "Try: I suggest that we… because…"],
+    decision: {
+      situation: "A project review must happen today, but one teammate is available early and another only late.",
+      userRole: "The project coordinator",
+      audience: "Two teammates with competing schedules",
+      decisionGoal: "Choose a time and preserve cooperation",
+      constraints: ["The review must happen today", "Neither teammate can attend for more than 30 minutes"],
+    },
+  },
+  vocabulary_in_action: {
+    id: "mission-preview-vocabulary",
+    type: "vocabulary_in_action",
+    title: "Explain a delayed handoff precisely",
+    eyebrow: "Vocabulary in action",
+    briefing: "Use your own words to explain a small delay without sounding vague or defensive.",
+    estimatedMinutes: 5,
+    difficulty: "Gentle stretch",
+    targetSkills: ["vocab.word_choice", "style.register", "clarity.expression"],
+    taskPrompt: "Write a concise update to the colleague waiting for your work.",
+    successCriteria: ["Name the cause precisely", "Distinguish a delay from a cancellation", "Use a professional but warm tone"],
+    hints: ["Think about the exact relationship between cause, delay, and next step.", "Useful chunks: held up by, on track to, revised handoff time", "Try: The handoff has been delayed because…"],
+    vocabulary: {
+      situation: "A dependency arrived late, so your work will be ready two hours after the original handoff time.",
+      communicativeGoal: "Explain the delay and set an accurate expectation",
+      audience: "A colleague waiting to continue the project",
+      tone: "Professional, accountable, and calm",
+      conceptsToExpress: ["external dependency", "limited delay", "new expected time"],
+    },
+  },
+}
+
+export async function generateCoachMission(input: CoachMissionRequest): Promise<CoachMission> {
+  if (USE_MOCK) {
+    await delay(700)
+    const types: CoachMission["type"][] = [
+      "guided_scene",
+      "picture_story",
+      "listen_retell",
+      "decision_response",
+      "vocabulary_in_action",
+    ]
+    const type = input.preferredType ?? types[Math.floor(Date.now() / 1000) % types.length]
+    const mission = MOCK_COACH_MISSIONS[type]
+    return {
+      ...mission,
+      id: `${mission.id}-${Date.now()}`,
+      estimatedMinutes: input.durationMinutes,
+      difficulty: input.energy === "light" ? "Gentle stretch" : input.energy === "challenge" ? "Challenge" : "Balanced",
+    }
+  }
+  const payload = await apiFetch<{ mission: CoachMission }>("/coach/missions", {
+    method: "POST",
+    body: JSON.stringify(withOutputLanguage({ ...input })),
+  })
+  return payload.mission
+}
+
+export async function generateInputLab2TranscriptMission(
+  input: InputLab2TranscriptMissionRequest,
+): Promise<CoachMission> {
+  if (USE_MOCK) {
+    await delay(650)
+    return {
+      ...MOCK_COACH_MISSIONS.listen_retell,
+      id: `owner-transcript-${Date.now()}`,
+      title: input.title,
+      estimatedMinutes: input.durationMinutes,
+      listening: {
+        script: input.transcript.trim(),
+        playLimit: 2,
+      },
+    }
+  }
+  const payload = await apiFetch<{ mission: CoachMission }>("/coach/input-lab-2/transcript-missions", {
+    method: "POST",
+    body: JSON.stringify(withOutputLanguage({ ...input })),
+  })
+  return payload.mission
+}
+
+export async function synthesizeCoachSpeech(
+  text: string,
+  style: "gentle" | "natural" | "challenge" = "natural",
+): Promise<Blob> {
+  if (USE_MOCK) throw new Error("AI speech is unavailable in mock mode.")
+  const path = "/coach/speech"
+  const res = await fetch(`${API_BASE_URL}/api/v1${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, style }),
+  })
+  if (!res.ok) throw new Error(await getErrorMessage(res, path))
+  return res.blob()
+}
+
 /* ---- Chat ---- */
 
 export async function createChatSession(
   userId: string = DEMO_USER_ID,
   topic?: string,
   textModel?: TextChatModel,
+  scenarioPrompt?: string,
+  starterMessage?: string,
+  scenarioFamily?: string,
+  scenarioKey?: string,
 ): Promise<ChatSession> {
   if (USE_MOCK) {
     await delay(300)
@@ -976,7 +1151,10 @@ export async function createChatSession(
       id: `cs-${Date.now()}`,
       userId,
       topic: topic ?? null,
-      scenarioPrompt: null,
+      scenarioPrompt: scenarioPrompt ?? null,
+      starterMessage: starterMessage ?? null,
+      scenarioFamily: scenarioFamily ?? null,
+      scenarioKey: scenarioKey ?? null,
       textModel: textModel ?? "Server default",
       messageCount: 0,
       summary: null,
@@ -986,7 +1164,15 @@ export async function createChatSession(
   }
   const { session } = await apiFetch<{ session: ChatSession }>("/chat/sessions", {
     method: "POST",
-    body: JSON.stringify({ userId, topic, ...(textModel ? { textModel } : {}) }),
+    body: JSON.stringify({
+      userId,
+      topic,
+      ...(textModel ? { textModel } : {}),
+      ...(scenarioPrompt ? { scenarioPrompt } : {}),
+      ...(starterMessage ? { starterMessage } : {}),
+      ...(scenarioFamily ? { scenarioFamily } : {}),
+      ...(scenarioKey ? { scenarioKey } : {}),
+    }),
   })
   return session
 }
@@ -1023,6 +1209,7 @@ export async function getChatMessages(
         userId,
         topic: null,
         scenarioPrompt: null,
+        starterMessage: null,
         textModel: "deepseek-v4-flash",
         messageCount: 0,
         summary: null,
@@ -1086,6 +1273,7 @@ export async function sendChatMessage(
 
 export async function analyzeSession(
   sessionId: string,
+  hintLevel: number = 0,
 ): Promise<SessionAnalysisResponse> {
   if (USE_MOCK) {
     await delay(2000)
@@ -1145,16 +1333,19 @@ export async function analyzeSession(
       sessionId,
       stealthPractice: {
         targetSkillCode: "grammar.verb_tense",
-        outcome: "success",
+        outcome: hintLevel > 0 ? "hinted_success" : "success",
         opportunityPresent: true,
-        evidenceQuote: "You described a past event with “went” and “was” without a correction or hint.",
+        evidenceQuote: hintLevel > 0
+          ? "You described a past event after opening a hint."
+          : "You described a past event with “went” and “was” without a correction or hint.",
+        hintLevel,
         nextReviewAt: new Date(Date.now() + 4 * 86400000).toISOString(),
       },
     }
   }
   return apiFetch<SessionAnalysisResponse>(`/chat/sessions/${sessionId}/analyze`, {
     method: "POST",
-    body: JSON.stringify(withOutputLanguage({})),
+    body: JSON.stringify(withOutputLanguage({ hintLevel })),
   })
 }
 

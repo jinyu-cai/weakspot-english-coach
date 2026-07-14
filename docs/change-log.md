@@ -1055,3 +1055,60 @@ Known issues:
 
 Next step: verify the Vercel production deployment UI after it finishes building
 from `main`.
+
+## 2026-07-13 — Coach Mode P0, contextual vocabulary, and owner-only Input Lab 2.0 prototype
+
+Date: 2026-07-13
+
+Branch: `prototype/coach-mode-p0`
+
+GitHub status: owner completed local UI acceptance and approved push, merge,
+and production deployment. The release branch is ready for its reviewed PR.
+
+Deploy status: approved for the normal production path: Oracle backend plus
+Vercel frontend. Cloudflare stays on Oracle; Alibaba is not changed for this
+release.
+
+Summary:
+
+- Added a primary Today's Mission flow that asks only for time, response mode,
+  and energy, then generates a fresh guided scene, picture story, listening
+  retell, open-ended decision, or contextual vocabulary task.
+- Dynamic guided scenes now have an AI opening line, goal, roles, complication,
+  progressive hints, and conservative `hinted_success` handling. Existing fixed
+  Chat scenes remain available.
+- Added three first-party inline SVG scenes and original TTS listening tasks.
+  Content completion and English-language evidence are deliberately separate;
+  the text model never claims to see an image or video.
+- Chat's dynamic card now generates and opens a new AI roleplay immediately.
+  Generated sessions save a scenario family/key and avoid recently used
+  families while alternatives remain, reducing repeated situations.
+- Added `/vocabulary`: learners express meanings in a realistic message before
+  seeing hints or corrections. Task context is passed to Diagnose as untrusted
+  data so word choice can be judged against intended meaning, while evidence
+  spans must still come from the learner's text. A single word-choice error is
+  shown as provisional evidence requiring another context.
+- Listening playback and Coach voice-mode AI role replies now prefer server-side
+  OpenAI Speech API MP3 (`tts-1-hd`, `marin`, configurable), disclose that the
+  voice is AI-generated, keep the API key server-side, and fall back to browser
+  speech when unavailable.
+- Added `/input/experimental` for an owner-supplied transcript pilot. Input Lab
+  1.0 remains public. The 2.0 endpoint rejects non-owner requests, extra URL
+  fields, and browser-exposed owner bypass tokens.
+- Added responsive Chat controls, full dynamic-scene opener recovery, confirmed
+  speech transcripts, and TTS/ASR mutual exclusion.
+- Added [Coach Mode / Input Lab 2.0 P0](COACH_MODE_P0.md) with the interaction,
+  copyright, permission, assessment, API, and P1 boundaries.
+
+Tests run:
+
+- Backend: Coach contract test ✅, smoke test ✅, full moto/fake-AI integration
+  loop ✅ (including unlimited History and Notebook regression coverage).
+- Frontend: ESLint ✅, `tsc --noEmit` ✅, production build ✅.
+- Owner completed the local interaction review and accepted the UI. No in-app
+  browser instance was available to add a separate automated screenshot pass.
+
+Next step: push the reviewed branch, merge its PR into `main`, deploy the exact
+merged backend archive to Oracle, let Vercel deploy the frontend from `main`,
+and verify the public health, CORS, model catalog, and new routes. Do not deploy
+Alibaba or switch the Cloudflare origin in this release.

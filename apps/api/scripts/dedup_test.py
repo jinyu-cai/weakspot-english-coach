@@ -11,6 +11,9 @@ Asserts:
   - Deleting a submission removes its errors and Notebook notes, then rolls
     back its skill penalties.
   - Deleting also clears the de-dup marker, so the text can be diagnosed fresh.
+  - Contextual vocabulary uses context-aware hashes: the same answer in the same
+    situation de-dups, while the same wording in a different situation is a new
+    transfer observation.
 """
 
 import os
@@ -117,6 +120,28 @@ def main() -> int:
         r = client.post("/api/v1/diagnose", json={"userId": user, "text": SAMPLE})
         assert r.json().get("duplicate") is False, "after deletion the text should diagnose fresh"
         print("5. re-diagnose deleted text -> duplicate=False (marker cleared) ✅")
+
+        # 6. Context is part of the hash for honest cross-situation transfer checks.
+        contextual_text = "I will send the revised project file to you at three this afternoon."
+        context_a = "Audience: teammate. Goal: explain a two-hour delay. Tone: accountable."
+        context_b = "Audience: customer. Goal: confirm the final delivery time. Tone: formal."
+        first_context = client.post(
+            "/api/v1/diagnose",
+            json={"userId": user, "text": contextual_text, "analysisContext": context_a},
+        ).json()
+        repeated_context = client.post(
+            "/api/v1/diagnose",
+            json={"userId": user, "text": contextual_text, "analysisContext": context_a},
+        ).json()
+        transferred_context = client.post(
+            "/api/v1/diagnose",
+            json={"userId": user, "text": contextual_text, "analysisContext": context_b},
+        ).json()
+        assert first_context.get("duplicate") is False
+        assert repeated_context.get("duplicate") is True
+        assert transferred_context.get("duplicate") is False
+        assert transferred_context["submission"]["analysisContext"] == context_b
+        print("6. contextual de-dup       -> same context dedups; new context records transfer ✅")
 
         print("\nDEDUP + DELETE TESTS PASSED ✅")
         return 0

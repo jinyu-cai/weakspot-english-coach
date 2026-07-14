@@ -1,4 +1,4 @@
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -15,6 +15,7 @@ class DiagnoseRequest(BaseModel):
     text: str = Field(min_length=20)
     diagnosisMode: DiagnosisMode = "fast"
     outputLanguage: OutputLanguage = "en"
+    analysisContext: Optional[str] = Field(default=None, max_length=2400)
 
 
 class DiagnosticErrorAI(BaseModel):

@@ -20,6 +20,83 @@ export type InputLearningSourceType =
   | "conversation"
   | "other"
 
+export type CoachMissionType =
+  | "guided_scene"
+  | "picture_story"
+  | "listen_retell"
+  | "decision_response"
+  | "vocabulary_in_action"
+export type CoachMissionModality = "text" | "voice"
+export type CoachMissionEnergy = "light" | "normal" | "challenge"
+
+export interface CoachSceneMission {
+  setting: string
+  userRole: string
+  aiRole: string
+  goal: string
+  scenarioPrompt: string
+  starterMessage: string
+  scenarioFamily: string
+  scenarioKey: string
+}
+
+export interface CoachPictureMission {
+  assetKey: "market_morning" | "rainy_bus_stop" | "kitchen_surprise"
+}
+
+export interface CoachListeningMission {
+  script: string
+  playLimit: number
+}
+
+export interface CoachDecisionMission {
+  situation: string
+  userRole: string
+  audience: string
+  decisionGoal: string
+  constraints: string[]
+}
+
+export interface CoachVocabularyMission {
+  situation: string
+  communicativeGoal: string
+  audience: string
+  tone: string
+  conceptsToExpress: string[]
+}
+
+export interface CoachMission {
+  id: string
+  type: CoachMissionType
+  title: string
+  eyebrow: string
+  briefing: string
+  estimatedMinutes: 5 | 10 | 15
+  difficulty: string
+  targetSkills: string[]
+  taskPrompt: string
+  successCriteria: string[]
+  hints: string[]
+  scene?: CoachSceneMission | null
+  picture?: CoachPictureMission | null
+  listening?: CoachListeningMission | null
+  decision?: CoachDecisionMission | null
+  vocabulary?: CoachVocabularyMission | null
+}
+
+export interface CoachMissionRequest {
+  durationMinutes: 5 | 10 | 15
+  modality: CoachMissionModality
+  energy: CoachMissionEnergy
+  preferredType?: CoachMissionType
+}
+
+export interface InputLab2TranscriptMissionRequest extends Omit<CoachMissionRequest, "preferredType"> {
+  title: string
+  transcript: string
+  rightsBasis: string
+}
+
 export interface LearnerProfile {
   userId: string
   nativeLanguage: string
@@ -118,6 +195,7 @@ export interface Submission {
   correctedText?: string | null
   cefrEstimate?: CEFRLevel | null
   summaryZh?: string | null
+  analysisContext?: string | null
   createdAt: string
 }
 
@@ -527,6 +605,9 @@ export interface ChatSession {
   mode?: "text" | "voice"
   topic?: string | null
   scenarioPrompt?: string | null
+  starterMessage?: string | null
+  scenarioFamily?: string | null
+  scenarioKey?: string | null
   textModel?: TextChatModel | null
   llmServerModelId?: string | null
   voiceModel?: RealtimeVoiceModel | null

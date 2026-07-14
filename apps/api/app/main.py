@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.api.routes import admin, auth, chat, chat_import, diagnose, health, history, input_learning, memory, models, notes, plan, practice, profile, realtime, stats
+from app.api.routes import admin, auth, chat, chat_import, coach, diagnose, health, history, input_learning, memory, models, notes, plan, practice, profile, realtime, stats
 from app.db.repositories import MemoryWriteClaimLostError
 from app.services.memory_write_service import MemoryWriteBusyError
 
@@ -39,6 +39,7 @@ app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(models.router, prefix="/api/v1", tags=["llm"])
 app.include_router(admin.router, prefix="/api/v1", tags=["admin"])
 app.include_router(auth.router, prefix="/api/v1", tags=["auth"])
+app.include_router(coach.router, prefix="/api/v1", tags=["coach"])
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 app.include_router(realtime.router, prefix="/api/v1", tags=["realtime"])
 app.include_router(chat_import.router, prefix="/api/v1", tags=["chat-import"])

@@ -2,10 +2,13 @@ import {
   BookOpen,
   BrainCircuit,
   CalendarRange,
+  Compass,
   Dumbbell,
+  FlaskConical,
   History,
   Inbox,
   LayoutDashboard,
+  Languages,
   MessageCircle,
   Radio,
   Shield,
@@ -16,7 +19,7 @@ import {
 
 export interface NavItem {
   href: string
-  key: "diagnose" | "chat" | "input" | "import" | "dashboard" | "memory" | "notebook" | "stats" | "plan" | "practice" | "history" | "admin"
+  key: "mission" | "diagnose" | "chat" | "vocabulary" | "input" | "inputLab2" | "import" | "dashboard" | "memory" | "notebook" | "stats" | "plan" | "practice" | "history" | "admin"
   label: string
   description: string
   icon: LucideIcon
@@ -31,9 +34,12 @@ export interface NavGroup {
 }
 
 export const NAV_ITEMS: NavItem[] = [
+  { href: "/coach", key: "mission", label: "Today's Mission", description: "Let your coach choose", icon: Compass },
   { href: "/", key: "diagnose", label: "Diagnose", description: "Analyze your writing", icon: Stethoscope },
   { href: "/chat", key: "chat", label: "Chat", description: "Practice conversations", icon: MessageCircle },
+  { href: "/vocabulary", key: "vocabulary", label: "Vocabulary", description: "Use precise words in context", icon: Languages },
   { href: "/input", key: "input", label: "Input Lab", description: "Watch, read & listen", icon: Radio },
+  { href: "/input/experimental", key: "inputLab2", label: "Input Lab 2.0", description: "Owner transcript pilot", icon: FlaskConical, ownerOnly: true },
   { href: "/import", key: "import", label: "Import", description: "ChatGPT conversations", icon: Inbox },
   { href: "/dashboard", key: "dashboard", label: "Dashboard", description: "Your weakness model", icon: LayoutDashboard },
   { href: "/memory", key: "memory", label: "Memory", description: "What your coach remembers", icon: BrainCircuit },
@@ -49,8 +55,8 @@ export const NAV_ITEMS: NavItem[] = [
 // clear path through the product. The order inside each group is intentional:
 // the most useful next action comes first.
 export const NAV_GROUPS: NavGroup[] = [
-  { key: "start", items: ["diagnose", "chat", "practice"] },
-  { key: "learn", items: ["input", "plan", "import"] },
+  { key: "start", items: ["mission", "diagnose", "chat", "vocabulary", "practice"] },
+  { key: "learn", items: ["input", "inputLab2", "plan", "import"] },
   { key: "progress", items: ["dashboard", "stats"] },
   { key: "library", items: ["notebook", "history"] },
   { key: "coach", items: ["memory"] },
