@@ -1,6 +1,6 @@
 # Coach Mode / Input Lab 2.0 P0 说明
 
-> 当前状态：owner 已于 2026-07-13 完成本地交互验收并决定采用本版 P0，批准合并到 `main`，按日常发布路径部署到 Oracle 与 Vercel。Alibaba Cloud 仍只保留为最终展示环境，本次发布不切换 Cloudflare，也不改动 Alibaba Cloud。
+> 当前状态：owner 已于 2026-07-13 完成本地交互验收并决定采用本版 P0。PR #39 已合并到 `main`（release commit `4c7a971`），后端已部署到 Oracle，前端已由 Vercel Production 发布。Cloudflare 保持 Oracle origin；Alibaba Cloud 仍只保留为最终展示环境，本次没有改动。
 
 ## 1. 要解决的用户问题
 
@@ -362,12 +362,12 @@ pnpm build
 
 ### 当前发布状态
 
-- 发布来源：`prototype/coach-mode-p0`，owner 已完成本地验收。
-- 数据迁移：无；发布会对现有 DynamoDB 表执行幂等建表/TTL 检查。
-- `main` 合并：已批准。
-- 日常后端：批准部署到 Oracle，Cloudflare 保持 Oracle origin。
-- 前端：批准由 `main` 触发 Vercel Production 部署。
-- Alibaba Cloud：本次不部署、不重启、不切流量，留到最终展示前同步同一 release commit。
+- 发布来源：`prototype/coach-mode-p0`，PR #39，merge commit `4c7a971`。
+- 数据迁移：无；发布已对现有 DynamoDB 表执行幂等建表/TTL 检查。
+- `main` 合并：已完成。
+- 日常后端：Oracle 容器已重建且健康，Cloudflare 保持 Oracle origin。
+- 前端：Vercel Production 已成功，公开新页面均返回 200。
+- Alibaba Cloud：未部署、未重启、未切流量，留到最终展示前同步同一 release commit。
 
 自动检查和人工检查的实际结果同时记录在本文件测试表与
 [`change-log.md`](change-log.md)；后续修改 Coach、Chat、Auth 或 API 合同时仍需重新运行发布门禁。
