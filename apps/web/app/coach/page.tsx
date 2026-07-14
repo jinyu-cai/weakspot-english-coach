@@ -207,6 +207,7 @@ export default function CoachPage() {
   const [sending, setSending] = useState(false)
   const [chatAnalysis, setChatAnalysis] = useState<SessionAnalysis | null>(null)
   const [stealthPractice, setStealthPractice] = useState<StealthPracticeResult | null>(null)
+  const [stealthPractices, setStealthPractices] = useState<StealthPracticeResult[]>([])
 
   const recognitionRef = useRef<RecognitionLike | null>(null)
   const dictationBaseRef = useRef("")
@@ -289,6 +290,7 @@ export default function CoachPage() {
     setChatMessages([])
     setChatAnalysis(null)
     setStealthPractice(null)
+    setStealthPractices([])
   }
 
   function returnToBriefing() {
@@ -409,6 +411,10 @@ export default function CoachPage() {
       const result = await analyzeSession(chatSession.id, hintLevel)
       setChatAnalysis(result.analysis)
       setStealthPractice(result.stealthPractice ?? null)
+      setStealthPractices(
+        result.stealthPractices
+          ?? (result.stealthPractice ? [result.stealthPractice] : []),
+      )
     } catch {
       toast.error(t.coach.errors.analyze)
       setScreen("active")
@@ -813,6 +819,7 @@ export default function CoachPage() {
         <SessionSummary
           analysis={chatAnalysis}
           stealthPractice={stealthPractice}
+          stealthPractices={stealthPractices}
           analyzing={analyzing}
           onClose={() => resetAttempt("setup")}
         />

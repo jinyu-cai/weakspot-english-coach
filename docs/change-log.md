@@ -18,6 +18,55 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-14 — Natural, rotating stealth practice in text chat
+
+Date: 2026-07-14
+
+Branch: `fix/natural-stealth-practice`
+
+GitHub status: release branch is locally validated and ready to push for review;
+not merged at the time of this entry.
+
+Deploy status: pending merge. This release changes both FastAPI and the chat
+summary UI, so Oracle must be rebuilt after merge and Vercel must publish the
+merged frontend. Alibaba and the Cloudflare origin are out of scope.
+
+Summary:
+
+- Removed the session-wide hidden target that was repeated in every reply.
+  Text chat now leaves turn 1 untouched and can schedule one one-shot probe on
+  turns 2, 4, and 6, with at most three different memory IDs and skill codes.
+- Added a strict naturalness gate: the coach answers the current message first,
+  skips the probe when it would require a topic-changing segue, and never gets
+  the stored target description, old error example, or remembered named entity
+  in its reply-generation prompt.
+- Excluded weaknesses, internal strategies, and low-relevance long-term
+  memories from ordinary chat personalization so an unrelated old topic such
+  as GitHub cannot be pulled into each answer outside the gated scheduler.
+- Added activation-turn evidence windows, plural end-session assessments, and
+  multi-card summary rendering while retaining the legacy single-result fields
+  for existing text and realtime voice sessions.
+
+Tests run:
+
+- Backend compile, smoke, full moto/fake-AI integration, MemoryAgent lifecycle,
+  stealth/Input Learning release suite, memory benchmark, de-dup/delete, and
+  Coach contract checks passed.
+- The stealth regression verifies empty injections on turns 1/3/5, distinct
+  probes on turns 2/4/6, three-result analysis, exact response-window evidence,
+  and absence of stored GitHub/error text from chat prompts and memory packs.
+- Frontend ESLint, `tsc --noEmit`, and the Next.js production build passed. The
+  first sandboxed build attempt could not fetch Google Fonts; the approved
+  networked rerun completed successfully.
+
+Known issues: whether a follow-up feels natural is still partly a model-level
+judgment. The generation prompt may skip a scheduled target, and the analysis
+then records `no_opportunity` without changing mastery or retention.
+
+Next step: push the branch, merge the reviewed PR, deploy the exact merged API
+to Oracle, let Vercel publish production, and verify public health plus the
+production routes.
+
 ## 2026-07-13 — Deep scene generation choice and Notebook tab layout fix
 
 Date: 2026-07-13

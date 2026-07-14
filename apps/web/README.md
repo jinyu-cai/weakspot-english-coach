@@ -112,8 +112,13 @@ Input Learning history has no 50- or 200-capture ceiling. The frontend follows
 the backend's bounded `nextCursor` pages until the archive is complete, with a
 repeated-cursor guard and ID de-duplication before rendering.
 
-The related stealth mission flow runs primarily inside text chat. A normal
-conversation may create a fair opportunity to use a due weakness,
+The related stealth mission flow runs primarily inside text chat. The first
+learner turn stays untouched; turns 2, 4, and 6 may each receive one optional,
+one-reply probe for a different due skill (maximum three per session). Raw
+weakness examples and unrelated remembered topics are excluded from normal
+chat personalization, and the coach skips a probe unless it is the natural next
+move in the live conversation. A normal conversation may therefore create a
+fair opportunity to use a due weakness,
 but the app records a learning outcome only after the backend opportunity gate
 confirms the target was actually observable. `no_opportunity` never lowers a
 learner's mastery or retention estimate and puts that target on a 12-hour

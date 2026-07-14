@@ -222,6 +222,69 @@ def main() -> int:
         instruction = build_stealth_probe_instruction(probe)
         assert isinstance(instruction, str) and len(instruction.strip()) >= 40
         assert probe["probeId"] not in instruction or "probe" in instruction.lower()
+        assert probe["targetDescription"] not in instruction
+        assert "Yesterday I went to the meeting." not in instruction
+        assert "for this reply only" in instruction
+        assert "at most one short practice-bearing follow-up" in instruction
+        sensitive_instruction = build_stealth_probe_instruction({
+            **probe,
+            "targetSkillCode": "vocab.github_capitalization",
+            "targetDescription": "The learner sometimes writes github instead of GitHub.",
+            "context": "The learner is asking how to end a tutoring session politely.",
+        })
+        assert "GitHub" not in sensitive_instruction
+        assert "github" not in sensitive_instruction.casefold()
+        unrelated_goal = remember_candidates(
+            no_op_user,
+            [
+                MemoryCandidate(
+                    kind="goal",
+                    canonicalKey="goal.github.projects",
+                    content="The learner wants to talk about GitHub projects and deployment.",
+                    evidence="A previous conversation mentioned GitHub.",
+                    confidence=0.95,
+                    importance=0.99,
+                )
+            ],
+            source_type="chat",
+            source_id="unrelated-chat-goal",
+        )[0]
+        chat_memory_pack = retrieve_memory_pack(
+            no_op_user,
+            "How can I politely end today's tutoring session?",
+            purpose="chat",
+        )
+        assert all(
+            item.get("kind") not in {"weakness", "strategy"}
+            for item in chat_memory_pack["items"]
+        )
+        assert unrelated_goal["id"] not in {
+            item.get("id") for item in chat_memory_pack["items"]
+        }
+        assert "GitHub" not in chat_memory_pack["text"]
+        assert "Yesterday I went to the meeting." not in chat_memory_pack["text"]
+
+        rotation_user = f"stealth-rotation-{uuid.uuid4().hex[:8]}"
+        for skill_code in (
+            "grammar.verb_tense",
+            "grammar.article",
+            "grammar.preposition",
+        ):
+            seed_weakness(rotation_user, skill_code)
+        rotation_probes = []
+        for _ in range(3):
+            selected = select_stealth_probe(
+                rotation_user,
+                modality="text_chat",
+                topic="Current learner message: Tell me more about your day.",
+                now=now,
+                exclude_memory_ids={row["memoryId"] for row in rotation_probes},
+                exclude_skill_codes={row["targetSkillCode"] for row in rotation_probes},
+            )
+            assert selected is not None
+            rotation_probes.append(selected)
+        assert len({row["memoryId"] for row in rotation_probes}) == 3
+        assert len({row["targetSkillCode"] for row in rotation_probes}) == 3
         print("1. due probe selection      -> future suppressed; due target selected")
 
         # 2. The opportunity gate has precedence over a contradictory failure
@@ -905,8 +968,9 @@ def main() -> int:
         summary = stealth_practice_summary(outcomes["success"].get("probeHistory") or [])
         assert summary is not None
 
-        # 8. Chat keeps the active target server-side until end-of-session
-        # analysis. The public response then uses the stable summary contract.
+        # 8. Text chat does not chase one session-wide target. It waits until
+        # the second learner turn, injects the selected target once, keeps it
+        # server-side, and assesses the later learner response at session end.
         chat_user = f"stealth-chat-{uuid.uuid4().hex[:8]}"
         seed_weakness(chat_user, "grammar.verb_tense")
         chat_client = TestClient(app)
@@ -924,12 +988,16 @@ def main() -> int:
         assert response.status_code == 200, response.text
         public_session = response.json()["session"]
         assert "stealthProbe" not in public_session
+        assert "stealthProbes" not in public_session
         session_id = public_session["id"]
         stored_session = get_chat_session(chat_user, session_id)
-        assert stored_session is not None and stored_session.get("stealthProbe")
+        assert stored_session is not None
+        assert not stored_session.get("stealthProbe")
+        assert not stored_session.get("stealthProbes")
         response = chat_client.get("/api/v1/chat/sessions")
         assert response.status_code == 200, response.text
         assert all("stealthProbe" not in row for row in response.json()["sessions"])
+        assert all("stealthProbes" not in row for row in response.json()["sessions"])
 
         # Learner-visible chat history is cursor-paged, not capped at the old
         # 20-session repository default. Following cursors reaches every row.
@@ -979,22 +1047,49 @@ def main() -> int:
             json={
                 "userId": "ignored-client-id",
                 "sessionId": session_id,
+                "text": "Can you explain what wrap up means?",
+            },
+        )
+        assert response.status_code == 200, response.text
+        stored_session = get_chat_session(chat_user, session_id)
+        assert stored_session is not None and not stored_session.get("stealthProbes")
+        response = chat_client.post(
+            "/api/v1/chat/send",
+            json={
+                "userId": "ignored-client-id",
+                "sessionId": session_id,
+                "text": "How can I politely tell my tutor I need to leave?",
+            },
+        )
+        assert response.status_code == 200, response.text
+        stored_session = get_chat_session(chat_user, session_id)
+        probes = list((stored_session or {}).get("stealthProbes") or [])
+        assert len(probes) == 1
+        assert probes[0]["activatedAfterLearnerTurn"] == 2
+        response = chat_client.post(
+            "/api/v1/chat/send",
+            json={
+                "userId": "ignored-client-id",
+                "sessionId": session_id,
                 "text": "I go to the park yesterday and meet my friend.",
             },
         )
         assert response.status_code == 200, response.text
+        assert len((get_chat_session(chat_user, session_id) or {}).get("stealthProbes") or []) == 1
         response = chat_client.post(
             f"/api/v1/chat/sessions/{session_id}/analyze",
             json={"outputLanguage": "en"},
         )
         assert response.status_code == 200, response.text
         revealed = response.json().get("stealthPractice")
+        revealed_all = response.json().get("stealthPractices")
+        assert isinstance(revealed_all, list) and revealed_all == [revealed]
         assert revealed and revealed["targetSkillCode"] == "grammar.verb_tense"
         assert revealed["outcome"] == "failure"
         assert revealed["evidenceQuote"]
         assert revealed["nextReviewAt"]
         assert revealed["progressionStage"] == "replay"
-        integrated_memory = get_memory(chat_user, stored_session["stealthProbe"]["memoryId"])
+        integrated_memory = get_memory(chat_user, probes[0]["memoryId"])
         assert integrated_memory is not None
         assert integrated_memory["retention"]["attempts"] == 1
         assert integrated_memory["modalityMastery"]["text_chat"]["failures"] == 1
@@ -1006,11 +1101,79 @@ def main() -> int:
         persisted_session = get_chat_session(chat_user, session_id)
         assert persisted_session is not None
         assert persisted_session.get("stealthPractice") == revealed
+        assert persisted_session.get("stealthPractices") == [revealed]
         assert not persisted_session.get("analysisClaimId")
-        duplicate_memory = get_memory(chat_user, stored_session["stealthProbe"]["memoryId"])
+        duplicate_memory = get_memory(chat_user, probes[0]["memoryId"])
         assert duplicate_memory is not None
         assert duplicate_memory["retention"]["attempts"] == 1
         assert duplicate_memory["modalityMastery"]["text_chat"]["failures"] == 1
+
+        rotating_chat_user = f"stealth-chat-rotation-{uuid.uuid4().hex[:8]}"
+        for skill_code in (
+            "grammar.verb_tense",
+            "grammar.article",
+            "grammar.preposition",
+        ):
+            seed_weakness(rotating_chat_user, skill_code)
+        rotating_client = TestClient(app)
+        rotating_client.cookies.set(
+            "session",
+            make_session_jwt({"sub": rotating_chat_user, "login": "rotation@example.com"}),
+        )
+        response = rotating_client.post(
+            "/api/v1/chat/sessions",
+            json={"userId": "ignored", "topic": "A relaxed conversation about daily life."},
+        )
+        assert response.status_code == 200, response.text
+        rotating_session_id = response.json()["session"]["id"]
+        hidden_instructions: list[str] = []
+        original_chat_reply = chat_routes.chat_reply
+
+        def capture_hidden_instruction(*args, **kwargs):
+            hidden_instructions.append(str(kwargs.get("hidden_practice_instruction") or ""))
+            return original_chat_reply(*args, **kwargs)
+
+        with patch.object(chat_routes, "chat_reply", side_effect=capture_hidden_instruction):
+            for text in (
+                "Hello, how is your day going?",
+                "I am trying to plan a calm evening.",
+                "Cooking at home sounds nice to me.",
+                "I also want to call a friend later.",
+                "We may talk about a movie we both watched.",
+                "After that, I will probably read for a while.",
+            ):
+                response = rotating_client.post(
+                    "/api/v1/chat/send",
+                    json={
+                        "userId": "ignored",
+                        "sessionId": rotating_session_id,
+                        "text": text,
+                    },
+                )
+                assert response.status_code == 200, response.text
+
+        rotating_session = get_chat_session(rotating_chat_user, rotating_session_id)
+        rotating_probes = list((rotating_session or {}).get("stealthProbes") or [])
+        assert len(rotating_probes) == 3
+        assert len({row["memoryId"] for row in rotating_probes}) == 3
+        assert len({row["targetSkillCode"] for row in rotating_probes}) == 3
+        assert [bool(value) for value in hidden_instructions] == [False, True, False, True, False, True]
+        assert all("Yesterday I went to the meeting." not in value for value in hidden_instructions)
+        assert all("needs recurring practice" not in value for value in hidden_instructions)
+        response = rotating_client.post(
+            f"/api/v1/chat/sessions/{rotating_session_id}/analyze",
+            json={"outputLanguage": "en"},
+        )
+        assert response.status_code == 200, response.text
+        rotating_results = response.json().get("stealthPractices")
+        assert isinstance(rotating_results, list) and len(rotating_results) == 3
+        assert {row["probeId"] for row in rotating_results} == {
+            row["probeId"] for row in rotating_probes
+        }
+        assert all(row["outcome"] == "no_opportunity" for row in rotating_results)
+        rotating_session = get_chat_session(rotating_chat_user, rotating_session_id)
+        assert (rotating_session or {}).get("stealthPractices") == rotating_results
+        print("8. chat target rotation      -> one-shot probes on turns 2/4/6 use distinct weaknesses")
 
         # A text turn owns the session while its reply is being generated.
         # Analysis must fail before taking a message snapshot, and no half

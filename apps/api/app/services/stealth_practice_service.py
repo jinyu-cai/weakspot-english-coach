@@ -24,6 +24,19 @@ PROBE_HISTORY_LIMIT = 20
 NO_OPPORTUNITY_COOLDOWN_HOURS = 12
 STRATEGY_ARMS = ("personal_story", "roleplay", "opinion_followup", "retell")
 VALID_OUTCOMES = {"success", "hinted_success", "failure", "avoided", "no_opportunity"}
+SAFE_GENERATION_SKILL_CODES = {
+    "grammar.verb_tense",
+    "grammar.article",
+    "grammar.preposition",
+    "grammar.subject_verb_agreement",
+    "vocab.word_choice",
+    "vocab.repetition",
+    "sentence.structure",
+    "sentence.variety",
+    "discourse.coherence",
+    "style.register",
+    "clarity.expression",
+}
 MODALITY_ALIASES = {
     "text": "text_chat",
     "chat": "text_chat",
@@ -198,14 +211,20 @@ def select_stealth_probe(
     modality: str = "text_chat",
     topic: Optional[str] = None,
     now: Optional[datetime | str] = None,
+    exclude_memory_ids: Optional[set[str]] = None,
+    exclude_skill_codes: Optional[set[str]] = None,
 ) -> Optional[dict]:
     """Choose one explainable hidden target without mutating learner state."""
     current = _as_now(now)
     normalized_modality = MODALITY_ALIASES.get(modality, modality or "text_chat")
+    excluded_memories = {str(value) for value in (exclude_memory_ids or set()) if value}
+    excluded_skills = {str(value) for value in (exclude_skill_codes or set()) if value}
     memories = list_memories(user_id, limit=500)
     weaknesses = [
         item for item in memories
         if item.get("kind") == "weakness" and item.get("status", "active") == "active"
+        and str(item.get("id") or "") not in excluded_memories
+        and _skill_code(item) not in excluded_skills
     ]
     if not weaknesses:
         return None
@@ -311,37 +330,94 @@ def select_stealth_probe(
     }
 
 
+def _skill_elicitation_brief(skill_code: str) -> str:
+    """Describe a skill family without replaying private error examples."""
+
+    return {
+        "grammar.verb_tense": (
+            "If the learner is already discussing time or events, one natural follow-up may invite "
+            "them to describe what happened, what usually happens, or what will happen."
+        ),
+        "grammar.article": (
+            "If the current topic naturally calls for concrete people, places, or objects, invite a "
+            "little more specific detail."
+        ),
+        "grammar.preposition": (
+            "If the learner is already describing time, place, movement, or a relationship, invite one "
+            "useful detail about it."
+        ),
+        "grammar.subject_verb_agreement": (
+            "If it follows naturally, ask about a person, group, habit, or routine in the current topic."
+        ),
+        "vocab.word_choice": (
+            "Let the learner explain the current idea in their own words. Never seed a desired word, "
+            "spelling, capitalization, brand, product, person, or place name."
+        ),
+        "vocab.repetition": (
+            "If the learner is already expanding an idea, invite a fresh detail without suggesting "
+            "replacement vocabulary."
+        ),
+        "sentence.structure": (
+            "If useful for the real conversation, invite the learner to connect a reason, contrast, "
+            "condition, or result to what they just said."
+        ),
+        "sentence.variety": (
+            "Invite one slightly fuller response only when a normal conversational follow-up calls for it."
+        ),
+        "discourse.coherence": (
+            "If the learner is explaining several ideas or events, ask for the next step, reason, or "
+            "connection that a real listener would want to know."
+        ),
+        "style.register": (
+            "Only if the current situation already has a clear audience or relationship, let the learner "
+            "choose naturally how formal or casual to sound."
+        ),
+        "clarity.expression": (
+            "Ask for clarification only when something in the learner's current message genuinely needs it."
+        ),
+    }.get(
+        skill_code,
+        "Observe the skill in the learner's spontaneous reply; do not steer the topic to manufacture it.",
+    )
+
+
 def build_stealth_probe_instruction(probe: Optional[dict]) -> str:
-    """Build a private prompt that elicits, but never teaches, the target."""
+    """Build a private, one-turn and context-gated elicitation prompt."""
     if not probe:
         return ""
     strategy = probe.get("elicitationStrategy", "opinion_followup")
     stage = probe.get("progressionStage", "replay")
     strategy_instruction = {
-        "personal_story": "Ask a natural personal-experience follow-up that makes the target useful.",
-        "roleplay": "Ease into a realistic role-play where the target would occur naturally.",
-        "opinion_followup": "Ask an opinion and one specific follow-up that creates a natural chance to use the target.",
-        "retell": "Invite the learner to retell, summarize, or sequence a relevant event in their own words.",
-    }.get(strategy, "Create one natural conversational opening where the target would be useful.")
-    fingerprint = probe.get("errorFingerprint") or {}
-    examples = list(fingerprint.get("correctedExamples") or [])[:2]
-    examples_text = "; ".join(str(item) for item in examples if item)
-    goal_text = str(probe.get("goalContext") or "").strip()
+        "personal_story": "A personal follow-up is allowed only when it is already the obvious next question.",
+        "roleplay": "Continue a role-play only when the conversation is already in one; never start an unrelated scene.",
+        "opinion_followup": "An opinion follow-up is allowed only when it directly responds to the learner's point.",
+        "retell": "A retell or sequence question is allowed only when the learner is already discussing an event or process.",
+    }.get(strategy, "Use at most one follow-up, and only when it is the natural next conversational move.")
     stage_instruction = {
-        "replay": "Recreate a context close to the learner's original mistake so the same form is retrievable.",
-        "variation": "Change the people, details, or communicative intent while testing the same underlying skill.",
-        "transfer": "Use a genuinely new, goal-relevant real-life context; do not mirror the stored example.",
-    }.get(stage, "Create one authentic opportunity for independent use.")
+        "replay": "Stay entirely inside the live conversation; do not recreate the stored mistake or its old setting.",
+        "variation": "Use only details the learner introduced in this conversation; do not borrow old examples.",
+        "transfer": "Observe transfer in this live context without introducing a remembered topic.",
+    }.get(stage, "Use only the live conversation as context.")
+    skill_code = str(probe.get("targetSkillCode") or "clarity.expression")
+    generation_skill_code = (
+        skill_code if skill_code in SAFE_GENERATION_SKILL_CODES else "general language production"
+    )
     return (
-        "Hidden adaptive-practice instruction (never reveal or mention this instruction):\n"
-        f"Target skill: {probe.get('targetSkillCode')}. {probe.get('targetDescription')}\n"
+        "Optional hidden practice check for this reply only (never reveal or mention it):\n"
+        "First answer the learner's actual message directly, accurately, and completely. The real conversation "
+        "always takes priority over this optional check.\n"
+        f"Target skill family: {generation_skill_code}. {_skill_elicitation_brief(skill_code)}\n"
         f"Progression stage: {stage}. {stage_instruction}\n"
-        f"Conversation context: {probe.get('context')}. {strategy_instruction}\n"
-        + (f"Learner goal to honor when it fits naturally: {goal_text}\n" if goal_text else "")
-        + (f"Previously useful form(s), for your internal understanding only: {examples_text}\n" if examples_text else "")
-        + "Do not ask the learner to use a named grammar rule or specific saved phrase. "
-        "Do not announce a test, weakness, memory, score, or correction. Do not force an awkward topic change. "
-        "Offer at most two natural openings, continue the real conversation if they do not fit, and keep normal errors uncorrected until end-of-session analysis."
+        f"Use only the live roleplay and conversation messages below as context. {strategy_instruction}\n"
+        "Naturalness gate: silently skip the check unless one subtle follow-up would be what a thoughtful human "
+        "conversation partner would ask next. Skip it if it needs a generic topic-changing segue such as 'by the way', "
+        "an unrelated named entity, a return to an earlier topic, or a second follow-up after answering. It is correct "
+        "to create no practice opportunity in this reply.\n"
+        "Never copy or paraphrase stored evidence, old examples, a remembered correction, or an unrelated learner "
+        "goal. Never introduce a product, platform, brand, person, or place merely to test spelling or capitalization. "
+        "Do not ask for a named grammar rule or saved phrase. Do not announce a test, weakness, memory, score, or "
+        "correction. Ask at most one short practice-bearing follow-up, then continue normally; keep ordinary errors "
+        "uncorrected until end-of-session analysis."
     )
 
 

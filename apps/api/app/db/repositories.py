@@ -1529,6 +1529,7 @@ def finalize_chat_session_turn(
     assistant_message: dict,
     summary: str,
     message_count: int,
+    stealth_probes: Optional[list[dict]] = None,
 ) -> None:
     """Commit a complete chat turn and release its claim atomically.
 
@@ -1545,6 +1546,17 @@ def finalize_chat_session_turn(
             "SK": chat_message_sk(message["createdAt"], message["id"]),
             "entityType": "CHAT_MESSAGE",
         })
+
+    session_values = {
+        ":summary": summary,
+        ":count": message_count,
+        ":updated": updated_at,
+        ":claim": claim_id,
+    }
+    session_set = "summary = :summary, messageCount = :count, updatedAt = :updated"
+    if stealth_probes is not None:
+        session_set += ", stealthProbes = :stealthProbes"
+        session_values[":stealthProbes"] = stealth_probes
 
     transaction = [
         {
@@ -1569,19 +1581,14 @@ def finalize_chat_session_turn(
                     "SK": chat_session_sk(session_id),
                 }),
                 "UpdateExpression": (
-                    "SET summary = :summary, messageCount = :count, updatedAt = :updated "
+                    f"SET {session_set} "
                     "REMOVE turnClaimId, turnClaimedAt, turnClaimedAtEpoch"
                 ),
                 "ConditionExpression": (
                     "turnClaimId = :claim AND attribute_not_exists(analysis) AND "
                     "attribute_not_exists(analysisDraft) AND attribute_not_exists(analysisClaimId)"
                 ),
-                "ExpressionAttributeValues": to_dynamo({
-                    ":summary": summary,
-                    ":count": message_count,
-                    ":updated": updated_at,
-                    ":claim": claim_id,
-                }),
+                "ExpressionAttributeValues": to_dynamo(session_values),
             }
         },
     ]
@@ -1796,6 +1803,7 @@ def update_chat_session_analysis(
     updated_skills: list,
     analyzed_at: str,
     stealth_practice: Optional[dict] = None,
+    stealth_practices: Optional[list[dict]] = None,
     claim_id: Optional[str] = None,
     errors_to_persist: Optional[list[dict]] = None,
     notes_to_persist: Optional[list[dict]] = None,
@@ -1809,11 +1817,13 @@ def update_chat_session_analysis(
         ":e": saved_errors,
         ":s": updated_skills,
         ":sp": stealth_practice,
+        ":sps": stealth_practices or [],
         ":u": analyzed_at,
     }
     update_expression = (
         "SET analysis = :a, analysisCreatedAt = :t, analysisSavedNotes = :n, "
-        "analysisSavedErrors = :e, analysisUpdatedSkills = :s, stealthPractice = :sp, updatedAt = :u "
+        "analysisSavedErrors = :e, analysisUpdatedSkills = :s, stealthPractice = :sp, "
+        "stealthPractices = :sps, updatedAt = :u "
         "REMOVE analysisClaimId, analysisClaimedAt, analysisClaimedAtEpoch, "
         "analysisDraft, analysisDraftCreatedAt"
     )

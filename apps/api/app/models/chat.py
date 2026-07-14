@@ -93,6 +93,7 @@ class SessionWeaknessAI(BaseModel):
 class StealthProbeAssessmentAI(BaseModel):
     """End-of-session evidence gate for a hidden practice opportunity."""
 
+    probeId: Optional[str] = None
     opportunityPresent: bool
     outcome: Literal[
         "success",
@@ -117,4 +118,10 @@ class SessionAnalysisAI(BaseModel):
     strengthsZh: List[str] = Field(default_factory=list, max_length=20)
     recommendedNextActionsZh: List[str] = Field(default_factory=list, max_length=20)
     memoryCandidates: List[MemoryCandidate] = Field(default_factory=list, max_length=20)
+    stealthProbeAssessments: List[StealthProbeAssessmentAI] = Field(
+        default_factory=list,
+        max_length=3,
+    )
+    # Kept for realtime voice and analysis drafts created before multi-target
+    # text chat. New text analyses use ``stealthProbeAssessments``.
     stealthProbeAssessment: Optional[StealthProbeAssessmentAI] = None

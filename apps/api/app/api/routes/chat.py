@@ -54,6 +54,9 @@ router = APIRouter(prefix="/chat")
 logger = logging.getLogger("uvicorn.error")
 
 FALLBACK_DEFAULT_TEXT_CHAT_MODEL = "deepseek-v4-flash"
+MAX_TEXT_STEALTH_PROBES = 3
+TEXT_STEALTH_PROBE_FIRST_TURN = 2
+TEXT_STEALTH_PROBE_TURN_INTERVAL = 2
 
 
 def _default_text_model() -> str:
@@ -86,6 +89,7 @@ def _public_session(session: dict) -> dict:
     public = dict(session)
     for internal_key in (
         "stealthProbe",
+        "stealthProbes",
         "stealthProbeHistory",
         "analysisDraft",
         "analysisDraftCreatedAt",
@@ -98,6 +102,62 @@ def _public_session(session: dict) -> dict:
     ):
         public.pop(internal_key, None)
     return public
+
+
+def _session_stealth_probes(session: dict) -> list[dict]:
+    """Normalize new multi-target sessions and legacy single-target sessions."""
+
+    candidates = session.get("stealthProbes")
+    if not isinstance(candidates, list):
+        legacy = session.get("stealthProbe")
+        candidates = [legacy] if isinstance(legacy, dict) else []
+
+    normalized: list[dict] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        identity = str(candidate.get("probeId") or candidate.get("memoryId") or "")
+        if not identity or identity in seen:
+            continue
+        seen.add(identity)
+        normalized.append(dict(candidate))
+    return normalized[:MAX_TEXT_STEALTH_PROBES]
+
+
+def _session_stealth_practices(session: dict) -> list[dict]:
+    candidates = session.get("stealthPractices")
+    if isinstance(candidates, list):
+        return [dict(item) for item in candidates if isinstance(item, dict)]
+    legacy = session.get("stealthPractice")
+    return [dict(legacy)] if isinstance(legacy, dict) else []
+
+
+def _should_schedule_text_probe(prior_user_turns: int, existing_probe_count: int) -> bool:
+    """Space one-shot targets across a conversation instead of chasing every reply."""
+
+    if existing_probe_count >= MAX_TEXT_STEALTH_PROBES:
+        return False
+    current_user_turn = prior_user_turns + 1
+    scheduled_turn = (
+        TEXT_STEALTH_PROBE_FIRST_TURN
+        + existing_probe_count * TEXT_STEALTH_PROBE_TURN_INTERVAL
+    )
+    return current_user_turn >= scheduled_turn
+
+
+def _turn_stealth_context(session: dict, history: list[dict], user_text: str) -> str:
+    recent = " ".join(
+        f"{message.get('role')}: {str(message.get('content') or '').strip()}"
+        for message in history[-4:]
+        if str(message.get("content") or "").strip()
+    )
+    scenario = _session_conversation_context(session) or "general conversation"
+    return (
+        f"Current learner message: {user_text[:500]}\n"
+        f"Recent conversation: {recent[-900:]}\n"
+        f"Scenario: {scenario[:300]}"
+    )
 
 
 def _session_conversation_context(session: dict) -> str | None:
@@ -146,15 +206,36 @@ def _apply_reported_hint_level(assessment: dict, reported_hint_level: int) -> di
     return adjusted
 
 
-def _has_exact_user_evidence(messages: list[dict], quote: str) -> bool:
+def _has_exact_user_evidence(
+    messages: list[dict],
+    quote: str,
+    *,
+    after_user_turn: int = 0,
+    through_user_turn: int | None = None,
+) -> bool:
     normalized_quote = " ".join((quote or "").casefold().split())
     if not normalized_quote:
         return False
-    return any(
-        normalized_quote in " ".join(str(message.get("content") or "").casefold().split())
-        for message in messages
-        if message.get("role") == "user"
-    )
+    user_turn = 0
+    for message in messages:
+        if message.get("role") != "user":
+            continue
+        user_turn += 1
+        if user_turn <= after_user_turn:
+            continue
+        if through_user_turn is not None and user_turn > through_user_turn:
+            continue
+        content = " ".join(str(message.get("content") or "").casefold().split())
+        if normalized_quote in content:
+            return True
+    return False
+
+
+def _probe_activation_turn(probe: dict) -> int:
+    try:
+        return max(0, int(probe.get("activatedAfterLearnerTurn") or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _ensure_text_session_writable(session: dict) -> None:
@@ -271,15 +352,6 @@ def create_session(
     text_model, server_model_id, deep_model_id, fast_model_id = _new_session_model(req.textModel, llm_provider)
     now = now_iso()
     session_id = f"cs_{uuid4().hex[:12]}"
-    try:
-        stealth_probe = select_stealth_probe(
-            req.userId,
-            modality="text_chat",
-            topic=req.scenarioPrompt or req.topic,
-        )
-    except Exception:
-        logger.exception("chat session stealth_selection_error user_id=%s", req.userId)
-        stealth_probe = None
     session = {
         "id": session_id,
         "userId": req.userId,
@@ -298,8 +370,6 @@ def create_session(
         "createdAt": now,
         "updatedAt": now,
     }
-    if stealth_probe:
-        session["stealthProbe"] = stealth_probe
     save_chat_session(session)
     return {"session": _public_session(session)}
 
@@ -386,12 +456,33 @@ def send_message(
 
         history = list_chat_messages(req.userId, req.sessionId, limit=None)
         history_for_ai = _conversation_messages_for_ai(session, history)
+        stealth_probes = _session_stealth_probes(session)
+        turn_stealth_probe = None
+        prior_user_turns = sum(1 for message in history if message.get("role") == "user")
+        if _should_schedule_text_probe(prior_user_turns, len(stealth_probes)):
+            try:
+                turn_stealth_probe = select_stealth_probe(
+                    req.userId,
+                    modality="text_chat",
+                    topic=_turn_stealth_context(session, history, req.text),
+                    exclude_memory_ids={
+                        str(probe.get("memoryId") or "") for probe in stealth_probes
+                    },
+                    exclude_skill_codes={
+                        str(probe.get("targetSkillCode") or "") for probe in stealth_probes
+                    },
+                )
+            except Exception:
+                logger.exception("chat[%s] stealth_selection_error", request_id)
+            if turn_stealth_probe:
+                turn_stealth_probe["activatedAfterLearnerTurn"] = prior_user_turns + 1
+                stealth_probes.append(turn_stealth_probe)
 
         try:
             conversation_context = _session_conversation_context(session)
             memory_pack = retrieve_memory_pack(
                 req.userId,
-                f"Conversation topic: {conversation_context or 'general'}. Learner message: {req.text}",
+                f"{conversation_context or ''}\n{req.text}",
                 purpose="chat",
             )
         except Exception:
@@ -420,7 +511,7 @@ def send_message(
             max_tokens=None if _unlimited_llm_output(identity) else 2000,
             trace_id=request_id,
             memory_context=memory_pack.get("text"),
-            hidden_practice_instruction=build_stealth_probe_instruction(session.get("stealthProbe")),
+            hidden_practice_instruction=build_stealth_probe_instruction(turn_stealth_probe),
         )
 
         assistant_now = now_iso()
@@ -446,6 +537,7 @@ def send_message(
             assistant_msg,
             summary_text,
             msg_count,
+            stealth_probes=stealth_probes if turn_stealth_probe else None,
         )
         turn_claimed = False
 
@@ -570,6 +662,7 @@ def analyze_chat_session(
             "sessionId": session_id,
             "duplicate": True,
             "stealthPractice": session.get("stealthPractice"),
+            "stealthPractices": _session_stealth_practices(session),
         }
 
     effective_provider = _session_provider(session, llm_provider)
@@ -585,6 +678,7 @@ def analyze_chat_session(
                 "sessionId": session_id,
                 "duplicate": True,
                 "stealthPractice": current.get("stealthPractice"),
+                "stealthPractices": _session_stealth_practices(current),
             }
         raise HTTPException(
             status_code=409,
@@ -622,6 +716,7 @@ def analyze_chat_session(
             logger.exception("analyze[%s] memory_retrieval_error", request_id)
             memory_pack = {"text": "", "items": [], "estimatedTokens": 0, "traceId": None}
 
+        active_stealth_probes = _session_stealth_probes(session)
         if session.get("analysisDraft"):
             analysis = SessionAnalysisAI.model_validate(session["analysisDraft"])
         else:
@@ -633,7 +728,7 @@ def analyze_chat_session(
                 max_tokens=None if _unlimited_llm_output(identity) else identity.max_output_tokens,
                 trace_id=request_id,
                 memory_context=memory_pack.get("text"),
-                stealth_probe=session.get("stealthProbe"),
+                stealth_probes=active_stealth_probes,
             )
             # Store the exact LLM result before any learning state is changed.
             # If a later write fails, the retry reuses this draft verbatim.
@@ -718,50 +813,98 @@ def analyze_chat_session(
         updated_skills = list(skills_to_persist.values())
         analysis_json = analysis.model_dump(mode="json")
         stealth_practice = None
-        if session.get("stealthProbe"):
-            assessment = analysis.stealthProbeAssessment
-            assessment_payload = (
+        stealth_practices: list[dict] = []
+        if active_stealth_probes:
+            returned_assessments = [
                 assessment.model_dump(mode="json")
-                if assessment is not None
-                else {
-                    "opportunityPresent": False,
-                    "outcome": "no_opportunity",
-                    "evidenceQuote": "",
-                    "rationale": "The analyzer returned no reliable evidence for the hidden target.",
-                    "confidence": 0.0,
-                    "hintLevel": 0,
-                }
-            )
-            assessment_payload = _apply_reported_hint_level(
-                assessment_payload,
-                req.hintLevel,
-            )
-            if (
-                assessment_payload.get("opportunityPresent")
-                and not _has_exact_user_evidence(
-                    messages_for_ai,
-                    str(assessment_payload.get("evidenceQuote") or ""),
+                for assessment in analysis.stealthProbeAssessments
+            ]
+            if analysis.stealthProbeAssessment is not None:
+                returned_assessments.append(
+                    analysis.stealthProbeAssessment.model_dump(mode="json")
                 )
-            ):
+            assessments_by_probe_id = {
+                str(payload.get("probeId")): payload
+                for payload in returned_assessments
+                if payload.get("probeId")
+            }
+            unkeyed_assessments = [
+                payload for payload in returned_assessments if not payload.get("probeId")
+            ]
+            persisted_assessments: list[dict] = []
+            for index, probe in enumerate(active_stealth_probes):
+                probe_id = str(probe.get("probeId") or "")
+                activation_turn = _probe_activation_turn(probe)
+                next_activation_turn = (
+                    _probe_activation_turn(active_stealth_probes[index + 1])
+                    if index + 1 < len(active_stealth_probes)
+                    else None
+                )
+                assessment_payload = assessments_by_probe_id.get(probe_id)
+                if assessment_payload is None and unkeyed_assessments:
+                    assessment_payload = unkeyed_assessments.pop(0)
+                if assessment_payload is None:
+                    assessment_payload = {
+                        "probeId": probe_id or None,
+                        "opportunityPresent": False,
+                        "outcome": "no_opportunity",
+                        "evidenceQuote": "",
+                        "rationale": "The analyzer returned no reliable evidence for this hidden target.",
+                        "confidence": 0.0,
+                        "hintLevel": 0,
+                    }
+                else:
+                    assessment_payload = {
+                        **assessment_payload,
+                        "probeId": probe_id or assessment_payload.get("probeId"),
+                    }
+                assessment_payload = _apply_reported_hint_level(
+                    assessment_payload,
+                    req.hintLevel,
+                )
+                if (
+                    assessment_payload.get("opportunityPresent")
+                    and not _has_exact_user_evidence(
+                        messages_for_ai,
+                        str(assessment_payload.get("evidenceQuote") or ""),
+                        after_user_turn=activation_turn,
+                        through_user_turn=next_activation_turn,
+                    )
+                ):
+                    assessment_payload.update({
+                        "opportunityPresent": False,
+                        "outcome": "no_opportunity",
+                        "rationale": (
+                            "The proposed evidence quote was not found verbatim in this target's eligible "
+                            "learner-response window; no mastery update was applied."
+                        ),
+                        "confidence": 0.0,
+                    })
+                result = record_stealth_probe_outcome(
+                    user_id,
+                    probe,
+                    assessment_payload,
+                )
                 assessment_payload.update({
-                    "opportunityPresent": False,
-                    "outcome": "no_opportunity",
-                    "rationale": (
-                        "The proposed evidence quote was not found verbatim in a learner message; "
-                        "no mastery update was applied."
-                    ),
-                    "confidence": 0.0,
+                    "outcome": result["outcome"],
+                    "opportunityPresent": result["opportunityPresent"],
                 })
-            stealth_practice = record_stealth_probe_outcome(
-                user_id,
-                session["stealthProbe"],
-                assessment_payload,
+                persisted_assessments.append(assessment_payload)
+                stealth_practices.append(result)
+
+            analysis_json["stealthProbeAssessments"] = persisted_assessments
+            analysis_json["stealthProbeAssessment"] = (
+                persisted_assessments[0] if len(persisted_assessments) == 1 else None
             )
-            assessment_payload.update({
-                "outcome": stealth_practice["outcome"],
-                "opportunityPresent": stealth_practice["opportunityPresent"],
-            })
-            analysis_json["stealthProbeAssessment"] = assessment_payload
+            analysis_json["stealthPractices"] = stealth_practices
+            stealth_practice = next(
+                (
+                    result
+                    for result in stealth_practices
+                    if result.get("stateChanged") or result.get("opportunityPresent")
+                ),
+                stealth_practices[0] if stealth_practices else None,
+            )
             analysis_json["stealthPractice"] = stealth_practice
 
         weakness_evidence = [
@@ -786,9 +929,12 @@ def analyze_chat_session(
             source_type="session_analysis",
             source_id=session_id,
             weakness_learning_skip_codes=(
-                {str(stealth_practice.get("targetSkillCode"))}
-                if stealth_practice and stealth_practice.get("stateChanged")
-                else None
+                {
+                    str(result.get("targetSkillCode"))
+                    for result in stealth_practices
+                    if result.get("stateChanged") and result.get("targetSkillCode")
+                }
+                or None
             ),
             weakness_modality="voice" if session.get("mode") == "voice" else "text_chat",
         )
@@ -801,6 +947,7 @@ def analyze_chat_session(
             updated_skills=updated_skills,
             analyzed_at=now,
             stealth_practice=stealth_practice,
+            stealth_practices=stealth_practices,
             claim_id=request_id,
             errors_to_persist=saved_errors,
             notes_to_persist=saved_notes,
@@ -825,6 +972,7 @@ def analyze_chat_session(
             "sessionId": session_id,
             "duplicate": False,
             "stealthPractice": stealth_practice,
+            "stealthPractices": stealth_practices,
             "memoriesSaved": saved_memories,
             "memoryRecall": {
                 "traceId": memory_pack.get("traceId"),
