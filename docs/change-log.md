@@ -1062,12 +1062,15 @@ Date: 2026-07-13
 
 Branch: `prototype/coach-mode-p0`
 
-GitHub status: owner completed local UI acceptance and approved push, merge,
-and production deployment. The release branch is ready for its reviewed PR.
+GitHub status: owner completed local UI acceptance. PR #39 merged into `main`
+at `4c7a971`; its Vercel Preview and merge-commit Production deployments both
+reported success.
 
-Deploy status: approved for the normal production path: Oracle backend plus
-Vercel frontend. Cloudflare stays on Oracle; Alibaba is not changed for this
-release.
+Deploy status: LIVE. The exact merged `apps/api` archive was deployed to
+`oracle-us-sj`; the existing production `.env` was preserved, DynamoDB table
+and TTL setup remained healthy, and the recreated container passed local and
+public health checks. Cloudflare remains on Oracle. Alibaba was not deployed,
+restarted, or selected as the origin.
 
 Summary:
 
@@ -1108,7 +1111,16 @@ Tests run:
 - Owner completed the local interaction review and accepted the UI. No in-app
   browser instance was available to add a separate automated screenshot pass.
 
-Next step: push the reviewed branch, merge its PR into `main`, deploy the exact
-merged backend archive to Oracle, let Vercel deploy the frontend from `main`,
-and verify the public health, CORS, model catalog, and new routes. Do not deploy
-Alibaba or switch the Cloudflare origin in this release.
+Production verification:
+
+- `https://enapi.jinxxx.de/api/v1/health` returns `{"status":"ok"}`.
+- The public model catalogue exposes the Oracle DeepSeek deep/fast choices and
+  no credentials; production Coach CORS preflight returns 200.
+- The Oracle container is healthy and its OpenAPI document contains the new
+  Coach mission route.
+- `/`, `/coach`, `/chat`, `/vocabulary`, and `/input/experimental` all return
+  200 from `https://englearning.jinxxx.de`.
+
+Next step: monitor normal production use. Before the final demonstration,
+deploy the selected final `main` commit to Alibaba, verify it independently,
+then perform the separately approved temporary Cloudflare origin switch.
