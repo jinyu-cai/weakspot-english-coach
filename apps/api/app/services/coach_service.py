@@ -11,11 +11,14 @@ from app.models.coach import (
     CoachMissionAIResult,
     CoachMissionRequest,
     CoachMissionResponse,
+    CoachScenarioFamily,
+    DecisionResponseMissionAIResult,
     GuidedSceneMissionAIResult,
     InputLab2TranscriptMissionRequest,
     ListenRetellMissionAIResult,
     PictureStoryMissionAIResult,
     TranscriptMissionPlanAIResult,
+    VocabularyInActionMissionAIResult,
 )
 from app.services.ai_client import LLMProviderConfig, parse_with_model
 from app.services.output_language import language_instruction
@@ -35,6 +38,21 @@ PICTURE_ASSET_BRIEFS = {
         "and clues that support a short before-now-next story."
     ),
 }
+
+SCENARIO_FAMILIES: tuple[CoachScenarioFamily, ...] = (
+    "service_recovery",
+    "workplace_alignment",
+    "travel_disruption",
+    "neighbor_coordination",
+    "healthcare_admin",
+    "community_event",
+    "housing_issue",
+    "delivery_problem",
+    "learning_request",
+    "social_boundary",
+    "tech_support",
+    "appointment_change",
+)
 
 
 MISSION_SYSTEM_PROMPT = """
@@ -64,6 +82,13 @@ Type requirements:
 - listen_retell: write an original, natural English listening script and a task
   that asks for a retell, inference, or practical response. The script itself is
   always English even when surrounding UI copy is Chinese.
+- decision_response: give incomplete or competing information and ask the
+  learner to decide, explain tradeoffs, and communicate the decision to a real
+  audience. This is not a quiz; several reasonable decisions may exist.
+- vocabulary_in_action: create a realistic production task that reveals word
+  choice, collocation, precision, and register through the learner's own
+  message. Do not show a correct-word list or multiple-choice options before the
+  learner answers. conceptsToExpress describe meanings, not target answers.
 """.strip()
 
 
@@ -99,7 +124,23 @@ def _response_model_for_request(req: CoachMissionRequest) -> Type[BaseModel]:
         return PictureStoryMissionAIResult
     if req.preferredType == "listen_retell":
         return ListenRetellMissionAIResult
+    if req.preferredType == "decision_response":
+        return DecisionResponseMissionAIResult
+    if req.preferredType == "vocabulary_in_action":
+        return VocabularyInActionMissionAIResult
     return CoachMissionAIResult
+
+
+def select_scenario_family(recent_families: list[str] | None = None) -> CoachScenarioFamily:
+    """Prefer a family absent from recent generated chats; repeats remain possible later."""
+
+    recent = [family for family in (recent_families or []) if family in SCENARIO_FAMILIES]
+    recent_set = set(recent)
+    candidates = [family for family in SCENARIO_FAMILIES if family not in recent_set]
+    if not candidates:
+        candidates = list(SCENARIO_FAMILIES)
+    index = int(uuid4().hex[:8], 16) % len(candidates)
+    return candidates[index]
 
 
 def _compact_skill_context(learner_skills: list[dict] | None) -> str:
@@ -123,8 +164,16 @@ def _public_response(
     req: CoachMissionRequest | InputLab2TranscriptMissionRequest,
     *,
     listening_script: str | None = None,
+    scenario_family: CoachScenarioFamily | None = None,
 ) -> CoachMissionResponse:
     payload = mission_content.model_dump(mode="json")
+    if payload.get("type") == "vocabulary_in_action":
+        skills = [skill for skill in payload.get("targetSkills", []) if skill != "vocab.word_choice"]
+        payload["targetSkills"] = ["vocab.word_choice", *skills][:4]
+    if payload.get("type") == "guided_scene" and isinstance(payload.get("scene"), dict):
+        family = scenario_family or payload["scene"].get("scenarioFamily")
+        payload["scene"]["scenarioFamily"] = family
+        payload["scene"]["scenarioKey"] = f"{family}:{uuid4().hex[:12]}"
     if listening_script is not None:
         play_limit = payload.pop("playLimit", 2)
         payload["type"] = "listen_retell"
@@ -146,6 +195,7 @@ def generate_coach_mission(
     req: CoachMissionRequest,
     *,
     learner_skills: list[dict] | None = None,
+    recent_scenario_families: list[str] | None = None,
     llm_provider: LLMProviderConfig | None = None,
     max_tokens: int | None = 3000,
     trace_id: str | None = None,
@@ -153,7 +203,9 @@ def generate_coach_mission(
     asset_catalog = "\n".join(
         f"- {key}: {brief}" for key, brief in PICTURE_ASSET_BRIEFS.items()
     )
-    requested_type = req.preferredType or "Choose the most useful of the three types."
+    requested_type = req.preferredType or "Choose the most useful of the five types."
+    selected_family = select_scenario_family(recent_scenario_families)
+    recent_family_context = ", ".join((recent_scenario_families or [])[:8]) or "none"
     user_prompt = f"""
 Create one mission with this configuration:
 - durationMinutes: {req.durationMinutes}
@@ -161,6 +213,8 @@ Create one mission with this configuration:
 - energy: {req.energy}
 - requested type: {requested_type}
 - variation seed: {uuid4().hex}
+- required guided_scene scenarioFamily: {selected_family}
+- recent generated scenario families to avoid repeating: {recent_family_context}
 
 {_compact_skill_context(learner_skills)}
 
@@ -190,7 +244,7 @@ Allowed first-party picture assets (use only for picture_story):
         trace_id=trace_id,
     )
     mission_content = cast(BaseModel, result.mission)
-    return _public_response(mission_content, req)
+    return _public_response(mission_content, req, scenario_family=selected_family)
 
 
 def _bounded_transcript_excerpt(transcript: str, duration_minutes: int) -> str:

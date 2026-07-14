@@ -18,8 +18,8 @@ cp .env.example .env          # then fill in real keys
 Common production `.env` values are: at least one text-model provider profile
 (`QWEN_MODEL_STUDIO_*`, `OPENAI_COMPAT_*`, or the backwards-compatible
 `DEEPSEEK_*` variables), AWS credentials/role + `DYNAMODB_TABLE`, and
-`CORS_ORIGINS` (include your Vercel URL). Add `OPENAI_API_KEY` only when realtime
-voice is enabled, and add OAuth/session values when login is enabled. See
+`CORS_ORIGINS` (include your Vercel URL). Add `OPENAI_API_KEY` when realtime
+voice or Coach AI speech is enabled, and add OAuth/session values when login is enabled. See
 `.env.example`.
 
 Managing dependencies: `uv add <pkg>` / `uv remove <pkg>` (updates the lockfile);
@@ -84,6 +84,10 @@ POST /chat/realtime/{session_id}/sideband
 GET  /chat/realtime/{session_id}/audit
 POST /chat/realtime/{session_id}/kick
 POST /chat-import/analyze
+
+POST /coach/missions
+POST /coach/speech                    # server-side OpenAI Speech API MP3
+POST /coach/input-lab-2/transcript-missions # owner-only supplied transcript
 
 GET  /memory?status=active|resolved|superseded|expired|forgotten|all
 POST /memory
@@ -390,6 +394,13 @@ Realtime voice is separate from the text provider. Configure
 exchanges the server key for short-lived Realtime client secrets so the browser
 never sees the real OpenAI key.
 
+Coach listening also uses the server-side `OPENAI_API_KEY`, through the OpenAI
+Speech API rather than an OpenAI-compatible text provider. Configure
+`OPENAI_TTS_BASE_URL`, `OPENAI_TTS_MODEL`, and `OPENAI_TTS_VOICE` as needed;
+defaults are the official `/v1` endpoint, `tts-1-hd`, and `marin`. The speech
+endpoint accepts only bounded text plus a small style enum, returns no-store
+MP3, and the frontend falls back to browser speech when it is unavailable.
+
 Text chat and prediction use the saved fast slot. End-of-session analysis uses
 the saved deep slot. Users can choose both before starting a new text chat.
 
@@ -398,6 +409,14 @@ the saved deep slot. Users can choose both before starting a new text chat.
 `POST /api/v1/diagnose` accepts `diagnosisMode: "fast" | "deep"`. Fast mode uses
 `OPENAI_COMPAT_FAST_MODEL` / `LLM_MODEL_FAST` when the server default provider is
 used, and falls back to the deep model if no fast model is configured.
+
+Contextual Coach tasks may also send optional `analysisContext` (maximum 2,400
+characters). It is serialized as untrusted task data in the user prompt and may
+help judge word choice, collocation, audience, and register. It is never a
+source of learner error spans: every saved correction must still be supported
+by the learner's `text`. Contextual submissions include the context in their
+deduplication hash, so the same wording can be tested honestly in two different
+situations.
 
 ```bash
 curl -v -X POST http://localhost:8000/api/v1/diagnose \

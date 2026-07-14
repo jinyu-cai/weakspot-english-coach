@@ -20,7 +20,12 @@ export type InputLearningSourceType =
   | "conversation"
   | "other"
 
-export type CoachMissionType = "guided_scene" | "picture_story" | "listen_retell"
+export type CoachMissionType =
+  | "guided_scene"
+  | "picture_story"
+  | "listen_retell"
+  | "decision_response"
+  | "vocabulary_in_action"
 export type CoachMissionModality = "text" | "voice"
 export type CoachMissionEnergy = "light" | "normal" | "challenge"
 
@@ -31,6 +36,8 @@ export interface CoachSceneMission {
   goal: string
   scenarioPrompt: string
   starterMessage: string
+  scenarioFamily: string
+  scenarioKey: string
 }
 
 export interface CoachPictureMission {
@@ -40,6 +47,22 @@ export interface CoachPictureMission {
 export interface CoachListeningMission {
   script: string
   playLimit: number
+}
+
+export interface CoachDecisionMission {
+  situation: string
+  userRole: string
+  audience: string
+  decisionGoal: string
+  constraints: string[]
+}
+
+export interface CoachVocabularyMission {
+  situation: string
+  communicativeGoal: string
+  audience: string
+  tone: string
+  conceptsToExpress: string[]
 }
 
 export interface CoachMission {
@@ -57,6 +80,8 @@ export interface CoachMission {
   scene?: CoachSceneMission | null
   picture?: CoachPictureMission | null
   listening?: CoachListeningMission | null
+  decision?: CoachDecisionMission | null
+  vocabulary?: CoachVocabularyMission | null
 }
 
 export interface CoachMissionRequest {
@@ -170,6 +195,7 @@ export interface Submission {
   correctedText?: string | null
   cefrEstimate?: CEFRLevel | null
   summaryZh?: string | null
+  analysisContext?: string | null
   createdAt: string
 }
 
@@ -580,6 +606,8 @@ export interface ChatSession {
   topic?: string | null
   scenarioPrompt?: string | null
   starterMessage?: string | null
+  scenarioFamily?: string | null
+  scenarioKey?: string | null
   textModel?: TextChatModel | null
   llmServerModelId?: string | null
   voiceModel?: RealtimeVoiceModel | null

@@ -62,6 +62,10 @@ and both servers share the same DynamoDB learner state. See
 
 - Writing diagnosis with CEFR estimate, corrected text, categorized errors,
   micro-lessons, and auto-collected notes.
+- Today's Mission with five production formats: generated roleplay, picture
+  story, listening retell, open-ended decision, and contextual vocabulary.
+- Contextual vocabulary at `/vocabulary`: use words in a real message first,
+  then review provisional word-choice evidence across learning history.
 - Text and realtime voice conversation, end-of-session analysis, and ChatGPT
   history import.
 - Persistent learner weakness/mastery model and daily progress dashboard.
@@ -84,7 +88,7 @@ in [Coach Mode / Input Lab 2.0 P0](docs/COACH_MODE_P0.md).
 | Qwen | Model Studio `qwen3.7-max`, `qwen3.7-plus`, `text-embedding-v4` |
 | Persistence | Amazon DynamoDB single-table design with TTL |
 | Traffic switch | Stable Cloudflare API hostname; Oracle normally, Alibaba only for final demo |
-| Voice | OpenAI Realtime API with backend sideband transcript capture |
+| Voice | OpenAI Realtime API for voice chat; OpenAI Speech API for Coach listening; browser speech fallback |
 | Auth | GitHub/Google OAuth, server-resolved identity, per-tier limits |
 
 ## Repository

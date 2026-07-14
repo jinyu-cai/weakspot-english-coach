@@ -22,8 +22,12 @@ from app.models.chat import (
 from app.models.chat_import import ChatImportAIResult, ChatWeaknessAI
 from app.models.coach import (
     CoachMissionAIResult,
+    CoachDecision,
     CoachPicture,
     CoachScene,
+    CoachVocabularyTask,
+    DecisionResponseMissionAI,
+    DecisionResponseMissionAIResult,
     GuidedSceneMissionAI,
     GuidedSceneMissionAIResult,
     ListenRetellMissionAI,
@@ -32,6 +36,8 @@ from app.models.coach import (
     PictureStoryMissionAIResult,
     TranscriptMissionPlanAI,
     TranscriptMissionPlanAIResult,
+    VocabularyInActionMissionAI,
+    VocabularyInActionMissionAIResult,
 )
 from app.models.common import CEFRLevel, PracticeType, Severity
 from app.models.diagnostic import DiagnosticAIResult, DiagnosticErrorAI, LearningNoteAI, SkillUpdateAI
@@ -325,6 +331,8 @@ def _fake_guided_scene_content() -> GuidedSceneMissionAI:
                 "follow-up questions, and introduce one mild scheduling complication. Do not correct the learner."
             ),
             starterMessage="Thanks for calling delivery support. How can I help with your order today?",
+            scenarioFamily="delivery_problem",
+            scenarioKey="delivery_problem:fake",
         ),
     )
 
@@ -380,6 +388,62 @@ def _fake_listen_retell_content() -> ListenRetellMissionAI:
     )
 
 
+def _fake_decision_response_content() -> DecisionResponseMissionAI:
+    return DecisionResponseMissionAI(
+        type="decision_response",
+        title="Choose a fair meeting plan",
+        eyebrow="Decide and explain",
+        briefing="Two teammates need different meeting times. Make a workable choice and explain it with care.",
+        targetSkills=["clarity.expression", "style.register", "discourse.coherence"],
+        taskPrompt="Write the short message you would send after choosing a plan.",
+        successCriteria=[
+            "State the decision clearly",
+            "Acknowledge both constraints",
+            "Offer one practical next step",
+        ],
+        hints=[
+            "Lead with the decision, then give the reason.",
+            "Useful frames: Given that..., the fairest option is...",
+            "Sentence starter: I suggest that we... because...",
+        ],
+        decision=CoachDecision(
+            situation="A project review must happen today, but one teammate is available early and another only late.",
+            userRole="The project coordinator",
+            audience="Two teammates with competing schedules",
+            decisionGoal="Choose a time and preserve cooperation",
+            constraints=["The review must happen today", "Neither teammate can attend for more than 30 minutes"],
+        ),
+    )
+
+
+def _fake_vocabulary_in_action_content() -> VocabularyInActionMissionAI:
+    return VocabularyInActionMissionAI(
+        type="vocabulary_in_action",
+        title="Explain a delayed handoff precisely",
+        eyebrow="Vocabulary in action",
+        briefing="Use your own words to explain a small delay without sounding vague or defensive.",
+        targetSkills=["vocab.word_choice", "style.register", "clarity.expression"],
+        taskPrompt="Write a concise update to the colleague waiting for your work.",
+        successCriteria=[
+            "Name the cause precisely",
+            "Distinguish a delay from a cancellation",
+            "Use a professional but warm tone",
+        ],
+        hints=[
+            "Think about the exact relationship between cause, delay, and next step.",
+            "Useful chunks: held up by, on track to, revised handoff time",
+            "Sentence starter: The handoff has been delayed because...",
+        ],
+        vocabulary=CoachVocabularyTask(
+            situation="A dependency arrived late, so your work will be ready two hours after the original handoff time.",
+            communicativeGoal="Explain the delay and set an accurate expectation",
+            audience="A colleague waiting to continue the project",
+            tone="Professional, accountable, and calm",
+            conceptsToExpress=["external dependency", "limited delay", "new expected time"],
+        ),
+    )
+
+
 def _fake_coach_mission() -> CoachMissionAIResult:
     return CoachMissionAIResult(mission=_fake_guided_scene_content())
 
@@ -394,6 +458,14 @@ def _fake_picture_story_mission() -> PictureStoryMissionAIResult:
 
 def _fake_listen_retell_mission() -> ListenRetellMissionAIResult:
     return ListenRetellMissionAIResult(mission=_fake_listen_retell_content())
+
+
+def _fake_decision_response_mission() -> DecisionResponseMissionAIResult:
+    return DecisionResponseMissionAIResult(mission=_fake_decision_response_content())
+
+
+def _fake_vocabulary_in_action_mission() -> VocabularyInActionMissionAIResult:
+    return VocabularyInActionMissionAIResult(mission=_fake_vocabulary_in_action_content())
 
 
 def _fake_transcript_mission_plan() -> TranscriptMissionPlanAIResult:
@@ -432,6 +504,8 @@ _BUILDERS = {
     GuidedSceneMissionAIResult: _fake_guided_scene_mission,
     PictureStoryMissionAIResult: _fake_picture_story_mission,
     ListenRetellMissionAIResult: _fake_listen_retell_mission,
+    DecisionResponseMissionAIResult: _fake_decision_response_mission,
+    VocabularyInActionMissionAIResult: _fake_vocabulary_in_action_mission,
     TranscriptMissionPlanAIResult: _fake_transcript_mission_plan,
 }
 

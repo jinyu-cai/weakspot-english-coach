@@ -286,6 +286,8 @@ def create_session(
         "topic": req.topic,
         "scenarioPrompt": req.scenarioPrompt,
         "starterMessage": req.starterMessage,
+        "scenarioFamily": req.scenarioFamily,
+        "scenarioKey": req.scenarioKey,
         "mode": "text",
         "textModel": text_model,
         "llmServerModelId": server_model_id,

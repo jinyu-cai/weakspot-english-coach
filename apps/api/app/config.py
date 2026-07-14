@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_realtime_model: str = "gpt-realtime-mini-2025-12-15"
     openai_realtime_models: str = "gpt-realtime-mini-2025-12-15,gpt-realtime-2"
+    # OpenAI Speech API. The same server-side key may be used for Realtime and
+    # TTS, but the browser never receives it. tts-1-hd is the supported
+    # quality-oriented default; deployments can change this without a rebuild.
+    openai_tts_base_url: str = "https://api.openai.com/v1"
+    openai_tts_model: str = "tts-1-hd"
+    openai_tts_voice: str = "marin"
 
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"

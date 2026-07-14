@@ -50,8 +50,17 @@ def _json_default(obj):
     return str(obj)
 
 
-def _language_text_hash(text: str, output_language: str) -> str:
-    return f"{output_language}:{normalized_text_hash(text)}"
+def _language_text_hash(
+    text: str,
+    output_language: str,
+    analysis_context: str | None = None,
+) -> str:
+    context_hash = (
+        f":context:{normalized_text_hash(analysis_context)}"
+        if analysis_context
+        else ""
+    )
+    return f"{output_language}:{normalized_text_hash(text)}{context_hash}"
 
 
 @router.post("/diagnose")
@@ -89,7 +98,14 @@ async def diagnose(
     # --- Fast pre-checks (profile + dedup) run in threadpool ---
     try:
         pre = await loop.run_in_executor(
-            None, lambda: _pre_check(req.userId, req.text, req.outputLanguage, request_id)
+            None,
+            lambda: _pre_check(
+                req.userId,
+                req.text,
+                req.outputLanguage,
+                request_id,
+                req.analysisContext,
+            ),
         )
     except Exception as e:
         logger.exception("diagnose[%s] pre_check_error", request_id)
@@ -160,10 +176,16 @@ async def diagnose(
 # Helpers — run inside the threadpool via run_in_executor
 # ---------------------------------------------------------------------------
 
-def _pre_check(user_id: str, text: str, output_language: str, request_id: str) -> dict:
+def _pre_check(
+    user_id: str,
+    text: str,
+    output_language: str,
+    request_id: str,
+    analysis_context: str | None = None,
+) -> dict:
     """Load profile, check for duplicate submission."""
     profile = get_or_create_profile(user_id)
-    text_hash = _language_text_hash(text, output_language)
+    text_hash = _language_text_hash(text, output_language, analysis_context)
     existing_hash = get_submission_hash(user_id, text_hash)
 
     if existing_hash:
@@ -232,6 +254,7 @@ def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mod
         max_output_tokens=None if identity.has_unlimited_llm_quota else identity.max_output_tokens,
         trace_id=request_id,
         memory_context=memory_pack.get("text"),
+        analysis_context=req.analysisContext,
     )
     llm_ms = _elapsed_ms(stage_started)
     logger.info(
@@ -259,6 +282,7 @@ def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mod
         "recommendedNextActionsZh": diagnostic.recommendedNextActionsZh,
         "textHash": text_hash,
         "outputLanguage": req.outputLanguage,
+        "analysisContext": req.analysisContext,
         "createdAt": now,
     }
     save_submission(submission)

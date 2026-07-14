@@ -1056,7 +1056,7 @@ Known issues:
 Next step: verify the Vercel production deployment UI after it finishes building
 from `main`.
 
-## 2026-07-13 — Coach Mode P0 and owner-only Input Lab 2.0 prototype
+## 2026-07-13 — Coach Mode P0, contextual vocabulary, and owner-only Input Lab 2.0 prototype
 
 Date: 2026-07-13
 
@@ -1067,14 +1067,26 @@ Deploy status: local preview only; not pushed, merged, or deployed.
 Summary:
 
 - Added a primary Today's Mission flow that asks only for time, response mode,
-  and energy, then generates a fresh guided scene, picture-story task, or
-  listen-and-retell task.
+  and energy, then generates a fresh guided scene, picture story, listening
+  retell, open-ended decision, or contextual vocabulary task.
 - Dynamic guided scenes now have an AI opening line, goal, roles, complication,
   progressive hints, and conservative `hinted_success` handling. Existing fixed
   Chat scenes remain available.
 - Added three first-party inline SVG scenes and original TTS listening tasks.
   Content completion and English-language evidence are deliberately separate;
   the text model never claims to see an image or video.
+- Chat's dynamic card now generates and opens a new AI roleplay immediately.
+  Generated sessions save a scenario family/key and avoid recently used
+  families while alternatives remain, reducing repeated situations.
+- Added `/vocabulary`: learners express meanings in a realistic message before
+  seeing hints or corrections. Task context is passed to Diagnose as untrusted
+  data so word choice can be judged against intended meaning, while evidence
+  spans must still come from the learner's text. A single word-choice error is
+  shown as provisional evidence requiring another context.
+- Listening playback and Coach voice-mode AI role replies now prefer server-side
+  OpenAI Speech API MP3 (`tts-1-hd`, `marin`, configurable), disclose that the
+  voice is AI-generated, keep the API key server-side, and fall back to browser
+  speech when unavailable.
 - Added `/input/experimental` for an owner-supplied transcript pilot. Input Lab
   1.0 remains public. The 2.0 endpoint rejects non-owner requests, extra URL
   fields, and browser-exposed owner bypass tokens.
@@ -1092,6 +1104,7 @@ Tests run:
   instance was available in this session; no alternate screenshot was presented
   as if it were the running application.
 
-Next step: owner reviews `/coach` and `/input/experimental` locally. Only after
+Next step: owner reviews `/coach`, `/vocabulary`, `/chat`, and
+`/input/experimental` locally. Only after
 explicit approval should this branch be pushed, opened as a preview PR, merged,
 or deployed.

@@ -1,6 +1,5 @@
 "use client"
 
-import Link from "next/link"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import {
@@ -20,6 +19,7 @@ import {
   getChatMessages,
   getChatSessions,
   getServerLLMModels,
+  generateCoachMission,
   sendChatMessage,
 } from "@/lib/api-client"
 import { DEMO_USER_ID } from "@/lib/mock-data"
@@ -266,6 +266,54 @@ export default function ChatPage() {
     }
   }
 
+  async function handleDynamicSession() {
+    if (voiceNavigationLocked) {
+      toast.error(t.chat.voicePanel.finishBeforeLeaving)
+      return
+    }
+    if (sending) return
+    sessionSelectionRef.current += 1
+    setCreatingSession(true)
+    try {
+      const mission = await generateCoachMission({
+        durationMinutes: 10,
+        modality: "text",
+        energy: "normal",
+        preferredType: "guided_scene",
+      })
+      if (!mission.scene) throw new Error("Generated mission has no scene")
+      const session = await createChatSession(
+        DEMO_USER_ID,
+        mission.title,
+        undefined,
+        mission.scene.scenarioPrompt,
+        mission.scene.starterMessage,
+        mission.scene.scenarioFamily,
+        mission.scene.scenarioKey,
+      )
+      setSessions((prev) => [session, ...prev])
+      setActiveSession(session)
+      setMode("text")
+      setMessages(withSessionStarter(session, []))
+      setInput("")
+      setViewState("chat")
+      setAnalysis(null)
+      setStealthPractice(null)
+    } catch {
+      toast.error(t.chat.dynamicCreateFailed)
+    } finally {
+      setCreatingSession(false)
+    }
+  }
+
+  function startAnotherSession() {
+    if (activeSession?.scenarioFamily) {
+      void handleDynamicSession()
+    } else {
+      void handleNewSession(activeSession?.topic ?? undefined)
+    }
+  }
+
   async function handleSelectSession(session: ChatSession) {
     const selectionId = ++sessionSelectionRef.current
     setActiveSession(session)
@@ -443,10 +491,13 @@ export default function ChatPage() {
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Card className="relative overflow-hidden border-primary/25 bg-primary/7 transition-all hover:border-primary/45 hover:shadow-md sm:col-span-2 lg:col-span-3">
-            <Link
-              href="/coach"
+            <button
+              type="button"
               aria-label={`${t.chat.scenarios.dynamic[0]}: ${t.chat.scenarios.dynamic[1]}`}
-              className="absolute inset-0 z-0 rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              title={`${t.chat.scenarios.dynamic[0]}: ${t.chat.scenarios.dynamic[1]}`}
+              disabled={creatingSession}
+              onClick={() => void handleDynamicSession()}
+              className="absolute inset-0 z-0 cursor-pointer rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-wait"
             />
             <CardContent className="pointer-events-none relative z-10 flex items-center gap-4 py-5">
               <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
@@ -603,7 +654,7 @@ export default function ChatPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => void handleNewSession(activeSession.topic ?? undefined)}
+              onClick={startAnotherSession}
               disabled={creatingSession}
             >
               {t.chat.continueChat}
@@ -612,7 +663,7 @@ export default function ChatPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => handleNewSession(activeSession.topic ?? undefined)}
+            onClick={startAnotherSession}
             disabled={creatingSession || voiceNavigationLocked || sending}
             title={voiceNavigationLocked ? t.chat.voicePanel.finishBeforeLeaving : undefined}
           >

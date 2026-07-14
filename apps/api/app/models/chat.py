@@ -3,6 +3,7 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 from app.models.common import OutputLanguage, Severity
+from app.models.coach import CoachScenarioFamily
 from app.models.memory import MemoryCandidate
 
 
@@ -14,6 +15,8 @@ class ChatCreateSessionRequest(BaseModel):
     topic: Optional[str] = Field(default=None, max_length=300)
     scenarioPrompt: Optional[str] = Field(default=None, max_length=4000)
     starterMessage: Optional[str] = Field(default=None, max_length=1200)
+    scenarioFamily: Optional[CoachScenarioFamily] = None
+    scenarioKey: Optional[str] = Field(default=None, max_length=160)
     textModel: Optional[str] = Field(default=None, max_length=200)
 
 

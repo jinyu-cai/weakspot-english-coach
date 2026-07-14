@@ -294,6 +294,7 @@ export async function diagnose(
   userId: string,
   text: string,
   diagnosisMode: DiagnosisMode = "fast",
+  analysisContext?: string,
 ): Promise<DiagnoseResponse> {
   if (USE_MOCK) {
     await delay(diagnosisMode === "fast" ? 700 : 1400)
@@ -315,7 +316,12 @@ export async function diagnose(
   }
   return apiFetch<DiagnoseResponse>("/diagnose", {
     method: "POST",
-    body: JSON.stringify(withOutputLanguage({ userId, text, diagnosisMode })),
+    body: JSON.stringify(withOutputLanguage({
+      userId,
+      text,
+      diagnosisMode,
+      ...(analysisContext ? { analysisContext } : {}),
+    })),
   })
 }
 
@@ -986,6 +992,8 @@ const MOCK_COACH_MISSIONS: Record<CoachMission["type"], CoachMission> = {
       goal: "Resolve the seat mix-up calmly",
       scenarioPrompt: "Role-play a passenger on a busy train. The learner has a ticket for seat 18A, but you believe it is reserved for your friend. Begin uncertain but polite. After the learner explains, reveal that your friend's ticket is actually for the next carriage. Stay in role, let the learner drive the resolution, and do not correct their English during the conversation.",
       starterMessage: "Oh—sorry, I think this seat is saved for my friend. Are you sure this is your seat?",
+      scenarioFamily: "travel_disruption",
+      scenarioKey: "travel_disruption:mock",
     },
   },
   picture_story: {
@@ -1019,12 +1027,58 @@ const MOCK_COACH_MISSIONS: Record<CoachMission["type"], CoachMission> = {
       playLimit: 2,
     },
   },
+  decision_response: {
+    id: "mission-preview-decision",
+    type: "decision_response",
+    title: "Choose a fair meeting plan",
+    eyebrow: "Decide and explain",
+    briefing: "Two teammates have competing schedules. Make a workable choice and communicate it with care.",
+    estimatedMinutes: 5,
+    difficulty: "Gentle stretch",
+    targetSkills: ["clarity.expression", "style.register", "discourse.coherence"],
+    taskPrompt: "Write the short message you would send after choosing a plan.",
+    successCriteria: ["State the decision clearly", "Acknowledge both constraints", "Offer one practical next step"],
+    hints: ["Lead with the decision, then give the reason.", "Useful frame: Given that…, the fairest option is…", "Try: I suggest that we… because…"],
+    decision: {
+      situation: "A project review must happen today, but one teammate is available early and another only late.",
+      userRole: "The project coordinator",
+      audience: "Two teammates with competing schedules",
+      decisionGoal: "Choose a time and preserve cooperation",
+      constraints: ["The review must happen today", "Neither teammate can attend for more than 30 minutes"],
+    },
+  },
+  vocabulary_in_action: {
+    id: "mission-preview-vocabulary",
+    type: "vocabulary_in_action",
+    title: "Explain a delayed handoff precisely",
+    eyebrow: "Vocabulary in action",
+    briefing: "Use your own words to explain a small delay without sounding vague or defensive.",
+    estimatedMinutes: 5,
+    difficulty: "Gentle stretch",
+    targetSkills: ["vocab.word_choice", "style.register", "clarity.expression"],
+    taskPrompt: "Write a concise update to the colleague waiting for your work.",
+    successCriteria: ["Name the cause precisely", "Distinguish a delay from a cancellation", "Use a professional but warm tone"],
+    hints: ["Think about the exact relationship between cause, delay, and next step.", "Useful chunks: held up by, on track to, revised handoff time", "Try: The handoff has been delayed because…"],
+    vocabulary: {
+      situation: "A dependency arrived late, so your work will be ready two hours after the original handoff time.",
+      communicativeGoal: "Explain the delay and set an accurate expectation",
+      audience: "A colleague waiting to continue the project",
+      tone: "Professional, accountable, and calm",
+      conceptsToExpress: ["external dependency", "limited delay", "new expected time"],
+    },
+  },
 }
 
 export async function generateCoachMission(input: CoachMissionRequest): Promise<CoachMission> {
   if (USE_MOCK) {
     await delay(700)
-    const types: CoachMission["type"][] = ["guided_scene", "picture_story", "listen_retell"]
+    const types: CoachMission["type"][] = [
+      "guided_scene",
+      "picture_story",
+      "listen_retell",
+      "decision_response",
+      "vocabulary_in_action",
+    ]
     const type = input.preferredType ?? types[Math.floor(Date.now() / 1000) % types.length]
     const mission = MOCK_COACH_MISSIONS[type]
     return {
@@ -1064,6 +1118,22 @@ export async function generateInputLab2TranscriptMission(
   return payload.mission
 }
 
+export async function synthesizeCoachSpeech(
+  text: string,
+  style: "gentle" | "natural" | "challenge" = "natural",
+): Promise<Blob> {
+  if (USE_MOCK) throw new Error("AI speech is unavailable in mock mode.")
+  const path = "/coach/speech"
+  const res = await fetch(`${API_BASE_URL}/api/v1${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, style }),
+  })
+  if (!res.ok) throw new Error(await getErrorMessage(res, path))
+  return res.blob()
+}
+
 /* ---- Chat ---- */
 
 export async function createChatSession(
@@ -1072,6 +1142,8 @@ export async function createChatSession(
   textModel?: TextChatModel,
   scenarioPrompt?: string,
   starterMessage?: string,
+  scenarioFamily?: string,
+  scenarioKey?: string,
 ): Promise<ChatSession> {
   if (USE_MOCK) {
     await delay(300)
@@ -1081,6 +1153,8 @@ export async function createChatSession(
       topic: topic ?? null,
       scenarioPrompt: scenarioPrompt ?? null,
       starterMessage: starterMessage ?? null,
+      scenarioFamily: scenarioFamily ?? null,
+      scenarioKey: scenarioKey ?? null,
       textModel: textModel ?? "Server default",
       messageCount: 0,
       summary: null,
@@ -1096,6 +1170,8 @@ export async function createChatSession(
       ...(textModel ? { textModel } : {}),
       ...(scenarioPrompt ? { scenarioPrompt } : {}),
       ...(starterMessage ? { starterMessage } : {}),
+      ...(scenarioFamily ? { scenarioFamily } : {}),
+      ...(scenarioKey ? { scenarioKey } : {}),
     }),
   })
   return session

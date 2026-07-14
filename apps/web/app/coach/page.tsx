@@ -9,11 +9,13 @@ import {
   CheckCircle2,
   Circle,
   Clock3,
+  GitBranch,
   Headphones,
   ImageIcon,
   Keyboard,
   Lightbulb,
   MessageCircle,
+  NotebookTabs,
   Mic,
   RotateCcw,
   Send,
@@ -39,6 +41,7 @@ import {
   diagnose,
   generateCoachMission,
   sendChatMessage,
+  synthesizeCoachSpeech,
 } from "@/lib/api-client"
 import { DEMO_USER_ID } from "@/lib/mock-data"
 import type {
@@ -81,12 +84,20 @@ type RecognitionLike = {
 type RecognitionConstructor = new () => RecognitionLike
 
 const DURATION_OPTIONS: Duration[] = [5, 10, 15]
-const TYPE_ORDER: CoachMissionType[] = ["guided_scene", "picture_story", "listen_retell"]
+const TYPE_ORDER: CoachMissionType[] = [
+  "guided_scene",
+  "picture_story",
+  "decision_response",
+  "vocabulary_in_action",
+  "listen_retell",
+]
 
 const MISSION_ICONS = {
   guided_scene: MessageCircle,
   picture_story: ImageIcon,
   listen_retell: Headphones,
+  decision_response: GitBranch,
+  vocabulary_in_action: NotebookTabs,
 } satisfies Record<CoachMissionType, typeof MessageCircle>
 
 function speechRecognitionConstructor(): RecognitionConstructor | null {
@@ -96,6 +107,27 @@ function speechRecognitionConstructor(): RecognitionConstructor | null {
     webkitSpeechRecognition?: RecognitionConstructor
   }
   return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null
+}
+
+function analysisContextForMission(mission: CoachMission): string | undefined {
+  if (mission.vocabulary) {
+    return [
+      `Situation: ${mission.vocabulary.situation}`,
+      `Communication goal: ${mission.vocabulary.communicativeGoal}`,
+      `Audience: ${mission.vocabulary.audience}`,
+      `Tone: ${mission.vocabulary.tone}`,
+      `Meanings to express: ${mission.vocabulary.conceptsToExpress.join("; ")}`,
+    ].join("\n")
+  }
+  if (mission.decision) {
+    return [
+      `Situation: ${mission.decision.situation}`,
+      `Decision goal: ${mission.decision.decisionGoal}`,
+      `Audience: ${mission.decision.audience}`,
+      `Constraints: ${mission.decision.constraints.join("; ")}`,
+    ].join("\n")
+  }
+  return undefined
 }
 
 function ChoiceButton({
@@ -177,6 +209,13 @@ export default function CoachPage() {
 
   const recognitionRef = useRef<RecognitionLike | null>(null)
   const dictationBaseRef = useRef("")
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const audioUrlRef = useRef<string | null>(null)
+  const audioMissionIdRef = useRef<string | null>(null)
+  const transientAudioUrlRef = useRef<string | null>(null)
+  const ttsUnavailableRef = useRef(false)
+  const playbackRequestRef = useRef(0)
+  const optimisticMessageCounterRef = useRef(0)
 
   const visibleHints = useMemo(
     () => mission?.hints.slice(0, hintLevel) ?? [],
@@ -193,8 +232,28 @@ export default function CoachPage() {
         // The recognition session may already be stopped.
       }
       if (typeof window !== "undefined") window.speechSynthesis?.cancel()
+      audioRef.current?.pause()
+      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
+      if (transientAudioUrlRef.current) URL.revokeObjectURL(transientAudioUrlRef.current)
     }
   }, [])
+
+  function stopPlayback(clearCache = false) {
+    playbackRequestRef.current += 1
+    audioRef.current?.pause()
+    audioRef.current = null
+    if (typeof window !== "undefined") window.speechSynthesis?.cancel()
+    setIsSpeaking(false)
+    if (transientAudioUrlRef.current) {
+      URL.revokeObjectURL(transientAudioUrlRef.current)
+      transientAudioUrlRef.current = null
+    }
+    if (clearCache && audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current)
+      audioUrlRef.current = null
+      audioMissionIdRef.current = null
+    }
+  }
 
   function stopDictation(discardPendingResults = false) {
     const recognition = recognitionRef.current
@@ -215,7 +274,7 @@ export default function CoachPage() {
 
   function resetAttempt(nextScreen: Screen = "briefing") {
     stopDictation(true)
-    if (typeof window !== "undefined") window.speechSynthesis?.cancel()
+    stopPlayback(nextScreen === "setup")
     setScreen(nextScreen)
     setAnswer("")
     setSubmittedAnswer("")
@@ -233,8 +292,7 @@ export default function CoachPage() {
 
   function returnToBriefing() {
     stopDictation(true)
-    if (typeof window !== "undefined") window.speechSynthesis?.cancel()
-    setIsSpeaking(false)
+    stopPlayback()
     setScreen("briefing")
   }
 
@@ -247,6 +305,8 @@ export default function CoachPage() {
         energy,
         ...(type ? { preferredType: type } : {}),
       })
+      stopPlayback(true)
+      ttsUnavailableRef.current = false
       setMission(nextMission)
       resetAttempt("briefing")
     } catch {
@@ -283,7 +343,7 @@ export default function CoachPage() {
     setSubmittedAnswer(text)
     setAnalyzing(true)
     try {
-      const result = await diagnose(DEMO_USER_ID, text, "fast")
+      const result = await diagnose(DEMO_USER_ID, text, "fast", analysisContextForMission(mission))
       setDiagnostic(result)
       setScreen("feedback")
     } catch {
@@ -306,13 +366,16 @@ export default function CoachPage() {
           undefined,
           mission.scene.scenarioPrompt,
           mission.scene.starterMessage,
+          mission.scene.scenarioFamily,
+          mission.scene.scenarioKey,
         )
         session = createdSession
         setChatSession(createdSession)
         setChatMessages((current) => current.map((message) => ({ ...message, sessionId: createdSession.id })))
       }
+      optimisticMessageCounterRef.current += 1
       const optimistic: ChatMessage = {
-        id: `coach-temp-${Date.now()}`,
+        id: `coach-temp-${optimisticMessageCounterRef.current}`,
         userId: session.userId,
         sessionId: session.id,
         role: "user",
@@ -327,6 +390,7 @@ export default function CoachPage() {
         response.userMessage,
         response.assistantMessage,
       ])
+      if (modality === "voice") void playRoleplaySpeech(response.assistantMessage.content)
     } catch {
       setChatMessages((current) => current.filter((message) => !message.id.startsWith("coach-temp-")))
       setAnswer(text)
@@ -357,22 +421,102 @@ export default function CoachPage() {
     setHintLevel((current) => current + 1)
   }
 
-  function playListening() {
-    if (!mission?.listening || typeof window === "undefined") return
-    if (!("speechSynthesis" in window)) {
+  function playBrowserSpeech(script: string) {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      setIsSpeaking(false)
       toast.error(t.coach.mission.playbackUnavailable)
       return
     }
-    if (playsUsed >= mission.listening.playLimit || isDictating) return
     window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(mission.listening.script)
+    const utterance = new SpeechSynthesisUtterance(script)
     utterance.lang = "en-US"
     utterance.rate = energy === "light" ? 0.86 : energy === "challenge" ? 1.02 : 0.94
     utterance.onend = () => setIsSpeaking(false)
     utterance.onerror = () => setIsSpeaking(false)
+    window.speechSynthesis.speak(utterance)
+  }
+
+  async function playListening() {
+    if (!mission?.listening || typeof window === "undefined") return
+    if (playsUsed >= mission.listening.playLimit || isDictating) return
+    stopPlayback()
+    const requestId = playbackRequestRef.current
     setIsSpeaking(true)
     setPlaysUsed((current) => current + 1)
-    window.speechSynthesis.speak(utterance)
+    try {
+      if (!audioUrlRef.current || audioMissionIdRef.current !== mission.id) {
+        if (ttsUnavailableRef.current) throw new Error("AI speech unavailable")
+        if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
+        const audioBlob = await synthesizeCoachSpeech(
+          mission.listening.script,
+          energy === "light" ? "gentle" : energy === "challenge" ? "challenge" : "natural",
+        )
+        audioUrlRef.current = URL.createObjectURL(audioBlob)
+        audioMissionIdRef.current = mission.id
+      }
+      if (playbackRequestRef.current !== requestId) return
+      const audio = new Audio(audioUrlRef.current)
+      audioRef.current = audio
+      audio.onended = () => {
+        audioRef.current = null
+        setIsSpeaking(false)
+      }
+      audio.onerror = () => {
+        audioRef.current = null
+        setIsSpeaking(false)
+      }
+      await audio.play()
+    } catch {
+      if (playbackRequestRef.current !== requestId) return
+      audioRef.current = null
+      if (transientAudioUrlRef.current) {
+        URL.revokeObjectURL(transientAudioUrlRef.current)
+        transientAudioUrlRef.current = null
+      }
+      ttsUnavailableRef.current = true
+      toast.info(t.coach.mission.browserVoiceFallback)
+      playBrowserSpeech(mission.listening.script)
+    }
+  }
+
+  async function playRoleplaySpeech(text: string) {
+    if (typeof window === "undefined") return
+    stopPlayback()
+    const requestId = playbackRequestRef.current
+    setIsSpeaking(true)
+    try {
+      if (ttsUnavailableRef.current) throw new Error("AI speech unavailable")
+      const audioBlob = await synthesizeCoachSpeech(
+        text,
+        energy === "light" ? "gentle" : energy === "challenge" ? "challenge" : "natural",
+      )
+      if (playbackRequestRef.current !== requestId) return
+      const url = URL.createObjectURL(audioBlob)
+      transientAudioUrlRef.current = url
+      const audio = new Audio(url)
+      audioRef.current = audio
+      const finish = () => {
+        if (transientAudioUrlRef.current === url) {
+          URL.revokeObjectURL(url)
+          transientAudioUrlRef.current = null
+        }
+        if (audioRef.current === audio) audioRef.current = null
+        setIsSpeaking(false)
+      }
+      audio.onended = finish
+      audio.onerror = finish
+      await audio.play()
+    } catch {
+      if (playbackRequestRef.current !== requestId) return
+      audioRef.current = null
+      if (transientAudioUrlRef.current) {
+        URL.revokeObjectURL(transientAudioUrlRef.current)
+        transientAudioUrlRef.current = null
+      }
+      ttsUnavailableRef.current = true
+      toast.info(t.coach.mission.browserVoiceFallback)
+      playBrowserSpeech(text)
+    }
   }
 
   function toggleDictation() {
@@ -503,7 +647,7 @@ export default function CoachPage() {
               <summary className="cursor-pointer list-none text-sm font-medium text-muted-foreground outline-none group-open:text-foreground">
                 {t.coach.setup.specific}
               </summary>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 <ChoiceButton selected={!preferredType} onClick={() => setPreferredType(undefined)} className="text-left">
                   <span className="block font-semibold">{t.coach.setup.surprise[0]}</span>
                   <span className="mt-0.5 block text-xs font-normal text-muted-foreground">{t.coach.setup.surprise[1]}</span>
@@ -571,6 +715,50 @@ export default function CoachPage() {
                     <p className="mt-1 text-sm leading-relaxed">{value}</p>
                   </div>
                 ))}
+              </div>
+            ) : null}
+
+            {mission.decision ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[
+                  [t.coach.mission.situation, mission.decision.situation],
+                  [t.coach.mission.yourRole, mission.decision.userRole],
+                  [t.coach.mission.audience, mission.decision.audience],
+                  [t.coach.mission.goal, mission.decision.decisionGoal],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-2xl border border-border/70 bg-muted/25 p-4">
+                    <div className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{label}</div>
+                    <p className="mt-1 text-sm leading-relaxed">{value}</p>
+                  </div>
+                ))}
+                <div className="rounded-2xl border border-warning/25 bg-warning/5 p-4 sm:col-span-2">
+                  <div className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{t.coach.mission.constraints}</div>
+                  <ul className="mt-2 grid gap-1.5 text-sm leading-relaxed">
+                    {mission.decision.constraints.map((constraint) => <li key={constraint}>• {constraint}</li>)}
+                  </ul>
+                </div>
+              </div>
+            ) : null}
+
+            {mission.vocabulary ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[
+                  [t.coach.mission.situation, mission.vocabulary.situation],
+                  [t.coach.mission.goal, mission.vocabulary.communicativeGoal],
+                  [t.coach.mission.audience, mission.vocabulary.audience],
+                  [t.coach.mission.tone, mission.vocabulary.tone],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-2xl border border-border/70 bg-muted/25 p-4">
+                    <div className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{label}</div>
+                    <p className="mt-1 text-sm leading-relaxed">{value}</p>
+                  </div>
+                ))}
+                <div className="rounded-2xl border border-primary/20 bg-primary/6 p-4 sm:col-span-2">
+                  <div className="text-xs font-semibold tracking-wide text-primary uppercase">{t.coach.mission.concepts}</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {mission.vocabulary.conceptsToExpress.map((concept) => <Badge key={concept} variant="outline">{concept}</Badge>)}
+                  </div>
+                </div>
               </div>
             ) : null}
 
@@ -724,6 +912,24 @@ export default function CoachPage() {
         <section className="min-w-0 space-y-4">
           {mission.picture ? <CoachScene assetKey={mission.picture.assetKey} title={mission.title} /> : null}
 
+          {mission.decision || mission.vocabulary ? (
+            <Card className="border-primary/20 bg-primary/5">
+              <CardHeader>
+                <CardTitle className="text-lg">{mission.decision?.situation ?? mission.vocabulary?.situation}</CardTitle>
+                <CardDescription>
+                  {mission.decision
+                    ? `${t.coach.mission.audience}: ${mission.decision.audience}`
+                    : `${t.coach.mission.tone}: ${mission.vocabulary?.tone}`}
+                </CardDescription>
+              </CardHeader>
+              {mission.decision ? (
+                <CardContent className="flex flex-wrap gap-2">
+                  {mission.decision.constraints.map((constraint) => <Badge key={constraint} variant="outline">{constraint}</Badge>)}
+                </CardContent>
+              ) : null}
+            </Card>
+          ) : null}
+
           {mission.listening ? (
             <div className="flex min-h-72 flex-col items-center justify-center rounded-3xl border border-primary/20 bg-gradient-to-br from-primary/8 via-card to-secondary/35 p-6 text-center">
               <span className={cn("flex size-20 items-center justify-center rounded-full bg-primary/12 text-primary transition", isSpeaking && "animate-pulse")}>
@@ -736,6 +942,7 @@ export default function CoachPage() {
                 {playsUsed === 0 ? t.coach.mission.listen : t.coach.mission.listenAgain}
               </Button>
               <span className="mt-2 text-xs text-muted-foreground">{Math.max(0, playLimit - playsUsed)} {t.coach.mission.playsLeft}</span>
+              <span className="mt-1 text-[11px] text-muted-foreground">{t.coach.mission.aiVoiceDisclosure}</span>
             </div>
           ) : null}
 
@@ -751,11 +958,24 @@ export default function CoachPage() {
                         : "rounded-bl-md border border-border bg-muted/45 text-foreground",
                     )}>
                       {message.content}
+                      {message.role === "assistant" && modality === "voice" ? (
+                        <button
+                          type="button"
+                          className="mt-2 flex items-center gap-1 text-[11px] font-medium text-muted-foreground transition hover:text-foreground disabled:cursor-wait disabled:opacity-50"
+                          onClick={() => void playRoleplaySpeech(message.content)}
+                          disabled={isSpeaking || isDictating}
+                        >
+                          <Volume2 className="size-3" /> {t.coach.mission.playReply}
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 ))}
                 {sending ? (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground"><Spinner className="size-4" /> {t.coach.mission.thinking}</div>
+                ) : null}
+                {modality === "voice" ? (
+                  <p className="border-t border-border/60 pt-3 text-[11px] text-muted-foreground">{t.coach.mission.aiVoiceDisclosure}</p>
                 ) : null}
               </div>
             </div>
