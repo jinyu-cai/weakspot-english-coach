@@ -43,6 +43,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { VoiceChatPanel, type VoiceChatLifecycle } from "@/components/voice-chat-panel"
 import { SessionSummary } from "@/components/session-summary"
 import { cn } from "@/lib/utils"
+import { shouldSendFromChatComposer } from "@/lib/chat-composer"
 import { useLanguage } from "@/components/language-provider"
 import { setVoiceNavigationLocked } from "@/lib/voice-navigation-guard"
 
@@ -118,6 +119,14 @@ export default function ChatPage() {
   useEffect(() => {
     scrollToBottom()
   }, [messages, scrollToBottom])
+
+  useEffect(() => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    textarea.style.height = "auto"
+    textarea.style.height = Math.min(textarea.scrollHeight, 128) + "px"
+    textarea.style.overflowY = textarea.scrollHeight > 128 ? "auto" : "hidden"
+  }, [input])
 
   useEffect(() => {
     getChatSessions(DEMO_USER_ID)
@@ -379,9 +388,9 @@ export default function ChatPage() {
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (shouldSendFromChatComposer(e)) {
       e.preventDefault()
-      handleSend()
+      void handleSend()
     }
   }
 
@@ -765,17 +774,19 @@ export default function ChatPage() {
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder={t.chat.placeholder}
+                  aria-keyshortcuts="Control+Enter Meta+Enter"
                   rows={1}
                   className={cn(
                     "w-full resize-none rounded-xl border border-border bg-background px-4 py-3 pr-12 text-sm",
                     "placeholder:text-muted-foreground/60 focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/20",
                     "max-h-32 min-h-[2.75rem]",
                   )}
-                  style={{ height: "auto", overflow: "hidden" }}
+                  style={{ height: "auto", overflowY: "hidden" }}
                   onInput={(e) => {
                     const target = e.target as HTMLTextAreaElement
                     target.style.height = "auto"
                     target.style.height = Math.min(target.scrollHeight, 128) + "px"
+                    target.style.overflowY = target.scrollHeight > 128 ? "auto" : "hidden"
                   }}
                   disabled={sending}
                 />
@@ -791,7 +802,10 @@ export default function ChatPage() {
                 <ArrowUp className="size-5" />
               </Button>
             </div>
-            <div className="mt-1.5 flex items-center justify-end px-1">
+            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 px-1">
+              <span className="text-[10px] leading-tight text-muted-foreground">
+                {t.chat.composerHint}
+              </span>
               {messages.filter((m) => m.role === "user").length >= 2 && (
                 <Button
                   variant="outline"
@@ -821,7 +835,7 @@ function ChatBubble({ message }: { message: ChatMessage }) {
     <div className={cn("flex flex-col gap-1.5", isUser ? "items-end" : "items-start")}>
       <div
         className={cn(
-          "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
+          "max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
           isUser
             ? "bg-primary text-primary-foreground"
             : "bg-muted/60 text-foreground",

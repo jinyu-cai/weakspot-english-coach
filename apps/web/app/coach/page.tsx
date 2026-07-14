@@ -56,6 +56,7 @@ import type {
   StealthPracticeResult,
 } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { shouldSendFromChatComposer } from "@/lib/chat-composer"
 
 type Duration = 5 | 10 | 15
 type Screen = "setup" | "briefing" | "active" | "feedback" | "chat_feedback"
@@ -952,7 +953,7 @@ export default function CoachPage() {
                 {chatMessages.map((message) => (
                   <div key={message.id} className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}>
                     <div className={cn(
-                      "max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-relaxed sm:max-w-[76%]",
+                      "max-w-[88%] whitespace-pre-wrap break-words rounded-2xl px-4 py-3 text-sm leading-relaxed sm:max-w-[76%]",
                       message.role === "user"
                         ? "rounded-br-md bg-primary text-primary-foreground"
                         : "rounded-bl-md border border-border bg-muted/45 text-foreground",
@@ -988,10 +989,11 @@ export default function CoachPage() {
               value={answer}
               onChange={(event) => setAnswer(event.target.value)}
               placeholder={t.coach.mission.placeholder}
+              aria-keyshortcuts="Control+Enter Meta+Enter"
               className="mt-2 min-h-32 resize-y"
               disabled={sending || analyzing || isSpeaking || isDictating}
               onKeyDown={(event) => {
-                if (mission.type === "guided_scene" && event.key === "Enter" && !event.shiftKey) {
+                if (mission.type === "guided_scene" && shouldSendFromChatComposer(event)) {
                   event.preventDefault()
                   void sendRoleplayMessage()
                 }
@@ -1005,7 +1007,11 @@ export default function CoachPage() {
                 </Button>
               ) : null}
               <span className="text-xs leading-relaxed text-muted-foreground">
-                {modality === "voice" ? t.coach.mission.voiceConfirm : mission.type === "guided_scene" ? mission.taskPrompt : t.coach.mission.minimum}
+                {modality === "voice"
+                  ? t.coach.mission.voiceConfirm
+                  : mission.type === "guided_scene"
+                    ? t.coach.mission.composerHint
+                    : t.coach.mission.minimum}
               </span>
               {mission.type === "guided_scene" ? (
                 <Button className="sm:ml-auto" onClick={() => void sendRoleplayMessage()} disabled={!answer.trim() || sending || analyzing || isDictating || isSpeaking}>
