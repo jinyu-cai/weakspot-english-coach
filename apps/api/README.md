@@ -85,7 +85,7 @@ GET  /chat/realtime/{session_id}/audit
 POST /chat/realtime/{session_id}/kick
 POST /chat-import/analyze
 
-POST /coach/missions
+POST /coach/missions                  # generationMode=fast|deep (fast default)
 POST /coach/speech                    # server-side OpenAI Speech API MP3
 POST /coach/input-lab-2/transcript-missions # owner-only supplied transcript
 

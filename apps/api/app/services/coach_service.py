@@ -117,6 +117,19 @@ def _selected_fast_model(provider: LLMProviderConfig | None) -> str:
     return settings.default_llm_fast_model or settings.default_llm_model
 
 
+def selected_coach_model(
+    req: CoachMissionRequest,
+    provider: LLMProviderConfig | None,
+) -> str:
+    """Use the requested server/BYOK slot; Fast remains the compatibility default."""
+
+    if req.generationMode == "deep":
+        if provider is not None:
+            return provider.model
+        return settings.default_llm_model
+    return _selected_fast_model(provider)
+
+
 def _response_model_for_request(req: CoachMissionRequest) -> Type[BaseModel]:
     if req.preferredType == "guided_scene":
         return GuidedSceneMissionAIResult
@@ -211,6 +224,7 @@ Create one mission with this configuration:
 - durationMinutes: {req.durationMinutes}
 - modality: {req.modality}
 - energy: {req.energy}
+- generationMode: {req.generationMode}
 - requested type: {requested_type}
 - variation seed: {uuid4().hex}
 - required guided_scene scenarioFamily: {selected_family}
@@ -239,7 +253,7 @@ Allowed first-party picture assets (use only for picture_story):
         ],
         response_model=response_model,
         max_tokens=max_tokens,
-        model=_selected_fast_model(llm_provider),
+        model=selected_coach_model(req, llm_provider),
         provider=llm_provider,
         trace_id=trace_id,
     )

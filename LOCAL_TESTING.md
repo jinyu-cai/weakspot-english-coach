@@ -108,6 +108,9 @@ History delete opens a confirmation dialog and names associated corrections/note
 History shows more than 20 submissions and more than 20 corrections when present
 Dashboard bar-chart labels are readable in full, including legacy grammar.* codes
 Chat and AI settings show the complete selected provider and model name
+Chat dynamic AI situation can switch between Fast and Deep generation; the
+selected slot reaches the backend without exposing credentials
+Notebook category labels remain on one line at 320px, 360px, and desktop widths
 ```
 
 ## Backend smoke and integration tests

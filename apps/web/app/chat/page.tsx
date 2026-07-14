@@ -23,7 +23,7 @@ import {
   sendChatMessage,
 } from "@/lib/api-client"
 import { DEMO_USER_ID } from "@/lib/mock-data"
-import type { ChatMessage, ChatSession, SessionAnalysis, StealthPracticeResult } from "@/lib/types"
+import type { ChatMessage, ChatSession, CoachGenerationMode, SessionAnalysis, StealthPracticeResult } from "@/lib/types"
 import {
   DEFAULT_SERVER_DEEP_MODEL_ID,
   DEFAULT_SERVER_FAST_MODEL_ID,
@@ -100,6 +100,7 @@ export default function ChatPage() {
   const [selectedServerFastModelId, setSelectedServerFastModelId] = useState(
     () => loadLLMSettings().serverFastModelId || DEFAULT_SERVER_FAST_MODEL_ID,
   )
+  const [sceneGenerationMode, setSceneGenerationMode] = useState<CoachGenerationMode>("fast")
   const [viewState, setViewState] = useState<ViewState>("chat")
   const [analysis, setAnalysis] = useState<SessionAnalysis | null>(null)
   const [stealthPractice, setStealthPractice] = useState<StealthPracticeResult | null>(null)
@@ -279,6 +280,7 @@ export default function ChatPage() {
         durationMinutes: 10,
         modality: "text",
         energy: "normal",
+        generationMode: sceneGenerationMode,
         preferredType: "guided_scene",
       })
       if (!mission.scene) throw new Error("Generated mission has no scene")
@@ -490,22 +492,51 @@ export default function ChatPage() {
         </header>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Card className="relative overflow-hidden border-primary/25 bg-primary/7 transition-all hover:border-primary/45 hover:shadow-md sm:col-span-2 lg:col-span-3">
-            <button
-              type="button"
-              aria-label={`${t.chat.scenarios.dynamic[0]}: ${t.chat.scenarios.dynamic[1]}`}
-              title={`${t.chat.scenarios.dynamic[0]}: ${t.chat.scenarios.dynamic[1]}`}
-              disabled={creatingSession}
-              onClick={() => void handleDynamicSession()}
-              className="absolute inset-0 z-0 cursor-pointer rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-wait"
-            />
-            <CardContent className="pointer-events-none relative z-10 flex items-center gap-4 py-5">
-              <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
-                <WandSparkles className="size-5" />
-              </span>
-              <div className="min-w-0">
-                <div className="font-heading text-base font-semibold">{t.chat.scenarios.dynamic[0]}</div>
-                <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">{t.chat.scenarios.dynamic[1]}</p>
+          <Card className="overflow-hidden border-primary/25 bg-primary/7 transition-all hover:border-primary/45 hover:shadow-md sm:col-span-2 lg:col-span-3">
+            <CardContent className="flex flex-col gap-4 py-5 sm:flex-row sm:items-center">
+              <button
+                type="button"
+                aria-label={`${t.chat.scenarios.dynamic[0]}: ${t.chat.scenarios.dynamic[1]}`}
+                title={`${t.chat.scenarios.dynamic[0]}: ${t.chat.scenarios.dynamic[1]}`}
+                disabled={creatingSession}
+                onClick={() => void handleDynamicSession()}
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-4 rounded-xl text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-60"
+              >
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+                  <WandSparkles className="size-5" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block font-heading text-base font-semibold">{t.chat.scenarios.dynamic[0]}</span>
+                  <span className="mt-0.5 block text-sm leading-relaxed text-muted-foreground">{t.chat.scenarios.dynamic[1]}</span>
+                </span>
+              </button>
+              <div className="flex shrink-0 items-center justify-between gap-3 border-t border-primary/15 pt-3 sm:flex-col sm:items-end sm:border-t-0 sm:pt-0">
+                <span className="text-xs font-medium text-muted-foreground">{t.chat.sceneGenerationModel}</span>
+                <ToggleGroup
+                  value={[sceneGenerationMode]}
+                  onValueChange={(values) => {
+                    const selected = values[0]
+                    if (selected === "fast" || selected === "deep") setSceneGenerationMode(selected)
+                  }}
+                  disabled={creatingSession}
+                  className="rounded-lg border border-primary/20 bg-background/75 p-0.5"
+                  aria-label={t.chat.sceneGenerationModel}
+                >
+                  <ToggleGroupItem
+                    value="fast"
+                    className="h-8 rounded-md px-3 text-xs"
+                    title={`${t.chat.sceneGenerationFastHint}: ${selectedFastServerModel ? formatServerModelSelection(selectedFastServerModel) : selectedServerFastModelId}`}
+                  >
+                    {t.chat.sceneGenerationFast}
+                  </ToggleGroupItem>
+                  <ToggleGroupItem
+                    value="deep"
+                    className="h-8 rounded-md px-3 text-xs"
+                    title={`${t.chat.sceneGenerationDeepHint}: ${selectedDeepServerModel ? formatServerModelSelection(selectedDeepServerModel) : selectedServerDeepModelId}`}
+                  >
+                    {t.chat.sceneGenerationDeep}
+                  </ToggleGroupItem>
+                </ToggleGroup>
               </div>
             </CardContent>
           </Card>

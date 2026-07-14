@@ -15,6 +15,9 @@ import { EmptyState } from "@/components/empty-state"
 import { NoteCard } from "@/components/note-card"
 import { useLanguage } from "@/components/language-provider"
 
+const notebookTabClass = "h-auto min-h-10 w-full flex-none gap-1 px-2 py-1.5 text-xs whitespace-nowrap [overflow-wrap:normal] sm:text-sm"
+const notebookCountClass = "ml-0.5 px-1.5 tabular-nums"
+
 export default function NotebookPage() {
   const { data, isLoading } = useSWR("notes", () => getNotes())
   const notes = data?.notes ?? []
@@ -162,26 +165,26 @@ export default function NotebookPage() {
           ) : null}
 
           <Tabs defaultValue="all">
-            <TabsList className="grid w-full grid-cols-1 gap-1 group-data-horizontal/tabs:h-auto min-[360px]:grid-cols-2 sm:inline-flex sm:w-fit sm:gap-0 sm:group-data-horizontal/tabs:h-8">
-              <TabsTrigger className="h-auto min-h-8 py-1.5 sm:h-[calc(100%-1px)] sm:min-h-0 sm:py-0.5" value="all">
+            <TabsList className="grid w-full grid-cols-2 gap-1 group-data-horizontal/tabs:h-auto md:grid-cols-4">
+              <TabsTrigger className={notebookTabClass} value="all">
                 <BookOpen data-icon="inline-start" />
                 {t.notebook.all}
-                <Badge variant="secondary" className="ml-1 tabular-nums">{visibleNotes.length}</Badge>
+                <Badge variant="secondary" className={notebookCountClass}>{visibleNotes.length}</Badge>
               </TabsTrigger>
-              <TabsTrigger className="h-auto min-h-8 py-1.5 sm:h-[calc(100%-1px)] sm:min-h-0 sm:py-0.5" value="expression">
+              <TabsTrigger className={notebookTabClass} value="expression">
                 <Lightbulb data-icon="inline-start" />
                 {t.notebook.expression}
-                <Badge variant="secondary" className="ml-1 tabular-nums">{expressionNotes.length}</Badge>
+                <Badge variant="secondary" className={notebookCountClass}>{expressionNotes.length}</Badge>
               </TabsTrigger>
-              <TabsTrigger className="h-auto min-h-8 py-1.5 sm:h-[calc(100%-1px)] sm:min-h-0 sm:py-0.5" value="vocabulary">
+              <TabsTrigger className={notebookTabClass} value="vocabulary">
                 <BookA data-icon="inline-start" />
                 {t.notebook.vocabulary}
-                <Badge variant="secondary" className="ml-1 tabular-nums">{vocabularyNotes.length}</Badge>
+                <Badge variant="secondary" className={notebookCountClass}>{vocabularyNotes.length}</Badge>
               </TabsTrigger>
-              <TabsTrigger className="h-auto min-h-8 py-1.5 sm:h-[calc(100%-1px)] sm:min-h-0 sm:py-0.5" value="grammar">
+              <TabsTrigger className={notebookTabClass} value="grammar">
                 <GraduationCap data-icon="inline-start" />
                 {t.notebook.grammar}
-                <Badge variant="secondary" className="ml-1 tabular-nums">{grammarNotes.length}</Badge>
+                <Badge variant="secondary" className={notebookCountClass}>{grammarNotes.length}</Badge>
               </TabsTrigger>
             </TabsList>
 

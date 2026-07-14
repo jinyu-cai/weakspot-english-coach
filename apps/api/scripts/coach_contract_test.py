@@ -25,15 +25,17 @@ from app.models.coach import (
     CoachSpeechRequest,
     InputLab2TranscriptMissionRequest,
 )
+from app.services.ai_client import LLMProviderConfig
 from app.services.chat_service import build_chat_messages, build_predict_messages
 from app.services.coach_service import (
     SCENARIO_FAMILIES,
     generate_coach_mission,
     generate_transcript_mission,
+    selected_coach_model,
     select_scenario_family,
 )
-from app.services.diagnose_service import build_diagnose_user_prompt
 from app.services import tts_service
+from app.services.diagnose_service import build_diagnose_user_prompt
 
 
 def main() -> None:
@@ -83,6 +85,21 @@ def main() -> None:
 
     only_unused = SCENARIO_FAMILIES[-1]
     assert select_scenario_family(list(SCENARIO_FAMILIES[:-1])) == only_unused
+
+    model_pair = LLMProviderConfig(
+        api_key="deep-key",
+        base_url="https://deep.example/v1",
+        model="deep-model",
+        fast_model="fast-model",
+        fast_api_key="fast-key",
+        fast_base_url="https://fast.example/v1",
+    )
+    assert selected_coach_model(
+        CoachMissionRequest(generationMode="fast"), model_pair
+    ) == "fast-model"
+    assert selected_coach_model(
+        CoachMissionRequest(generationMode="deep"), model_pair
+    ) == "deep-model"
 
     scene_session = ChatCreateSessionRequest(
         userId="ignored-by-server",
