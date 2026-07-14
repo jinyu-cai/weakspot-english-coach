@@ -18,6 +18,40 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-13 — PR #37 release completion
+
+Date: 2026-07-13
+
+Branch: `main` at merge commit `b8604e4`
+
+GitHub status: PR #37 merged. Vercel reported the merge-commit Production
+Deployment as `success`.
+
+Deploy status: LIVE. The merged `apps/api` archive was deployed only to
+`oracle-us-sj`; the helper preserved `.env`, confirmed the existing DynamoDB
+table and TTL, recreated `weakspot-api`, and passed local health. Cloudflare
+remains on the Oracle origin. Alibaba was not changed.
+
+Production verification:
+
+- `https://englearning.jinxxx.de` returns the adopted UI and contains `Start
+  here` plus `Start with English you already use`.
+- Public API health returns `{"status":"ok"}` and production CORS allows the
+  frontend origin with credentials.
+- Public Chat and Input Learning list responses contain `count` and
+  `nextCursor`; the legacy Input `limit` request also remains valid.
+- The production model catalogue exposes only the Oracle DeepSeek default,
+  deep and fast slots.
+
+Known verification limitation: no in-app visual-browser instance was available
+after the production deploy, so a second live screenshot pass could not run.
+The same UI had already passed local narrow-screen review, TypeScript, ESLint,
+Next.js production build, Vercel Preview and Vercel Production deployment.
+
+Next step: review the guided-learning report and decide whether to prototype
+the P0 Today’s Mission, Scene Director, graduated text hints and Input-to-Output
+loop. No Coach Mode recommendation was implemented in PR #37.
+
 ## 2026-07-13 — Warm UI adopted, complete learning history, and guided-learning strategy
 
 Date: 2026-07-13
