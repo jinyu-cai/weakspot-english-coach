@@ -24,12 +24,14 @@ Date: 2026-07-14
 
 Branch: `fix/natural-stealth-practice`
 
-GitHub status: release branch is locally validated and ready to push for review;
-not merged at the time of this entry.
+GitHub status: PR #44 merged into `main` at merge commit `5aa7f40`. Its
+Vercel Preview and merge-commit Production deployments both passed.
 
-Deploy status: pending merge. This release changes both FastAPI and the chat
-summary UI, so Oracle must be rebuilt after merge and Vercel must publish the
-merged frontend. Alibaba and the Cloudflare origin are out of scope.
+Deploy status: LIVE. The exact merged `origin/main:apps/api` archive was
+SHA-256 verified and deployed to `oracle-us-sj`; the production `.env` and old
+backend directory were preserved, table/TTL setup passed, and the recreated
+container passed local and public health checks. Vercel Production published
+the merged frontend. Cloudflare remains on Oracle; Alibaba was not changed.
 
 Summary:
 
@@ -63,9 +65,19 @@ Known issues: whether a follow-up feels natural is still partly a model-level
 judgment. The generation prompt may skip a scheduled target, and the analysis
 then records `no_opportunity` without changing mastery or retention.
 
-Next step: push the branch, merge the reviewed PR, deploy the exact merged API
-to Oracle, let Vercel publish production, and verify public health plus the
-production routes.
+Production verification:
+
+- `https://enapi.jinxxx.de/api/v1/health` returns `{"status":"ok"}` and the
+  model catalogue exposes only the Oracle DeepSeek deep/fast choices.
+- Production CORS allows `https://englearning.jinxxx.de`, and `/chat` returns
+  200 from the production frontend.
+- The running Oracle container reports healthy and loads the plural assessment
+  schema plus the three-target turn schedule (`2/4/6`). Its post-deploy logs
+  contain only successful startup and verification requests.
+
+Next step: monitor real conversations for naturalness and `no_opportunity`
+rates. Before the final demonstration, deploy the selected final `main` commit
+to Alibaba in the separate release window; do not switch Cloudflare now.
 
 ## 2026-07-13 — Deep scene generation choice and Notebook tab layout fix
 
