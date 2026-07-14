@@ -12,6 +12,8 @@ Run from the apps/api directory:
 import json
 from decimal import Decimal
 
+from pydantic import ValidationError
+
 
 def main() -> None:
     # 1. Import the FastAPI app (exercises config, routes, services, db, models)
@@ -25,7 +27,7 @@ def main() -> None:
 
     # 2. JSON schema generation for every AI response model.
     from app.models.chat_import import ChatImportAIResult
-    from app.models.diagnostic import DiagnosticAIResult
+    from app.models.diagnostic import DiagnoseRequest, DiagnosticAIResult
     from app.models.plan import LearningPlanAIResult
     from app.models.practice import PracticeExerciseAIResult, PracticeGradeAIResult
 
@@ -74,6 +76,17 @@ def main() -> None:
     result = DiagnosticAIResult.model_validate(sample)
     assert result.errors[0].code == "grammar.verb_tense"
     print("Sample DiagnosticAIResult validated OK.")
+
+    # The writing UI and API both use a five-word minimum. This short valid
+    # example deliberately has fewer than the previous 20-character minimum.
+    assert DiagnoseRequest(userId="u1", text="I am at a TV.").text == "I am at a TV."
+    for too_short in ("Only four words here", "... !!!"):
+        try:
+            DiagnoseRequest(userId="u1", text=too_short)
+            raise AssertionError(f"Short diagnostic input was accepted: {too_short!r}")
+        except ValidationError:
+            pass
+    print("Diagnose word-count validation OK (minimum 5 meaningful words).")
 
     from app.config import Settings
     from app.services.ai_client import _provider_connection, _uses_model_studio_qwen

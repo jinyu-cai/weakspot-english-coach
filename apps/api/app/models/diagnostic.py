@@ -1,6 +1,7 @@
+import re
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.common import CEFRLevel, OutputLanguage, Severity
 from app.models.memory import MemoryCandidate
@@ -8,14 +9,30 @@ from app.models.memory import MemoryCandidate
 
 DiagnosisMode = Literal["fast", "deep"]
 NoteType = Literal["expression", "vocabulary", "grammar"]
+MIN_DIAGNOSE_WORDS = 5
+
+
+def _word_count(value: str) -> int:
+    return sum(
+        1
+        for token in re.split(r"\s+", value.strip())
+        if token and re.search(r"[^\W_]", token, flags=re.UNICODE)
+    )
 
 
 class DiagnoseRequest(BaseModel):
     userId: str
-    text: str = Field(min_length=20)
+    text: str = Field(min_length=1)
     diagnosisMode: DiagnosisMode = "fast"
     outputLanguage: OutputLanguage = "en"
     analysisContext: Optional[str] = Field(default=None, max_length=2400)
+
+    @field_validator("text")
+    @classmethod
+    def require_enough_words(cls, value: str) -> str:
+        if _word_count(value) < MIN_DIAGNOSE_WORDS:
+            raise ValueError(f"Write at least {MIN_DIAGNOSE_WORDS} words.")
+        return value
 
 
 class DiagnosticErrorAI(BaseModel):
