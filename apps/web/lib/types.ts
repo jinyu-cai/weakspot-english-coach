@@ -512,6 +512,7 @@ export interface InputLearningAnalyzeRequest {
 export interface InputLearningSourcesResponse {
   sources: InputLearningSource[]
   count: number
+  nextCursor?: string | null
 }
 
 export interface InputLearningAnalyzeResponse {
@@ -567,6 +568,8 @@ export interface ChatSendResponse {
 
 export interface ChatSessionsResponse {
   sessions: ChatSession[]
+  count?: number
+  nextCursor?: string | null
 }
 
 export interface ChatMessagesResponse {

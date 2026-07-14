@@ -73,7 +73,7 @@ DELETE /notes/{note_id}
 GET  /stats/daily/{user_id}?timezone=<IANA timezone>&days=7
 
 POST /chat/sessions
-GET  /chat/sessions
+GET  /chat/sessions                    # cursor-paged; pageSize is not a total cap
 GET  /chat/sessions/{session_id}/messages
 POST /chat/send
 POST /chat/predict
@@ -95,7 +95,7 @@ GET  /memory/next-action
 GET  /memory/stealth-next?modality=text_chat&topic=... # owner-only due-target QA preview
 
 POST /input-learning/analyze       # grounded capture or pre-consumption attention mission
-GET  /input-learning               # list the current learner's captures
+GET  /input-learning               # cursor-paged; pageSize is not a total cap
 GET  /input-learning/{source_id}   # capture, grounded items, and optional mission
 DELETE /input-learning/{source_id} # remove the learner-owned capture and derivatives
 
@@ -123,6 +123,22 @@ submission and error repositories follow DynamoDB `LastEvaluatedKey` across all
 query pages, while notes use the same unbounded pagination behavior documented
 below. Other services may deliberately request a bounded recent subset for AI
 context or dashboard summaries; that does not limit the learner-facing History.
+
+Chat-session and Input Learning history use bounded cursor pages instead of one
+ever-growing response. Their list responses include `nextCursor`; clients keep
+following it until it is `null`. `pageSize` is only the per-request batch size
+(maximum 100), not a lifetime or display limit. Invalid or cross-user cursors
+are rejected, and browsing chat history does not consume a generative-chat
+quota event. Chat pages use the `messageCount` maintained atomically on each
+session; listing sessions never rescans `CHATMSG#`, `CHATBATCH#`, or
+`CHATSTAGE#` transcript rows. A missing or invalid stored count is returned as
+zero rather than triggering an archive scan.
+
+For compatibility, `GET /input-learning?limit=N` still supports the legacy
+one-page request with `N` from 1 through 200 and returns at most that explicit
+number. New clients should use `pageSize` plus `nextCursor` for an archive with
+no total limit. `limit` cannot be combined with `cursor` or `pageSize`; mixed
+pagination modes return `400 ambiguous_pagination`.
 
 ## Notebook API and lifecycle
 

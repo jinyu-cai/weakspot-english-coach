@@ -3,19 +3,21 @@ import logging
 import time
 from uuid import uuid4
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
-from app.api.deps import Identity, get_llm_provider, rate_limited
+from app.api.deps import Identity, get_llm_provider, rate_limited, resolve_identity
 from app.config import settings
 from app.core.mastery import update_skill_from_error
+from app.core.pagination import decode_dynamo_cursor, encode_dynamo_cursor
 from app.core.taxonomy import ERROR_TAXONOMY
+from app.db.keys import user_pk
 from app.db.repositories import (
     claim_chat_session_analysis,
     claim_chat_session_turn,
     finalize_chat_session_turn,
     get_chat_session,
     list_chat_messages,
-    list_chat_sessions,
+    list_chat_sessions_page,
     list_skills,
     now_iso,
     save_chat_session,
@@ -255,10 +257,31 @@ def create_session(
 
 @router.get("/sessions")
 def get_sessions(
-    identity: Identity = Depends(rate_limited("chat")),
+    page_size: int = Query(default=50, alias="pageSize", ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=2048),
+    identity: Identity = Depends(resolve_identity),
 ):
-    sessions = list_chat_sessions(identity.user_id)
-    return {"sessions": [_public_session(session) for session in sessions]}
+    try:
+        start_key = decode_dynamo_cursor(
+            cursor,
+            expected_pk=user_pk(identity.user_id),
+            expected_sk_prefix="CHAT#",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_cursor", "message": str(exc)},
+        ) from exc
+    sessions, next_key = list_chat_sessions_page(
+        identity.user_id,
+        page_size=page_size,
+        start_key=start_key,
+    )
+    return {
+        "sessions": [_public_session(session) for session in sessions],
+        "count": len(sessions),
+        "nextCursor": encode_dynamo_cursor(next_key),
+    }
 
 
 @router.get("/sessions/{session_id}/messages")

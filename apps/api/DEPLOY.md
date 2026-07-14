@@ -2,14 +2,22 @@
 
 Deploys the FastAPI backend on a Linux server, behind Nginx with a real HTTPS
 certificate, talking to a configured OpenAI-compatible text provider and real
-AWS DynamoDB. The primary deployment uses Alibaba Model Studio Qwen; DeepSeek
-remains supported as a provider or standby. This guide assumes Ubuntu/Debian
-(`apt`). The frontend is on Vercel and calls this backend over HTTPS.
+AWS DynamoDB. Oracle Cloud is the normal production origin and uses the
+DeepSeek profile. Alibaba Cloud ECS uses Alibaba Model Studio Qwen and is kept
+as the release-matched final-demo origin; it should receive public traffic only
+during the planned Qwen Cloud Hackathon demonstration/evidence window. This
+guide applies to either Ubuntu/Debian host (`apt`). The frontend is on Vercel
+and always calls the stable Cloudflare API hostname.
 
 Text diagnosis/chat/analysis uses the configured Qwen, provider-neutral, or
 DeepSeek profile. Realtime voice is separate and uses the official OpenAI
 Realtime API, so voice-enabled production also needs an OpenAI API key on the
 backend server.
+
+For ordinary releases, deploy and verify Oracle only. Before the final demo,
+deploy the exact same Git commit to Alibaba, verify local health and the model
+catalog, then switch the Cloudflare origin manually. A frontend-only release
+does not require either backend to restart and must not change the origin.
 
 ## 0. Prerequisites (once)
 

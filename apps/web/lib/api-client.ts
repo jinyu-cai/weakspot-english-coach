@@ -16,7 +16,8 @@
  *  GET  /history/{userId}                                    -> HistoryResponse
  *  GET  /stats/daily/{userId}?timezone=<IANA>&days=7         -> DailyStatsResponse
  *  POST /input-learning/analyze { sourceType, title, ... }    -> { source }
- *  GET  /input-learning                                      -> { sources, count }
+ *  GET  /input-learning?pageSize=&cursor=                    -> { sources, count, nextCursor }
+ *  GET  /chat/sessions?pageSize=&cursor=                     -> { sessions, count, nextCursor }
  */
 
 import type {
@@ -142,6 +143,19 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(message)
   }
   return payload as T
+}
+
+const LEARNER_HISTORY_PAGE_SIZE = 100
+
+function newestFirst<T extends { id: string; createdAt: string }>(left: T, right: T) {
+  return right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id)
+}
+
+function nextPageCursor(nextCursor: string | null | undefined, seen: Set<string>) {
+  if (!nextCursor) return undefined
+  if (seen.has(nextCursor)) throw new Error("The server returned a repeated history cursor.")
+  seen.add(nextCursor)
+  return nextCursor
 }
 
 export async function getServerLLMModels(): Promise<ServerLLMModel[]> {
@@ -915,7 +929,18 @@ export async function getInputLearningSources(): Promise<InputLearningSourcesRes
       count: mockInputLearningSources.length,
     }
   }
-  return apiFetch<InputLearningSourcesResponse>("/input-learning")
+  const sources = new Map<string, InputLearningSource>()
+  const seenCursors = new Set<string>()
+  let cursor: string | undefined
+  do {
+    const params = new URLSearchParams({ pageSize: String(LEARNER_HISTORY_PAGE_SIZE) })
+    if (cursor) params.set("cursor", cursor)
+    const page = await apiFetch<InputLearningSourcesResponse>(`/input-learning?${params.toString()}`)
+    for (const source of page.sources) sources.set(source.id, source)
+    cursor = nextPageCursor(page.nextCursor, seenCursors)
+  } while (cursor)
+  const completeHistory = [...sources.values()].sort(newestFirst)
+  return { sources: completeHistory, count: completeHistory.length, nextCursor: null }
 }
 
 export async function getInputLearningSource(sourceId: string): Promise<InputLearningSource> {
@@ -973,8 +998,17 @@ export async function getChatSessions(
     await delay(300)
     return []
   }
-  const { sessions } = await apiFetch<ChatSessionsResponse>("/chat/sessions")
-  return sessions
+  const sessions = new Map<string, ChatSession>()
+  const seenCursors = new Set<string>()
+  let cursor: string | undefined
+  do {
+    const params = new URLSearchParams({ pageSize: String(LEARNER_HISTORY_PAGE_SIZE) })
+    if (cursor) params.set("cursor", cursor)
+    const page = await apiFetch<ChatSessionsResponse>(`/chat/sessions?${params.toString()}`)
+    for (const session of page.sessions) sessions.set(session.id, session)
+    cursor = nextPageCursor(page.nextCursor, seenCursors)
+  } while (cursor)
+  return [...sessions.values()].sort(newestFirst)
 }
 
 export async function getChatMessages(

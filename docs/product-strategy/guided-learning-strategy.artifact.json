@@ -1,0 +1,714 @@
+{
+  "surface": "report",
+  "manifest": {
+    "version": 1,
+    "surface": "report",
+    "title": "Guided Learning Strategy",
+    "description": "A product strategy for turning Weakspot English Coach from a learner-led toolbox into a warm, proactive coach without removing existing capabilities.",
+    "generatedAt": "2026-07-13T19:00:00Z",
+    "cards": [],
+    "charts": [
+      {
+        "id": "delivery_readiness",
+        "title": "现有能力让前三项可以更快落地",
+        "subtitle": "方向性复用成熟度指数（1–5），不是开发工期或真实用户指标。",
+        "type": "horizontalBar",
+        "dataset": "delivery_readiness",
+        "sourceId": "delivery_readiness_rubric",
+        "encodings": {
+          "x": {
+            "field": "capability",
+            "type": "nominal",
+            "label": "能力"
+          },
+          "y": {
+            "field": "readiness",
+            "type": "quantitative",
+            "label": "复用成熟度",
+            "format": "number"
+          }
+        },
+        "yAxisTitle": "复用成熟度（1–5）",
+        "valueFormat": "number",
+        "layout": "full"
+      }
+    ],
+    "tables": [
+      {
+        "id": "current_gaps",
+        "title": "用户真正卡住的地方",
+        "subtitle": "问题不只是空白页，而是由用户承担了内容选择、场景启动和学习路径编排。",
+        "dataset": "current_gaps",
+        "sourceId": "current_gaps_synthesis",
+        "defaultSort": {
+          "field": "stage",
+          "direction": "asc"
+        },
+        "density": "comfortable",
+        "layout": "full",
+        "columns": [
+          {
+            "field": "stage",
+            "label": "环节",
+            "type": "text"
+          },
+          {
+            "field": "current",
+            "label": "当前体验",
+            "type": "text"
+          },
+          {
+            "field": "missing",
+            "label": "缺少的引导",
+            "type": "text"
+          },
+          {
+            "field": "existing_asset",
+            "label": "可复用能力",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "id": "mission_portfolio",
+        "title": "由系统提供的任务组合",
+        "subtitle": "不同任务产生不同证据；轮换比无限随机话题更有诊断价值。",
+        "dataset": "mission_portfolio",
+        "sourceId": "mission_portfolio_synthesis",
+        "defaultSort": {
+          "field": "order",
+          "direction": "asc"
+        },
+        "density": "comfortable",
+        "layout": "full",
+        "columns": [
+          {
+            "field": "order",
+            "label": "顺序",
+            "type": "text"
+          },
+          {
+            "field": "mission",
+            "label": "任务",
+            "type": "text"
+          },
+          {
+            "field": "learner_experience",
+            "label": "用户看到什么",
+            "type": "text"
+          },
+          {
+            "field": "evidence",
+            "label": "主要发现什么",
+            "type": "text"
+          },
+          {
+            "field": "guardrail",
+            "label": "关键边界",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "id": "roadmap",
+        "title": "建议实施顺序",
+        "subtitle": "先复用现有闭环解决“不知道做什么”，再扩展证据模型和内容供给。",
+        "dataset": "roadmap",
+        "sourceId": "roadmap_synthesis",
+        "defaultSort": {
+          "field": "order",
+          "direction": "asc"
+        },
+        "density": "comfortable",
+        "layout": "full",
+        "columns": [
+          {
+            "field": "order",
+            "label": "顺序",
+            "type": "text"
+          },
+          {
+            "field": "priority",
+            "label": "优先级",
+            "type": "text"
+          },
+          {
+            "field": "capability",
+            "label": "能力",
+            "type": "text"
+          },
+          {
+            "field": "reuse",
+            "label": "复用现有系统",
+            "type": "text"
+          },
+          {
+            "field": "new_work",
+            "label": "主要新增工作",
+            "type": "text"
+          },
+          {
+            "field": "user_value",
+            "label": "用户价值",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "id": "measurement",
+        "title": "上线后的衡量方式",
+        "subtitle": "先埋点与建立基线，再设绝对目标；核心不是消息量，而是独立输出和延迟迁移。",
+        "dataset": "measurement",
+        "sourceId": "measurement_synthesis",
+        "defaultSort": {
+          "field": "order",
+          "direction": "asc"
+        },
+        "density": "comfortable",
+        "layout": "full",
+        "columns": [
+          {
+            "field": "order",
+            "label": "顺序",
+            "type": "text"
+          },
+          {
+            "field": "role",
+            "label": "角色",
+            "type": "text"
+          },
+          {
+            "field": "metric",
+            "label": "指标",
+            "type": "text"
+          },
+          {
+            "field": "definition",
+            "label": "定义",
+            "type": "text"
+          },
+          {
+            "field": "decision",
+            "label": "支持的决策",
+            "type": "text"
+          }
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "id": "strategy_notes",
+        "label": "Repository audit and research synthesis",
+        "path": "docs/product-strategy/GUIDED_LEARNING_EVIDENCE.md"
+      },
+      {
+        "id": "delivery_readiness_rubric",
+        "label": "Directional delivery-readiness rubric",
+        "path": "docs/product-strategy/GUIDED_LEARNING_EVIDENCE.md",
+        "query": {
+          "engine": "duckdb",
+          "language": "sql",
+          "description": "Reproduces the reviewed 1–5 planning rubric documented in the evidence notes; this is directional product synthesis, not learner telemetry.",
+          "sql": "SELECT * FROM (VALUES ('文字聊天渐进提示', 5), ('Today’s Mission', 4), ('Scene Director', 4), ('Input → Output 闭环', 4), ('Discovery + SkillCoverage', 2), ('自有内容 + 更广口语模型', 1)) AS rubric(capability, readiness)"
+        }
+      },
+      {
+        "id": "current_gaps_synthesis",
+        "label": "Current journey gap synthesis",
+        "path": "docs/product-strategy/GUIDED_LEARNING_EVIDENCE.md",
+        "query": {
+          "engine": "duckdb",
+          "language": "sql",
+          "description": "Reproduces the reviewed mapping from current product stages to missing guidance and reusable repository capabilities.",
+          "sql": "SELECT * FROM (VALUES ('1. Start', 'Paste 需要用户先有一段自己的英文；示例只能减轻空白感。', '系统直接给一个三到八分钟、可评分的今日任务。', 'Diagnose、Memory、Decision'), ('2. Chat', '少量固定场景，用户仍面对空白对话并通常先开口。', 'AI 先进入动态场景，给目标、信息差、转折和成功条件。', 'Chat session、scenarioPrompt、stealth probe、predict'), ('3. Input', '用户仍要选择视频、找字幕；看完后的输出不是必经步骤。', '系统提供分级短素材，并闭合到复述、新场景应用和延迟回忆。', 'Grounded Capture、Attention Mission、episode memory'), ('4. Discovery', '系统能追踪已发现弱点，但难以区分掌握与从未被测试。', '跨任务、模态和独立程度的 SkillCoverage。', 'SkillState、Memory、fair-opportunity outcomes')) AS gaps(stage, current, missing, existing_asset)"
+        }
+      },
+      {
+        "id": "mission_portfolio_synthesis",
+        "label": "Guided mission portfolio synthesis",
+        "path": "docs/product-strategy/GUIDED_LEARNING_EVIDENCE.md",
+        "query": {
+          "engine": "duckdb",
+          "language": "sql",
+          "description": "Reproduces the reviewed mission portfolio and the evidence and guardrail mapping for each mission family.",
+          "sql": "SELECT * FROM (VALUES ('1', 'Guided scene', '在真实目标中与 AI 解决问题，AI 先开口并推动状态变化。', '互动、语域、提问、澄清、目标弱点的自然使用。', '保存提示级别；避免把模型范例后的回答算作独立掌握。'), ('2', 'Picture story', '描述单图或按图片顺序讲故事。', '时态、位置、连接、事件顺序、推测和原因。', '与无图表达轮换，避免视觉线索替代内容组织。'), ('3', 'Listen and retell', '听短内容、先确认理解，再关闭文本复述。', '听力理解、信息保留、概括和口语组织。', '先区分听不懂与表达不出；ASR 不确定时降低证据置信度。'), ('4', 'Information gap', '通过提问和确认找出缺失的日程、路线或订单信息。', '问句、澄清、沟通修复、介词、数量与时间表达。', '任务必须真的存在信息差，而不是普通问答换皮。'), ('5', 'Micro write', '回复真实消息、解释决定、讲述经历或比较方案。', '写作组织、语法、词汇、语域和清晰度。', '场景和目的由系统给出，不要求用户先准备作文。'), ('6', 'Input loop', '系统提供短素材，用户理解、注意表达、复述并迁移使用。', '从识别到独立提取，再到新场景产出的完整链路。', '看过和收藏不是掌握；外部素材需处理字幕质量与版权。')) AS missions(order_id, mission, learner_experience, evidence, guardrail)"
+        }
+      },
+      {
+        "id": "roadmap_synthesis",
+        "label": "Guided learning delivery roadmap synthesis",
+        "path": "docs/product-strategy/GUIDED_LEARNING_EVIDENCE.md",
+        "query": {
+          "engine": "duckdb",
+          "language": "sql",
+          "description": "Reproduces the recommended implementation order derived from repository reuse and product dependency review.",
+          "sql": "SELECT * FROM (VALUES ('1', 'P0', 'Today’s Mission', 'Decision、Memory、Stats、Practice、Chat', 'Coach 编排接口、ActivityRun、首页主入口', '无需理解功能结构或先决定练什么。'), ('2', 'P0', 'Scene Director + AI opening', 'Chat session、scenarioPrompt、stealth probe', 'ScenarioSpec、状态、目标、转折、fingerprint', '不面对空白输入，场景可持续变化。'), ('3', 'P0', 'Graduated hints', '现有 chat predict endpoint 与 hintLevel 语义', '文字 UI、四级帮助和证据标记', '卡住时继续完成，又不掩盖真实独立程度。'), ('4', 'P0', 'Input → Output loop', 'Input Learning、Diagnose、Practice、Chat、Memory', '复述、应用与延迟回忆步骤', '不用找字幕，也能把看懂转成真正会用。'), ('5', 'P1', 'Discovery Sprint + SkillCoverage', 'SkillState、session analysis、fair opportunity', 'EvidenceEvent、覆盖置信度、混合任务调度', '即使平时不写东西，也能逐步发现未知弱点。'), ('6', 'P1–P2', 'Owned content and broader speaking model', 'Input episode memory、retention scheduling', '内容目录、权利元数据、听力互动维度、可靠音频评分', '长期获得稳定供料，并逐步覆盖更多真实英语能力。')) AS roadmap(order_id, priority, capability, reuse, new_work, user_value)"
+        }
+      },
+      {
+        "id": "measurement_synthesis",
+        "label": "Guided learning KPI framework",
+        "path": "docs/product-strategy/GUIDED_LEARNING_EVIDENCE.md",
+        "query": {
+          "engine": "duckdb",
+          "language": "sql",
+          "description": "Reproduces the proposed outcome, driver and guardrail definitions. These are metric specifications, not observed learner results.",
+          "sql": "SELECT * FROM (VALUES ('1', 'Primary', 'First meaningful output', '新用户在首次会话完成至少一次可评分的独立英语输出。', 'Coach 是否真正消除了不知道做什么的启动障碍。'), ('2', 'Primary', 'Evidence yield', '每个已开始任务产生的公平、可评分、独立机会。', '任务是否既自然又有诊断价值。'), ('3', 'Primary', 'Delayed transfer success', '目标在延迟后的新场景中无提示或低提示独立使用成功。', '练习是否转化为稳定能力，而非短期模仿。'), ('4', 'Driver', 'Mission start and completion', '看到推荐后开始并完成任务的比例，按时长与任务类型拆分。', '入口、任务长度与难度是否合适。'), ('5', 'Driver', 'Hint dependence', '同一目标跨尝试所需的最高提示等级变化。', '用户是否从 assisted 走向 independent。'), ('6', 'Driver', 'Coverage growth', '获得足够证据的技能 × 模态 × 场景组合增长。', '系统是否在发现未知能力，而非只重复已知弱点。'), ('7', 'Guardrail', 'No-opportunity and contradiction', '没有公平机会、后续证据反驳或用户纠正判断的比例。', '弱点模型是否制造假阳性。'), ('8', 'Guardrail', 'Abandonment, latency and ASR uncertainty', '任务放弃、响应等待、模型成本与低置信语音证据。', '学习质量提升是否以挫败、速度或不可靠判断为代价。')) AS metrics(order_id, role, metric, definition, decision)"
+        }
+      },
+      {
+        "id": "repository",
+        "label": "Weakspot English Coach repository",
+        "path": "README.md"
+      },
+      {
+        "id": "actfl_2024",
+        "label": "ACTFL Proficiency Guidelines 2024",
+        "href": "https://www.actfl.org/uploads/files/general/Resources-Publications/ACTFL_Proficiency_Guidelines_2024.pdf"
+      },
+      {
+        "id": "cefr_2020",
+        "label": "CEFR Companion Volume 2020",
+        "href": "https://rm.coe.int/cefr-companion-volume-with-new-descriptors-2020/16809ea0d4"
+      },
+      {
+        "id": "diagnostic_assessment",
+        "label": "Diagnostic assessment in second language learning",
+        "href": "https://doi.org/10.1177/0265532214564505"
+      },
+      {
+        "id": "captioned_video",
+        "label": "Meta-analysis of captioned video",
+        "href": "https://doi.org/10.1016/j.system.2013.07.013"
+      },
+      {
+        "id": "corrective_feedback",
+        "label": "Meta-analysis of oral corrective feedback",
+        "href": "https://doi.org/10.1017/S0272263109990520"
+      },
+      {
+        "id": "spaced_practice",
+        "label": "Meta-analysis of L2 spaced practice",
+        "href": "https://doi.org/10.1111/lang.12479"
+      },
+      {
+        "id": "asr_inclusivity",
+        "label": "ASR inclusivity for non-native English",
+        "href": "https://doi.org/10.1016/j.csl.2023.101567"
+      }
+    ],
+    "blocks": [
+      {
+        "id": "title",
+        "type": "markdown",
+        "body": "# Guided Learning Strategy"
+      },
+      {
+        "id": "executive_summary",
+        "type": "markdown",
+        "body": "## Executive Summary\n\n**建议把产品从“等待用户选择工具和提供材料”升级为“每天主动安排一项可完成任务的教练”。**\n\n- 现有后端已经能诊断、记录弱点、生成练习、安排隐形复测并判断提示下成功与独立成功；最缺的是替用户决定“现在做什么”的活动编排层。\n- 第一优先级应是 **Today’s Mission / Coach Mode**：用户只选时间、文字或语音、精力，系统负责给素材、先开场、逐级提示、要求重做并安排后续迁移。\n- Chat 应从固定话题升级为有目标、信息差、转折和成功条件的 Scene Director；Input Lab 应从“帮用户分析自找素材”升级为“系统供料，并强制闭合到复述和新场景应用”。\n- 弱点模型必须把“尚未测过”与“不是弱点”分开，并记录独立程度、任务、模态、上下文和延迟迁移。\n- 不减少任何现有功能：Paste、自由聊天、Practice、Plan、Memory 和外部素材继续保留，Coach Mode 只是更清楚的默认入口。"
+      },
+      {
+        "id": "product_decision",
+        "type": "markdown",
+        "body": "## 产品决策：从工具箱变成会主动带路的教练\n\n用户说“不知道粘贴什么、看什么、聊什么”，并不是缺少示例文案，而是系统仍把学习设计责任交给了用户。新的默认体验应让用户不需要了解自己的弱点，也不需要先准备英语素材。系统每天制造一个真实、可评分、可复练的语言使用机会；高级用户仍可自由进入现有工具。"
+      },
+      {
+        "id": "current_gaps_block",
+        "type": "table",
+        "tableId": "current_gaps",
+        "layout": "full"
+      },
+      {
+        "id": "today_mission",
+        "type": "markdown",
+        "sourceId": "strategy_notes",
+        "body": "## Today’s Mission：用户只需按下开始\n\n首页主行动建议是“今天帮我安排”。用户只选择 **5 / 10 / 15 分钟**、**文字 / 语音**以及 **轻松 / 正常 / 挑战**。系统按到期弱点、证据覆盖缺口、迁移需要、目标相关性、最近疲劳与新鲜度生成一项任务。\n\n统一闭环是：系统供给并先开场 → 用户无提示首答 → 卡住时逐级提示 → 只反馈一到两个关键问题 → 用户自我修正 → 立即重做 → 未来换场景延迟复练。这样每一次活动既是练习，也是带有独立程度的学习证据。"
+      },
+      {
+        "id": "mission_portfolio_block",
+        "type": "table",
+        "tableId": "mission_portfolio",
+        "layout": "full"
+      },
+      {
+        "id": "scene_director",
+        "type": "markdown",
+        "body": "## Chat：动态场景需要目标，而不只是随机话题\n\nScene Director 应从 `角色 × 地点 × 关系 × 目标 × 障碍 × 正式程度 × 目标弱点` 生成场景。AI 必须先说第一句；用户能看到自己的任务，但不知道系统正在观察哪个具体弱点。每个场景保存状态、成功条件、一次合理转折和防重复 fingerprint。\n\n“我卡住了”采用四级帮助：表达意图 → 关键词 → 句首 → 完整范例。提示级别进入证据；看过范例后答对属于有效练习，但不能标记为独立掌握。早期 AI 角色扮演研究有积极信号，但证据仍窄，因此它应与延迟复练和真实迁移共同验证，而不是被当作天然有效。[相关研究](https://doi.org/10.1002/tesq.70010)"
+      },
+      {
+        "id": "input_lab",
+        "type": "markdown",
+        "body": "## Input Lab：默认由系统供料，最后必须由用户输出\n\n保留用户链接、字幕粘贴和 Attention Mission，同时新增系统推荐的分级微内容：短、已核验字幕、权利清楚，并按目标与弱点选择。默认流程是：不看字幕听一次 → 回答理解问题 → 必要时打开英文字幕 → 选择一到三个表达 → 关闭字幕复述 → 在新情景使用 → 延迟回忆。\n\n字幕视频研究支持理解和词汇学习，但不能由此推断用户已经会独立使用这些表达；因此复述和迁移不是附加项，而是 Input Lab 形成弱点与掌握证据的关键闭环。[字幕视频元分析](https://doi.org/10.1016/j.system.2013.07.013)"
+      },
+      {
+        "id": "evidence_model",
+        "type": "markdown",
+        "body": "## 证据模型：把“没测过”与“没有弱点”分开\n\n建议同时维护两条状态：覆盖度 `unassessed → exploring → enough evidence`，弱点进展 `suspected → supported → assisted → independent → stable → archived`。每条 EvidenceEvent 记录任务、模态、上下文、公平机会、独立首答、提示级别、自我修正、延迟回忆、迁移结果和置信度。\n\n这也延续现有 History 语义：系统认为“不再是弱点”时只从活跃弱点中归档，历史证据仍可查看；只有用户明确确认永久删除时，后端才删除对应历史记录。语言诊断研究同样强调，多阶段证据应连接到具体支持与决策，而不是由单个例句下结论。[诊断评估研究](https://doi.org/10.1177/0265532214564505)"
+      },
+      {
+        "id": "feedback_spacing",
+        "type": "markdown",
+        "body": "## 反馈与复练：先让用户修正，再跨时间确认\n\n反馈不应每句直接改成标准答案。先指出缺失的语言意图或形式，让用户自己再说一次；仍失败时才逐级展开。纠错研究支持为学习者保留自我修正机会。[口头纠错元分析](https://doi.org/10.1017/S0272263109990520)\n\n同一目标需要经历当场重做、稍后提取和新人物或新任务中的迁移。间隔研究支持延迟检索，因此“提示后会说”只能推进到 assisted，不能立即解除弱点。[间隔练习元分析](https://doi.org/10.1111/lang.12479)"
+      },
+      {
+        "id": "architecture",
+        "type": "markdown",
+        "sourceId": "strategy_notes",
+        "body": "## 实现原则：新增一个薄编排层，复用现有学习闭环\n\n首版不需要重写诊断。新增 Coach 编排接口和 `ActivityRun`，调用现有 Decision、Memory、Practice、Chat、Input Learning 与 stealth probe。随后增加统一的 `EvidenceEvent` 和 `SkillCoverage`，让系统既知道哪些弱点到期，也知道哪些能力从未获得公平测试。"
+      },
+      {
+        "id": "delivery_readiness_block",
+        "type": "chart",
+        "chartId": "delivery_readiness",
+        "layout": "full"
+      },
+      {
+        "id": "roadmap_block",
+        "type": "table",
+        "tableId": "roadmap",
+        "layout": "full"
+      },
+      {
+        "id": "measurement_intro",
+        "type": "markdown",
+        "sourceId": "strategy_notes",
+        "body": "## 衡量成功：看独立输出和迁移，不看消息数量\n\n当前仓库没有覆盖这条新旅程的产品事件基线，因此不应先写一个看似精确的绝对目标。建议先完成埋点并建立两周基线，再比较 Coach 入口与现有工具入口的相对变化。"
+      },
+      {
+        "id": "measurement_block",
+        "type": "table",
+        "tableId": "measurement",
+        "layout": "full"
+      },
+      {
+        "id": "recommendation",
+        "type": "markdown",
+        "body": "## Recommendation\n\n下一轮设计与开发只聚焦一个清楚的产品承诺：**用户不用先知道自己要学什么，系统会给出今天最合适的一项英语任务，并把它带到完成。**\n\n建议先制作可点击的 Coach Mode + Scene Director 交互稿，再实现 P0：今日任务、AI 开场、渐进提示、Input 输出闭环和真正个性化的 Daily Wins。通过真实使用数据确认启动率、证据产出和延迟迁移改善后，再投入内容库与更广的听说能力模型。"
+      },
+      {
+        "id": "further_questions",
+        "type": "markdown",
+        "body": "## Further Questions\n\n- 第一版是否先以文字获得更可靠的证据，还是文字与语音同步上线？\n- 自有内容库先服务日常生活、工作、旅行还是学习场景？\n- 隐形弱点目标应在任务前展示，还是完成后再解释推荐原因？\n- 用户认为系统判断错误时，怎样保留历史证据同时纠正活跃弱点？\n- 什么程度的场景状态能在 DeepSeek fast / deep 组合下稳定运行并控制延迟？"
+      },
+      {
+        "id": "caveats",
+        "type": "markdown",
+        "body": "## Caveats and Assumptions\n\n- 本报告基于代码审计与公开研究，不是实际学习者行为数据分析。\n- 学习研究的效果依赖人群、任务与实施方式；这里用于确定实验方向，不代表保证效果。\n- ASR 对非母语口音可能存在系统性差异，转写不确定时不能直接写入发音或语法弱点。[ASR 研究](https://doi.org/10.1016/j.csl.2023.101567)\n- 内置内容需要明确授权、字幕质检和持续编辑成本。\n- 可参考 ACTFL 与 CEFR 的能力维度，但商业产品不应未经许可复制受限制的 Can-Do 文本。[ACTFL 2024](https://www.actfl.org/uploads/files/general/Resources-Publications/ACTFL_Proficiency_Guidelines_2024.pdf) · [CEFR 2020](https://rm.coe.int/cefr-companion-volume-with-new-descriptors-2020/16809ea0d4)"
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "generatedAt": "2026-07-13T19:00:00Z",
+    "status": "ready",
+    "datasets": {
+      "delivery_readiness": [
+        {
+          "capability": "文字聊天渐进提示",
+          "readiness": 5
+        },
+        {
+          "capability": "Today’s Mission",
+          "readiness": 4
+        },
+        {
+          "capability": "Scene Director",
+          "readiness": 4
+        },
+        {
+          "capability": "Input → Output 闭环",
+          "readiness": 4
+        },
+        {
+          "capability": "Discovery + SkillCoverage",
+          "readiness": 2
+        },
+        {
+          "capability": "自有内容 + 更广口语模型",
+          "readiness": 1
+        }
+      ],
+      "current_gaps": [
+        {
+          "stage": "1. Start",
+          "current": "Paste 需要用户先有一段自己的英文；示例只能减轻空白感。",
+          "missing": "系统直接给一个三到八分钟、可评分的今日任务。",
+          "existing_asset": "Diagnose、Memory、Decision"
+        },
+        {
+          "stage": "2. Chat",
+          "current": "少量固定场景，用户仍面对空白对话并通常先开口。",
+          "missing": "AI 先进入动态场景，给目标、信息差、转折和成功条件。",
+          "existing_asset": "Chat session、scenarioPrompt、stealth probe、predict"
+        },
+        {
+          "stage": "3. Input",
+          "current": "用户仍要选择视频、找字幕；看完后的输出不是必经步骤。",
+          "missing": "系统提供分级短素材，并闭合到复述、新场景应用和延迟回忆。",
+          "existing_asset": "Grounded Capture、Attention Mission、episode memory"
+        },
+        {
+          "stage": "4. Discovery",
+          "current": "系统能追踪已发现弱点，但难以区分掌握与从未被测试。",
+          "missing": "跨任务、模态和独立程度的 SkillCoverage。",
+          "existing_asset": "SkillState、Memory、fair-opportunity outcomes"
+        }
+      ],
+      "mission_portfolio": [
+        {
+          "order": "1",
+          "mission": "Guided scene",
+          "learner_experience": "在真实目标中与 AI 解决问题，AI 先开口并推动状态变化。",
+          "evidence": "互动、语域、提问、澄清、目标弱点的自然使用。",
+          "guardrail": "保存提示级别；避免把模型范例后的回答算作独立掌握。"
+        },
+        {
+          "order": "2",
+          "mission": "Picture story",
+          "learner_experience": "描述单图或按图片顺序讲故事。",
+          "evidence": "时态、位置、连接、事件顺序、推测和原因。",
+          "guardrail": "与无图表达轮换，避免视觉线索替代内容组织。"
+        },
+        {
+          "order": "3",
+          "mission": "Listen and retell",
+          "learner_experience": "听短内容、先确认理解，再关闭文本复述。",
+          "evidence": "听力理解、信息保留、概括和口语组织。",
+          "guardrail": "先区分听不懂与表达不出；ASR 不确定时降低证据置信度。"
+        },
+        {
+          "order": "4",
+          "mission": "Information gap",
+          "learner_experience": "通过提问和确认找出缺失的日程、路线或订单信息。",
+          "evidence": "问句、澄清、沟通修复、介词、数量与时间表达。",
+          "guardrail": "任务必须真的存在信息差，而不是普通问答换皮。"
+        },
+        {
+          "order": "5",
+          "mission": "Micro write",
+          "learner_experience": "回复真实消息、解释决定、讲述经历或比较方案。",
+          "evidence": "写作组织、语法、词汇、语域和清晰度。",
+          "guardrail": "场景和目的由系统给出，不要求用户先准备作文。"
+        },
+        {
+          "order": "6",
+          "mission": "Input loop",
+          "learner_experience": "系统提供短素材，用户理解、注意表达、复述并迁移使用。",
+          "evidence": "从识别到独立提取，再到新场景产出的完整链路。",
+          "guardrail": "看过和收藏不是掌握；外部素材需处理字幕质量与版权。"
+        }
+      ],
+      "roadmap": [
+        {
+          "order": "1",
+          "priority": "P0",
+          "capability": "Today’s Mission",
+          "reuse": "Decision、Memory、Stats、Practice、Chat",
+          "new_work": "Coach 编排接口、ActivityRun、首页主入口",
+          "user_value": "无需理解功能结构或先决定练什么。"
+        },
+        {
+          "order": "2",
+          "priority": "P0",
+          "capability": "Scene Director + AI opening",
+          "reuse": "Chat session、scenarioPrompt、stealth probe",
+          "new_work": "ScenarioSpec、状态、目标、转折、fingerprint",
+          "user_value": "不面对空白输入，场景可持续变化。"
+        },
+        {
+          "order": "3",
+          "priority": "P0",
+          "capability": "Graduated hints",
+          "reuse": "现有 /chat/predict 与 hintLevel 语义",
+          "new_work": "文字 UI、四级帮助和证据标记",
+          "user_value": "卡住时继续完成，又不掩盖真实独立程度。"
+        },
+        {
+          "order": "4",
+          "priority": "P0",
+          "capability": "Input → Output loop",
+          "reuse": "Input Learning、Diagnose、Practice、Chat、Memory",
+          "new_work": "复述、应用与延迟回忆步骤",
+          "user_value": "不用找字幕，也能把看懂转成真正会用。"
+        },
+        {
+          "order": "5",
+          "priority": "P1",
+          "capability": "Discovery Sprint + SkillCoverage",
+          "reuse": "SkillState、session analysis、fair opportunity",
+          "new_work": "EvidenceEvent、覆盖置信度、混合任务调度",
+          "user_value": "即使平时不写东西，也能逐步发现未知弱点。"
+        },
+        {
+          "order": "6",
+          "priority": "P1–P2",
+          "capability": "Owned content and broader speaking model",
+          "reuse": "Input episode memory、retention scheduling",
+          "new_work": "内容目录、权利元数据、听力互动维度、可靠音频评分",
+          "user_value": "长期获得稳定供料，并逐步覆盖更多真实英语能力。"
+        }
+      ],
+      "measurement": [
+        {
+          "order": "1",
+          "role": "Primary",
+          "metric": "First meaningful output",
+          "definition": "新用户在首次会话完成至少一次可评分的独立英语输出。",
+          "decision": "Coach 是否真正消除了不知道做什么的启动障碍。"
+        },
+        {
+          "order": "2",
+          "role": "Primary",
+          "metric": "Evidence yield",
+          "definition": "每个已开始任务产生的公平、可评分、独立机会。",
+          "decision": "任务是否既自然又有诊断价值。"
+        },
+        {
+          "order": "3",
+          "role": "Primary",
+          "metric": "Delayed transfer success",
+          "definition": "目标在延迟后的新场景中无提示或低提示独立使用成功。",
+          "decision": "练习是否转化为稳定能力，而非短期模仿。"
+        },
+        {
+          "order": "4",
+          "role": "Driver",
+          "metric": "Mission start and completion",
+          "definition": "看到推荐后开始并完成任务的比例，按时长与任务类型拆分。",
+          "decision": "入口、任务长度与难度是否合适。"
+        },
+        {
+          "order": "5",
+          "role": "Driver",
+          "metric": "Hint dependence",
+          "definition": "同一目标跨尝试所需的最高提示等级变化。",
+          "decision": "用户是否从 assisted 走向 independent。"
+        },
+        {
+          "order": "6",
+          "role": "Driver",
+          "metric": "Coverage growth",
+          "definition": "获得足够证据的技能 × 模态 × 场景组合增长。",
+          "decision": "系统是否在发现未知能力，而非只重复已知弱点。"
+        },
+        {
+          "order": "7",
+          "role": "Guardrail",
+          "metric": "No-opportunity and contradiction",
+          "definition": "没有公平机会、后续证据反驳或用户纠正判断的比例。",
+          "decision": "弱点模型是否制造假阳性。"
+        },
+        {
+          "order": "8",
+          "role": "Guardrail",
+          "metric": "Abandonment, latency and ASR uncertainty",
+          "definition": "任务放弃、响应等待、模型成本与低置信语音证据。",
+          "decision": "学习质量提升是否以挫败、速度或不可靠判断为代价。"
+        }
+      ]
+    }
+  },
+  "sources": [
+    {
+      "id": "strategy_notes",
+      "label": "Repository audit and research synthesis",
+      "path": "docs/product-strategy/GUIDED_LEARNING_EVIDENCE.md"
+    },
+    {
+      "id": "delivery_readiness_rubric",
+      "label": "Directional delivery-readiness rubric",
+      "path": "docs/product-strategy/GUIDED_LEARNING_EVIDENCE.md",
+      "query": {
+        "engine": "duckdb",
+        "language": "sql",
+        "description": "Reproduces the reviewed 1–5 planning rubric documented in the evidence notes; this is directional product synthesis, not learner telemetry.",
+        "sql": "SELECT * FROM (VALUES ('文字聊天渐进提示', 5), ('Today’s Mission', 4), ('Scene Director', 4), ('Input → Output 闭环', 4), ('Discovery + SkillCoverage', 2), ('自有内容 + 更广口语模型', 1)) AS rubric(capability, readiness)"
+      }
+    },
+    {
+      "id": "current_gaps_synthesis",
+      "label": "Current journey gap synthesis",
+      "path": "docs/product-strategy/GUIDED_LEARNING_EVIDENCE.md",
+      "query": {
+        "engine": "duckdb",
+        "language": "sql",
+        "description": "Reproduces the reviewed mapping from current product stages to missing guidance and reusable repository capabilities.",
+        "sql": "SELECT * FROM (VALUES ('1. Start', 'Paste 需要用户先有一段自己的英文；示例只能减轻空白感。', '系统直接给一个三到八分钟、可评分的今日任务。', 'Diagnose、Memory、Decision'), ('2. Chat', '少量固定场景，用户仍面对空白对话并通常先开口。', 'AI 先进入动态场景，给目标、信息差、转折和成功条件。', 'Chat session、scenarioPrompt、stealth probe、predict'), ('3. Input', '用户仍要选择视频、找字幕；看完后的输出不是必经步骤。', '系统提供分级短素材，并闭合到复述、新场景应用和延迟回忆。', 'Grounded Capture、Attention Mission、episode memory'), ('4. Discovery', '系统能追踪已发现弱点，但难以区分掌握与从未被测试。', '跨任务、模态和独立程度的 SkillCoverage。', 'SkillState、Memory、fair-opportunity outcomes')) AS gaps(stage, current, missing, existing_asset)"
+      }
+    },
+    {
+      "id": "mission_portfolio_synthesis",
+      "label": "Guided mission portfolio synthesis",
+      "path": "docs/product-strategy/GUIDED_LEARNING_EVIDENCE.md",
+      "query": {
+        "engine": "duckdb",
+        "language": "sql",
+        "description": "Reproduces the reviewed mission portfolio and the evidence and guardrail mapping for each mission family.",
+        "sql": "SELECT * FROM (VALUES ('1', 'Guided scene', '在真实目标中与 AI 解决问题，AI 先开口并推动状态变化。', '互动、语域、提问、澄清、目标弱点的自然使用。', '保存提示级别；避免把模型范例后的回答算作独立掌握。'), ('2', 'Picture story', '描述单图或按图片顺序讲故事。', '时态、位置、连接、事件顺序、推测和原因。', '与无图表达轮换，避免视觉线索替代内容组织。'), ('3', 'Listen and retell', '听短内容、先确认理解，再关闭文本复述。', '听力理解、信息保留、概括和口语组织。', '先区分听不懂与表达不出；ASR 不确定时降低证据置信度。'), ('4', 'Information gap', '通过提问和确认找出缺失的日程、路线或订单信息。', '问句、澄清、沟通修复、介词、数量与时间表达。', '任务必须真的存在信息差，而不是普通问答换皮。'), ('5', 'Micro write', '回复真实消息、解释决定、讲述经历或比较方案。', '写作组织、语法、词汇、语域和清晰度。', '场景和目的由系统给出，不要求用户先准备作文。'), ('6', 'Input loop', '系统提供短素材，用户理解、注意表达、复述并迁移使用。', '从识别到独立提取，再到新场景产出的完整链路。', '看过和收藏不是掌握；外部素材需处理字幕质量与版权。')) AS missions(order_id, mission, learner_experience, evidence, guardrail)"
+      }
+    },
+    {
+      "id": "roadmap_synthesis",
+      "label": "Guided learning delivery roadmap synthesis",
+      "path": "docs/product-strategy/GUIDED_LEARNING_EVIDENCE.md",
+      "query": {
+        "engine": "duckdb",
+        "language": "sql",
+        "description": "Reproduces the recommended implementation order derived from repository reuse and product dependency review.",
+        "sql": "SELECT * FROM (VALUES ('1', 'P0', 'Today’s Mission', 'Decision、Memory、Stats、Practice、Chat', 'Coach 编排接口、ActivityRun、首页主入口', '无需理解功能结构或先决定练什么。'), ('2', 'P0', 'Scene Director + AI opening', 'Chat session、scenarioPrompt、stealth probe', 'ScenarioSpec、状态、目标、转折、fingerprint', '不面对空白输入，场景可持续变化。'), ('3', 'P0', 'Graduated hints', '现有 chat predict endpoint 与 hintLevel 语义', '文字 UI、四级帮助和证据标记', '卡住时继续完成，又不掩盖真实独立程度。'), ('4', 'P0', 'Input → Output loop', 'Input Learning、Diagnose、Practice、Chat、Memory', '复述、应用与延迟回忆步骤', '不用找字幕，也能把看懂转成真正会用。'), ('5', 'P1', 'Discovery Sprint + SkillCoverage', 'SkillState、session analysis、fair opportunity', 'EvidenceEvent、覆盖置信度、混合任务调度', '即使平时不写东西，也能逐步发现未知弱点。'), ('6', 'P1–P2', 'Owned content and broader speaking model', 'Input episode memory、retention scheduling', '内容目录、权利元数据、听力互动维度、可靠音频评分', '长期获得稳定供料，并逐步覆盖更多真实英语能力。')) AS roadmap(order_id, priority, capability, reuse, new_work, user_value)"
+      }
+    },
+    {
+      "id": "measurement_synthesis",
+      "label": "Guided learning KPI framework",
+      "path": "docs/product-strategy/GUIDED_LEARNING_EVIDENCE.md",
+      "query": {
+        "engine": "duckdb",
+        "language": "sql",
+        "description": "Reproduces the proposed outcome, driver and guardrail definitions. These are metric specifications, not observed learner results.",
+        "sql": "SELECT * FROM (VALUES ('1', 'Primary', 'First meaningful output', '新用户在首次会话完成至少一次可评分的独立英语输出。', 'Coach 是否真正消除了不知道做什么的启动障碍。'), ('2', 'Primary', 'Evidence yield', '每个已开始任务产生的公平、可评分、独立机会。', '任务是否既自然又有诊断价值。'), ('3', 'Primary', 'Delayed transfer success', '目标在延迟后的新场景中无提示或低提示独立使用成功。', '练习是否转化为稳定能力，而非短期模仿。'), ('4', 'Driver', 'Mission start and completion', '看到推荐后开始并完成任务的比例，按时长与任务类型拆分。', '入口、任务长度与难度是否合适。'), ('5', 'Driver', 'Hint dependence', '同一目标跨尝试所需的最高提示等级变化。', '用户是否从 assisted 走向 independent。'), ('6', 'Driver', 'Coverage growth', '获得足够证据的技能 × 模态 × 场景组合增长。', '系统是否在发现未知能力，而非只重复已知弱点。'), ('7', 'Guardrail', 'No-opportunity and contradiction', '没有公平机会、后续证据反驳或用户纠正判断的比例。', '弱点模型是否制造假阳性。'), ('8', 'Guardrail', 'Abandonment, latency and ASR uncertainty', '任务放弃、响应等待、模型成本与低置信语音证据。', '学习质量提升是否以挫败、速度或不可靠判断为代价。')) AS metrics(order_id, role, metric, definition, decision)"
+      }
+    },
+    {
+      "id": "repository",
+      "label": "Weakspot English Coach repository",
+      "path": "README.md"
+    },
+    {
+      "id": "actfl_2024",
+      "label": "ACTFL Proficiency Guidelines 2024",
+      "href": "https://www.actfl.org/uploads/files/general/Resources-Publications/ACTFL_Proficiency_Guidelines_2024.pdf"
+    },
+    {
+      "id": "cefr_2020",
+      "label": "CEFR Companion Volume 2020",
+      "href": "https://rm.coe.int/cefr-companion-volume-with-new-descriptors-2020/16809ea0d4"
+    },
+    {
+      "id": "diagnostic_assessment",
+      "label": "Diagnostic assessment in second language learning",
+      "href": "https://doi.org/10.1177/0265532214564505"
+    },
+    {
+      "id": "captioned_video",
+      "label": "Meta-analysis of captioned video",
+      "href": "https://doi.org/10.1016/j.system.2013.07.013"
+    },
+    {
+      "id": "corrective_feedback",
+      "label": "Meta-analysis of oral corrective feedback",
+      "href": "https://doi.org/10.1017/S0272263109990520"
+    },
+    {
+      "id": "spaced_practice",
+      "label": "Meta-analysis of L2 spaced practice",
+      "href": "https://doi.org/10.1111/lang.12479"
+    },
+    {
+      "id": "asr_inclusivity",
+      "label": "ASR inclusivity for non-native English",
+      "href": "https://doi.org/10.1016/j.csl.2023.101567"
+    }
+  ]
+}

@@ -115,6 +115,7 @@ def main() -> int:
             list_memories,
             list_chat_messages,
             list_chat_sessions,
+            list_chat_sessions_page,
             list_notes,
             list_recent_errors,
             list_recent_practice_attempts,
@@ -929,6 +930,49 @@ def main() -> int:
         response = chat_client.get("/api/v1/chat/sessions")
         assert response.status_code == 200, response.text
         assert all("stealthProbe" not in row for row in response.json()["sessions"])
+
+        # Learner-visible chat history is cursor-paged, not capped at the old
+        # 20-session repository default. Following cursors reaches every row.
+        paged_chat_ids = set()
+        for index in range(26):
+            paged_id = f"cs_pagination_{index:03d}"
+            paged_chat_ids.add(paged_id)
+            created_at = _iso(now + timedelta(seconds=index + 1))
+            save_chat_session({
+                "id": paged_id,
+                "userId": chat_user,
+                "topic": f"Pagination session {index}",
+                "mode": "text",
+                "messageCount": 0,
+                "summary": None,
+                "createdAt": created_at,
+                "updatedAt": created_at,
+            })
+
+        response = chat_client.get("/api/v1/chat/sessions")
+        assert response.status_code == 200, response.text
+        assert paged_chat_ids <= {row["id"] for row in response.json()["sessions"]}
+        assert paged_chat_ids <= {row["id"] for row in list_chat_sessions(chat_user)}
+
+        all_chat_ids = set()
+        chat_cursor = None
+        while True:
+            params = {"pageSize": 7}
+            if chat_cursor:
+                params["cursor"] = chat_cursor
+            response = chat_client.get("/api/v1/chat/sessions", params=params)
+            assert response.status_code == 200, response.text
+            page = response.json()
+            assert len(page["sessions"]) <= 7
+            all_chat_ids.update(row["id"] for row in page["sessions"])
+            chat_cursor = page.get("nextCursor")
+            if not chat_cursor:
+                break
+        assert paged_chat_ids <= all_chat_ids, len(all_chat_ids)
+        assert chat_client.get(
+            "/api/v1/chat/sessions",
+            params={"cursor": "not-a-cursor"},
+        ).status_code == 400
 
         response = chat_client.post(
             "/api/v1/chat/send",
@@ -1860,32 +1904,48 @@ def main() -> int:
             assert list_chat_messages(chat_user, snapshot_session_id, limit=None) == []
         assert len(list_chat_messages(chat_user, snapshot_session_id, limit=None)) == 1
 
-        snapshot_two = seed_snapshot_stage("tb_snapshot_two", "snapshot-2", "Second snapshot message")
-        published_two = False
-
-        def commit_after_count_snapshot(user_id: str, session_id: str):
-            nonlocal published_two
-            snapshot = original_committed_snapshot(user_id, session_id)
-            if session_id == snapshot_session_id and not published_two:
-                published_two = True
-                publish_snapshot_stage(snapshot_two)
-            return snapshot
-
-        with patch.object(
-            repository_module,
-            "_committed_chat_transcript_batch_ids",
-            side_effect=commit_after_count_snapshot,
+        malformed_count_session_id = f"cs_bad_count_{uuid.uuid4().hex[:8]}"
+        missing_count_session_id = f"cs_missing_count_{uuid.uuid4().hex[:8]}"
+        for bad_session in (
+            {
+                "id": malformed_count_session_id,
+                "messageCount": "not-a-number",
+            },
+            {"id": missing_count_session_id},
         ):
-            snapshot_sessions = list_chat_sessions(chat_user, limit=20)
-        snapshot_count = next(
-            item["messageCount"] for item in snapshot_sessions
-            if item["id"] == snapshot_session_id
-        )
-        assert snapshot_count == 1
-        assert next(
-            item["messageCount"] for item in list_chat_sessions(chat_user, limit=20)
-            if item["id"] == snapshot_session_id
-        ) == 2
+            save_chat_session({
+                **bad_session,
+                "userId": chat_user,
+                "mode": "text",
+                "topic": "Stored count fallback",
+                "summary": None,
+                "createdAt": voice_now,
+                "updatedAt": voice_now,
+            })
+
+        # A session page performs exactly its bounded CHAT# query. It must not
+        # rescan CHATMSG#, CHATBATCH#, or CHATSTAGE# to rebuild counts.
+        captured_session_queries = []
+        real_table_query = table.query
+
+        def record_session_query(*args, **kwargs):
+            captured_session_queries.append(kwargs)
+            return real_table_query(*args, **kwargs)
+
+        with patch.object(table, "query", side_effect=record_session_query):
+            stored_count_sessions, _ = list_chat_sessions_page(
+                chat_user,
+                page_size=100,
+            )
+        assert len(captured_session_queries) == 1, captured_session_queries
+        assert captured_session_queries[0].get("Limit") == 100
+        stored_counts = {
+            item["id"]: item["messageCount"] for item in stored_count_sessions
+        }
+        assert stored_counts[malformed_count_session_id] == 0
+        assert stored_counts[missing_count_session_id] == 0
+        assert stored_counts[bulk_voice_session_id] == 70
+        assert stored_counts[failed_voice_session_id] == 2
 
         response = chat_client.get("/api/v1/chat/sessions")
         assert response.status_code == 200, response.text
@@ -2278,7 +2338,80 @@ def main() -> int:
                 "expired",
                 "superseded",
             }, memory
-        print("11. Input Learning CRUD    -> list/get/delete and identity isolation passed")
+
+        # Input Learning history has a bounded page size but no user-visible
+        # 50- or 200-item ceiling. Cursor iteration must recover every source.
+        paged_input_ids = set()
+        for index in range(205):
+            paged_id = f"input_pagination_{index:03d}"
+            paged_input_ids.add(paged_id)
+            created_at = _iso(now + timedelta(seconds=1_000 + index))
+            table.put_item(Item={
+                "PK": user_pk(user_a),
+                "SK": f"INPUT_SOURCE#{paged_id}",
+                "entityType": "INPUT_LEARNING_SOURCE",
+                "id": paged_id,
+                "userId": user_a,
+                "sourceType": "article",
+                "title": f"Input pagination source {index}",
+                "mode": "attention_mission",
+                "status": "complete",
+                "contentProvided": False,
+                "itemCount": 0,
+                "createdAt": created_at,
+                "updatedAt": created_at,
+            })
+
+        all_input_ids = set()
+        input_cursor = None
+        first_input_cursor = None
+        while True:
+            params = {"pageSize": 37}
+            if input_cursor:
+                params["cursor"] = input_cursor
+            response = client_a.get("/api/v1/input-learning", params=params)
+            assert response.status_code == 200, response.text
+            page = response.json()
+            assert len(page["sources"]) <= 37
+            all_input_ids.update(row["id"] for row in page["sources"])
+            input_cursor = page.get("nextCursor")
+            first_input_cursor = first_input_cursor or input_cursor
+            if not input_cursor:
+                break
+        assert paged_input_ids <= all_input_ids, len(all_input_ids)
+        assert len(all_input_ids) > 200
+        assert paged_input_ids <= {
+            row["id"] for row in list_input_learning_sources(user_a)
+        }
+        assert client_a.get(
+            "/api/v1/input-learning",
+            params={"cursor": "not-a-cursor"},
+        ).status_code == 400
+        assert first_input_cursor
+        assert client_b.get(
+            "/api/v1/input-learning",
+            params={"cursor": first_input_cursor},
+        ).status_code == 400
+        legacy_page = client_a.get(
+            "/api/v1/input-learning",
+            params={"limit": 200},
+        )
+        assert legacy_page.status_code == 200, legacy_page.text
+        assert len(legacy_page.json()["sources"]) == 200
+        assert legacy_page.json()["count"] == 200
+        assert legacy_page.json()["nextCursor"] is None
+        for mixed_params in (
+            {"limit": 20, "cursor": first_input_cursor},
+            {"limit": 20, "pageSize": 10},
+        ):
+            mixed = client_a.get("/api/v1/input-learning", params=mixed_params)
+            assert mixed.status_code == 400, mixed.text
+            assert mixed.json()["detail"]["code"] == "ambiguous_pagination"
+        assert client_a.get(
+            "/api/v1/input-learning",
+            params={"limit": 201},
+        ).status_code == 422
+        print("11. Input Learning CRUD    -> identity-scoped, cursor history exceeds 200")
 
         # The preview exposes the active hidden target and is therefore
         # owner-only. A normal authenticated learner receives an explicit 403.

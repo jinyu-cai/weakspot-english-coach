@@ -1121,11 +1121,11 @@ uv run uvicorn app.main:app --reload --port 8000
 
 ### 16.3 当前双后端
 
-- Alibaba ECS：主站，Qwen chat + embedding。
-- Oracle：备用，DeepSeek + lexical fallback。
+- Oracle Cloud：日常生产源站，DeepSeek chat + lexical fallback。
+- Alibaba ECS：最终展示源站，Qwen chat + embedding；平时保持配置与版本同步，但不承载日常流量。
 - 两者使用同一 DynamoDB learner state。
 
-上线顺序应是：后端 API → health/models/memory probe → 前端 Vercel。
+日常上线顺序应是：Oracle 后端 API → health/models/memory probe → 前端 Vercel。只有最终展示前才把同一 Git commit 部署到 Alibaba，完成本机检查后再手动切换 Cloudflare origin；平时不要因为前端更新而切换源站。
 
 ## 17. 想改某个功能时从哪里开始
 
