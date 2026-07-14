@@ -18,6 +18,88 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-13 — Warm UI adopted, complete learning history, and guided-learning strategy
+
+Date: 2026-07-13
+
+Branch: `fix/unbounded-learning-history`
+
+GitHub status: The warm guided UI is merged in PR #36. The cursor-history and
+strategy-document changes are prepared on this branch for a separate reviewed
+PR.
+
+Deploy status: PR #36 is live on Vercel. The public frontend contains `Start
+here` and `Start with English you already use`; the Oracle API health and model
+catalog are healthy. The cursor-history backend is not deployed until this
+branch passes review and merge. Alibaba and the Cloudflare origin are unchanged.
+
+Summary:
+
+- Adopted the warm, compact UI without removing Paste, Chat, Practice, Input,
+  Plan, History, Notebook, Memory, Stats, Import, voice, or model-selection
+  capabilities.
+- Replaced the hidden 20-session Chat cap and 50/200-item Input Learning cap
+  with identity-bound DynamoDB cursors. `pageSize` limits only one response;
+  the web client follows every page, de-duplicates IDs, and globally sorts the
+  complete archive.
+- Kept History and Notebook unbounded behavior intact. The Memory Agent's
+  active-memory capacity remains a separate learning-model policy and is not a
+  History display limit.
+- Prevented pagination from becoming expensive: Chat session pages use the
+  `messageCount` already maintained by chat transactions and never rescan all
+  transcript rows. The list cost is now linear in the number of session pages,
+  not pages multiplied by all messages.
+- Added opaque, user-bound cursors; invalid, repeated, resource-mismatched and
+  cross-user cursors cannot expose another learner's archive.
+- Preserved `GET /input-learning?limit=1..200` for old clients while rejecting
+  ambiguous mixing of legacy `limit` with cursor pagination.
+- Corrected deployment documentation: Oracle is the normal production origin;
+  Alibaba is configured for the final demonstration only. Frontend-only changes
+  do not restart either backend or switch Cloudflare.
+- Added a research- and repository-backed guided-learning strategy. Its main
+  recommendation is a Today’s Mission / Coach Mode that supplies the task,
+  starts the scene, uses graduated hints, closes Input Lab with learner output,
+  and separates unassessed abilities from known strengths.
+
+Files changed:
+
+- Chat/Input Learning routes, repositories, services, pagination utility and
+  regression coverage under `apps/api/`
+- `apps/web/lib/api-client.ts`, `apps/web/lib/types.ts`, and frontend/backend
+  README files
+- `apps/api/DEPLOY.md`, `development.md`, and this change log
+- `docs/product-strategy/GUIDED_LEARNING_EVIDENCE.md`
+- `docs/product-strategy/guided-learning-strategy.artifact.json`
+- `docs/product-strategy/guided-learning-strategy.html`
+
+Tests run:
+
+- Backend smoke test passed.
+- Full integration loop passed with unbounded History and Notebook fixtures.
+- Stealth/Input Learning suite passed with more than 20 Chat sessions and more
+  than 200 Input captures, complete cursor traversal, identity isolation,
+  legacy compatibility and a one-query Chat page cost assertion.
+- TypeScript, ESLint and the Next.js production build passed.
+- The portable product report passed schema/package checks, source-dialog
+  interaction, and responsive verification at 1440 px and 390 px.
+- `git diff --check` passed; a second read-only review found no release blocker.
+
+Known issues:
+
+- Existing Chat/Input sort keys contain random IDs rather than timestamps. A
+  single API page is therefore not globally newest-first; the current web
+  client follows all bounded pages and sorts the complete result before display.
+  A future created-at GSI could support true newest-first infinite scrolling.
+- Product event instrumentation does not yet measure first meaningful output,
+  evidence yield or delayed transfer. The strategy intentionally avoids
+  invented absolute KPI targets until a baseline exists.
+- Coach Mode, Scene Director, the owned content catalogue and SkillCoverage are
+  recommendations in this release, not implemented product features.
+
+Next step: Open and merge the reviewed PR, deploy only the merged `apps/api`
+release to Oracle, allow Vercel to deploy `main`, and verify the public cursor
+responses without switching Cloudflare or touching Alibaba.
+
 ## 2026-07-13 — Unbounded History and complete dense labels
 
 Date: 2026-07-13
