@@ -18,6 +18,47 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-13 — Deep scene generation choice and Notebook tab layout fix
+
+Date: 2026-07-13
+
+Branch: `feature/deep-scene-notebook-layout`
+
+GitHub status: local implementation and review branch; not pushed or merged.
+
+Deploy status: not deployed. Oracle, Alibaba, Cloudflare, and Vercel are
+unchanged pending owner review.
+
+Summary:
+
+- Added `generationMode: fast | deep` to normal Coach mission requests. Fast
+  remains the backwards-compatible default; Deep selects the current safe
+  model pair's deep slot, including server-managed mixed-provider pairs or the
+  configured BYOK deep model.
+- Added a clear Fast/Deep control directly to Chat's dynamic AI situation card.
+  It changes new scene generation only and does not silently mutate an existing
+  Chat session.
+- Rebuilt Notebook category tabs as a responsive 2-column/4-column grid and
+  disabled character-level wrapping so Expression, Vocabulary, and Grammar
+  stay readable with their counts.
+- Updated the Coach contract test and learning/release documentation.
+
+Files changed: Coach request/service/contract test, Chat/Notebook UI, shared
+types/API mock/i18n, and related documentation.
+
+Tests: Coach contract, smoke, and full moto/fake-AI integration passed; the
+integration fixture still returns History 26 / Notebook 57. Frontend ESLint,
+standalone TypeScript, and the Next.js production build passed. Local Chat and
+Notebook routes return 200. No browser instance was available for a second
+automated screenshot, so narrow/desktop visual acceptance remains an explicit
+owner check rather than being inferred from the build.
+
+Known issues: Deep generation can take longer and consume more provider quota;
+the UI therefore keeps Fast as the default.
+
+Next step: owner reviews the local Chat control and Notebook tabs before any
+push, merge, or deployment.
+
 ## 2026-07-13 — Learning guide updated for Coach Mode production
 
 Date: 2026-07-13

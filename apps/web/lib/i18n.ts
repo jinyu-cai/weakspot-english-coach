@@ -304,6 +304,11 @@ export const copy = {
       loadFailed: "Failed to load messages.",
       createFailed: "Failed to create chat session.",
       dynamicCreateFailed: "Could not prepare a new AI situation. Please try again.",
+      sceneGenerationModel: "Scene generation",
+      sceneGenerationFast: "Fast",
+      sceneGenerationDeep: "Deep",
+      sceneGenerationFastHint: "Use the selected Fast model for a quicker new situation",
+      sceneGenerationDeepHint: "Use the selected Deep model for a richer new situation",
       sendFailed: "Failed to send message. Please try again.",
       analyzeFailed: "Failed to analyze session.",
       scenarios: {
@@ -1188,6 +1193,11 @@ export const copy = {
       loadFailed: "加载消息失败。",
       createFailed: "创建会话失败。",
       dynamicCreateFailed: "暂时无法准备新的 AI 场景，请重试。",
+      sceneGenerationModel: "场景生成模型",
+      sceneGenerationFast: "快速",
+      sceneGenerationDeep: "深度",
+      sceneGenerationFastHint: "使用当前选择的 Fast 模型，更快生成新场景",
+      sceneGenerationDeepHint: "使用当前选择的 Deep 模型，生成更丰富的新场景",
       sendFailed: "发送失败，请重试。",
       analyzeFailed: "分析会话失败。",
       scenarios: {

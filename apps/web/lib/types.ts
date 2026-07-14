@@ -28,6 +28,7 @@ export type CoachMissionType =
   | "vocabulary_in_action"
 export type CoachMissionModality = "text" | "voice"
 export type CoachMissionEnergy = "light" | "normal" | "challenge"
+export type CoachGenerationMode = "fast" | "deep"
 
 export interface CoachSceneMission {
   setting: string
@@ -88,10 +89,11 @@ export interface CoachMissionRequest {
   durationMinutes: 5 | 10 | 15
   modality: CoachMissionModality
   energy: CoachMissionEnergy
+  generationMode?: CoachGenerationMode
   preferredType?: CoachMissionType
 }
 
-export interface InputLab2TranscriptMissionRequest extends Omit<CoachMissionRequest, "preferredType"> {
+export interface InputLab2TranscriptMissionRequest extends Omit<CoachMissionRequest, "preferredType" | "generationMode"> {
   title: string
   transcript: string
   rightsBasis: string

@@ -817,7 +817,8 @@ CoachMissionRequest
   -> 读取 mastery 最低的最多 5 个 skill
   -> 读取最近一页 20 个 Chat session 的 scenarioFamily
   -> coach_service.generate_coach_mission
-  -> fast text model + 对应 Pydantic response model
+  -> generationMode 选择当前模型组合的 fast/deep slot（默认 fast）
+  -> 对应 Pydantic response model
   -> 加 mission id、时长、难度和唯一 scenarioKey
   -> CoachMissionResponse
 ```
@@ -867,6 +868,8 @@ guided_scene
 ### 10.15 动态 Chat 和 owner-only Input Lab 2.0
 
 Chat 的“AI 新场景”不是跳到一组固定模板。前端先请求 `guided_scene` mission，再把 title、scenarioPrompt、starterMessage、scenarioFamily 和 scenarioKey 写入新 session。AI 开场白立即显示；用户结束后仍走标准 session analysis。点击“再来一个”会生成新 mission，并利用已保存的 family 尽量避开最近场景。
+
+动态卡片还提供 `Fast / Deep` 选择。请求的 `generationMode` 默认是 `fast`；选择 `deep` 时，`selected_coach_model` 使用当前安全模型组合的 deep model，否则使用 fast model。BYOK 同样使用用户配置中的 `model / fastModel`，但 key 仍只通过已有受控 headers 传输。这个选择只决定新任务脚手架由哪个模型生成，不会改变已经创建的 Chat session。
 
 `/input/experimental` 是另一条严格隔离的实验路径：
 
@@ -1235,6 +1238,7 @@ curl -sS -X POST http://localhost:8000/api/v1/coach/missions \
     "durationMinutes":5,
     "modality":"text",
     "energy":"normal",
+    "generationMode":"deep",
     "preferredType":"vocabulary_in_action",
     "outputLanguage":"zh-CN"
   }'

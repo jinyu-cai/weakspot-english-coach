@@ -55,10 +55,11 @@ stored because automatic mastery judgments can be imperfect. If later evidence
 reopens a related weakness, the note automatically returns to Current.
 
 On narrow screens, the state selector becomes a full-width vertical control and
-the four note categories use one or two columns according to available width.
-Card headers and learner text wrap rather than overflowing, so long notes,
-counts, and deletion details remain fully visible without horizontal page
-scrolling.
+the four note categories use two columns, expanding to four only when each tab
+has enough room. Category labels use normal word boundaries and remain on one
+line instead of splitting English words character by character. Card headers
+and learner text wrap rather than overflowing, so long notes, counts, and
+deletion details remain fully visible without horizontal page scrolling.
 
 Deleting a History submission is different from automatic weakness resolution.
 It is an explicit, confirmed learner action that permanently deletes the
@@ -141,7 +142,9 @@ Qwen 3.7 Max for deep work and Qwen 3.7 Plus for fast work. Either slot can be
 switched to its DeepSeek equivalent, so Qwen/DeepSeek mixed pairs are supported.
 Loading failures are shown with a retry action. The same pair applies to text
 AI features; the chat page also exposes both selectors before a new
-conversation starts.
+conversation starts. The dynamic “new AI situation” card has its own Fast/Deep
+generation choice: Fast remains the quick default, while Deep uses the selected
+Deep slot for that new scene scaffold.
 
 The optional custom-provider form is BYOK and is stored only in that browser's
 local storage. It overrides the server-model choice until cleared.

@@ -1071,7 +1071,7 @@ const MOCK_COACH_MISSIONS: Record<CoachMission["type"], CoachMission> = {
 
 export async function generateCoachMission(input: CoachMissionRequest): Promise<CoachMission> {
   if (USE_MOCK) {
-    await delay(700)
+    await delay(input.generationMode === "deep" ? 1200 : 700)
     const types: CoachMission["type"][] = [
       "guided_scene",
       "picture_story",
