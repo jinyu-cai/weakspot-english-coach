@@ -18,6 +18,46 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-13 — Learning guide updated for Coach Mode production
+
+Date: 2026-07-13
+
+Branch: `docs/update-learning-guide-coach`
+
+GitHub status: documentation-only update prepared through the normal reviewed
+branch workflow; the merge history is the authoritative PR record.
+
+Deploy status: no backend deployment or Cloudflare/Alibaba change is required.
+Merging documentation may trigger a no-code-change Vercel rebuild from `main`.
+
+Summary:
+
+- Updated `development.md` from the deployed `main` implementation rather than
+  the earlier prototype plan.
+- Added the complete Coach mission generation and evidence flow, all five
+  discriminated mission types, dynamic Chat scenario variation, contextual
+  vocabulary observations, owner-only Input Lab 2.0 boundaries, and the
+  distinction between Realtime, Speech/TTS, browser recognition, and browser
+  speech fallback.
+- Documented which task state is transient, which diagnosis/chat evidence is
+  persisted, why task context cannot be learner evidence, and which P0 limits
+  remain intentionally unresolved.
+- Extended local-learning commands, Swagger/curl exercises, release tests,
+  file-routing guidance, common misconceptions, and the glossary.
+
+Files changed: `development.md`, `docs/change-log.md`.
+
+Tests: Markdown whitespace check and referenced-code-path audit. Application
+tests are unchanged from the already released PR #39 because this update does
+not modify runtime code.
+
+Known issues: documentation explains that non-scene Coach hint level is still
+UI-only and that Input Lab 2.0 currently uses browser speech and transient
+owner material.
+
+Next step: keep this guide synchronized whenever a new Coach mission type,
+evidence rule, or speech path is added.
+
 ## 2026-07-13 — PR #37 release completion
 
 Date: 2026-07-13
