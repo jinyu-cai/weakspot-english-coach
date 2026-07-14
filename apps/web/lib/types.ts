@@ -617,6 +617,7 @@ export interface ChatSession {
   summary?: string | null
   analysis?: SessionAnalysis | null
   stealthPractice?: StealthPracticeResult | null
+  stealthPractices?: StealthPracticeResult[]
   createdAt: string
   updatedAt: string
 }
@@ -759,6 +760,7 @@ export interface StealthPracticeResult {
 export interface SessionAnalysisResponse {
   analysis: SessionAnalysis
   stealthPractice?: StealthPracticeResult | null
+  stealthPractices?: StealthPracticeResult[]
   savedNotes: LearningNote[]
   savedErrors?: EnglishError[]
   updatedSkills: SkillState[]

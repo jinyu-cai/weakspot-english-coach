@@ -56,6 +56,8 @@ def build_chat_messages(
             "role": "system",
             "content": memory_context
             + "\nPersonalize naturally, but never claim a memory if it conflicts with the current message. "
+            "Never introduce a remembered topic, named entity, goal, or correction merely because it appears "
+            "in memory; ignore it unless it is directly relevant to the learner's current message. "
             "When a relevant input-learning expression appears in memory, model at most one naturally and "
             "create a light chance to notice or reuse it; exposure alone is never proof of mastery.",
         })

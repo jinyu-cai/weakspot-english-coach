@@ -186,7 +186,11 @@ days are all required. The row then becomes `resolved` and stops being recalled;
 fresh evidence for the same weakness reactivates the same row.
 
 MemoryAgent also tracks retention and modality-specific evidence from stealth
-missions. A due weakness can be woven into normal chat, but an outcome is
+missions. Text chat excludes weakness/strategy rows and low-relevance memories
+from ordinary reply personalization. Starting with learner turn 2, it may use a
+single one-reply naturalness-gated probe; turns 4 and 6 may rotate to other due
+skill codes, up to three distinct targets per session. A due weakness can be
+woven into normal chat, but an outcome is
 recorded only after an opportunity gate establishes that the target was fairly
 elicited and observable. Supported outcomes are `success`, `hinted_success`,
 `failure`, `avoided`, and `no_opportunity`; the last outcome never changes attempts,
@@ -206,8 +210,10 @@ advance that ladder. Memories separately track `candidate`, `observed`,
 discounted in retrieval and explicitly marked for natural confirmation instead
 of being asserted as known truth.
 
-Same-batch memory candidates are coalesced by normalized canonical key. When a
-chat's ordinary correction matches a scored stealth target, its evidence may
+Same-batch memory candidates are coalesced by normalized canonical key. Each
+text-chat target is assessed only against learner turns after its activation
+and before the next target takes over. When a chat's ordinary correction
+matches a scored stealth target, its evidence may
 still merge but retention and modality counters are not decremented twice.
 End-session analysis first persists an immutable model draft, then atomically
 commits errors, notes, skill updates, and the final session result. A failed

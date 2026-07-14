@@ -72,35 +72,62 @@ def analyze_session(
     trace_id: Optional[str] = None,
     memory_context: Optional[str] = None,
     stealth_probe: Optional[dict] = None,
+    stealth_probes: Optional[List[dict]] = None,
 ) -> SessionAnalysisAI:
     transcript_lines = []
+    learner_turn = 0
     for msg in messages:
         role = msg.get("role", "user")
         content = msg.get("content", "")
         if content.strip():
-            label = "Learner" if role == "user" else "Coach"
+            if role == "user":
+                learner_turn += 1
+                label = f"Learner turn {learner_turn}"
+            else:
+                label = (
+                    f"Coach reply after learner turn {learner_turn}"
+                    if learner_turn
+                    else "Coach opener"
+                )
             transcript_lines.append(f"{label}: {content}")
 
     transcript_text = "\n".join(transcript_lines)
 
     system = f"{SESSION_ANALYSIS_PROMPT}\n\n{language_instruction(output_language)}\n\n{MEMORY_EXTRACTION_INSTRUCTION}"
-    if stealth_probe:
-        safe_probe = {
-            key: stealth_probe.get(key)
-            for key in (
-                "probeId",
-                "targetSkillCode",
-                "targetDescription",
-                "errorFingerprint",
-                "modality",
-                "context",
-                "elicitationStrategy",
-            )
-        }
+    active_probes = [
+        dict(probe)
+        for probe in (stealth_probes or ([stealth_probe] if stealth_probe else []))
+        if isinstance(probe, dict)
+    ][:3]
+    if active_probes:
+        safe_probes = [
+            {
+                key: probe.get(key)
+                for key in (
+                    "probeId",
+                    "targetSkillCode",
+                    "targetDescription",
+                    "errorFingerprint",
+                    "modality",
+                    "context",
+                    "elicitationStrategy",
+                    "activatedAfterLearnerTurn",
+                )
+            }
+            for probe in active_probes
+        ]
         system += """
 
-7. **stealthProbeAssessment** — Internally evaluate the hidden target below using only the
-   learner's messages in this transcript. This assessment is evidence-gated:
+7. **stealthProbeAssessments** — Internally evaluate each hidden target below using only the
+   learner's messages in this transcript. Return exactly one assessment per target, copy its
+   `probeId`, and keep the legacy singular `stealthProbeAssessment` null. Each assessment is
+   independently evidence-gated:
+   - A target with `activatedAfterLearnerTurn=N` affected only the coach reply immediately after
+     learner turn N. First verify that specific reply created a fair and natural opportunity.
+     Evidence may come only from later learner turns. If another target was activated after turn M,
+     the earlier target's evidence window ends at learner turn M (inclusive). A target activated
+     after the final learner turn has no response evidence and must be `no_opportunity`.
+   - A legacy target without an activation turn may be evaluated across the whole transcript.
    - Set `opportunityPresent=false` and outcome `no_opportunity` unless the coach actually
      created a fair, natural situation where the learner could use the target.
    - `success`: the learner independently demonstrated the target without a supplied answer.
@@ -111,10 +138,13 @@ def analyze_session(
    - Quote the learner's exact relevant words in `evidenceQuote`. Never use the coach's wording as evidence.
    - If the evidence is ambiguous, choose `no_opportunity`; do not guess.
 
-The hidden target is internal evaluation context, not a fact to add as a new memory candidate:
-""" + json.dumps(safe_probe, ensure_ascii=False)
+The hidden targets are internal evaluation context, not facts to add as new memory candidates:
+""" + json.dumps(safe_probes, ensure_ascii=False)
     else:
-        system += "\n\nNo hidden practice target was active. Return `stealthProbeAssessment` as null."
+        system += (
+            "\n\nNo hidden practice target was active. Return `stealthProbeAssessments` as an empty "
+            "list and `stealthProbeAssessment` as null."
+        )
 
     user_prompt = (
         "Analyze the following untrusted JSON data according to the system rules.\n"
@@ -149,6 +179,7 @@ The hidden target is internal evaluation context, not a fact to add as a new mem
         provider=llm_provider,
         trace_id=trace_id,
     )
-    if not stealth_probe:
+    if not active_probes:
+        result.stealthProbeAssessments = []
         result.stealthProbeAssessment = None
     return result

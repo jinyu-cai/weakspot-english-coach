@@ -146,16 +146,18 @@ promise, and the agent still waits for an appropriate conversational context.
 
 ## Stealth weakness missions
 
-A stealth mission turns a due weakness into a natural conversational
-opportunity. For example, a learner with a past-tense weakness may be asked
-what happened in a recent meeting without being told that grammar is being
-tested. The lifecycle is:
+A stealth mission turns a due weakness into an optional natural conversational
+opportunity. Text chat never injects the raw weakness, old error sentence, or
+remembered named entity into ordinary memory context. It can schedule at most
+one one-shot target on learner turns 2, 4, and 6, excluding every memory and
+skill code already used in that session. The coach must skip the target when
+the current message has no natural opening. The lifecycle is:
 
 ```text
-due weakness + learner goal/preferences + current conversation
+due weakness + current turn + unused skill in this session
   -> bounded mission brief
-  -> natural prompt with no answer leakage
-  -> opportunity gate
+  -> one-reply naturalness gate with no old-example leakage
+  -> turn-bounded opportunity gate
   -> outcome: success | hinted_success | failure | avoided | no_opportunity
   -> retention + modality + transfer update
   -> next due check
@@ -179,13 +181,15 @@ Outcomes have distinct meanings:
 | `avoided` | fair opportunity, but learner consistently routes around the target | keep due and vary the next context; do not label it a grammar error |
 | `no_opportunity` | target was not reasonably elicited or observable | no learner penalty and no attempt counted |
 
-Mission records keep the source weakness, `progressionStage` (`replay`,
+Mission records keep the source weakness, activation turn, `progressionStage` (`replay`,
 `variation`, or `transfer`), modality, context, elicitation strategy, outcome,
 evidence, hint level, and timestamps. The stage advances only after independent
-cold success: first a context close to the original error, then changed details,
-then a genuinely new goal-relevant setting. Guided exercises cannot advance the
-ladder. The hidden teaching objective is never shown before the response; only
-the post-session evidence summary is returned to the learner.
+cold success: first retrieval of the same skill family, then changed details,
+then a genuinely new setting. Even at replay, the prompt stays inside the live
+conversation and never reproduces the stored mistake or its named entities.
+Guided exercises cannot advance the ladder. The hidden teaching objective is
+never shown before the response; only the post-session evidence summaries are
+returned to the learner.
 
 End-of-session analysis may also emit an ordinary correction for the same skill
 as the stealth assessment. The durable source evidence is still merged, but the

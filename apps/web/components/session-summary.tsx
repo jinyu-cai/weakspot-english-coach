@@ -24,11 +24,18 @@ import { useLanguage } from "@/components/language-provider"
 interface SessionSummaryProps {
   analysis: SessionAnalysis | null
   stealthPractice?: StealthPracticeResult | null
+  stealthPractices?: StealthPracticeResult[]
   analyzing: boolean
   onClose: () => void
 }
 
-export function SessionSummary({ analysis, stealthPractice, analyzing, onClose }: SessionSummaryProps) {
+export function SessionSummary({
+  analysis,
+  stealthPractice,
+  stealthPractices,
+  analyzing,
+  onClose,
+}: SessionSummaryProps) {
   const [expandedSection, setExpandedSection] = useState<string | null>("corrections")
   const { language, t } = useLanguage()
 
@@ -47,6 +54,12 @@ export function SessionSummary({ analysis, stealthPractice, analyzing, onClose }
   }
 
   if (!analysis) return null
+
+  const practiceResults = stealthPractices?.length
+    ? stealthPractices
+    : stealthPractice
+      ? [stealthPractice]
+      : []
 
   const sections = [
     {
@@ -107,50 +120,57 @@ export function SessionSummary({ analysis, stealthPractice, analyzing, onClose }
           )}
         </div>
 
-        {stealthPractice && (
+        {practiceResults.length > 0 && (
           <div className="border-b border-border bg-primary/5 px-4 py-4">
-            <div className="rounded-xl border border-primary/20 bg-background p-3.5">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <p className="flex items-center gap-1.5 text-sm font-medium">
-                    <Target className="size-4 text-primary" />
-                    {t.chat.summary.stealthTitle}
-                  </p>
-                  <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground">
-                    {t.chat.summary.stealthDescription}
-                  </p>
-                </div>
-                <Badge
-                  variant={stealthPractice.outcome === "failure" ? "destructive" : "secondary"}
-                  className="shrink-0"
+            <div className="flex flex-col gap-3">
+              {practiceResults.map((practice) => (
+                <div
+                  key={practice.probeId ?? `${practice.targetSkillCode}-${practice.outcome}`}
+                  className="rounded-xl border border-primary/20 bg-background p-3.5"
                 >
-                  {t.chat.summary.stealthOutcomes[stealthPractice.outcome]}
-                </Badge>
-              </div>
-              <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3 text-xs">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline">
-                    {t.labels.skills[stealthPractice.targetSkillCode as keyof typeof t.labels.skills]
-                      ?? stealthPractice.targetSkillCode}
-                  </Badge>
-                </div>
-                {stealthPractice.evidenceQuote && (
-                  <p className="leading-relaxed text-muted-foreground">
-                    <span className="font-medium text-foreground">{t.chat.summary.stealthEvidence}: </span>
-                    {stealthPractice.evidenceQuote}
-                  </p>
-                )}
-                {stealthPractice.nextReviewAt && (
-                  <p className="flex items-center gap-1.5 text-muted-foreground">
-                    <Clock3 className="size-3.5 text-primary" />
-                    <span className="font-medium text-foreground">{t.chat.summary.stealthNext}:</span>
-                    {new Date(stealthPractice.nextReviewAt).toLocaleDateString(
-                      language === "zh-CN" ? "zh-CN" : "en-US",
-                      { year: "numeric", month: "short", day: "numeric" },
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="flex items-center gap-1.5 text-sm font-medium">
+                        <Target className="size-4 text-primary" />
+                        {t.chat.summary.stealthTitle}
+                      </p>
+                      <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground">
+                        {t.chat.summary.stealthDescription}
+                      </p>
+                    </div>
+                    <Badge
+                      variant={practice.outcome === "failure" ? "destructive" : "secondary"}
+                      className="shrink-0"
+                    >
+                      {t.chat.summary.stealthOutcomes[practice.outcome]}
+                    </Badge>
+                  </div>
+                  <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3 text-xs">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline">
+                        {t.labels.skills[practice.targetSkillCode as keyof typeof t.labels.skills]
+                          ?? practice.targetSkillCode}
+                      </Badge>
+                    </div>
+                    {practice.evidenceQuote && (
+                      <p className="leading-relaxed text-muted-foreground">
+                        <span className="font-medium text-foreground">{t.chat.summary.stealthEvidence}: </span>
+                        {practice.evidenceQuote}
+                      </p>
                     )}
-                  </p>
-                )}
-              </div>
+                    {practice.nextReviewAt && (
+                      <p className="flex items-center gap-1.5 text-muted-foreground">
+                        <Clock3 className="size-3.5 text-primary" />
+                        <span className="font-medium text-foreground">{t.chat.summary.stealthNext}:</span>
+                        {new Date(practice.nextReviewAt).toLocaleDateString(
+                          language === "zh-CN" ? "zh-CN" : "en-US",
+                          { year: "numeric", month: "short", day: "numeric" },
+                        )}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}

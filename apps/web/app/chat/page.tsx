@@ -105,6 +105,7 @@ export default function ChatPage() {
   const [viewState, setViewState] = useState<ViewState>("chat")
   const [analysis, setAnalysis] = useState<SessionAnalysis | null>(null)
   const [stealthPractice, setStealthPractice] = useState<StealthPracticeResult | null>(null)
+  const [stealthPractices, setStealthPractices] = useState<StealthPracticeResult[]>([])
   const [voiceLifecycle, setVoiceLifecycle] = useState<VoiceChatLifecycle>({ active: false, pending: false })
   const { t } = useLanguage()
 
@@ -220,21 +221,30 @@ export default function ChatPage() {
     setViewState("chat")
     setAnalysis(null)
     setStealthPractice(null)
+    setStealthPractices([])
   }
 
   async function triggerAnalysis(sessionId: string) {
     setViewState("analyzing")
     setAnalysis(null)
     setStealthPractice(null)
+    setStealthPractices([])
     try {
       const result = await analyzeSession(sessionId)
+      const practiceResults = result.stealthPractices?.length
+        ? result.stealthPractices
+        : result.stealthPractice
+          ? [result.stealthPractice]
+          : []
       setAnalysis(result.analysis)
       setStealthPractice(result.stealthPractice ?? null)
+      setStealthPractices(practiceResults)
       setActiveSession((current) => current?.id === sessionId
         ? {
             ...current,
             analysis: result.analysis,
             stealthPractice: result.stealthPractice ?? null,
+            stealthPractices: practiceResults,
           }
         : current)
       setSessions((current) => current.map((session) => session.id === sessionId
@@ -242,6 +252,7 @@ export default function ChatPage() {
             ...session,
             analysis: result.analysis,
             stealthPractice: result.stealthPractice ?? null,
+            stealthPractices: practiceResults,
           }
         : session))
       setViewState("summary")
@@ -269,6 +280,7 @@ export default function ChatPage() {
       setViewState("chat")
       setAnalysis(null)
       setStealthPractice(null)
+      setStealthPractices([])
     } catch {
       toast.error(t.chat.createFailed)
     } finally {
@@ -310,6 +322,7 @@ export default function ChatPage() {
       setViewState("chat")
       setAnalysis(null)
       setStealthPractice(null)
+      setStealthPractices([])
     } catch {
       toast.error(t.chat.dynamicCreateFailed)
     } finally {
@@ -334,6 +347,7 @@ export default function ChatPage() {
     setViewState(session.analysis ? "summary" : "chat")
     setAnalysis(session.analysis ?? null)
     setStealthPractice(session.stealthPractice ?? null)
+    setStealthPractices(session.stealthPractices ?? (session.stealthPractice ? [session.stealthPractice] : []))
     try {
       const { session: refreshedSession, messages: msgs } = await getChatMessages(session.id, DEMO_USER_ID)
       if (sessionSelectionRef.current !== selectionId) return
@@ -344,6 +358,10 @@ export default function ChatPage() {
       setViewState(refreshedSession.analysis ? "summary" : "chat")
       setAnalysis(refreshedSession.analysis ?? null)
       setStealthPractice(refreshedSession.stealthPractice ?? null)
+      setStealthPractices(
+        refreshedSession.stealthPractices
+          ?? (refreshedSession.stealthPractice ? [refreshedSession.stealthPractice] : []),
+      )
     } catch {
       if (sessionSelectionRef.current !== selectionId) return
       toast.error(t.chat.loadFailed)
@@ -718,6 +736,7 @@ export default function ChatPage() {
         <SessionSummary
           analysis={analysis}
           stealthPractice={stealthPractice}
+          stealthPractices={stealthPractices}
           analyzing={viewState === "analyzing"}
           onClose={resetSession}
         />

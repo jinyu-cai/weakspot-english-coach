@@ -1257,6 +1257,17 @@ def retrieve_memory_pack(
         }
 
     memories = _active_memories(user_id)
+    if purpose == "chat":
+        # Weaknesses and learned probe strategies are internal scheduling
+        # state, not conversational personalization. Feeding their raw content
+        # or evidence into every reply makes the coach repeat old mistakes,
+        # named entities, and topics even when no natural practice opportunity
+        # exists. Text chat receives at most one separately gated probe instead.
+        memories = [
+            memory
+            for memory in memories
+            if memory.get("kind") not in {"weakness", "strategy"}
+        ]
     query_vector = embed_text(query)
     now = utc_now()
     scored: list[dict] = []
@@ -1268,6 +1279,14 @@ def retrieve_memory_pack(
         lexical = lexical_similarity(query, searchable)
         semantic_value = cosine_similarity(query_vector, memory.get("embedding"))
         semantic = semantic_value if semantic_value is not None else lexical
+        if purpose == "chat" and not (
+            lexical >= 0.16
+            or (semantic_value is not None and semantic_value >= 0.62)
+        ):
+            # Retrieval must not turn an unrelated long-term goal or episode
+            # into the next conversation topic. Chat memory is optional
+            # personalization, so low-relevance rows are safer to omit.
+            continue
         importance = float(memory.get("importance", 0.5))
         recency = _recency(memory, now)
         frequency = min(1.0, math.log1p(int(memory.get("accessCount", 0))) / math.log(11))
