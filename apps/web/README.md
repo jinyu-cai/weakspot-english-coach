@@ -81,6 +81,11 @@ Chat and AI settings show server models as `provider · actual-model-name` in
 full-width responsive selectors instead of squeezing verbose names into narrow
 fixed-width controls.
 
+The Chat session picker also has no 20-session ceiling. The API client follows
+bounded cursor pages and de-duplicates then sorts the complete result, so a
+large archive stays reachable without asking the backend for one unlimited
+payload.
+
 ## Input Learning
 
 `/input` turns authentic material into personalized language intake and later
@@ -101,6 +106,10 @@ archives dependent phrase and mission records; the UI should refresh Memory
 Center and Input Learning after the operation. In mock mode, `/input` contains
 the same Grounded Capture and Attention Mission flows so the full page can be
 reviewed without a backend.
+
+Input Learning history has no 50- or 200-capture ceiling. The frontend follows
+the backend's bounded `nextCursor` pages until the archive is complete, with a
+repeated-cursor guard and ID de-duplication before rendering.
 
 The related stealth mission flow runs primarily inside text chat. A normal
 conversation may create a fair opportunity to use a due weakness,

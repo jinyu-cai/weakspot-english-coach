@@ -607,26 +607,51 @@ def get_input_learning_source(user_id: str, source_id: str) -> Optional[dict]:
     return clean(item) if item else None
 
 
-def list_input_learning_sources(user_id: str, limit: int = 50) -> list:
-    if limit <= 0:
-        return []
-    sources: list[dict] = []
+def list_input_learning_sources_page(
+    user_id: str,
+    page_size: int = 50,
+    start_key: Optional[dict] = None,
+) -> tuple[list, Optional[dict]]:
+    """Return one bounded page; callers can follow ``LastEvaluatedKey`` forever."""
+    if page_size <= 0:
+        return [], None
     query_kwargs = {
         "KeyConditionExpression": Key("PK").eq(user_pk(user_id))
         & Key("SK").begins_with("INPUT_SOURCE#"),
+        "Limit": page_size,
     }
-    while len(sources) < limit:
-        res = table.query(**query_kwargs)
-        sources.extend(clean(item) for item in res.get("Items", []))
-        last_key = res.get("LastEvaluatedKey")
-        if not last_key:
-            break
-        query_kwargs["ExclusiveStartKey"] = last_key
+    if start_key:
+        query_kwargs["ExclusiveStartKey"] = start_key
+    res = table.query(**query_kwargs)
+    sources = [clean(item) for item in res.get("Items", [])]
     sources.sort(
         key=lambda item: item.get("createdAt", item.get("updatedAt", "")),
         reverse=True,
     )
-    return sources[:limit]
+    last_key = res.get("LastEvaluatedKey")
+    return sources, clean(last_key) if last_key else None
+
+
+def list_input_learning_sources(user_id: str, limit: Optional[int] = None) -> list:
+    if limit is not None and limit <= 0:
+        return []
+    sources: list[dict] = []
+    start_key: Optional[dict] = None
+    while limit is None or len(sources) < limit:
+        page_size = 100 if limit is None else min(100, limit - len(sources))
+        page, start_key = list_input_learning_sources_page(
+            user_id,
+            page_size=page_size,
+            start_key=start_key,
+        )
+        sources.extend(page)
+        if not start_key:
+            break
+    sources.sort(
+        key=lambda item: item.get("createdAt", item.get("updatedAt", "")),
+        reverse=True,
+    )
+    return sources if limit is None else sources[:limit]
 
 
 def _raise_if_input_claim_transaction_lost(exc: ClientError) -> None:
@@ -1429,57 +1454,61 @@ def _list_chat_transcript_stage_items(user_id: str, session_id: str) -> list[dic
         query_kwargs["ExclusiveStartKey"] = last_key
 
 
-def _count_chat_messages_by_session(user_id: str, session_ids: set[str]) -> dict[str, int]:
-    if not session_ids:
-        return {}
-
-    # Capture marker snapshots first. A batch committed after this point is
-    # deliberately excluded from this read rather than exposing a mixed epoch.
-    committed_by_session = {
-        session_id: _committed_chat_transcript_batch_ids(user_id, session_id)
-        for session_id in session_ids
-    }
-    counts = {session_id: 0 for session_id in session_ids}
+def list_chat_sessions_page(
+    user_id: str,
+    page_size: int = 50,
+    start_key: Optional[dict] = None,
+) -> tuple[list, Optional[dict]]:
+    """Return a bounded page of sessions and a cursor key for the next page."""
+    if page_size <= 0:
+        return [], None
     query_kwargs = {
-        "KeyConditionExpression": Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("CHATMSG#"),
-        "ScanIndexForward": True,
-        "ConsistentRead": True,
+        "KeyConditionExpression": Key("PK").eq(user_pk(user_id))
+        & Key("SK").begins_with("CHAT#"),
+        "ScanIndexForward": False,
+        "Limit": page_size,
     }
-
-    while True:
-        res = table.query(**query_kwargs)
-        for item in res.get("Items", []):
-            session_id = item.get("sessionId")
-            if session_id in counts:
-                batch_id = item.get("transcriptBatchId")
-                if not batch_id or str(batch_id) in committed_by_session[session_id]:
-                    counts[session_id] += 1
-
-        last_key = res.get("LastEvaluatedKey")
-        if not last_key:
-            break
-        query_kwargs["ExclusiveStartKey"] = last_key
-
-    for session_id, committed in committed_by_session.items():
-        if not committed:
-            continue
-        for item in _list_chat_transcript_stage_items(user_id, session_id):
-            if str(item.get("batchId") or "") in committed:
-                counts[session_id] += len(item.get("messages") or [])
-    return counts
-
-
-def list_chat_sessions(user_id: str, limit: int = 20) -> list:
-    res = table.query(
-        KeyConditionExpression=Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("CHAT#"),
-        ScanIndexForward=False,
-        Limit=limit,
-    )
+    if start_key:
+        query_kwargs["ExclusiveStartKey"] = start_key
+    res = table.query(**query_kwargs)
     sessions = [clean(i) for i in res.get("Items", [])]
-    counts = _count_chat_messages_by_session(user_id, {s["id"] for s in sessions if s.get("id")})
     for session in sessions:
-        session["messageCount"] = counts.get(session.get("id"), 0)
-    return sessions
+        stored_count = session.get("messageCount")
+        session["messageCount"] = (
+            stored_count
+            if isinstance(stored_count, int)
+            and not isinstance(stored_count, bool)
+            and stored_count >= 0
+            else 0
+        )
+    sessions.sort(
+        key=lambda item: (str(item.get("createdAt") or ""), str(item.get("id") or "")),
+        reverse=True,
+    )
+    last_key = res.get("LastEvaluatedKey")
+    return sessions, clean(last_key) if last_key else None
+
+
+def list_chat_sessions(user_id: str, limit: Optional[int] = None) -> list:
+    if limit is not None and limit <= 0:
+        return []
+    sessions: list[dict] = []
+    start_key: Optional[dict] = None
+    while limit is None or len(sessions) < limit:
+        page_size = 100 if limit is None else min(100, limit - len(sessions))
+        page, start_key = list_chat_sessions_page(
+            user_id,
+            page_size=page_size,
+            start_key=start_key,
+        )
+        sessions.extend(page)
+        if not start_key:
+            break
+    sessions.sort(
+        key=lambda item: (str(item.get("createdAt") or ""), str(item.get("id") or "")),
+        reverse=True,
+    )
+    return sessions if limit is None else sessions[:limit]
 
 
 def save_chat_message(message: dict) -> None:

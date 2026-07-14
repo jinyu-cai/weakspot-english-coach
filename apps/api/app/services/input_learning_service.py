@@ -27,6 +27,7 @@ from app.db.repositories import (
     get_input_learning_source as repo_get_input_learning_source,
     list_input_learning_items,
     list_input_learning_sources,
+    list_input_learning_sources_page,
     now_iso,
     release_input_learning_source_claim,
     save_input_learning_item,
@@ -638,8 +639,24 @@ def analyze_input_learning(
             release_input_learning_source_claim(user_id, source_id, claim_id)
 
 
-def list_input_learning_sources_for_user(user_id: str, limit: int = 50) -> list[dict]:
+def list_input_learning_sources_for_user(
+    user_id: str,
+    limit: Optional[int] = None,
+) -> list[dict]:
     return [_public_row(source) for source in list_input_learning_sources(user_id, limit=limit)]
+
+
+def list_input_learning_sources_page_for_user(
+    user_id: str,
+    page_size: int = 50,
+    start_key: Optional[dict] = None,
+) -> tuple[list[dict], Optional[dict]]:
+    sources, next_key = list_input_learning_sources_page(
+        user_id,
+        page_size=page_size,
+        start_key=start_key,
+    )
+    return [_public_row(source) for source in sources], next_key
 
 
 def get_input_learning_source_for_user(user_id: str, source_id: str) -> Optional[dict]:

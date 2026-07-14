@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.api.deps import Identity, get_llm_provider, rate_limited, resolve_identity
+from app.core.pagination import decode_dynamo_cursor, encode_dynamo_cursor
+from app.db.keys import user_pk
 from app.models.input_learning import AnalyzeInputLearningRequest
 from app.services.ai_client import LLMProviderConfig
 from app.services.input_learning_service import (
@@ -9,6 +11,7 @@ from app.services.input_learning_service import (
     delete_input_learning_source_for_user,
     get_input_learning_source_for_user,
     list_input_learning_sources_for_user,
+    list_input_learning_sources_page_for_user,
 )
 
 
@@ -45,11 +48,56 @@ def analyze_source(
 
 @router.get("")
 def list_sources(
-    limit: int = Query(default=50, ge=1, le=200),
+    request: Request,
+    page_size: int = Query(default=50, alias="pageSize", ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=2048),
+    limit: int | None = Query(default=None, ge=1, le=200),
     identity: Identity = Depends(resolve_identity),
 ):
-    sources = list_input_learning_sources_for_user(identity.user_id, limit=limit)
-    return {"sources": sources, "count": len(sources)}
+    if limit is not None:
+        mixed_with = [
+            name
+            for name in ("cursor", "pageSize")
+            if name in request.query_params
+        ]
+        if mixed_with:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "ambiguous_pagination",
+                    "message": (
+                        "Legacy limit cannot be combined with cursor or pageSize. "
+                        "Use limit alone, or use pageSize with cursor pagination."
+                    ),
+                },
+            )
+        sources = list_input_learning_sources_for_user(
+            identity.user_id,
+            limit=limit,
+        )
+        return {"sources": sources, "count": len(sources), "nextCursor": None}
+
+    try:
+        start_key = decode_dynamo_cursor(
+            cursor,
+            expected_pk=user_pk(identity.user_id),
+            expected_sk_prefix="INPUT_SOURCE#",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_cursor", "message": str(exc)},
+        ) from exc
+    sources, next_key = list_input_learning_sources_page_for_user(
+        identity.user_id,
+        page_size=page_size,
+        start_key=start_key,
+    )
+    return {
+        "sources": sources,
+        "count": len(sources),
+        "nextCursor": encode_dynamo_cursor(next_key),
+    }
 
 
 @router.get("/{source_id}")
