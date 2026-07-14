@@ -18,6 +18,10 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
   }, [])
 
   const visibleItems = NAV_ITEMS.filter((item) => !item.ownerOnly || isOwner)
+  const activeHref = [...visibleItems]
+    .sort((left, right) => right.href.length - left.href.length)
+    .find((item) => item.href === "/" ? pathname === "/" : pathname.startsWith(item.href))
+    ?.href
 
   return (
     <div className="flex min-h-full flex-col gap-5 p-3.5">
@@ -53,7 +57,7 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
               </h2>
               <div className="flex flex-col gap-0.5">
                 {items.map((item) => {
-                  const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)
+                  const isActive = item.href === activeHref
                   const Icon = item.icon
                   const localized = t.nav.items[item.key]
                   return (
@@ -78,7 +82,7 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
                           </span>
                         ) : null}
                       </span>
-                      {item.key === "diagnose" && !isActive ? (
+                      {item.key === "mission" && !isActive ? (
                         <span className="size-1.5 rounded-full bg-primary" aria-label={t.nav.startHere} />
                       ) : null}
                     </Link>

@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import {
@@ -11,6 +12,7 @@ import {
   Mic,
   Plus,
   RefreshCw,
+  WandSparkles,
 } from "lucide-react"
 import {
   analyzeSession,
@@ -50,6 +52,25 @@ type ViewState = "chat" | "analyzing" | "summary"
 function formatTextModel(model: string | null | undefined, models: ServerLLMModel[]) {
   if (!model) return "Server default"
   return models.find((option) => option.model === model)?.label ?? model
+}
+
+function withSessionStarter(session: ChatSession, messages: ChatMessage[]): ChatMessage[] {
+  const starter = session.starterMessage?.trim()
+  if (!starter) return messages
+  if (messages.some((message) => message.role === "assistant" && message.content.trim() === starter)) {
+    return messages
+  }
+  return [
+    {
+      id: `session-starter-${session.id}`,
+      userId: session.userId,
+      sessionId: session.id,
+      role: "assistant",
+      content: starter,
+      createdAt: session.createdAt,
+    },
+    ...messages,
+  ]
 }
 
 const SCENARIOS = [
@@ -260,7 +281,7 @@ export default function ChatPage() {
       setActiveSession(refreshedSession)
       setSessions((current) => current.map((item) => item.id === refreshedSession.id ? refreshedSession : item))
       setMode(refreshedSession.mode === "voice" ? "voice" : "text")
-      setMessages(msgs)
+      setMessages(withSessionStarter(refreshedSession, msgs))
       setViewState(refreshedSession.analysis ? "summary" : "chat")
       setAnalysis(refreshedSession.analysis ?? null)
       setStealthPractice(refreshedSession.stealthPractice ?? null)
@@ -350,9 +371,11 @@ export default function ChatPage() {
             <h1 className="font-heading text-3xl font-bold tracking-tight">{t.chat.title}</h1>
             <p className="text-muted-foreground">{t.chat.description}</p>
           </div>
-          <div className="grid w-full min-w-0 gap-2 text-xs font-medium text-muted-foreground">
-            <span>{t.settings.serverModel}</span>
-            <div className="grid gap-3 sm:grid-cols-2">
+          <details className="group w-full min-w-0 rounded-xl border border-border/70 bg-muted/20 p-3 text-xs font-medium text-muted-foreground">
+            <summary className="cursor-pointer list-none outline-none transition group-open:mb-3 group-open:text-foreground">
+              {t.settings.serverModel}
+            </summary>
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2">
               <label className="grid min-w-0 gap-1">
                 <span>{t.settings.deepModel}</span>
                 <select
@@ -400,7 +423,7 @@ export default function ChatPage() {
                 </select>
               </label>
             </div>
-            <div className="flex justify-end">
+            <div className="mt-2 flex justify-end">
               {modelsError && (
                 <Button
                   type="button"
@@ -415,10 +438,26 @@ export default function ChatPage() {
               )}
             </div>
             {modelsError && <span className="text-destructive">{t.settings.serverModelsFailed}</span>}
-          </div>
+          </details>
         </header>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <Card className="relative overflow-hidden border-primary/25 bg-primary/7 transition-all hover:border-primary/45 hover:shadow-md sm:col-span-2 lg:col-span-3">
+            <Link
+              href="/coach"
+              aria-label={`${t.chat.scenarios.dynamic[0]}: ${t.chat.scenarios.dynamic[1]}`}
+              className="absolute inset-0 z-0 rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            />
+            <CardContent className="pointer-events-none relative z-10 flex items-center gap-4 py-5">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+                <WandSparkles className="size-5" />
+              </span>
+              <div className="min-w-0">
+                <div className="font-heading text-base font-semibold">{t.chat.scenarios.dynamic[0]}</div>
+                <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">{t.chat.scenarios.dynamic[1]}</p>
+              </div>
+            </CardContent>
+          </Card>
           {SCENARIOS.map((s) => {
             const localized = t.chat.scenarios[s.key]
             return (
@@ -503,10 +542,10 @@ export default function ChatPage() {
 
   // ---- Active session: chat view ----
   return (
-    <div className="mx-auto flex h-[calc(100vh-8rem)] w-full max-w-3xl flex-col">
+    <div className="mx-auto flex min-h-[calc(100dvh-7rem)] w-full max-w-3xl flex-col lg:h-[calc(100vh-8rem)] lg:min-h-0">
       {/* Chat header */}
-      <div className="flex items-center justify-between border-b border-border pb-3">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-3 border-b border-border pb-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <Button
             variant="ghost"
             size="sm"
@@ -517,8 +556,8 @@ export default function ChatPage() {
             <ChevronDown className="size-4 rotate-90" />
             {t.chat.back}
           </Button>
-          <div className="flex flex-col">
-            <span className="text-sm font-medium">
+          <div className="flex min-w-0 flex-col">
+            <span className="truncate text-sm font-medium" title={activeSession.topic || t.chat.freeChat}>
               {activeSession.topic || t.chat.freeChat}
             </span>
             <span className="text-xs text-muted-foreground">
@@ -532,10 +571,14 @@ export default function ChatPage() {
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto sm:justify-end">
           {viewState === "chat" && mode === "text" && (
-            <Badge variant="secondary" className="h-7 rounded-md px-2.5 text-xs">
-              {formatTextModel(activeSession.textModel, serverModels)}
+            <Badge
+              variant="secondary"
+              className="hidden h-7 max-w-48 rounded-md px-2.5 text-xs md:inline-flex"
+              title={formatTextModel(activeSession.textModel, serverModels)}
+            >
+              <span className="truncate">{formatTextModel(activeSession.textModel, serverModels)}</span>
             </Badge>
           )}
           {viewState === "chat" && (

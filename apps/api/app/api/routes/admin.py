@@ -3,7 +3,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.api.deps import Identity, resolve_identity
+from app.api.deps import Identity, require_owner
 from app.db.repositories import delete_access_role, get_access_role, list_access_roles, set_access_role
 
 router = APIRouter(prefix="/admin")
@@ -12,12 +12,6 @@ router = APIRouter(prefix="/admin")
 class AccessRoleRequest(BaseModel):
     identifier: str = Field(min_length=1, max_length=180)
     role: Literal["owner", "member"]
-
-
-def require_owner(identity: Identity = Depends(resolve_identity)) -> Identity:
-    if not identity.is_owner:
-        raise HTTPException(status_code=403, detail="Owner access required.")
-    return identity
 
 
 @router.get("/access-roles")

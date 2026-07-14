@@ -1055,3 +1055,43 @@ Known issues:
 
 Next step: verify the Vercel production deployment UI after it finishes building
 from `main`.
+
+## 2026-07-13 — Coach Mode P0 and owner-only Input Lab 2.0 prototype
+
+Date: 2026-07-13
+
+Branch: `prototype/coach-mode-p0`
+
+Deploy status: local preview only; not pushed, merged, or deployed.
+
+Summary:
+
+- Added a primary Today's Mission flow that asks only for time, response mode,
+  and energy, then generates a fresh guided scene, picture-story task, or
+  listen-and-retell task.
+- Dynamic guided scenes now have an AI opening line, goal, roles, complication,
+  progressive hints, and conservative `hinted_success` handling. Existing fixed
+  Chat scenes remain available.
+- Added three first-party inline SVG scenes and original TTS listening tasks.
+  Content completion and English-language evidence are deliberately separate;
+  the text model never claims to see an image or video.
+- Added `/input/experimental` for an owner-supplied transcript pilot. Input Lab
+  1.0 remains public. The 2.0 endpoint rejects non-owner requests, extra URL
+  fields, and browser-exposed owner bypass tokens.
+- Added responsive Chat controls, full dynamic-scene opener recovery, confirmed
+  speech transcripts, and TTS/ASR mutual exclusion.
+- Added [Coach Mode / Input Lab 2.0 P0](COACH_MODE_P0.md) with the interaction,
+  copyright, permission, assessment, API, and P1 boundaries.
+
+Tests run:
+
+- Backend: Coach contract test ✅, smoke test ✅, full moto/fake-AI integration
+  loop ✅ (including unlimited History and Notebook regression coverage).
+- Frontend: ESLint ✅, `tsc --noEmit` ✅, production build ✅.
+- Browser visual QA remains an explicit manual check because no in-app browser
+  instance was available in this session; no alternate screenshot was presented
+  as if it were the running application.
+
+Next step: owner reviews `/coach` and `/input/experimental` locally. Only after
+explicit approval should this branch be pushed, opened as a preview PR, merged,
+or deployed.

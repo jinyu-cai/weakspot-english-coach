@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Optional
 
 import jwt
-from fastapi import Header, HTTPException, Request, Response
+from fastapi import Depends, Header, HTTPException, Request, Response
 
 from app.config import settings
 from app.db.repositories import get_access_role, incr_rate_counter
@@ -230,6 +230,14 @@ def resolve_identity(request: Request, response: Response) -> Identity:
         max_output_tokens=settings.guest_max_output_tokens,
         max_realtime_seconds=settings.guest_realtime_max_seconds,
     )
+
+
+def require_owner(identity: Identity = Depends(resolve_identity)) -> Identity:
+    """Server-side authorization boundary for owner-only experiments/admin."""
+
+    if not identity.is_owner:
+        raise HTTPException(status_code=403, detail="Owner access required.")
+    return identity
 
 
 def rate_limited(feature: str):

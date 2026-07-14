@@ -100,6 +100,52 @@ def _public_session(session: dict) -> dict:
     return public
 
 
+def _session_conversation_context(session: dict) -> str | None:
+    """Dynamic roleplay context takes precedence over a short topic label."""
+
+    scenario = str(session.get("scenarioPrompt") or "").strip()
+    if scenario:
+        return scenario
+    topic = str(session.get("topic") or "").strip()
+    return topic or None
+
+
+def _conversation_messages_for_ai(session: dict, messages: list[dict]) -> list[dict]:
+    """Add the UI-visible generated opener without persisting a fake learner turn."""
+
+    result: list[dict] = []
+    starter = str(session.get("starterMessage") or "").strip()
+    if starter:
+        result.append({"role": "assistant", "content": starter})
+    result.extend(
+        {"role": message["role"], "content": message["content"]}
+        for message in messages
+        if message.get("role") in ("user", "assistant")
+        and str(message.get("content") or "").strip()
+    )
+    return result
+
+
+def _apply_reported_hint_level(assessment: dict, reported_hint_level: int) -> dict:
+    """Prevent a hint-assisted answer from being credited as independent use."""
+
+    adjusted = dict(assessment)
+    adjusted["hintLevel"] = max(
+        int(adjusted.get("hintLevel", 0) or 0),
+        reported_hint_level,
+    )
+    if adjusted["hintLevel"] > 0 and adjusted.get("outcome") == "success":
+        adjusted["outcome"] = "hinted_success"
+        rationale = str(adjusted.get("rationale") or "").strip()
+        assistance_note = (
+            "The learner revealed at least one mission hint before analysis."
+            if reported_hint_level > 0
+            else "The assessment indicates that the response used hint assistance."
+        )
+        adjusted["rationale"] = f"{rationale} {assistance_note}".strip()
+    return adjusted
+
+
 def _has_exact_user_evidence(messages: list[dict], quote: str) -> bool:
     normalized_quote = " ".join((quote or "").casefold().split())
     if not normalized_quote:
@@ -229,7 +275,7 @@ def create_session(
         stealth_probe = select_stealth_probe(
             req.userId,
             modality="text_chat",
-            topic=req.topic or req.scenarioPrompt,
+            topic=req.scenarioPrompt or req.topic,
         )
     except Exception:
         logger.exception("chat session stealth_selection_error user_id=%s", req.userId)
@@ -239,6 +285,7 @@ def create_session(
         "userId": req.userId,
         "topic": req.topic,
         "scenarioPrompt": req.scenarioPrompt,
+        "starterMessage": req.starterMessage,
         "mode": "text",
         "textModel": text_model,
         "llmServerModelId": server_model_id,
@@ -336,15 +383,13 @@ def send_message(
         )
 
         history = list_chat_messages(req.userId, req.sessionId, limit=None)
-        history_for_ai = [
-            {"role": m["role"], "content": m["content"]}
-            for m in history
-        ]
+        history_for_ai = _conversation_messages_for_ai(session, history)
 
         try:
+            conversation_context = _session_conversation_context(session)
             memory_pack = retrieve_memory_pack(
                 req.userId,
-                f"Conversation topic: {session.get('topic') or 'general'}. Learner message: {req.text}",
+                f"Conversation topic: {conversation_context or 'general'}. Learner message: {req.text}",
                 purpose="chat",
             )
         except Exception:
@@ -367,7 +412,7 @@ def send_message(
         ai_result = chat_reply(
             history=history_for_ai,
             user_text=req.text,
-            topic=session.get("topic"),
+            topic=_session_conversation_context(session),
             llm_provider=effective_provider,
             model=text_model,
             max_tokens=None if _unlimited_llm_output(identity) else 2000,
@@ -470,15 +515,12 @@ def predict(
         )
 
         history = list_chat_messages(req.userId, req.sessionId)
-        history_for_ai = [
-            {"role": m["role"], "content": m["content"]}
-            for m in history
-        ]
+        history_for_ai = _conversation_messages_for_ai(session, history)
 
         result = predict_completion(
             history=history_for_ai,
             partial_text=req.partialText,
-            topic=session.get("topic"),
+            topic=_session_conversation_context(session),
             llm_provider=effective_provider,
             max_tokens=None if _unlimited_llm_output(identity) else 500,
             trace_id=request_id,
@@ -564,15 +606,13 @@ def analyze_chat_session(
             request_id, user_id, session_id, len(messages),
         )
 
-        messages_for_ai = [
-            {"role": m["role"], "content": m["content"]}
-            for m in messages if m.get("content", "").strip()
-        ]
+        messages_for_ai = _conversation_messages_for_ai(session, messages)
 
         try:
+            conversation_context = _session_conversation_context(session)
             memory_pack = retrieve_memory_pack(
                 user_id,
-                f"Analyze learning evidence for topic {session.get('topic') or 'general'}: "
+                f"Analyze learning evidence for topic {conversation_context or 'general'}: "
                 + " ".join(m.get("content", "") for m in user_messages)[-2000:],
                 purpose="session_analysis",
             )
@@ -585,7 +625,7 @@ def analyze_chat_session(
         else:
             analysis = analyze_session(
                 messages=messages_for_ai,
-                topic=session.get("topic"),
+                topic=_session_conversation_context(session),
                 output_language=req.outputLanguage,
                 llm_provider=effective_provider,
                 max_tokens=None if _unlimited_llm_output(identity) else identity.max_output_tokens,
@@ -689,6 +729,10 @@ def analyze_chat_session(
                     "confidence": 0.0,
                     "hintLevel": 0,
                 }
+            )
+            assessment_payload = _apply_reported_hint_level(
+                assessment_payload,
+                req.hintLevel,
             )
             if (
                 assessment_payload.get("opportunityPresent")

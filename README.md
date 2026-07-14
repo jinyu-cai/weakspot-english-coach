@@ -71,6 +71,9 @@ and both servers share the same DynamoDB learner state. See
   strategies, and memories.
 - Targeted practice whose skill and format adapt from actual learning outcomes.
 
+Preview design and safety boundaries for guided, non-quiz learning are documented
+in [Coach Mode / Input Lab 2.0 P0](docs/COACH_MODE_P0.md).
+
 ## Tech stack
 
 | Layer | Technology |

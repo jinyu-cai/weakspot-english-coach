@@ -20,6 +20,19 @@ from app.models.chat import (
     SessionWeaknessAI,
 )
 from app.models.chat_import import ChatImportAIResult, ChatWeaknessAI
+from app.models.coach import (
+    CoachMissionAIResult,
+    CoachPicture,
+    CoachScene,
+    GuidedSceneMissionAI,
+    GuidedSceneMissionAIResult,
+    ListenRetellMissionAI,
+    ListenRetellMissionAIResult,
+    PictureStoryMissionAI,
+    PictureStoryMissionAIResult,
+    TranscriptMissionPlanAI,
+    TranscriptMissionPlanAIResult,
+)
 from app.models.common import CEFRLevel, PracticeType, Severity
 from app.models.diagnostic import DiagnosticAIResult, DiagnosticErrorAI, LearningNoteAI, SkillUpdateAI
 from app.models.plan import LearningPlanAIResult, LearningPlanDayAI, LearningPlanTaskAI, PlanExerciseAI
@@ -284,6 +297,128 @@ def _fake_session_analysis() -> SessionAnalysisAI:
     )
 
 
+def _fake_guided_scene_content() -> GuidedSceneMissionAI:
+    return GuidedSceneMissionAI(
+        type="guided_scene",
+        title="Rescue the delayed delivery",
+        eyebrow="Today's guided mission",
+        briefing="A time-sensitive delivery is late. Explain the problem and negotiate a practical next step.",
+        targetSkills=["clarity.expression", "style.register"],
+        taskPrompt="Speak with the support agent, explain what happened, and agree on a solution.",
+        successCriteria=[
+            "State the problem clearly",
+            "Ask for one specific action",
+            "Keep a calm, polite tone",
+        ],
+        hints=[
+            "Start with the outcome you need.",
+            "Useful phrase: Could you check whether...?",
+            "Sentence starter: I'm calling because my delivery...",
+        ],
+        scene=CoachScene(
+            setting="A customer-support call about a delivery needed for an event tonight.",
+            userRole="The customer who needs the package before 6 p.m.",
+            aiRole="A helpful but initially cautious delivery support agent.",
+            goal="Get a reliable delivery update or arrange a workable alternative.",
+            scenarioPrompt=(
+                "Roleplay a delivery support agent. Stay in character, respond in English, ask natural "
+                "follow-up questions, and introduce one mild scheduling complication. Do not correct the learner."
+            ),
+            starterMessage="Thanks for calling delivery support. How can I help with your order today?",
+        ),
+    )
+
+
+def _fake_picture_story_content() -> PictureStoryMissionAI:
+    return PictureStoryMissionAI(
+        type="picture_story",
+        title="What happened at the market?",
+        eyebrow="Picture story",
+        briefing="Observe the first-party illustration, then build a short explanation of the moment.",
+        targetSkills=["sentence.variety", "discourse.coherence"],
+        taskPrompt="Describe what you notice, infer one cause, and predict what may happen next.",
+        successCriteria=[
+            "Connect details into one clear story",
+            "Separate observation from inference",
+            "Use at least one linking phrase",
+        ],
+        hints=[
+            "Move from what you can observe to what you infer.",
+            "Useful links: It seems that..., so..., which might mean...",
+            "Sentence starter: At first glance, I notice...",
+        ],
+        picture=CoachPicture(assetKey="market_morning"),
+    )
+
+
+def _fake_listen_retell_content() -> ListenRetellMissionAI:
+    return ListenRetellMissionAI(
+        type="listen_retell",
+        title="Retell a change of plans",
+        eyebrow="Listen and reconstruct",
+        briefing="Listen for the sequence, the reason for the change, and the speaker's final request.",
+        targetSkills=["grammar.verb_tense", "discourse.coherence"],
+        taskPrompt="Retell the message in your own words and respond with what you would do next.",
+        successCriteria=[
+            "Preserve the main sequence",
+            "Explain the reason for the change",
+            "Add a practical response",
+        ],
+        hints=[
+            "Organize your retell as situation, change, next step.",
+            "Useful links: originally, however, as a result.",
+            "Sentence starter: The speaker originally planned to...",
+        ],
+        listening={
+            "script": (
+                "I was planning to meet the design team at the downtown office at two, but the train "
+                "has been delayed. I will join the first part online and arrive in person around three. "
+                "Please ask Maya to start with the customer feedback while I am travelling."
+            ),
+            "playLimit": 2,
+        },
+    )
+
+
+def _fake_coach_mission() -> CoachMissionAIResult:
+    return CoachMissionAIResult(mission=_fake_guided_scene_content())
+
+
+def _fake_guided_scene_mission() -> GuidedSceneMissionAIResult:
+    return GuidedSceneMissionAIResult(mission=_fake_guided_scene_content())
+
+
+def _fake_picture_story_mission() -> PictureStoryMissionAIResult:
+    return PictureStoryMissionAIResult(mission=_fake_picture_story_content())
+
+
+def _fake_listen_retell_mission() -> ListenRetellMissionAIResult:
+    return ListenRetellMissionAIResult(mission=_fake_listen_retell_content())
+
+
+def _fake_transcript_mission_plan() -> TranscriptMissionPlanAIResult:
+    return TranscriptMissionPlanAIResult(
+        mission=TranscriptMissionPlanAI(
+            title="Listen, reshape, and respond",
+            eyebrow="Owner transcript experiment",
+            briefing="Listen for the speaker's main intent and how the ideas connect.",
+            targetSkills=["discourse.coherence", "clarity.expression"],
+            taskPrompt="Retell the message in your own structure, then give a short practical response.",
+            successCriteria=[
+                "Express the main intent clearly",
+                "Connect the ideas in a logical order",
+                "Use your own wording",
+            ],
+            hints=[
+                "Listen first for purpose, not every word.",
+                "Use a three-part structure: context, main point, response.",
+                "Sentence starter: The speaker's main point is...",
+            ],
+            playLimit=2,
+        )
+    )
+
+
 _BUILDERS = {
     ChatReplyAI: _fake_chat_reply,
     ChatPredictionAI: _fake_prediction,
@@ -293,6 +428,11 @@ _BUILDERS = {
     LearningPlanAIResult: _fake_plan,
     PracticeExerciseAIResult: _fake_exercise,
     PracticeGradeAIResult: _fake_grade,
+    CoachMissionAIResult: _fake_coach_mission,
+    GuidedSceneMissionAIResult: _fake_guided_scene_mission,
+    PictureStoryMissionAIResult: _fake_picture_story_mission,
+    ListenRetellMissionAIResult: _fake_listen_retell_mission,
+    TranscriptMissionPlanAIResult: _fake_transcript_mission_plan,
 }
 
 

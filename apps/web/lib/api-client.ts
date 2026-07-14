@@ -25,6 +25,8 @@ import type {
   ChatImportConversation,
   ChatMessage,
   ChatMessagesResponse,
+  CoachMission,
+  CoachMissionRequest,
   ChatSendResponse,
   ChatSession,
   RealtimeVoiceModel,
@@ -41,6 +43,7 @@ import type {
   InputLearningItem,
   InputLearningSource,
   InputLearningSourcesResponse,
+  InputLab2TranscriptMissionRequest,
   LearningPlan,
   MemoryItem,
   MemoryKind,
@@ -83,7 +86,6 @@ import { getOutputLanguage } from "./language"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
 const USE_MOCK = !API_BASE_URL
-const OWNER_BYPASS_TOKEN = process.env.NEXT_PUBLIC_OWNER_BYPASS_TOKEN
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const withOutputLanguage = <T extends Record<string, unknown>>(body: T) => ({
@@ -120,7 +122,6 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       "Content-Type": "application/json",
       ...getLLMProviderHeaders(),
-      ...(OWNER_BYPASS_TOKEN ? { "X-Owner-Token": OWNER_BYPASS_TOKEN } : {}),
       ...(init?.headers ?? {}),
     },
     ...init,
@@ -963,12 +964,114 @@ export async function deleteInputLearningSource(sourceId: string): Promise<{ del
   return apiFetch<{ deleted: boolean; id: string }>(`/input-learning/${sourceId}`, { method: "DELETE" })
 }
 
+/* ---- Coach missions ---- */
+
+const MOCK_COACH_MISSIONS: Record<CoachMission["type"], CoachMission> = {
+  guided_scene: {
+    id: "mission-preview-scene",
+    type: "guided_scene",
+    title: "The last seat on the train",
+    eyebrow: "A small real-life moment",
+    briefing: "You are travelling to a new city. Another passenger thinks the empty seat beside you is reserved, but your ticket says otherwise.",
+    estimatedMinutes: 5,
+    difficulty: "Gentle stretch",
+    targetSkills: ["polite clarification", "explaining evidence"],
+    taskPrompt: "Clarify the situation politely and reach an agreement without sounding confrontational.",
+    successCriteria: ["Explain what your ticket shows", "Ask one polite question", "Respond to a small change in the situation"],
+    hints: ["Start by acknowledging the other passenger.", "Useful phrase: I may be mistaken, but…", "Try: Excuse me, I may be mistaken, but my ticket shows seat 18A."],
+    scene: {
+      setting: "A busy train just before departure",
+      userRole: "A passenger holding a ticket for seat 18A",
+      aiRole: "A polite but uncertain passenger",
+      goal: "Resolve the seat mix-up calmly",
+      scenarioPrompt: "Role-play a passenger on a busy train. The learner has a ticket for seat 18A, but you believe it is reserved for your friend. Begin uncertain but polite. After the learner explains, reveal that your friend's ticket is actually for the next carriage. Stay in role, let the learner drive the resolution, and do not correct their English during the conversation.",
+      starterMessage: "Oh—sorry, I think this seat is saved for my friend. Are you sure this is your seat?",
+    },
+  },
+  picture_story: {
+    id: "mission-preview-picture",
+    type: "picture_story",
+    title: "A rainy wait",
+    eyebrow: "Notice, describe, then infer",
+    briefing: "Look at the scene for a moment. Describe what is happening, then make one reasonable guess about what might happen next.",
+    estimatedMinutes: 5,
+    difficulty: "Gentle stretch",
+    targetSkills: ["present continuous", "position and place", "making inferences"],
+    taskPrompt: "Write 3–5 English sentences: two things you can clearly see and one careful inference.",
+    successCriteria: ["Describe at least two visible actions", "Use one place expression", "Mark your guess as a possibility, not a fact"],
+    hints: ["Separate what you see from what you think.", "Useful words: shelter, puddle, across from, might", "Try: A woman is standing under the shelter while…"],
+    picture: { assetKey: "rainy_bus_stop" },
+  },
+  listen_retell: {
+    id: "mission-preview-listen",
+    type: "listen_retell",
+    title: "The forgotten lunch",
+    eyebrow: "Listen for meaning, not every word",
+    briefing: "Listen to a short original story. Then retell the important events in your own English without trying to repeat it word for word.",
+    estimatedMinutes: 5,
+    difficulty: "Gentle stretch",
+    targetSkills: ["past tense", "event sequence", "key-detail recall"],
+    taskPrompt: "Listen once or twice, then retell what happened in 3–5 sentences.",
+    successCriteria: ["State the main problem", "Include two events in order", "Explain how the situation ended"],
+    hints: ["Think: problem → action → result.", "Useful connectors: at first, so, in the end", "Try: On her way to work, Maya realized that…"],
+    listening: {
+      script: "On her way to work, Maya realized that she had left her lunch on the kitchen table. She did not have time to turn back, so she sent a message to her neighbor. At noon, the neighbor surprised her by bringing the lunch to the office reception desk.",
+      playLimit: 2,
+    },
+  },
+}
+
+export async function generateCoachMission(input: CoachMissionRequest): Promise<CoachMission> {
+  if (USE_MOCK) {
+    await delay(700)
+    const types: CoachMission["type"][] = ["guided_scene", "picture_story", "listen_retell"]
+    const type = input.preferredType ?? types[Math.floor(Date.now() / 1000) % types.length]
+    const mission = MOCK_COACH_MISSIONS[type]
+    return {
+      ...mission,
+      id: `${mission.id}-${Date.now()}`,
+      estimatedMinutes: input.durationMinutes,
+      difficulty: input.energy === "light" ? "Gentle stretch" : input.energy === "challenge" ? "Challenge" : "Balanced",
+    }
+  }
+  const payload = await apiFetch<{ mission: CoachMission }>("/coach/missions", {
+    method: "POST",
+    body: JSON.stringify(withOutputLanguage({ ...input })),
+  })
+  return payload.mission
+}
+
+export async function generateInputLab2TranscriptMission(
+  input: InputLab2TranscriptMissionRequest,
+): Promise<CoachMission> {
+  if (USE_MOCK) {
+    await delay(650)
+    return {
+      ...MOCK_COACH_MISSIONS.listen_retell,
+      id: `owner-transcript-${Date.now()}`,
+      title: input.title,
+      estimatedMinutes: input.durationMinutes,
+      listening: {
+        script: input.transcript.trim(),
+        playLimit: 2,
+      },
+    }
+  }
+  const payload = await apiFetch<{ mission: CoachMission }>("/coach/input-lab-2/transcript-missions", {
+    method: "POST",
+    body: JSON.stringify(withOutputLanguage({ ...input })),
+  })
+  return payload.mission
+}
+
 /* ---- Chat ---- */
 
 export async function createChatSession(
   userId: string = DEMO_USER_ID,
   topic?: string,
   textModel?: TextChatModel,
+  scenarioPrompt?: string,
+  starterMessage?: string,
 ): Promise<ChatSession> {
   if (USE_MOCK) {
     await delay(300)
@@ -976,7 +1079,8 @@ export async function createChatSession(
       id: `cs-${Date.now()}`,
       userId,
       topic: topic ?? null,
-      scenarioPrompt: null,
+      scenarioPrompt: scenarioPrompt ?? null,
+      starterMessage: starterMessage ?? null,
       textModel: textModel ?? "Server default",
       messageCount: 0,
       summary: null,
@@ -986,7 +1090,13 @@ export async function createChatSession(
   }
   const { session } = await apiFetch<{ session: ChatSession }>("/chat/sessions", {
     method: "POST",
-    body: JSON.stringify({ userId, topic, ...(textModel ? { textModel } : {}) }),
+    body: JSON.stringify({
+      userId,
+      topic,
+      ...(textModel ? { textModel } : {}),
+      ...(scenarioPrompt ? { scenarioPrompt } : {}),
+      ...(starterMessage ? { starterMessage } : {}),
+    }),
   })
   return session
 }
@@ -1023,6 +1133,7 @@ export async function getChatMessages(
         userId,
         topic: null,
         scenarioPrompt: null,
+        starterMessage: null,
         textModel: "deepseek-v4-flash",
         messageCount: 0,
         summary: null,
@@ -1086,6 +1197,7 @@ export async function sendChatMessage(
 
 export async function analyzeSession(
   sessionId: string,
+  hintLevel: number = 0,
 ): Promise<SessionAnalysisResponse> {
   if (USE_MOCK) {
     await delay(2000)
@@ -1145,16 +1257,19 @@ export async function analyzeSession(
       sessionId,
       stealthPractice: {
         targetSkillCode: "grammar.verb_tense",
-        outcome: "success",
+        outcome: hintLevel > 0 ? "hinted_success" : "success",
         opportunityPresent: true,
-        evidenceQuote: "You described a past event with “went” and “was” without a correction or hint.",
+        evidenceQuote: hintLevel > 0
+          ? "You described a past event after opening a hint."
+          : "You described a past event with “went” and “was” without a correction or hint.",
+        hintLevel,
         nextReviewAt: new Date(Date.now() + 4 * 86400000).toISOString(),
       },
     }
   }
   return apiFetch<SessionAnalysisResponse>(`/chat/sessions/${sessionId}/analyze`, {
     method: "POST",
-    body: JSON.stringify(withOutputLanguage({})),
+    body: JSON.stringify(withOutputLanguage({ hintLevel })),
   })
 }
 
