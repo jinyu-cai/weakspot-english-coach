@@ -22,12 +22,17 @@ Next step:
 
 Date: 2026-07-13
 
-Branch: `feature/deep-scene-notebook-layout`
+Branch: `main` at merge commit `ce3810f`
 
-GitHub status: local implementation and review branch; not pushed or merged.
+GitHub status: owner completed local UI acceptance; PR #42 merged into `main`.
+Both the Vercel Preview and merge-commit Production deployments reported
+success.
 
-Deploy status: not deployed. Oracle, Alibaba, Cloudflare, and Vercel are
-unchanged pending owner review.
+Deploy status: LIVE. The exact merged `apps/api` archive was deployed to
+`oracle-us-sj`; the existing production `.env` was backed up and preserved,
+DynamoDB table/TTL setup passed, and the recreated container passed local and
+public health checks. Vercel Production deployed the merged frontend.
+Cloudflare remains on Oracle; Alibaba was not changed.
 
 Summary:
 
@@ -49,15 +54,24 @@ types/API mock/i18n, and related documentation.
 Tests: Coach contract, smoke, and full moto/fake-AI integration passed; the
 integration fixture still returns History 26 / Notebook 57. Frontend ESLint,
 standalone TypeScript, and the Next.js production build passed. Local Chat and
-Notebook routes return 200. No browser instance was available for a second
-automated screenshot, so narrow/desktop visual acceptance remains an explicit
-owner check rather than being inferred from the build.
+Notebook routes return 200, and the owner completed the local visual review.
+No browser instance was available for a second automated screenshot pass.
+
+Production verification:
+
+- `https://enapi.jinxxx.de/api/v1/health` returns `{"status":"ok"}`.
+- The public model catalogue exposes the Oracle DeepSeek deep/fast slots.
+- Production OpenAPI contains `generationMode` on `CoachMissionRequest`, and
+  the Coach mission CORS preflight allows the production frontend origin.
+- `/`, `/chat`, and `/notebook` return 200 from
+  `https://englearning.jinxxx.de`.
 
 Known issues: Deep generation can take longer and consume more provider quota;
 the UI therefore keeps Fast as the default.
 
-Next step: owner reviews the local Chat control and Notebook tabs before any
-push, merge, or deployment.
+Next step: monitor normal production use. Before the final demonstration,
+deploy the selected final `main` commit to Alibaba and verify it independently;
+do not switch Cloudflare away from Oracle before that separate step.
 
 ## 2026-07-13 — Learning guide updated for Coach Mode production
 
