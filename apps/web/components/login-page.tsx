@@ -20,6 +20,7 @@ export function LoginPage({ redirect }: { redirect: string }) {
   const router = useRouter()
   const { language } = useLanguage()
   const [checkingSession, setCheckingSession] = useState(true)
+  const [authProviders, setAuthProviders] = useState<AuthProvider[]>([])
   const destination = safeRedirect(redirect)
   const configured = isAuthConfigured()
   const isChinese = language === "zh-CN"
@@ -32,6 +33,7 @@ export function LoginPage({ redirect }: { redirect: string }) {
         router.replace(destination)
         return
       }
+      setAuthProviders(me.authProviders ?? [])
       setCheckingSession(false)
     })
     return () => {
@@ -105,25 +107,29 @@ export function LoginPage({ redirect }: { redirect: string }) {
             </CardHeader>
 
             <CardContent className="space-y-4 px-0">
-              <Button
-                size="lg"
-                className="h-12 w-full justify-center gap-3 text-sm"
-                disabled={checkingSession || !configured}
-                onClick={() => signIn("github")}
-              >
-                <Code2 className="size-5" />
-                {isChinese ? "使用 GitHub 登录" : "Continue with GitHub"}
-              </Button>
-              <Button
-                variant="outline"
-                size="lg"
-                className="h-12 w-full justify-center gap-3 text-sm"
-                disabled={checkingSession || !configured}
-                onClick={() => signIn("google")}
-              >
-                <Mail className="size-5" />
-                {isChinese ? "使用 Google 登录" : "Continue with Google"}
-              </Button>
+              {authProviders.includes("github") ? (
+                <Button
+                  size="lg"
+                  className="h-12 w-full justify-center gap-3 text-sm"
+                  disabled={checkingSession || !configured}
+                  onClick={() => signIn("github")}
+                >
+                  <Code2 className="size-5" />
+                  {isChinese ? "使用 GitHub 登录" : "Continue with GitHub"}
+                </Button>
+              ) : null}
+              {authProviders.includes("google") ? (
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="h-12 w-full justify-center gap-3 text-sm"
+                  disabled={checkingSession || !configured}
+                  onClick={() => signIn("google")}
+                >
+                  <Mail className="size-5" />
+                  {isChinese ? "使用 Google 登录" : "Continue with Google"}
+                </Button>
+              ) : null}
 
               {checkingSession ? (
                 <p className="text-center text-sm text-muted-foreground">
@@ -134,6 +140,10 @@ export function LoginPage({ redirect }: { redirect: string }) {
                   {isChinese
                     ? "尚未配置登录服务。请设置 NEXT_PUBLIC_API_BASE_URL。"
                     : "Sign-in is not configured. Set NEXT_PUBLIC_API_BASE_URL to enable it."}
+                </p>
+              ) : authProviders.length === 0 ? (
+                <p className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-center text-sm text-warning-foreground">
+                  {isChinese ? "登录服务目前不可用，请稍后再试。" : "Sign-in is currently unavailable. Please try again later."}
                 </p>
               ) : null}
 

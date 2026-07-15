@@ -22,15 +22,18 @@ Next step:
 
 Date: 2026-07-14
 
-Branch: `fix/alibaba-tts-compat`
+Branch: `fix/alibaba-tts-compat`, followed by
+`fix/auth-provider-capabilities`
 
-GitHub status: locally validated; pending push, Preview, and merge.
+GitHub status: TTS fix PR #48 merged into `main` at `5a877eb` after Vercel
+Preview passed. The auth-provider follow-up is locally validated and pending
+push, Preview, and merge.
 
-Deploy status: the exact `main@73d1cc4` backend archive is live on Alibaba ECS
-and the previous backend is preserved as a rollback directory. Qwen text and
-embedding checks pass, but the TTS compatibility fix in this branch still
-needs to be merged and redeployed. Cloudflare remains on Oracle; no traffic
-switch has been made.
+Deploy status: the exact `main@5a877eb` backend archive is live on Oracle and
+Alibaba ECS, and both previous backends are preserved as rollback directories.
+Live TTS now passes on Alibaba. The auth-provider capability response still
+needs merge and deployment. Cloudflare remains on Oracle; no traffic switch
+has been made.
 
 Summary:
 
@@ -45,19 +48,24 @@ Summary:
   configuration error rather than a provider-side 400.
 - Made the Alibaba production template and final-demo runbook explicit about
   Realtime and TTS configuration.
+- Made the login page consume the backend's configured-provider list, so an
+  unconfigured Google OAuth button cannot lead to a 503 during the demo. The
+  currently configured GitHub login remains visible; Google appears
+  automatically when its server credentials are added.
 
 Tests run: Coach contract, backend smoke, Python compile, `git diff --check`,
-and the full moto/fake-AI integration loop passed. Live Alibaba checks passed
-for Qwen Fast, Qwen Deep, Qwen Embedding, OpenAI API connectivity, and both
-configured Realtime model IDs.
+the full moto/fake-AI integration loop, frontend TypeScript, ESLint, and the
+Next.js production build passed. Live Alibaba checks passed for Qwen Fast,
+Qwen Deep, Qwen Embedding, OpenAI API connectivity, and both configured
+Realtime model IDs. No browser instance was available for separate visual QA.
 
 Known issues: interactive OAuth and browser voice playback require a final
 browser pass during the traffic-switch window. Direct ECS Nginx/TLS is healthy,
 but Cloudflare still intentionally routes the stable API hostname to Oracle.
 
-Next step: push and merge this fix after Preview passes, redeploy the exact
-merged API archive to Oracle and Alibaba, then verify live TTS and the Realtime
-client-secret endpoint before the final traffic switch.
+Next step: push and merge the auth-provider follow-up after Preview passes,
+redeploy the exact merged API archive to Oracle and Alibaba, and verify the
+production login capability response before the final traffic switch.
 
 ## 2026-07-14 — Diagnose input uses word count
 

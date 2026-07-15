@@ -10,6 +10,7 @@ export type Me = {
   isMember?: boolean
   accessTier?: "owner" | "member" | "user" | "guest"
   guestLimit?: number
+  authProviders?: AuthProvider[]
 }
 
 export async function getMe(): Promise<Me> {

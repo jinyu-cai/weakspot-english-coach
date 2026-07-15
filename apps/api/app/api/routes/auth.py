@@ -28,6 +28,15 @@ GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 
+def _configured_auth_providers() -> list[str]:
+    providers: list[str] = []
+    if settings.auth_enabled:
+        providers.append("github")
+    if settings.google_auth_enabled:
+        providers.append("google")
+    return providers
+
+
 def _safe_redirect(redirect: Optional[str]) -> str:
     """Only allow redirects back to our own frontend (prevents open-redirect)."""
     if redirect and settings.frontend_url and redirect.startswith(settings.frontend_url):
@@ -175,6 +184,7 @@ def me(request: Request, response: Response):
             "isOwner": True,
             "isMember": False,
             "accessTier": "owner",
+            "authProviders": _configured_auth_providers(),
         }
 
     claims = read_session(request)
@@ -189,9 +199,14 @@ def me(request: Request, response: Response):
             "isOwner": identity.is_owner,
             "isMember": identity.is_member,
             "accessTier": identity.kind,
+            "authProviders": _configured_auth_providers(),
         }
     resolve_identity(request, response)  # establish a guest cookie
-    return {"authenticated": False, "guestLimit": settings.guest_daily_limit}
+    return {
+        "authenticated": False,
+        "guestLimit": settings.guest_daily_limit,
+        "authProviders": _configured_auth_providers(),
+    }
 
 
 @router.post("/auth/logout")
