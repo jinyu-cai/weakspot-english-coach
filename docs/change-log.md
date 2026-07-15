@@ -25,15 +25,16 @@ Date: 2026-07-14
 Branch: `fix/alibaba-tts-compat`, followed by
 `fix/auth-provider-capabilities`
 
-GitHub status: TTS fix PR #48 merged into `main` at `5a877eb` after Vercel
-Preview passed. The auth-provider follow-up is locally validated and pending
-push, Preview, and merge.
+GitHub status: TTS fix PR #48 and auth-provider PR #49 merged into `main` after
+their Vercel Previews passed. The final application release is `e03863c`, and
+its Vercel Production deployment passed.
 
-Deploy status: the exact `main@5a877eb` backend archive is live on Oracle and
-Alibaba ECS, and both previous backends are preserved as rollback directories.
-Live TTS now passes on Alibaba. The auth-provider capability response still
-needs merge and deployment. Cloudflare remains on Oracle; no traffic switch
-has been made.
+Deploy status: LIVE and release-matched. The exact `main@e03863c` backend
+archive with SHA-256 `26c6fb889107584d40cb090424f34941d8f27c632d08d84a96d47ed3fa79af19`
+is deployed on Oracle and Alibaba ECS. Both production `.env` files and prior
+backend directories were preserved, table/TTL setup passed, and both recreated
+containers are healthy. Cloudflare remains on Oracle; no traffic switch has
+been made.
 
 Summary:
 
@@ -57,15 +58,27 @@ Tests run: Coach contract, backend smoke, Python compile, `git diff --check`,
 the full moto/fake-AI integration loop, frontend TypeScript, ESLint, and the
 Next.js production build passed. Live Alibaba checks passed for Qwen Fast,
 Qwen Deep, Qwen Embedding, OpenAI API connectivity, and both configured
-Realtime model IDs. No browser instance was available for separate visual QA.
+Realtime model IDs. The final release also passed a real Realtime client-secret
+request, GitHub OAuth redirect validation, the provider-capability response,
+and the complete `/coach/speech` route with a 53,280-byte MP3. No browser
+instance was available for separate visual QA.
 
-Known issues: interactive OAuth and browser voice playback require a final
-browser pass during the traffic-switch window. Direct ECS Nginx/TLS is healthy,
-but Cloudflare still intentionally routes the stable API hostname to Oracle.
+Known issues:
 
-Next step: push and merge the auth-provider follow-up after Preview passes,
-redeploy the exact merged API archive to Oracle and Alibaba, and verify the
-production login capability response before the final traffic switch.
+- Interactive OAuth and browser audio playback require one final manual browser
+  pass during the traffic-switch window.
+- Google OAuth credentials are not configured on either backend, so the login
+  page now correctly exposes only GitHub. Adding Google later requires matching
+  credentials and callback configuration on both hosts.
+- Alibaba UFW intentionally allows ports 80/443 only from Cloudflare's official
+  IP ranges. Direct ECS-IP web probes therefore time out; Nginx/TLS was verified
+  locally, and public verification must go through Cloudflare after the origin
+  switch.
+
+Next step: immediately before the final demo, change only Cloudflare's `enapi`
+origin to Alibaba, verify public health/models/CORS/auth plus one marked Qwen
+request in Alibaba logs, capture the evidence, and return the origin to Oracle
+after the demonstration window.
 
 ## 2026-07-14 — Diagnose input uses word count
 
