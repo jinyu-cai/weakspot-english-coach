@@ -24,11 +24,19 @@ Date: 2026-07-15 UTC
 
 Branch: `fix/plan-chat-analysis-reliability`
 
-GitHub status: PR #65 is open and its Vercel Preview passed. Final merge is
-pending the updated release record and checks.
+GitHub status: PR #65 merged into `main` at
+`75e0bd8bdd061e672355b0078939ace4a5dc2562` after its final Vercel Preview
+passed. The matching Vercel Production deployment also completed successfully.
 
-Deploy status: Not deployed. Production remains on the prior Oracle backend
-release while this fix completes PR, Preview, and live-model verification.
+Deploy status: LIVE on the normal Oracle production origin. The exact
+`main@75e0bd8` backend archive, SHA-256
+`1206c1ed731d6be92fcaf2182d4c36c5d6494f45efdd9817648a0a1ef4ad237b`, is
+deployed on `oracle-us-sj`. The production `.env` hash matched before and after
+staging, DynamoDB table/TTL setup passed, the container is healthy, and the
+previous `main@976a6a8` tree remains at
+`/home/ubuntu/weakspot-backend.rollback-976a6a8-20260715T224706Z`. Cloudflare
+continues to route the stable API hostname to Oracle. Alibaba was intentionally
+left unchanged during this ordinary release.
 
 Summary:
 
@@ -61,14 +69,29 @@ MemoryAgent; stealth/Input Learning (including the greater-than-3-second
 two-chat race); Memory benchmark; dedup/delete; Coach contract; frontend
 standalone TypeScript, ESLint, and Next.js production build. All passed.
 
-Known issues: Live DeepSeek latency and the two-request production path still
-need to be measured after the exact merged backend is deployed. Same-session
-duplicate analysis intentionally remains a 409 while the original request is
-running; this is distinct from two different chats running concurrently.
+Production verification: public and container health returned 200; the
+production-origin CORS preflight for `POST /plan` returned 200 with credentials
+enabled; the Vercel `/plan` page returned 200; and the exact merge commit's
+Vercel status was successful. A real plan request through Cloudflare returned
+200 in 45.27 seconds with 7 days, 14 tasks, and 42 exercises. Oracle logs
+confirmed `deepseek-v4-flash`, a 12,000-token cap, first-attempt validation,
+and the same bounded shape. Two different production chats were analyzed
+simultaneously: both returned 200 in 16.38 and 29.77 seconds within a 29.77
+second wall-clock window. Their logs show overlapping Fast-model starts,
+first-attempt validation, independent completion, and no 409. A complete
+current-release log scan found no 500, traceback, server/validation/upstream
+error, or analysis-in-progress conflict.
 
-Next step: Push the branch, open a PR, verify Vercel Preview, merge, deploy the
-exact merged backend archive to Oracle, then run a real 7-day plan request and
-two different chat analyses concurrently through the production stack.
+Known issues: The in-app browser runtime exposed no browser instance, so the
+deployed buttons could not be replayed visually. The final Vercel bundle and
+page response passed, the frontend TypeScript/ESLint/production build passed,
+and the exact public API flows were exercised directly. Same-session duplicate
+analysis intentionally remains a 409 while the original request is running;
+this is distinct from two different chats running concurrently.
+
+Next step: Monitor normal Plan and Chat use and their Fast-model latency.
+Before a separate Alibaba demo window, deploy this exact merged release there
+and verify Qwen routing before changing any Cloudflare origin.
 
 ## 2026-07-15 — Concurrent practice generation without Memory lease conflicts
 
