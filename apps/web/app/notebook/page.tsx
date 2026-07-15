@@ -48,14 +48,20 @@ export default function NotebookPage() {
       if (!items.length) continue
       md += `## ${title} (${items.length})\n\n`
       for (const note of items) {
-        md += `### ${note.topic}\n\n`
-        md += `- **${t.notebook.original}:** ${note.original}\n`
-        md += `- **${t.notebook.natural}:** ${note.natural}\n`
-        md += `- **${t.notebook.explanation}:** ${note.explanation}\n`
-        if (note.context) md += `- **${t.notebook.contextTone}:** ${note.context}\n`
-        if (note.examples.length) {
-          md += `- **${t.notebook.examples}:**\n`
-          for (const ex of note.examples) md += `  - _${ex}_\n`
+        md += `### ${note.topic || (note.sourceType === "chat_selection" ? t.notebook.chatSelection : "")}\n\n`
+        if (note.sourceType === "chat_selection") {
+          md += `- **${t.notebook.savedText}:** ${note.original}\n`
+          md += `- **${t.notebook.source}:** ${note.sourceRole === "user" ? t.notebook.fromYou : t.notebook.fromCoach}\n`
+          if (note.context) md += `- **${t.notebook.messageContext}:** ${note.context}\n`
+        } else {
+          md += `- **${t.notebook.original}:** ${note.original}\n`
+          md += `- **${t.notebook.natural}:** ${note.natural}\n`
+          md += `- **${t.notebook.explanation}:** ${note.explanation}\n`
+          if (note.context) md += `- **${t.notebook.contextTone}:** ${note.context}\n`
+          if (note.examples.length) {
+            md += `- **${t.notebook.examples}:**\n`
+            for (const ex of note.examples) md += `  - _${ex}_\n`
+          }
         }
         md += `\n`
       }

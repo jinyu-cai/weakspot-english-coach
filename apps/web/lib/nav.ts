@@ -43,7 +43,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/import", key: "import", label: "Import", description: "ChatGPT conversations", icon: Inbox },
   { href: "/dashboard", key: "dashboard", label: "Dashboard", description: "Your weakness model", icon: LayoutDashboard },
   { href: "/memory", key: "memory", label: "Memory", description: "What your coach remembers", icon: BrainCircuit },
-  { href: "/notebook", key: "notebook", label: "Notebook", description: "Auto-collected notes", icon: BookOpen },
+  { href: "/notebook", key: "notebook", label: "Notebook", description: "Learning notes & chat saves", icon: BookOpen },
   { href: "/stats", key: "stats", label: "Daily Wins", description: "Your learning streak", icon: Trophy },
   { href: "/plan", key: "plan", label: "Plan", description: "7-day study plan", icon: CalendarRange },
   { href: "/practice", key: "practice", label: "Practice", description: "Targeted exercises", icon: Dumbbell },

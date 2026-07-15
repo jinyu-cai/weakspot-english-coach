@@ -919,9 +919,18 @@ def main() -> int:
         )
 
         # 10. End-of-session chat analysis
-        r = client.post("/api/v1/chat/sessions", json={"userId": user, "topic": "Free conversation"})
+        starter_message = "Welcome! Tell me about something interesting that happened today."
+        r = client.post(
+            "/api/v1/chat/sessions",
+            json={
+                "userId": user,
+                "topic": "Free conversation",
+                "starterMessage": starter_message,
+            },
+        )
         assert r.status_code == 200, r.text
         chat_session = r.json()["session"]
+        chat_turns = []
         for text in [
             "I go to the park yesterday and the weather was very good.",
             "I want explain my idea more natural.",
@@ -931,6 +940,71 @@ def main() -> int:
                 json={"userId": user, "sessionId": chat_session["id"], "text": text},
             )
             assert r.status_code == 200, r.text
+            chat_turns.append(r.json())
+
+        assistant_message = chat_turns[0]["assistantMessage"]
+        selected_text = assistant_message["content"][:40].strip()
+        r = client.post(
+            "/api/v1/notes/from-chat",
+            json={
+                "sessionId": chat_session["id"],
+                "messageId": assistant_message["id"],
+                "messageCreatedAt": assistant_message["createdAt"],
+                "selectedText": selected_text,
+            },
+        )
+        assert r.status_code == 200, r.text
+        saved_chat_note = r.json()["note"]
+        assert saved_chat_note["original"] == selected_text, saved_chat_note
+        assert saved_chat_note["sourceType"] == "chat_selection", saved_chat_note
+        assert saved_chat_note["sourceRole"] == "assistant", saved_chat_note
+
+        user_message = chat_turns[0]["userMessage"]
+        r = client.post(
+            "/api/v1/notes/from-chat",
+            json={
+                "sessionId": chat_session["id"],
+                "messageId": user_message["id"],
+                "messageCreatedAt": user_message["createdAt"],
+                "selectedText": "the park yesterday",
+            },
+        )
+        assert r.status_code == 200, r.text
+        saved_user_note = r.json()["note"]
+        assert saved_user_note["sourceRole"] == "user", saved_user_note
+
+        r = client.post(
+            "/api/v1/notes/from-chat",
+            json={
+                "sessionId": chat_session["id"],
+                "messageId": f"session-starter-{chat_session['id']}",
+                "messageCreatedAt": chat_session["createdAt"],
+                "selectedText": "something interesting",
+            },
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["note"]["sourceRole"] == "assistant", r.text
+
+        r = client.post(
+            "/api/v1/notes/from-chat",
+            json={
+                "sessionId": chat_session["id"],
+                "messageId": assistant_message["id"],
+                "messageCreatedAt": assistant_message["createdAt"],
+                "selectedText": "text that was never in this message",
+            },
+        )
+        assert r.status_code == 400, r.text
+
+        r = client.get("/api/v1/notes")
+        assert r.status_code == 200, r.text
+        saved_note_ids = {note["id"] for note in r.json()["notes"]}
+        assert saved_chat_note["id"] in saved_note_ids, saved_note_ids
+        assert saved_user_note["id"] in saved_note_ids, saved_note_ids
+        print(
+            "   POST /notes/from-chat    -> learner, coach, and generated starter "
+            "selections validated"
+        )
 
         r = client.post(f"/api/v1/chat/sessions/{chat_session['id']}/analyze")
         assert r.status_code == 200, r.text
