@@ -24,11 +24,14 @@ Date: 2026-07-14
 
 Branch: `fix/diagnostic-word-count`
 
-GitHub status: locally validated and ready to push; not merged at the time of
-this entry.
+GitHub status: PR #46 merged into `main` at merge commit `fd8d904`. Its Vercel
+Preview and merge-commit Production deployments both passed.
 
-Deploy status: pending merge. Both the frontend counter and FastAPI request
-validation changed, so Vercel and Oracle need the same merged release.
+Deploy status: LIVE. The exact merged `origin/main:apps/api` archive was
+SHA-256 verified and deployed to `oracle-us-sj`; the production `.env` and old
+backend directory were preserved, table/TTL setup passed, and the recreated
+container passed local and public health checks. Vercel Production published
+the merged frontend. Cloudflare remains on Oracle; Alibaba was not changed.
 
 Summary:
 
@@ -48,8 +51,17 @@ Known issues: word counting is intentionally whitespace-delimited because this
 surface asks for English writing; it is not intended to segment unspaced CJK
 text.
 
-Next step: push, merge after Vercel Preview passes, deploy the merged API to
-Oracle, and verify Vercel Production plus public health/CORS.
+Production verification:
+
+- `https://englearning.jinxxx.de/` returns 200 and its rendered page contains
+  the new `At least 5 words` copy.
+- `https://enapi.jinxxx.de/api/v1/health` returns `{"status":"ok"}`, its model
+  catalogue exposes the expected DeepSeek models, and production CORS permits
+  `https://englearning.jinxxx.de`.
+- The running Oracle container reports healthy and directly accepts five-word
+  input while rejecting four-word and punctuation-only input.
+
+Next step: monitor diagnose submissions for unexpected tokenization edge cases.
 
 ## 2026-07-14 — Natural, rotating stealth practice in text chat
 
