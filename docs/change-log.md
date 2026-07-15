@@ -18,6 +18,58 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-15 — Reliable 7-day plans and concurrent chat analysis
+
+Date: 2026-07-15 UTC
+
+Branch: `fix/plan-chat-analysis-reliability`
+
+GitHub status: PR #65 is open and its Vercel Preview passed. Final merge is
+pending the updated release record and checks.
+
+Deploy status: Not deployed. Production remains on the prior Oracle backend
+release while this fix completes PR, Preview, and live-model verification.
+
+Summary:
+
+- Replaced the unbounded 7-day-plan contract (which produced 53,181 characters
+  across more than 112 exercises and took 283 seconds in production) with an
+  exact 7-day, 2-task/day, 3-exercise/task contract: 42 exercises total.
+- Routed plan generation through the selected Fast model, capped it at 12,000
+  output tokens, normalized its shape, added a synchronous UI in-flight guard,
+  and added request IDs plus timing/shape logs with safe public errors.
+- Limited chat analysis to the most useful corrections, expressions,
+  weaknesses, strengths, actions, and memories. Model over-generation is
+  safely truncated before validation, analysis uses the Fast model, and its
+  output is capped at 12,000 tokens to avoid the production retry that took
+  137 seconds.
+- Tracked analysis in flight per chat session in the UI. Learners can leave
+  chat A analyzing, open and analyze chat B, and receive each result in its own
+  session without one background response replacing the other session's view.
+  Duplicate analysis of the same chat remains guarded.
+- Extended only chat-analysis finalization's learner write-lease wait from 3
+  to 30 seconds. A regression holds one chat beyond the old deadline and
+  verifies that a second, different chat still completes with both learning
+  updates preserved.
+
+Files changed: plan API/model/service/fake data and integration coverage; chat
+analysis model/service/finalization concurrency coverage; Chat and Plan UI;
+this change record.
+
+Tests run: Python compile; backend smoke; full moto/fake-AI integration loop;
+MemoryAgent; stealth/Input Learning (including the greater-than-3-second
+two-chat race); Memory benchmark; dedup/delete; Coach contract; frontend
+standalone TypeScript, ESLint, and Next.js production build. All passed.
+
+Known issues: Live DeepSeek latency and the two-request production path still
+need to be measured after the exact merged backend is deployed. Same-session
+duplicate analysis intentionally remains a 409 while the original request is
+running; this is distinct from two different chats running concurrently.
+
+Next step: Push the branch, open a PR, verify Vercel Preview, merge, deploy the
+exact merged backend archive to Oracle, then run a real 7-day plan request and
+two different chat analyses concurrently through the production stack.
+
 ## 2026-07-15 — Concurrent practice generation without Memory lease conflicts
 
 Date: 2026-07-15 UTC

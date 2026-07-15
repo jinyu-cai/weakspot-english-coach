@@ -5,8 +5,11 @@ from app.config import settings
 from app.models.common import OutputLanguage
 from app.models.chat import SessionAnalysisAI
 from app.services.ai_client import LLMProviderConfig, parse_with_model
-from app.services.output_language import language_instruction
 from app.services.memory_service import MEMORY_EXTRACTION_INSTRUCTION
+from app.services.output_language import language_instruction
+
+
+SESSION_ANALYSIS_MAX_TOKENS = 12_000
 
 SESSION_ANALYSIS_PROMPT = """\
 You are an expert English tutor for Chinese native speakers.
@@ -25,13 +28,16 @@ the scenario context or a Coach scene opener.
 
 Your analysis must cover:
 
-1. **corrections** — Every grammar, vocabulary, or usage error the learner made.
+1. **corrections** — Return at most 12 distinct, high-value grammar, vocabulary, or usage
+   corrections. Prioritize recurring patterns, errors that block meaning, and representative
+   examples across skill codes. Do not repeat the same underlying pattern for many utterances.
    For each: code, category, severity (low/medium/high), the original text,
    the corrected version, an explanation, one micro lesson,
    and one practice goal.
-   Be thorough — catch every error, even small ones.
+   Omit low-value duplicates rather than exceeding 12 corrections.
 
-2. **naturalExpressions** — Useful phrasings to save to the learner's notebook. Include BOTH:
+2. **naturalExpressions** — Return at most 8 useful phrasings to save to the learner's notebook.
+   Include BOTH:
    (a) Places where the learner's English was grammatically correct but sounds unnatural or
        non-idiomatic — suggest a more natural alternative.
    (b) **Expression gaps** — moments where the learner asked how to express an idea (e.g.
@@ -40,9 +46,10 @@ Your analysis must cover:
        wanted to convey as `original` (their Chinese or rough attempt) and the natural English
        as `natural` (use the coach's suggestion when one was given in the conversation).
    For each: original, natural version, explanation, usage context, and 2 example sentences.
-   Include every expression that would be useful for the learner to acquire.
+   Choose the most reusable expressions; omit near-duplicates.
 
-3. **weaknesses** — Recurring patterns or skill gaps you observe across the conversation.
+3. **weaknesses** — Return at most 6 recurring patterns or skill gaps you observe across the
+   conversation.
    Count repeated expression gaps — asking how to say things, or falling back on Chinese
    because the English is missing — as a `clarity.expression` weakness so they enter the
    learner's weakness profile.
@@ -53,11 +60,13 @@ Your analysis must cover:
    For each: code, category label, severity (low/medium/high), evidence quote, explanation,
    and a practice goal.
 
-4. **strengthsZh** — What the learner does well.
+4. **strengthsZh** — At most 5 things the learner does well.
 
 5. **summaryZh** — A summary of the learner's overall performance in this conversation.
 
-6. **recommendedNextActionsZh** — Recommended next steps.
+6. **recommendedNextActionsZh** — At most 5 recommended next steps.
+
+Return at most 8 `memoryCandidates`. Keep all learner-facing fields concise.
 
 Be encouraging but honest. Include both recurring patterns and isolated slips.
 """
@@ -68,7 +77,7 @@ def analyze_session(
     topic: Optional[str] = None,
     output_language: OutputLanguage = "en",
     llm_provider: Optional[LLMProviderConfig] = None,
-    max_tokens: Optional[int] = 16384,
+    max_tokens: Optional[int] = SESSION_ANALYSIS_MAX_TOKENS,
     trace_id: Optional[str] = None,
     memory_context: Optional[str] = None,
     stealth_probe: Optional[dict] = None,
@@ -167,9 +176,14 @@ The hidden targets are internal evaluation context, not facts to add as new memo
 
     model = None
     if llm_provider:
-        model = llm_provider.model
-    elif settings.default_llm_model:
-        model = settings.default_llm_model
+        model = llm_provider.fast_model or llm_provider.model
+    elif settings.default_llm_fast_model:
+        model = settings.default_llm_fast_model
+
+    effective_max_tokens = min(
+        max_tokens or SESSION_ANALYSIS_MAX_TOKENS,
+        SESSION_ANALYSIS_MAX_TOKENS,
+    )
 
     request_messages = [{"role": "system", "content": system}]
     if memory_context:
@@ -182,7 +196,7 @@ The hidden targets are internal evaluation context, not facts to add as new memo
     result = parse_with_model(
         messages=request_messages,
         response_model=SessionAnalysisAI,
-        max_tokens=max_tokens,
+        max_tokens=effective_max_tokens,
         model=model,
         provider=llm_provider,
         trace_id=trace_id,

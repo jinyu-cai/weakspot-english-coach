@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import useSWR from "swr"
 import { toast } from "sonner"
 import { CalendarRange, Sparkles } from "lucide-react"
@@ -19,11 +19,14 @@ export default function PlanPage() {
   const [plan, setPlan] = useState<LearningPlan | null>(null)
   const [generating, setGenerating] = useState(false)
   const [errorScope, setErrorScope] = useState<PlanErrorScope>("weekly")
+  const generateInFlightRef = useRef(false)
   const { t } = useLanguage()
 
   const activePlan = plan ?? data?.plan ?? null
 
   async function handleGenerate() {
+    if (generateInFlightRef.current) return
+    generateInFlightRef.current = true
     setGenerating(true)
     try {
       const newPlan = await generatePlan(undefined, errorScope)
@@ -33,6 +36,7 @@ export default function PlanPage() {
     } catch {
       toast.error(t.plan.generateFailed)
     } finally {
+      generateInFlightRef.current = false
       setGenerating(false)
     }
   }
