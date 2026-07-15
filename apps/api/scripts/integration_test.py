@@ -850,6 +850,7 @@ def main() -> int:
             guest = TestClient(app)
             me = guest.get("/api/v1/auth/me")
             assert me.status_code == 200 and me.json().get("authenticated") is False, me.text
+            assert me.json().get("authProviders") == [], me.text
             print("10. GET /auth/me (no cookie)   -> authenticated: false")
             spoofed_scope = {
                 "type": "http",
