@@ -24,7 +24,8 @@ Date: 2026-07-15 UTC
 
 Branch: `fix/plan-chat-analysis-reliability`
 
-GitHub status: Local branch; not pushed or opened as a PR yet.
+GitHub status: PR #65 is open and its Vercel Preview passed. Final merge is
+pending the updated release record and checks.
 
 Deploy status: Not deployed. Production remains on the prior Oracle backend
 release while this fix completes PR, Preview, and live-model verification.
