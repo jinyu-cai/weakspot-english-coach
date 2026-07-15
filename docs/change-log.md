@@ -24,11 +24,19 @@ Date: 2026-07-15 UTC
 
 Branch: `fix/practice-generation-deep-chat`
 
-GitHub status: Release changes and regression coverage are ready for the
-normal reviewed PR workflow.
+GitHub status: PR #59 merged into `main` at
+`12e6d7534a5f269ca97ee1c8de39b875287c8e5e` after its Vercel Preview passed.
+The matching Vercel Production deployment also completed successfully.
 
-Deploy status: Not deployed yet. Oracle remains the active production API
-origin, and the current Vercel production deployment is unchanged.
+Deploy status: LIVE on the normal Oracle production origin. The exact
+`main@12e6d75` backend archive, SHA-256
+`079030babcdc0814e96f1e993bbe7ece7891a2ef8a2ccf0e336d4f46c9695947`, is
+deployed on `oracle-us-sj`. The production `.env` was preserved, DynamoDB
+table/TTL setup passed, the container is healthy, and the previous
+`main@215b4193` tree remains at
+`/home/ubuntu/weakspot-backend.rollback-215b4193-20260715T183926Z`. Cloudflare
+continues to route the stable API hostname to Oracle. Alibaba was intentionally
+left unchanged during this ordinary release.
 
 Summary:
 
@@ -52,13 +60,20 @@ moto/fake-AI learner loop; exact 410 KB practice-decision regression; default,
 mixed-provider, saved-session, and BYOK Fast/Deep chat routing; frontend
 TypeScript, ESLint, and the Next.js production build. All passed.
 
+Production verification: public API health, DeepSeek model catalogue, CORS,
+OpenAPI `textModelMode`, Vercel `/chat`, and the rendered Chat reply-model copy
+passed. A real `/practice/generate` request returned 200 and its stored decision
+omitted `errorFingerprint`. A real Deep text session saved
+`textModelMode=deep`, returned a successful reply, and the backend log confirmed
+`model=deepseek-v4-pro`. A post-smoke log scan found no traceback, 500, or error.
+
 Known issues: Deep chat replies can take longer and consume more provider
 quota, so Fast remains the default. Existing sessions retain their original
 model; learners select Deep before starting a new text session.
 
-Next step: Open and merge the reviewed PR, deploy the merged backend to Oracle,
-wait for the Vercel production deployment, and run public practice/chat smoke
-checks. Alibaba remains unchanged during this ordinary production release.
+Next step: Monitor practice generation and Deep-chat latency/provider usage.
+Before a separate Alibaba demo window, deploy this exact merged release there
+and verify Qwen Deep/Fast routing before changing any Cloudflare origin.
 
 ## 2026-07-15 — Event-driven text-chat practice opportunities
 
