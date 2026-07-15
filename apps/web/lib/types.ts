@@ -737,6 +737,7 @@ export type StealthPracticeOutcome =
 
 export interface StealthPracticeResult {
   probeId?: string | null
+  probeKind?: "weakness" | "discovery" | null
   memoryId?: string | null
   targetSkillCode: string
   targetDescription?: string | null

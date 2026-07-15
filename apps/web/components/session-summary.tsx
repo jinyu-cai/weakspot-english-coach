@@ -18,6 +18,7 @@ import type { SessionAnalysis, StealthPracticeResult } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
+import { ShadowingButton } from "@/components/shadowing-button"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/components/language-provider"
 
@@ -132,10 +133,14 @@ export function SessionSummary({
                     <div>
                       <p className="flex items-center gap-1.5 text-sm font-medium">
                         <Target className="size-4 text-primary" />
-                        {t.chat.summary.stealthTitle}
+                        {practice.probeKind === "discovery"
+                          ? t.chat.summary.discoveryTitle
+                          : t.chat.summary.stealthTitle}
                       </p>
                       <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted-foreground">
-                        {t.chat.summary.stealthDescription}
+                        {practice.probeKind === "discovery"
+                          ? t.chat.summary.discoveryDescription
+                          : t.chat.summary.stealthDescription}
                       </p>
                     </div>
                     <Badge
@@ -264,6 +269,12 @@ export function SessionSummary({
                           ))}
                         </div>
                       )}
+                      <div className="mt-1.5 flex flex-col gap-2 rounded-lg border border-border/70 bg-background/70 p-2 sm:flex-row sm:items-center">
+                        <ShadowingButton text={e.natural} />
+                        <span className="text-[11px] leading-relaxed text-muted-foreground">
+                          {t.chat.summary.shadowHint}
+                        </span>
+                      </div>
                       <Badge variant="secondary" className="mt-1 w-fit gap-1 text-[10px]">
                         <CheckCircle2 className="size-3" />
                         {t.chat.summary.saved}

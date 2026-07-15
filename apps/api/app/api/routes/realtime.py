@@ -33,7 +33,7 @@ from app.services.memory_service import (
 )
 from app.services.stealth_practice_service import (
     build_stealth_probe_instruction,
-    select_stealth_probe,
+    select_conversation_probe,
 )
 
 router = APIRouter(prefix="/chat")
@@ -178,7 +178,7 @@ def create_realtime_session(
         logger.exception("realtime memory_retrieval_error user_id=%s", req.userId)
         memory_pack = {"text": "", "items": [], "estimatedTokens": 0, "traceId": None}
     try:
-        stealth_probe = select_stealth_probe(
+        stealth_probe = select_conversation_probe(
             req.userId,
             modality="voice",
             topic=req.topic,

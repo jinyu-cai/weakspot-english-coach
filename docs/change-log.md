@@ -18,6 +18,63 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-15 — Neutral skill discovery and unscored shadowing
+
+Date: 2026-07-15
+
+Branch: `feature/conversation-discovery-shadowing`
+
+GitHub status: local implementation and release checks complete; PR not opened yet.
+
+Deploy status: not deployed.
+
+Summary:
+
+- Filled otherwise empty turns 2/4/6 sampling slots with a neutral,
+  naturalness-gated sample of an under-observed skill. Due remembered
+  weaknesses still take priority, while skill codes and interaction moves stay
+  distinct within a chat.
+- Kept coverage separate from mastery. Neutral samples use exact, turn-bounded
+  evidence and record one bounded strategy row per modality, but even one
+  independent success cannot raise mastery. A weakness still requires ordinary
+  correction/weakness evidence from an exact learner utterance.
+- Added “Hear & shadow” beside post-session natural expressions. It plays the
+  existing server-side AI voice with a browser-voice fallback and invites the
+  learner to copy stress and rhythm. The UI explicitly calls this practice, not
+  a pronunciation score; it records no microphone audio.
+
+Research basis: mixed practice across several English grammar structures has
+shown a delayed-retention advantage over blocked practice, moderated by prior
+knowledge (Nakata & Suzuki, 2019,
+https://doi.org/10.1111/modl.12581). An 18-week study with Chinese university
+learners found maintained spontaneous comprehensibility gains only for the
+suprasegmental-instruction group (Zhang & Yuan, 2020,
+https://doi.org/10.1017/S0272263120000121). Pronunciation measurement reviews
+also distinguish controlled from spontaneous production and comprehensibility
+from native-likeness (https://doi.org/10.1111/lang.12345 and
+https://doi.org/10.1002/tesq.3027). These findings motivate rotation and
+shadowing; they do not validate this exact scheduler, one playback, or an
+automated prosody score.
+
+Tests run: Python compile and `git diff --check`; the full deterministic
+stealth/Input Learning suite (including discovery fallback, distinct skill/move
+rotation, exact evidence windows, zero mastery mutation and retry idempotency);
+backend smoke, Coach contract, full moto/fake-AI integration, MemoryAgent,
+memory benchmark, and de-dup/delete suites; frontend standalone TypeScript,
+ESLint, and the network-enabled Next.js production build for all 19 routes all
+passed.
+
+Known issues: the neutral sampler is chat-specific rather than one cross-surface
+coverage model. Shadowing supplies a model and instructions but does not yet
+capture audio, compare acoustics, or verify learner performance. The configured
+in-app browser had no available browser binding, so an independent visual
+automation pass could not be completed; static type/lint and production render
+compilation are the UI release gates for this branch.
+
+Next step: run all backend/frontend release gates, review the UI, open a PR,
+merge, deploy the exact release to Oracle and Alibaba, and perform live-model
+checks on neutral sampling and speech playback.
+
 ## 2026-07-15 — Adaptive conversation moves for natural stealth practice
 
 Date: 2026-07-15

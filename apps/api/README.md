@@ -189,8 +189,13 @@ MemoryAgent also tracks retention and modality-specific evidence from stealth
 missions. Text chat excludes weakness/strategy rows and low-relevance memories
 from ordinary reply personalization. Starting with learner turn 2, it may use a
 single one-reply naturalness-gated probe; turns 4 and 6 may rotate to other due
-skill codes, up to three distinct targets per session. A due weakness can be
-woven into normal chat, but an outcome is
+skill codes, up to three distinct targets per session. When no unused due
+weakness fits an available slot, the scheduler may instead sample an
+under-observed skill family neutrally. A neutral sample is explicitly not a
+known weakness: it records bounded modality coverage and interaction-move
+statistics, but never changes mastery or creates a weakness by itself. A later
+correction or weakness still needs exact learner evidence from end-session
+analysis. A due weakness can be woven into normal chat, but an outcome is
 recorded only after an opportunity gate establishes that the target was fairly
 elicited and observable. Supported outcomes are `success`, `hinted_success`,
 `failure`, `avoided`, and `no_opportunity`; the last outcome never changes attempts,

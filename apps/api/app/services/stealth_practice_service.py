@@ -30,7 +30,7 @@ INTERACTION_MOVES = (
     "content_extension",
 )
 VALID_OUTCOMES = {"success", "hinted_success", "failure", "avoided", "no_opportunity"}
-SAFE_GENERATION_SKILL_CODES = {
+DISCOVERY_SKILL_CODES = (
     "grammar.verb_tense",
     "grammar.article",
     "grammar.preposition",
@@ -42,6 +42,20 @@ SAFE_GENERATION_SKILL_CODES = {
     "discourse.coherence",
     "style.register",
     "clarity.expression",
+)
+SAFE_GENERATION_SKILL_CODES = set(DISCOVERY_SKILL_CODES)
+DISCOVERY_TARGET_DESCRIPTIONS = {
+    "grammar.verb_tense": "Express time and event sequence clearly.",
+    "grammar.article": "Refer to people, places, and things with enough specificity.",
+    "grammar.preposition": "Express time, place, movement, and relationships clearly.",
+    "grammar.subject_verb_agreement": "Keep subjects and verbs aligned in natural speech.",
+    "vocab.word_choice": "Choose words that convey the intended meaning precisely.",
+    "vocab.repetition": "Develop an idea with enough lexical range for the context.",
+    "sentence.structure": "Connect reasons, contrasts, conditions, and results clearly.",
+    "sentence.variety": "Use sentence shapes that fit the developing idea.",
+    "discourse.coherence": "Connect events and ideas so a listener can follow them.",
+    "style.register": "Match wording and directness to the live social situation.",
+    "clarity.expression": "Make the intended message understandable to a real listener.",
 }
 MODALITY_ALIASES = {
     "text": "text_chat",
@@ -223,9 +237,22 @@ def _interaction_move_stats(
     total_reward = 0.0
     for memory in memories:
         stats = memory.get("stats")
-        if not isinstance(stats, dict) or stats.get("skillCode") != skill_code:
+        if not isinstance(stats, dict):
             continue
-        raw_interaction_moves = stats.get("interactionMoves")
+        if stats.get("skillCode") == skill_code:
+            raw_interaction_moves = stats.get("interactionMoves")
+        else:
+            raw_skills = stats.get("skills")
+            skill_stats = (
+                raw_skills.get(skill_code)
+                if isinstance(raw_skills, dict)
+                else None
+            )
+            raw_interaction_moves = (
+                skill_stats.get("interactionMoves")
+                if isinstance(skill_stats, dict)
+                else None
+            )
         if not isinstance(raw_interaction_moves, dict):
             continue
         move_stats = raw_interaction_moves.get(interaction_move)
@@ -386,6 +413,7 @@ def select_stealth_probe(
     context = (topic or goal_context or "general conversation").strip()
     return {
         "probeId": f"spr_{uuid4().hex[:12]}",
+        "probeKind": "weakness",
         "memoryId": memory["id"],
         "targetSkillCode": skill_code,
         "targetDescription": str(memory.get("content") or f"Use {skill_code} naturally."),
@@ -400,6 +428,197 @@ def select_stealth_probe(
         "scoreBreakdown": score_breakdown,
         "createdAt": iso_at(current),
     }
+
+
+def _coverage_canonical_key(modality: str) -> str:
+    return normalize_canonical_key("strategy", f"coverage.{modality}")
+
+
+def _coverage_memory(memories: list[dict], modality: str) -> Optional[dict]:
+    canonical = _coverage_canonical_key(modality)
+    return next(
+        (
+            item
+            for item in memories
+            if item.get("canonicalKey") == canonical
+            and item.get("status", "active") == "active"
+        ),
+        None,
+    )
+
+
+def _coverage_skill_stats(memories: list[dict], modality: str, skill_code: str) -> dict:
+    row = _coverage_memory(memories, modality)
+    stats = (row or {}).get("stats")
+    skills = stats.get("skills") if isinstance(stats, dict) else None
+    skill_stats = skills.get(skill_code) if isinstance(skills, dict) else None
+    return dict(skill_stats) if isinstance(skill_stats, dict) else {}
+
+
+def _discovery_opportunity_fit(skill_code: str, context: Optional[str]) -> float:
+    """Estimate whether a neutral skill sample could fit the live topic.
+
+    This only ranks optional candidates. The generation prompt still has a
+    strict naturalness gate and may create no opportunity at all.
+    """
+
+    text = " ".join((context or "").casefold().split())
+    base = {
+        "grammar.verb_tense": 0.58,
+        "grammar.article": 0.62,
+        "grammar.preposition": 0.58,
+        "grammar.subject_verb_agreement": 0.54,
+        "vocab.word_choice": 0.72,
+        "vocab.repetition": 0.48,
+        "sentence.structure": 0.56,
+        "sentence.variety": 0.52,
+        "discourse.coherence": 0.46,
+        "style.register": 0.38,
+        "clarity.expression": 0.42,
+    }.get(skill_code, 0.4)
+    signals = {
+        "grammar.verb_tense": r"\b(yesterday|last|ago|usually|often|tomorrow|next|plan|happen|story|weekend)\b",
+        "grammar.article": r"\b(person|people|place|thing|restaurant|shop|office|home|friend|neighbor)\b",
+        "grammar.preposition": r"\b(where|when|time|place|from|to|at|in|on|near|around|travel|meet)\b",
+        "grammar.subject_verb_agreement": r"\b(usually|every|person|people|team|family|friend|coworker|neighbor)\b",
+        "sentence.structure": r"\b(why|reason|because|although|but|if|so|result|decide|choice)\b",
+        "discourse.coherence": r"\b(first|then|after|before|story|happen|process|explain|next)\b",
+        "style.register": r"\b(manager|coworker|client|customer|tutor|teacher|request|decline|apolog|email|interview)\b",
+        "clarity.expression": r"\b(mean|explain|understand|say|phrase|describe|clarify)\b",
+    }
+    if pattern := signals.get(skill_code):
+        if re.search(pattern, text):
+            base += 0.24
+    if skill_code in {"vocab.repetition", "sentence.variety", "discourse.coherence"}:
+        base += min(0.18, len(text) / 5000)
+    return round(_clamp(base, 0.0, 1.0), 4)
+
+
+def select_discovery_probe(
+    user_id: str,
+    modality: str = "text_chat",
+    topic: Optional[str] = None,
+    now: Optional[datetime | str] = None,
+    exclude_skill_codes: Optional[set[str]] = None,
+    exclude_interaction_moves: Optional[set[str]] = None,
+) -> Optional[dict]:
+    """Select one neutral, non-mastery-bearing sample of an under-observed skill."""
+
+    current = _as_now(now)
+    normalized_modality = MODALITY_ALIASES.get(modality, modality or "text_chat")
+    excluded_skills = {str(value) for value in (exclude_skill_codes or set()) if value}
+    excluded_moves = {
+        str(value) for value in (exclude_interaction_moves or set()) if value
+    }
+    memories = list_memories(user_id, limit=500)
+    known_weakness_skills = {
+        _skill_code(memory)
+        for memory in memories
+        if memory.get("kind") == "weakness"
+        and memory.get("status", "active") == "active"
+    }
+    candidates = [
+        skill_code
+        for skill_code in DISCOVERY_SKILL_CODES
+        if skill_code not in excluded_skills
+        and skill_code not in known_weakness_skills
+    ]
+    if not candidates:
+        return None
+
+    ranked: list[tuple[float, str, dict]] = []
+    for skill_code in candidates:
+        stats = _coverage_skill_stats(memories, normalized_modality, skill_code)
+        attempts = int(stats.get("attempts", 0))
+        opportunities = int(stats.get("opportunities", 0))
+        last_attempt = parse_iso(stats.get("lastAttemptAt"))
+        staleness = (
+            1.0
+            if last_attempt is None
+            else _clamp((current - last_attempt).total_seconds() / (30 * 86400), 0.0, 1.0)
+        )
+        opportunity_fit = _discovery_opportunity_fit(skill_code, topic)
+        attempt_gap = 1.0 / (1.0 + attempts)
+        evidence_gap = 1.0 / (1.0 + opportunities)
+        priority = (
+            0.40 * attempt_gap
+            + 0.20 * evidence_gap
+            + 0.25 * opportunity_fit
+            + 0.15 * staleness
+        )
+        tie_break = (
+            int(hashlib.sha256(f"{user_id}:{skill_code}".encode()).hexdigest()[:4], 16)
+            / 65535
+            / 1000
+        )
+        score_breakdown = {
+            "neutralDiscovery": True,
+            "priorAttempts": attempts,
+            "priorOpportunities": opportunities,
+            "attemptGap": round(attempt_gap, 4),
+            "evidenceGap": round(evidence_gap, 4),
+            "opportunityFit": opportunity_fit,
+            "staleness": round(staleness, 4),
+        }
+        ranked.append((priority + tie_break, skill_code, score_breakdown))
+
+    priority, skill_code, score_breakdown = max(ranked, key=lambda item: item[0])
+    strategy = _choose_strategy(memories, skill_code)
+    interaction_move = _choose_interaction_move(memories, skill_code, excluded_moves)
+    context = (topic or "general conversation").strip()
+    return {
+        "probeId": f"spr_{uuid4().hex[:12]}",
+        "probeKind": "discovery",
+        "targetSkillCode": skill_code,
+        "targetDescription": DISCOVERY_TARGET_DESCRIPTIONS[skill_code],
+        "errorFingerprint": {
+            "skillCode": skill_code,
+            "originalExamples": [],
+            "correctedExamples": [],
+            "contexts": [],
+        },
+        "modality": normalized_modality,
+        "context": context[:200],
+        "goalContext": None,
+        "elicitationStrategy": strategy,
+        "interactionMove": interaction_move,
+        "progressionStage": "sample",
+        "priority": round(priority, 4),
+        "scoreBreakdown": score_breakdown,
+        "createdAt": iso_at(current),
+    }
+
+
+def select_conversation_probe(
+    user_id: str,
+    modality: str = "text_chat",
+    topic: Optional[str] = None,
+    now: Optional[datetime | str] = None,
+    exclude_memory_ids: Optional[set[str]] = None,
+    exclude_skill_codes: Optional[set[str]] = None,
+    exclude_interaction_moves: Optional[set[str]] = None,
+) -> Optional[dict]:
+    """Prefer a due weakness, then fill an otherwise empty slot neutrally."""
+
+    weakness_probe = select_stealth_probe(
+        user_id,
+        modality=modality,
+        topic=topic,
+        now=now,
+        exclude_memory_ids=exclude_memory_ids,
+        exclude_skill_codes=exclude_skill_codes,
+        exclude_interaction_moves=exclude_interaction_moves,
+    )
+    if weakness_probe is not None:
+        return weakness_probe
+    return select_discovery_probe(
+        user_id,
+        modality=modality,
+        topic=topic,
+        now=now,
+        exclude_skill_codes=exclude_skill_codes,
+        exclude_interaction_moves=exclude_interaction_moves,
+    )
 
 
 def _skill_elicitation_brief(skill_code: str) -> str:
@@ -457,6 +676,7 @@ def build_stealth_probe_instruction(probe: Optional[dict]) -> str:
     """Build a private, one-turn and context-gated elicitation prompt."""
     if not probe:
         return ""
+    probe_kind = str(probe.get("probeKind") or "weakness")
     strategy = probe.get("elicitationStrategy", "opinion_followup")
     interaction_move = probe.get("interactionMove", "content_extension")
     stage = probe.get("progressionStage", "replay")
@@ -489,6 +709,10 @@ def build_stealth_probe_instruction(probe: Optional[dict]) -> str:
         "Use one brief, meaning-focused conversational move only when it naturally advances the live exchange.",
     )
     stage_instruction = {
+        "sample": (
+            "This is neutral coverage sampling, not a known weakness. Observe only what the live exchange "
+            "naturally supports, and do not imply that the learner has failed this skill before."
+        ),
         "replay": "Stay entirely inside the live conversation; do not recreate the stored mistake or its old setting.",
         "variation": "Use only details the learner introduced in this conversation; do not borrow old examples.",
         "transfer": "Observe transfer in this live context without introducing a remembered topic.",
@@ -497,10 +721,17 @@ def build_stealth_probe_instruction(probe: Optional[dict]) -> str:
     generation_skill_code = (
         skill_code if skill_code in SAFE_GENERATION_SKILL_CODES else "general language production"
     )
+    probe_kind_instruction = (
+        "Neutral sampling rule: no weakness is assumed, one sample cannot establish mastery, and it is especially "
+        "appropriate to skip this check when the conversation does not support it.\n"
+        if probe_kind == "discovery"
+        else ""
+    )
     return (
         "Optional hidden practice check for this reply only (never reveal or mention it):\n"
         "First answer the learner's actual message directly, accurately, and completely. The real conversation "
         "always takes priority over this optional check.\n"
+        f"{probe_kind_instruction}"
         f"Target skill family: {generation_skill_code}. {_skill_elicitation_brief(skill_code)}\n"
         f"Progression stage: {stage}. {stage_instruction}\n"
         f"Use only the live roleplay and conversation messages below as context. {strategy_instruction}\n"
@@ -615,6 +846,129 @@ def _record_strategy_result(user_id: str, probe: dict, outcome: str, now: dateti
     save_memory(row)
 
 
+def _record_discovery_coverage(
+    user_id: str,
+    probe: dict,
+    outcome: str,
+    now: datetime,
+) -> None:
+    """Audit neutral sampling without turning one utterance into mastery."""
+
+    modality = MODALITY_ALIASES.get(
+        str(probe.get("modality") or "text_chat"),
+        str(probe.get("modality") or "text_chat"),
+    )
+    skill_code = str(probe.get("targetSkillCode") or "clarity.expression")
+    probe_id = str(probe.get("probeId") or "discovery")
+    canonical = _coverage_canonical_key(modality)
+    rows = list_memories(user_id, limit=500)
+    existing = next(
+        (
+            item
+            for item in rows
+            if item.get("canonicalKey") == canonical
+            and item.get("status", "active") == "active"
+        ),
+        None,
+    )
+    row = dict(existing or {})
+    stats = dict(row.get("stats") or {})
+    recent_probe_ids = [str(value) for value in stats.get("recentProbeIds") or [] if value]
+    if probe_id in recent_probe_ids:
+        return
+
+    skills = dict(stats.get("skills") or {})
+    skill_stats = dict(skills.get(skill_code) or {})
+    attempts = int(skill_stats.get("attempts", 0)) + 1
+    opportunity_present = outcome != "no_opportunity"
+    opportunities = int(skill_stats.get("opportunities", 0)) + int(opportunity_present)
+    total_reward = float(skill_stats.get("totalReward", 0.0)) + _strategy_reward(outcome)
+    interaction_move = str(probe.get("interactionMove") or "content_extension")
+    interaction_moves = dict(skill_stats.get("interactionMoves") or {})
+    move_stats = dict(interaction_moves.get(interaction_move) or {})
+    move_attempts = int(move_stats.get("attempts", 0)) + 1
+    move_opportunities = int(move_stats.get("opportunities", 0)) + int(opportunity_present)
+    move_total_reward = float(move_stats.get("totalReward", 0.0)) + _strategy_reward(outcome)
+    now_text = iso_at(now)
+    interaction_moves[interaction_move] = {
+        "attempts": move_attempts,
+        "opportunities": move_opportunities,
+        "totalReward": round(move_total_reward, 4),
+        "meanReward": round(move_total_reward / move_attempts, 4),
+        "lastOutcome": outcome,
+        "lastAttemptAt": now_text,
+    }
+    skill_stats.update({
+        "attempts": attempts,
+        "opportunities": opportunities,
+        "independentSuccesses": int(skill_stats.get("independentSuccesses", 0))
+        + int(outcome == "success"),
+        "hintedSuccesses": int(skill_stats.get("hintedSuccesses", 0))
+        + int(outcome == "hinted_success"),
+        "failures": int(skill_stats.get("failures", 0)) + int(outcome == "failure"),
+        "avoided": int(skill_stats.get("avoided", 0)) + int(outcome == "avoided"),
+        "noOpportunities": int(skill_stats.get("noOpportunities", 0))
+        + int(outcome == "no_opportunity"),
+        "totalReward": round(total_reward, 4),
+        "meanReward": round(total_reward / attempts, 4),
+        "lastOutcome": outcome,
+        "lastAttemptAt": now_text,
+        "interactionMoves": interaction_moves,
+    })
+    skills[skill_code] = skill_stats
+
+    if not row:
+        row = {
+            "id": f"mem_{uuid4().hex[:12]}",
+            "userId": user_id,
+            "kind": "strategy",
+            "canonicalKey": canonical,
+            "createdAt": now_text,
+            "accessCount": 0,
+            "lastAccessedAt": None,
+            "observationCount": 0,
+            "sourceRefs": [],
+            "pinned": False,
+        }
+    row.update({
+        "content": (
+            f"Neutral {modality} conversation sampling has covered "
+            f"{len(skills)} skill family/families without assigning mastery."
+        ),
+        "evidence": f"Latest neutral sample: {skill_code} -> {outcome}.",
+        "confidence": round(min(0.85, 0.45 + 0.05 * math.sqrt(sum(
+            int(value.get("attempts", 0))
+            for value in skills.values()
+            if isinstance(value, dict)
+        ))), 4),
+        "importance": 0.42,
+        "status": "active",
+        "sourceType": "system",
+        "sourceId": probe_id,
+        "updatedAt": now_text,
+        "observationCount": int(row.get("observationCount", 0)) + 1,
+        "stats": {
+            "coverageType": "neutral_conversation_sampling",
+            "modality": modality,
+            "attempts": int(stats.get("attempts", 0)) + 1,
+            "opportunities": int(stats.get("opportunities", 0)) + int(opportunity_present),
+            "recentProbeIds": [*recent_probe_ids, probe_id][-20:],
+            "skills": skills,
+        },
+        "expiresAt": iso_at(now + timedelta(days=180)),
+        "ttl": int((now + timedelta(days=210)).timestamp()),
+    })
+    refs = list(row.get("sourceRefs") or [])
+    refs.append({
+        "sourceType": "system",
+        "sourceId": probe_id,
+        "evidence": row["evidence"],
+        "createdAt": now_text,
+    })
+    row["sourceRefs"] = refs[-12:]
+    save_memory(row)
+
+
 def _summary(
     probe: dict,
     assessment: dict,
@@ -625,15 +979,27 @@ def _summary(
     mastery_after: Optional[float],
 ) -> dict:
     outcome = assessment.get("outcome", "no_opportunity")
-    labels = {
-        "success": "你在自然对话中独立用对了",
-        "hinted_success": "你在轻微提示后用对了",
-        "failure": "这次真实场景仍暴露了同一弱点",
-        "avoided": "你绕开了这个表达机会，系统会换一种更自然的方式再验证",
-        "no_opportunity": "本次没有形成公平的使用机会，因此不会改变掌握度",
-    }
+    probe_kind = str(probe.get("probeKind") or "weakness")
+    labels = (
+        {
+            "success": "本次自然对话提供了一个独立使用样本，但不会仅凭一次表现判定掌握",
+            "hinted_success": "本次在轻微提示后获得了一个使用样本，不计为独立掌握",
+            "failure": "本次自然对话发现了一个值得后续确认的模式",
+            "avoided": "本次有自然机会，但没有获得可判断的直接尝试",
+            "no_opportunity": "本次没有形成公平的观察机会，因此不会作出能力判断",
+        }
+        if probe_kind == "discovery"
+        else {
+            "success": "你在自然对话中独立用对了",
+            "hinted_success": "你在轻微提示后用对了",
+            "failure": "这次真实场景仍暴露了同一弱点",
+            "avoided": "你绕开了这个表达机会，系统会换一种更自然的方式再验证",
+            "no_opportunity": "本次没有形成公平的使用机会，因此不会改变掌握度",
+        }
+    )
     return {
         "probeId": probe.get("probeId"),
+        "probeKind": probe_kind,
         "memoryId": probe.get("memoryId"),
         "targetSkillCode": probe.get("targetSkillCode"),
         "targetDescription": probe.get("targetDescription"),
@@ -677,6 +1043,19 @@ def record_stealth_probe_outcome(
         outcome = "no_opportunity"
     payload["outcome"] = outcome
     payload["opportunityPresent"] = outcome != "no_opportunity"
+    if outcome == "no_opportunity":
+        payload["evidenceQuote"] = ""
+
+    if str(probe.get("probeKind") or "weakness") == "discovery":
+        _record_discovery_coverage(user_id, probe, outcome, current)
+        return _summary(
+            probe,
+            payload,
+            state_changed=False,
+            next_review_at=None,
+            mastery_before=None,
+            mastery_after=None,
+        )
 
     memory = get_memory(user_id, str(probe.get("memoryId") or ""))
     if not memory or memory.get("kind") != "weakness":
