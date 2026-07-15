@@ -18,6 +18,39 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-14 — Diagnose input uses word count
+
+Date: 2026-07-14
+
+Branch: `fix/diagnostic-word-count`
+
+GitHub status: locally validated and ready to push; not merged at the time of
+this entry.
+
+Deploy status: pending merge. Both the frontend counter and FastAPI request
+validation changed, so Vercel and Oracle need the same merged release.
+
+Summary:
+
+- Replaced the Diagnose input's character counter with an English word counter.
+  The example reported as 845 characters now displays as 145 words.
+- Whitespace and punctuation-only tokens do not count. Singular/plural English
+  labels and the Chinese word-count copy are both supported.
+- Replaced the 20-character minimum with a shared five-meaningful-word rule in
+  the browser and API, preventing UI/API validation mismatches.
+
+Tests run: exact 145-word sample assertion, punctuation/blank edge cases,
+backend smoke and full moto/fake-AI integration, frontend ESLint, standalone
+TypeScript, and the Next.js production build all passed. No browser instance
+was available for a separate automated screenshot pass.
+
+Known issues: word counting is intentionally whitespace-delimited because this
+surface asks for English writing; it is not intended to segment unspaced CJK
+text.
+
+Next step: push, merge after Vercel Preview passes, deploy the merged API to
+Oracle, and verify Vercel Production plus public health/CORS.
+
 ## 2026-07-14 — Natural, rotating stealth practice in text chat
 
 Date: 2026-07-14

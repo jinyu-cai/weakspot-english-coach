@@ -6,9 +6,10 @@ import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { Spinner } from "@/components/ui/spinner"
 import type { DiagnosisMode } from "@/lib/types"
+import { countWords } from "@/lib/text-count"
 import { useLanguage } from "@/components/language-provider"
 
-const MIN_DIAGNOSE_CHARACTERS = 20
+const MIN_DIAGNOSE_WORDS = 5
 const EXAMPLE_TEXTS = [
   "Hi Sarah, I want to ask if we can move tomorrow meeting to Friday because I need more time finish the report.",
   "Yesterday I go to a new cafe with my friend and we talked about what we want to do in summer.",
@@ -31,7 +32,7 @@ export function DiagnosticInput({
   onDiagnosisModeChange: (mode: DiagnosisMode) => void
 }) {
   const { t } = useLanguage()
-  const characterCount = value.trim().length
+  const wordCount = countWords(value)
 
   return (
     <Card className="border border-primary/20 shadow-sm ring-primary/10">
@@ -83,9 +84,9 @@ export function DiagnosticInput({
         <div className="flex min-w-0 flex-1 flex-col gap-2 text-xs text-muted-foreground">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="tabular-nums">
-              {characterCount} {t.diagnose.characters}
+              {wordCount} {wordCount === 1 ? t.diagnose.word : t.diagnose.words}
             </span>
-            {characterCount < MIN_DIAGNOSE_CHARACTERS ? (
+            {wordCount < MIN_DIAGNOSE_WORDS ? (
               <span className="text-warning-foreground">{t.diagnose.onboarding.minimumHint}</span>
             ) : null}
           </div>
@@ -128,7 +129,7 @@ export function DiagnosticInput({
           </div>
           <Button
             onClick={onAnalyze}
-            disabled={loading || characterCount < MIN_DIAGNOSE_CHARACTERS}
+            disabled={loading || wordCount < MIN_DIAGNOSE_WORDS}
             size="lg"
             className="h-11 w-full px-5 text-sm shadow-sm sm:w-auto"
           >
