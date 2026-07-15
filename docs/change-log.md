@@ -24,9 +24,18 @@ Date: 2026-07-15
 
 Branch: `feature/conversation-discovery-shadowing`
 
-GitHub status: local implementation and release checks complete; PR not opened yet.
+GitHub status: PR #54 merged into `main` at
+`2dbb637a23b4fa4b07aa37b477bf75447935afcc` after its Vercel Preview passed;
+the matching Vercel Production deployment also passed.
 
-Deploy status: not deployed.
+Deploy status: LIVE and release-matched. The exact backend archive from
+`main@2dbb637`, SHA-256
+`2ee7439d1abe4398dd262b370945af74fa1a812f4806e74336ff94de2c89b20a`,
+is deployed on both Oracle and Alibaba ECS. Both production `.env` files and
+the previous backend directories were preserved. Docker build, DynamoDB
+table/TTL setup, application smoke tests, release-marker/code checks, and
+container health checks passed on both hosts. Cloudflare still routes public
+API traffic to Oracle; no traffic switch was made.
 
 Summary:
 
@@ -71,9 +80,19 @@ in-app browser had no available browser binding, so an independent visual
 automation pass could not be completed; static type/lint and production render
 compilation are the UI release gates for this branch.
 
-Next step: run all backend/frontend release gates, review the UI, open a PR,
-merge, deploy the exact release to Oracle and Alibaba, and perform live-model
-checks on neutral sampling and speech playback.
+Live verification: the public API health check passed, and each running
+container loaded all 11 discovery skill families. A non-persistent neutral
+sample selected `grammar.article` plus genuine clarification on both providers.
+DeepSeek and Qwen each stayed with the learner's neighborhood-picnic topic,
+without announcing a test, correction or remembered weakness. AI speech also
+passed on both hosts: Oracle returned a 70,080-byte MP3 and Alibaba a
+73,920-byte MP3, both with the expected MPEG frame prefix. These checks did not
+write a learner chat session.
+
+Next step: monitor real transcripts for false or repetitive opportunities,
+extend coverage across Diagnose/Coach/Input Learning, and only add acoustic
+comparison after explicit recording consent and a validated audio-scoring
+boundary are available.
 
 ## 2026-07-15 — Adaptive conversation moves for natural stealth practice
 
