@@ -24,9 +24,19 @@ Date: 2026-07-15 UTC
 
 Branch: `feat/chat-selection-notes`
 
-GitHub status: Ready to open a PR after local validation.
+GitHub status: PR #61 merged into `main` at
+`7a0dab506a3d964ea6ec76ff61e35c46ef074514` after its Vercel Preview passed.
+The matching Vercel Production deployment also completed successfully.
 
-Deploy status: Not deployed yet.
+Deploy status: LIVE on the normal Oracle production origin. The exact
+`main@7a0dab5` backend archive, SHA-256
+`0ad4f6a218c5c9cf58a5f244797d127fbe2ba49937711d107f7bc595a8ef3147`, is
+deployed on `oracle-us-sj`. The production `.env` hash matched before and after
+staging, DynamoDB table/TTL setup passed, the container is healthy, and the
+previous `main@12e6d75` tree remains at
+`/home/ubuntu/weakspot-backend.rollback-12e6d75-20260715T194535Z`. Cloudflare
+continues to route the stable API hostname to Oracle. Alibaba was intentionally
+left unchanged during this ordinary release.
 
 Summary:
 
@@ -48,14 +58,22 @@ starter, invalid-selection, persistence, and Notebook-read cases); Python
 compile; frontend standalone TypeScript, ESLint, and the Next.js production
 build. All passed.
 
+Production verification: public and container health returned 200; production
+CORS accepted `POST /api/v1/notes/from-chat` from the frontend origin; a
+non-writing request reached the new endpoint and returned the expected session
+404. The Vercel production bundle contains the new endpoint path, Save to
+Notebook action, and English/Chinese selection guidance. Recent Oracle logs
+contained no traceback, 500, or error after the smoke checks.
+
 Known issues: The in-app browser runtime exposed no browser instance, so a live
 drag-select/click pass could not run locally. Selection behavior is covered by
 the browser Selection API implementation plus production compilation; the full
 save/read contract is covered in the backend integration suite.
 
-Next step: Open and merge the PR, deploy the exact merged backend archive to
-Oracle while preserving `.env`, allow Vercel to publish `main`, and verify the
-public API, CORS, frontend, and the new notes contract.
+Next step: Monitor normal production use and complete one manual desktop/mobile
+drag-selection pass when a browser session is available. Before a separate
+Alibaba demo window, deploy this exact merged release there and verify the Qwen
+configuration before changing any Cloudflare origin.
 
 ## 2026-07-15 — Reliable practice generation and selectable Deep text chat
 
