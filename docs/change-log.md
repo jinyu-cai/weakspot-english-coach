@@ -24,11 +24,19 @@ Date: 2026-07-15 UTC
 
 Branch: `fix/practice-generation-concurrency`
 
-GitHub status: PR #63 is open. Its Vercel Preview passed; final merge is
-pending the updated release record and checks.
+GitHub status: PR #63 merged into `main` at
+`976a6a821558f78d74840aa833472106b02c0485` after its final Vercel Preview
+passed. The matching Vercel Production deployment also completed successfully.
 
-Deploy status: Not deployed. Production remains on the prior `main` release
-while this fix completes review and Preview verification.
+Deploy status: LIVE on the normal Oracle production origin. The exact
+`main@976a6a8` backend archive, SHA-256
+`afa4e1939a262ea0edde3e29fb7721bb82d3072f80d47b3a9de8dd017586059b`, is
+deployed on `oracle-us-sj`. The production `.env` hash matched before and after
+staging, DynamoDB table/TTL setup passed, the container is healthy, and the
+previous `main@7a0dab5` tree remains at
+`/home/ubuntu/weakspot-backend.rollback-7a0dab5-20260715T221333Z`. Cloudflare
+continues to route the stable API hostname to Oracle. Alibaba was intentionally
+left unchanged during this ordinary release.
 
 Summary:
 
@@ -55,15 +63,23 @@ conflict; MemoryAgent; stealth/Input Learning concurrency and fencing; Memory
 benchmark; dedup/delete; frontend standalone TypeScript, focused ESLint, and
 the Next.js production build. All passed.
 
+Production verification: public health and the safe model catalogue returned
+200; the production-origin CORS preflight for `/practice/generate` returned
+200 with credentials enabled; the Vercel `/practice` page returned 200; and
+four simultaneous real-model generation requests each returned 200 with a
+distinct saved exercise. The matching Oracle logs contained four successful
+model validations and four 200 responses with no practice-generation 500,
+traceback, or `TransactionConflictException`.
+
 Known issues: The in-app browser runtime exposed no browser instance, so the
 live button flow could not be replayed through browser automation. The exact
 production failure was instead matched from Oracle logs and the 136-byte API
 response, and the request pattern is covered by the new backend concurrency
 regression plus frontend compilation.
 
-Next step: Push the branch, open a PR, verify Vercel Preview, merge, deploy the
-matching backend archive to Oracle, and confirm four live generation requests
-return 200 without transaction-conflict errors.
+Next step: Monitor normal Practice use. Before a separate Alibaba demo window,
+deploy this exact merged release there and verify the Qwen configuration before
+changing any Cloudflare origin.
 
 ## 2026-07-15 — Save selected chat text to Notebook
 
