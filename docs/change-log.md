@@ -24,7 +24,8 @@ Date: 2026-07-15 UTC
 
 Branch: `fix/practice-generation-concurrency`
 
-GitHub status: Local branch; not pushed or opened as a PR yet.
+GitHub status: PR #63 is open. Its Vercel Preview passed; final merge is
+pending the updated release record and checks.
 
 Deploy status: Not deployed. Production remains on the prior `main` release
 while this fix completes review and Preview verification.
