@@ -312,6 +312,10 @@ export const copy = {
       sceneGenerationDeep: "Deep",
       sceneGenerationFastHint: "Use the selected Fast model for a quicker new situation",
       sceneGenerationDeepHint: "Use the selected Deep model for a richer new situation",
+      replyModel: "Chat reply model",
+      replyModelHint: "Choose the model used for replies in each new text conversation.",
+      replyFastHint: "Use the selected Fast model for chat replies",
+      replyDeepHint: "Use the selected Deep model for chat replies",
       sendFailed: "Failed to send message. Please try again.",
       analyzeFailed: "Failed to analyze session.",
       scenarios: {
@@ -1219,6 +1223,10 @@ export const copy = {
       sceneGenerationDeep: "深度",
       sceneGenerationFastHint: "使用当前选择的 Fast 模型，更快生成新场景",
       sceneGenerationDeepHint: "使用当前选择的 Deep 模型，生成更丰富的新场景",
+      replyModel: "聊天回复模型",
+      replyModelHint: "选择每个新文字会话用于回复的模型。",
+      replyFastHint: "使用当前选择的 Fast 模型回复聊天",
+      replyDeepHint: "使用当前选择的 Deep 模型回复聊天",
       sendFailed: "发送失败，请重试。",
       analyzeFailed: "分析会话失败。",
       scenarios: {

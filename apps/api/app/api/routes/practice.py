@@ -45,6 +45,37 @@ logger = logging.getLogger("uvicorn.error")
 
 DEFAULT_SKILL = "grammar.verb_tense"
 PLATFORM_PRACTICE_ANSWER_CHAR_LIMIT = 2000
+PERSISTED_PRACTICE_DECISION_FIELDS = (
+    "targetSkillCode",
+    "practiceType",
+    "reason",
+    "skillReason",
+    "practiceTypeReason",
+    "supportingMemoryIds",
+    "progressionStage",
+    "progressionReason",
+    "policy",
+    "generatedAt",
+)
+
+
+def _exercise_for_storage(exercise: dict) -> dict:
+    """Keep useful generation provenance without copying large prompt context.
+
+    ``errorFingerprint`` can contain many learner examples and score breakdowns
+    are reproducible from learner state. Neither is needed to grade the saved
+    exercise, and copying them can push an otherwise small exercise over
+    DynamoDB's 400 KB item limit.
+    """
+    stored = dict(exercise)
+    decision = exercise.get("decision")
+    if isinstance(decision, dict):
+        stored["decision"] = {
+            key: decision[key]
+            for key in PERSISTED_PRACTICE_DECISION_FIELDS
+            if key in decision
+        }
+    return stored
 
 
 def _severity_from_score(score: int) -> str:
@@ -311,7 +342,7 @@ def generate(
                 "estimatedTokens": memory_pack.get("estimatedTokens", 0),
             },
         }
-        save_exercise(exercise)
+        save_exercise(_exercise_for_storage(exercise))
         return {"exercise": exercise}
 
     except ValueError as e:

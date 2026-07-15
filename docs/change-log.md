@@ -18,6 +18,48 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-15 — Reliable practice generation and selectable Deep text chat
+
+Date: 2026-07-15 UTC
+
+Branch: `fix/practice-generation-deep-chat`
+
+GitHub status: Release changes and regression coverage are ready for the
+normal reviewed PR workflow.
+
+Deploy status: Not deployed yet. Oracle remains the active production API
+origin, and the current Vercel production deployment is unchanged.
+
+Summary:
+
+- Prevented `/practice/generate` from copying an unbounded adaptive error
+  fingerprint into the saved DynamoDB exercise. The API keeps the complete
+  current-request decision while the durable record retains only the compact
+  provenance required for later grading and audit.
+- Added schema character limits and a 4,096-token generation cap so one
+  model-produced exercise cannot exceed DynamoDB's 400 KB item limit.
+- Added a session-scoped Fast/Deep choice for text-chat replies. New sessions
+  save their exact model and mode, so later browser model changes cannot make
+  a Deep session silently fall back to Fast.
+- Kept old server-pair and BYOK session behavior compatible. Dynamic scene
+  generation and subsequent chat replies now have separate Fast/Deep controls.
+
+Files changed: practice route/model/service and regression tests; chat
+route/model/API/types/UI/i18n; API route documentation and this release record.
+
+Tests run: backend smoke, Coach contract, Python compile, and the full
+moto/fake-AI learner loop; exact 410 KB practice-decision regression; default,
+mixed-provider, saved-session, and BYOK Fast/Deep chat routing; frontend
+TypeScript, ESLint, and the Next.js production build. All passed.
+
+Known issues: Deep chat replies can take longer and consume more provider
+quota, so Fast remains the default. Existing sessions retain their original
+model; learners select Deep before starting a new text session.
+
+Next step: Open and merge the reviewed PR, deploy the merged backend to Oracle,
+wait for the Vercel production deployment, and run public practice/chat smoke
+checks. Alibaba remains unchanged during this ordinary production release.
+
 ## 2026-07-15 — Event-driven text-chat practice opportunities
 
 Date: 2026-07-15 UTC

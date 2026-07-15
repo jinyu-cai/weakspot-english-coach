@@ -29,7 +29,11 @@ def main() -> None:
     from app.models.chat_import import ChatImportAIResult
     from app.models.diagnostic import DiagnoseRequest, DiagnosticAIResult
     from app.models.plan import LearningPlanAIResult
-    from app.models.practice import PracticeExerciseAIResult, PracticeGradeAIResult
+    from app.models.practice import (
+        PRACTICE_QUESTION_MAX_CHARS,
+        PracticeExerciseAIResult,
+        PracticeGradeAIResult,
+    )
 
     for model in (
         DiagnosticAIResult,
@@ -41,6 +45,20 @@ def main() -> None:
         schema = model.model_json_schema()
         assert "properties" in schema, model.__name__
         print(f"Schema OK: {model.__name__} ({len(json.dumps(schema))} bytes)")
+
+    try:
+        PracticeExerciseAIResult(
+            type="fix_sentence",
+            targetSkillCode="grammar.verb_tense",
+            promptZh="Correct the sentence.",
+            question="x" * (PRACTICE_QUESTION_MAX_CHARS + 1),
+            answer="Yesterday I went to class.",
+            explanationZh="Use the past tense after yesterday.",
+        )
+        raise AssertionError("Oversized practice question was accepted.")
+    except ValidationError:
+        pass
+    print("Practice generation output-size validation OK.")
 
     # 3. Validate a realistic diagnostic payload (what DeepSeek should return).
     sample = {

@@ -3,6 +3,8 @@ from app.models.common import OutputLanguage
 from app.services.ai_client import LLMProviderConfig, parse_with_model
 from app.services.output_language import language_instruction
 
+PRACTICE_GENERATION_MAX_TOKENS = 4_096
+
 GENERATE_SYSTEM_PROMPT = """
 You are creating one targeted English exercise for a Chinese native speaker.
 
@@ -75,6 +77,7 @@ def generate_practice_exercise(
         ],
         response_model=PracticeExerciseAIResult,
         provider=llm_provider,
+        max_tokens=PRACTICE_GENERATION_MAX_TOKENS,
     )
 
 

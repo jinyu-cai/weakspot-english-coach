@@ -31,6 +31,7 @@ import type {
   ChatSession,
   RealtimeVoiceModel,
   TextChatModel,
+  TextChatModelMode,
   ChatSessionsResponse,
   DailyStatsResponse,
   DeleteSubmissionResponse,
@@ -1144,6 +1145,7 @@ export async function createChatSession(
   starterMessage?: string,
   scenarioFamily?: string,
   scenarioKey?: string,
+  textModelMode?: TextChatModelMode,
 ): Promise<ChatSession> {
   if (USE_MOCK) {
     await delay(300)
@@ -1156,6 +1158,7 @@ export async function createChatSession(
       scenarioFamily: scenarioFamily ?? null,
       scenarioKey: scenarioKey ?? null,
       textModel: textModel ?? "Server default",
+      textModelMode: textModelMode ?? "fast",
       messageCount: 0,
       summary: null,
       createdAt: new Date().toISOString(),
@@ -1172,6 +1175,7 @@ export async function createChatSession(
       ...(starterMessage ? { starterMessage } : {}),
       ...(scenarioFamily ? { scenarioFamily } : {}),
       ...(scenarioKey ? { scenarioKey } : {}),
+      ...(textModelMode ? { textModelMode } : {}),
     }),
   })
   return session
