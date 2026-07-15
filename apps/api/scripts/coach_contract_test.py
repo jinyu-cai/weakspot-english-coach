@@ -159,10 +159,18 @@ def main() -> None:
         settings.openai_tts_model = "tts-1-hd"
         settings.openai_tts_voice = "marin"
         tts_service.OpenAI = _FakeOpenAI
+        try:
+            tts_service.generate_speech("An incompatible voice test.")
+        except tts_service.TTSNotConfiguredError:
+            pass
+        else:
+            raise AssertionError("tts-1-hd accepted an incompatible voice")
+
+        settings.openai_tts_voice = "nova"
         assert tts_service.generate_speech("A natural test sentence.") == b"ID3-contract-audio"
         assert captured_speech_request == {
             "model": "tts-1-hd",
-            "voice": "marin",
+            "voice": "nova",
             "input": "A natural test sentence.",
             "response_format": "mp3",
             "speed": 1.0,

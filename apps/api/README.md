@@ -403,7 +403,9 @@ never sees the real OpenAI key.
 Coach listening also uses the server-side `OPENAI_API_KEY`, through the OpenAI
 Speech API rather than an OpenAI-compatible text provider. Configure
 `OPENAI_TTS_BASE_URL`, `OPENAI_TTS_MODEL`, and `OPENAI_TTS_VOICE` as needed;
-defaults are the official `/v1` endpoint, `tts-1-hd`, and `marin`. The speech
+defaults are the official `/v1` endpoint, `tts-1-hd`, and `nova`. The service
+also rejects model/voice combinations that the configured `tts-1` family does
+not support before making a provider request. The speech
 endpoint accepts only bounded text plus a small style enum, returns no-store
 MP3, and the frontend falls back to browser speech when it is unavailable.
 
