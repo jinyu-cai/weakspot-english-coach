@@ -22,11 +22,24 @@ Next step:
 
 Date: 2026-07-15 UTC
 
-Branch: `fix/event-driven-chat-practice`
+Branches: `fix/event-driven-chat-practice`, followed by
+`fix/chat-practice-attempt-cooldown`.
 
-GitHub status: Pending PR.
+GitHub status: PR #56 merged into `main` at
+`33184349a12aca2f7d70e72f7bedd9fdb13cc782`; the post-live-check cooldown
+follow-up PR #57 merged at
+`215b4193c94bf5226591a3bf4aac71e14ae251d3`. Both Vercel Previews passed, and
+the Vercel Production deployment for final commit `215b4193` succeeded.
 
-Deploy status: Not deployed yet.
+Deploy status: LIVE and release-matched. The exact backend archive from
+`main@215b4193`, SHA-256
+`6f0a2df03a6c44c6874058a3e4943764ea3c24e7cee5af992865215a0a513cf5`,
+is deployed on both Oracle and Alibaba ECS. Each existing production `.env`
+was copied byte-for-byte and the prior `3318434` directory was retained as a
+rollback point. Staging archive verification and image builds, Compose config,
+DynamoDB table/TTL setup, container health, release markers, smoke tests, and
+recent-log checks passed on both hosts. Cloudflare still routes the stable
+public API hostname to Oracle; no origin switch was made.
 
 Summary:
 
@@ -44,8 +57,9 @@ Summary:
 - Limited ordinary replies to at most one focused, relevant follow-up and
   prohibited unrelated segues and invented personal experiences.
 
-Files changed: backend chat route/model/prompts, stealth scheduler and release
-tests; API, web, and MemoryAgent documentation.
+Files changed: backend chat route/model/prompts, atomic chat-turn repository
+finalization, stealth scheduler and release tests; API, web, and MemoryAgent
+documentation.
 
 Tests run: Python compile; backend smoke, integration, de-dup/delete,
 MemoryAgent, stealth/Input Learning, and memory benchmark suites; frontend
@@ -56,10 +70,22 @@ internal field parsed, meta-language without a candidate remained false,
 replies stayed on topic, used no `By the way`/`GitHub`, asked at most one
 question, and invented no personal experience.
 
+Post-deploy verification: both final containers loaded the required structured
+field, event-driven readiness rules, bounded private candidate history, privacy
+filter, and atomic repository argument. DeepSeek Fast and Qwen Fast both
+answered the `wrap up` meaning request directly with the internal flag false
+and produced natural on-topic replies for a rich learner story without
+`By the way`, `GitHub`, stacked questions, or invented personal experience.
+Qwen conservatively declined the positive candidate; the new private history
+is specifically tested to cool down and rotate that case without turning it
+into an assessment. Public API health and production CORS passed, and the
+Vercel frontend returned 200.
+
 Known issues: None currently known.
 
-Next step: Open/merge the PR, then deploy the exact merged release to Oracle
-and Alibaba.
+Next step: Monitor real chat transcripts for over-triggering, repeated target
+families, and model/provider differences; tune content-fit thresholds from
+audited evidence rather than restoring fixed turn numbers.
 
 ## 2026-07-15 — Neutral skill discovery and unscored shadowing
 
