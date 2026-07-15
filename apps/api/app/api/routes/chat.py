@@ -59,7 +59,13 @@ MAX_TEXT_STEALTH_PROBES = 3
 MAX_TEXT_STEALTH_PROBE_HISTORY = 12
 
 
-def _default_text_model() -> str:
+def _default_text_model(mode: str = "fast") -> str:
+    if mode == "deep":
+        return (
+            settings.default_llm_model
+            or settings.default_llm_fast_model
+            or FALLBACK_DEFAULT_TEXT_CHAT_MODEL
+        ).strip()
     return (
         settings.default_llm_fast_model
         or settings.default_llm_model
@@ -255,8 +261,8 @@ def _ensure_text_session_writable(session: dict) -> None:
         )
 
 
-def _validate_text_model(model: str | None) -> str:
-    selected = (model or _default_text_model()).strip() or _default_text_model()
+def _validate_text_model(model: str | None, mode: str = "fast") -> str:
+    selected = (model or _default_text_model(mode)).strip() or _default_text_model(mode)
     allowed = _allowed_text_models()
     if selected not in allowed:
         raise HTTPException(
@@ -272,17 +278,27 @@ def _validate_text_model(model: str | None) -> str:
 
 def _new_session_model(
     requested_model: str | None,
+    requested_mode: str | None,
     llm_provider: LLMProviderConfig | None,
-) -> tuple[str, str | None, str | None, str | None]:
+) -> tuple[str, str, str | None, str | None, str | None]:
     """Resolve a new session to its exact server model when possible."""
     if llm_provider is not None:
+        # Preserve legacy clients: paired server choices historically used the
+        # Fast slot, while BYOK chat historically used its primary model.
+        resolved_mode = requested_mode or (
+            "deep"
+            if llm_provider.is_byok
+            or str(llm_provider.server_model_id or "").endswith("-deep")
+            else "fast"
+        )
         text_model = (
             llm_provider.model
-            if llm_provider.is_byok
+            if resolved_mode == "deep"
             else llm_provider.fast_model or llm_provider.model
         )
         return (
             text_model,
+            resolved_mode,
             llm_provider.server_model_id,
             llm_provider.server_deep_model_id,
             llm_provider.server_fast_model_id,
@@ -293,9 +309,10 @@ def _new_session_model(
     # forwarding a DeepSeek model name to a Qwen endpoint (or vice versa).
     selected = server_model_for_name(requested_model or "")
     if selected is not None:
-        return selected.model, selected.id, None, None
+        return selected.model, selected.mode, selected.id, None, None
 
-    return _validate_text_model(requested_model), None, None, None
+    resolved_mode = requested_mode or "fast"
+    return _validate_text_model(requested_model, resolved_mode), resolved_mode, None, None, None
 
 
 def _session_provider(
@@ -331,11 +348,20 @@ def _session_provider(
 
 
 def _session_text_model(session: dict, llm_provider: LLMProviderConfig | None) -> str:
+    stored = str(session.get("textModel") or "").strip()
     if llm_provider is not None:
-        if llm_provider.is_byok:
+        provider_models = {
+            model
+            for model in (llm_provider.model, llm_provider.fast_model)
+            if model
+        }
+        if stored in provider_models:
+            return stored
+        if session.get("textModelMode") == "deep" or (
+            not session.get("textModelMode") and llm_provider.is_byok
+        ):
             return llm_provider.model
         return llm_provider.fast_model or llm_provider.model
-    stored = str(session.get("textModel") or "").strip()
     return stored if stored in _allowed_text_models() else _default_text_model()
 
 
@@ -346,7 +372,11 @@ def create_session(
     identity: Identity = Depends(rate_limited("chat")),
 ):
     req.userId = identity.user_id
-    text_model, server_model_id, deep_model_id, fast_model_id = _new_session_model(req.textModel, llm_provider)
+    text_model, text_model_mode, server_model_id, deep_model_id, fast_model_id = _new_session_model(
+        req.textModel,
+        req.textModelMode,
+        llm_provider,
+    )
     now = now_iso()
     session_id = f"cs_{uuid4().hex[:12]}"
     session = {
@@ -359,6 +389,7 @@ def create_session(
         "scenarioKey": req.scenarioKey,
         "mode": "text",
         "textModel": text_model,
+        "textModelMode": text_model_mode,
         "llmServerModelId": server_model_id,
         "llmServerDeepModelId": deep_model_id,
         "llmServerFastModelId": fast_model_id,

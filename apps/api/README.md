@@ -72,7 +72,7 @@ GET  /notes
 DELETE /notes/{note_id}
 GET  /stats/daily/{user_id}?timezone=<IANA timezone>&days=7
 
-POST /chat/sessions
+POST /chat/sessions                    # textModelMode=fast|deep; fixed for the session
 GET  /chat/sessions                    # cursor-paged; pageSize is not a total cap
 GET  /chat/sessions/{session_id}/messages
 POST /chat/send

@@ -5,9 +5,19 @@ from pydantic import BaseModel, Field
 from app.models.common import OutputLanguage, PracticeType
 
 
+PRACTICE_SKILL_CODE_MAX_CHARS = 200
+PRACTICE_PROMPT_MAX_CHARS = 2_000
+PRACTICE_QUESTION_MAX_CHARS = 4_000
+PRACTICE_ANSWER_MAX_CHARS = 4_000
+PRACTICE_EXPLANATION_MAX_CHARS = 4_000
+
+
 class GeneratePracticeRequest(BaseModel):
     userId: str
-    targetSkillCode: Optional[str] = None
+    targetSkillCode: Optional[str] = Field(
+        default=None,
+        max_length=PRACTICE_SKILL_CODE_MAX_CHARS,
+    )
     outputLanguage: OutputLanguage = "en"
     # When set, force the generated exercise to this type so a learner can
     # "regenerate the same kind" of exercise (e.g. re-do a plan task).
@@ -16,11 +26,11 @@ class GeneratePracticeRequest(BaseModel):
 
 class PracticeExerciseAIResult(BaseModel):
     type: PracticeType
-    targetSkillCode: str
-    promptZh: str
-    question: str
-    answer: str
-    explanationZh: str
+    targetSkillCode: str = Field(max_length=PRACTICE_SKILL_CODE_MAX_CHARS)
+    promptZh: str = Field(max_length=PRACTICE_PROMPT_MAX_CHARS)
+    question: str = Field(max_length=PRACTICE_QUESTION_MAX_CHARS)
+    answer: str = Field(max_length=PRACTICE_ANSWER_MAX_CHARS)
+    explanationZh: str = Field(max_length=PRACTICE_EXPLANATION_MAX_CHARS)
 
 
 class SubmitPracticeRequest(BaseModel):

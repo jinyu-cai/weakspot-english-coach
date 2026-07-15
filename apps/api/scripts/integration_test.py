@@ -66,6 +66,7 @@ def main() -> int:
         from app.api.deps import _client_ip, make_session_jwt
         from app.config import settings
         from app.db.repositories import (
+            get_exercise,
             list_chat_messages,
             save_error,
             save_memory,
@@ -191,6 +192,35 @@ def main() -> int:
         ex = r.json()["exercise"]
         assert ex["question"], "expected a question"
         print(f"4. POST /practice/generate -> skill {ex['targetSkillCode']}, type {ex['type']}")
+
+        # A large adaptive fingerprint used to be copied into the EXERCISE
+        # record and made DynamoDB reject the PutItem at its 400 KB limit. The
+        # response can retain the complete decision for the current request,
+        # while durable exercise provenance stays compact.
+        from app.api.routes import practice as practice_route
+
+        original_recommend_next_action = practice_route.recommend_next_action
+        practice_route.recommend_next_action = lambda *args, **kwargs: {
+            "targetSkillCode": "grammar.verb_tense",
+            "practiceType": "fix_sentence",
+            "reason": "Oversized adaptive-context regression test.",
+            "progressionStage": "replay",
+            "errorFingerprint": {"description": "x" * 410_000},
+        }
+        try:
+            oversized = client.post("/api/v1/practice/generate", json={"userId": user})
+            assert oversized.status_code == 200, oversized.text
+            oversized_exercise = oversized.json()["exercise"]
+            stored_exercise = get_exercise(
+                oversized_exercise["userId"],
+                oversized_exercise["id"],
+            )
+            assert stored_exercise is not None
+            assert stored_exercise["decision"]["reason"] == "Oversized adaptive-context regression test."
+            assert "errorFingerprint" not in stored_exercise["decision"]
+        finally:
+            practice_route.recommend_next_action = original_recommend_next_action
+        print("   oversized decision       -> compact DynamoDB exercise record")
 
         # 5. practice submit
         r = client.post(
@@ -469,6 +499,7 @@ def main() -> int:
             assert r.status_code == 200, r.text
             default_model_session = r.json()["session"]
             assert default_model_session["textModel"] == "qwen3.7-plus", default_model_session
+            assert default_model_session["textModelMode"] == "fast", default_model_session
             r = client.post(
                 "/api/v1/chat/send",
                 json={"userId": user, "sessionId": default_model_session["id"], "text": "Hello from Plus."},
@@ -478,12 +509,36 @@ def main() -> int:
 
             r = client.post(
                 "/api/v1/chat/sessions",
+                json={
+                    "userId": user,
+                    "topic": "Default Deep text model",
+                    "textModelMode": "deep",
+                },
+            )
+            assert r.status_code == 200, r.text
+            default_deep_session = r.json()["session"]
+            assert default_deep_session["textModel"] == "qwen3.7-max", default_deep_session
+            assert default_deep_session["textModelMode"] == "deep", default_deep_session
+            r = client.post(
+                "/api/v1/chat/send",
+                json={
+                    "userId": user,
+                    "sessionId": default_deep_session["id"],
+                    "text": "Hello from the default Deep model.",
+                },
+            )
+            assert r.status_code == 200, r.text
+            assert selected_text_models[-1] == "qwen3.7-max", selected_text_models
+
+            r = client.post(
+                "/api/v1/chat/sessions",
                 headers={"X-LLM-Server-Model": "qwen-deep"},
                 json={"userId": user, "topic": "Max text model"},
             )
             assert r.status_code == 200, r.text
             max_model_session = r.json()["session"]
             assert max_model_session["textModel"] == "qwen3.7-max", max_model_session
+            assert max_model_session["textModelMode"] == "deep", max_model_session
             assert max_model_session["llmServerModelId"] == "qwen-deep", max_model_session
             r = client.post(
                 "/api/v1/chat/send",
@@ -521,6 +576,7 @@ def main() -> int:
             assert r.status_code == 200, r.text
             mixed_session = r.json()["session"]
             assert mixed_session["textModel"] == "deepseek-v4-flash", mixed_session
+            assert mixed_session["textModelMode"] == "fast", mixed_session
             assert mixed_session["llmServerDeepModelId"] == "qwen-deep", mixed_session
             assert mixed_session["llmServerFastModelId"] == "deepseek-fast", mixed_session
             r = client.post(
@@ -534,6 +590,37 @@ def main() -> int:
             )
             assert r.status_code == 200, r.text
             assert selected_text_models[-1] == "deepseek-v4-flash", selected_text_models
+
+            r = client.post(
+                "/api/v1/chat/sessions",
+                headers=pair_headers,
+                json={
+                    "userId": user,
+                    "topic": "Mixed provider pair with Deep chat",
+                    "textModelMode": "deep",
+                },
+            )
+            assert r.status_code == 200, r.text
+            mixed_deep_session = r.json()["session"]
+            assert mixed_deep_session["textModel"] == "qwen3.7-max", mixed_deep_session
+            assert mixed_deep_session["textModelMode"] == "deep", mixed_deep_session
+            assert mixed_deep_session["llmServerDeepModelId"] == "qwen-deep", mixed_deep_session
+            assert mixed_deep_session["llmServerFastModelId"] == "deepseek-fast", mixed_deep_session
+            r = client.post(
+                "/api/v1/chat/send",
+                # The Deep mode and saved pair must survive later UI changes.
+                headers={
+                    "X-LLM-Server-Deep-Model": "deepseek-deep",
+                    "X-LLM-Server-Fast-Model": "qwen-fast",
+                },
+                json={
+                    "userId": user,
+                    "sessionId": mixed_deep_session["id"],
+                    "text": "Hello from mixed Deep routing.",
+                },
+            )
+            assert r.status_code == 200, r.text
+            assert selected_text_models[-1] == "qwen3.7-max", selected_text_models
 
             r = client.post(
                 "/api/v1/chat/sessions",
@@ -577,6 +664,7 @@ def main() -> int:
             assert r.status_code == 200, r.text
             byok_session = r.json()["session"]
             assert byok_session["textModel"] == "guest-byok-pro-model", byok_session
+            assert byok_session["textModelMode"] == "deep", byok_session
             r = byok_guest.post(
                 "/api/v1/chat/send",
                 json={"userId": "guest-byok", "sessionId": byok_session["id"], "text": "Hello from BYOK."},
@@ -584,6 +672,27 @@ def main() -> int:
             assert r.status_code == 200, r.text
             assert selected_text_models[-1] == "guest-byok-pro-model", selected_text_models
             assert selected_text_max_tokens[-1] == 2000, selected_text_max_tokens
+
+            r = byok_guest.post(
+                "/api/v1/chat/sessions",
+                headers={"X-Real-IP": "203.0.113.55"},
+                json={
+                    "userId": "guest-byok",
+                    "topic": "BYOK fast chat",
+                    "textModelMode": "fast",
+                },
+            )
+            assert r.status_code == 200, r.text
+            byok_fast_session = r.json()["session"]
+            assert byok_fast_session["textModel"] == "guest-byok-fast-model", byok_fast_session
+            assert byok_fast_session["textModelMode"] == "fast", byok_fast_session
+            r = byok_guest.post(
+                "/api/v1/chat/send",
+                headers={"X-Real-IP": "203.0.113.55"},
+                json={"userId": "guest-byok", "sessionId": byok_fast_session["id"], "text": "Fast reply."},
+            )
+            assert r.status_code == 200, r.text
+            assert selected_text_models[-1] == "guest-byok-fast-model", selected_text_models
         finally:
             chat_routes.chat_reply = original_chat_reply
             for name, value in original_model_settings.items():

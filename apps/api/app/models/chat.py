@@ -8,6 +8,7 @@ from app.models.memory import MemoryCandidate
 
 
 RealtimeVoiceModel = Literal["gpt-realtime-mini-2025-12-15", "gpt-realtime-2"]
+TextChatModelMode = Literal["fast", "deep"]
 
 
 class ChatCreateSessionRequest(BaseModel):
@@ -18,6 +19,9 @@ class ChatCreateSessionRequest(BaseModel):
     scenarioFamily: Optional[CoachScenarioFamily] = None
     scenarioKey: Optional[str] = Field(default=None, max_length=160)
     textModel: Optional[str] = Field(default=None, max_length=200)
+    # Optional for backwards compatibility. Older clients used the server Fast
+    # slot (or the BYOK primary model) and should retain that behavior.
+    textModelMode: Optional[TextChatModelMode] = None
 
 
 class ChatSendRequest(BaseModel):

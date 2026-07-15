@@ -6,6 +6,7 @@ export type OutputLanguage = "en" | "zh-CN"
 export type ChatImportEvidenceType = "user_error" | "expression_gap" | "assistant_correction" | "assistant_advice"
 export type PlanErrorScope = "weekly" | "all"
 export type TextChatModel = string
+export type TextChatModelMode = "fast" | "deep"
 export type RealtimeVoiceModel = string
 export type MemoryKind = "preference" | "goal" | "strategy" | "weakness" | "episode"
 export type MemoryStatus = "active" | "resolved" | "superseded" | "expired" | "forgotten"
@@ -611,6 +612,7 @@ export interface ChatSession {
   scenarioFamily?: string | null
   scenarioKey?: string | null
   textModel?: TextChatModel | null
+  textModelMode?: TextChatModelMode | null
   llmServerModelId?: string | null
   voiceModel?: RealtimeVoiceModel | null
   messageCount: number

@@ -23,7 +23,14 @@ import {
   sendChatMessage,
 } from "@/lib/api-client"
 import { DEMO_USER_ID } from "@/lib/mock-data"
-import type { ChatMessage, ChatSession, CoachGenerationMode, SessionAnalysis, StealthPracticeResult } from "@/lib/types"
+import type {
+  ChatMessage,
+  ChatSession,
+  CoachGenerationMode,
+  SessionAnalysis,
+  StealthPracticeResult,
+  TextChatModelMode,
+} from "@/lib/types"
 import {
   DEFAULT_SERVER_DEEP_MODEL_ID,
   DEFAULT_SERVER_FAST_MODEL_ID,
@@ -102,6 +109,7 @@ export default function ChatPage() {
     () => loadLLMSettings().serverFastModelId || DEFAULT_SERVER_FAST_MODEL_ID,
   )
   const [sceneGenerationMode, setSceneGenerationMode] = useState<CoachGenerationMode>("fast")
+  const [textChatModelMode, setTextChatModelMode] = useState<TextChatModelMode>("fast")
   const [viewState, setViewState] = useState<ViewState>("chat")
   const [analysis, setAnalysis] = useState<SessionAnalysis | null>(null)
   const [stealthPractice, setStealthPractice] = useState<StealthPracticeResult | null>(null)
@@ -271,7 +279,16 @@ export default function ChatPage() {
     sessionSelectionRef.current += 1
     setCreatingSession(true)
     try {
-      const session = await createChatSession(DEMO_USER_ID, topic)
+      const session = await createChatSession(
+        DEMO_USER_ID,
+        topic,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        textChatModelMode,
+      )
       setSessions((prev) => [session, ...prev])
       setActiveSession(session)
       setMode("text")
@@ -313,6 +330,7 @@ export default function ChatPage() {
         mission.scene.starterMessage,
         mission.scene.scenarioFamily,
         mission.scene.scenarioKey,
+        textChatModelMode,
       )
       setSessions((prev) => [session, ...prev])
       setActiveSession(session)
@@ -341,6 +359,7 @@ export default function ChatPage() {
   async function handleSelectSession(session: ChatSession) {
     const selectionId = ++sessionSelectionRef.current
     setActiveSession(session)
+    if (session.textModelMode) setTextChatModelMode(session.textModelMode)
     setMode(session.mode === "voice" ? "voice" : "text")
     setMessages([])
     setInput("")
@@ -352,6 +371,7 @@ export default function ChatPage() {
       const { session: refreshedSession, messages: msgs } = await getChatMessages(session.id, DEMO_USER_ID)
       if (sessionSelectionRef.current !== selectionId) return
       setActiveSession(refreshedSession)
+      if (refreshedSession.textModelMode) setTextChatModelMode(refreshedSession.textModelMode)
       setSessions((current) => current.map((item) => item.id === refreshedSession.id ? refreshedSession : item))
       setMode(refreshedSession.mode === "voice" ? "voice" : "text")
       setMessages(withSessionStarter(refreshedSession, msgs))
@@ -517,6 +537,38 @@ export default function ChatPage() {
             {modelsError && <span className="text-destructive">{t.settings.serverModelsFailed}</span>}
           </details>
         </header>
+
+        <div className="flex flex-col gap-3 rounded-xl border border-border/70 bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-sm font-medium text-foreground">{t.chat.replyModel}</span>
+            <span className="text-xs text-muted-foreground">{t.chat.replyModelHint}</span>
+          </div>
+          <ToggleGroup
+            value={[textChatModelMode]}
+            onValueChange={(values) => {
+              const selected = values[0]
+              if (selected === "fast" || selected === "deep") setTextChatModelMode(selected)
+            }}
+            disabled={creatingSession}
+            className="shrink-0 rounded-lg border border-border bg-background p-0.5"
+            aria-label={t.chat.replyModel}
+          >
+            <ToggleGroupItem
+              value="fast"
+              className="h-8 rounded-md px-3 text-xs"
+              title={`${t.chat.replyFastHint}: ${selectedFastServerModel ? formatServerModelSelection(selectedFastServerModel) : selectedServerFastModelId}`}
+            >
+              {t.chat.sceneGenerationFast}
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="deep"
+              className="h-8 rounded-md px-3 text-xs"
+              title={`${t.chat.replyDeepHint}: ${selectedDeepServerModel ? formatServerModelSelection(selectedDeepServerModel) : selectedServerDeepModelId}`}
+            >
+              {t.chat.sceneGenerationDeep}
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </div>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Card className="overflow-hidden border-primary/25 bg-primary/7 transition-all hover:border-primary/45 hover:shadow-md sm:col-span-2 lg:col-span-3">
