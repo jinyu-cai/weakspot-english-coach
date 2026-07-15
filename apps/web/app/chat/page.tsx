@@ -1,9 +1,11 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { mutate } from "swr"
 import { toast } from "sonner"
 import {
   ArrowUp,
+  BookOpenCheck,
   ChevronDown,
   ClipboardCheck,
   Keyboard,
@@ -20,6 +22,7 @@ import {
   getChatSessions,
   getServerLLMModels,
   generateCoachMission,
+  saveChatSelectionToNote,
   sendChatMessage,
 } from "@/lib/api-client"
 import { DEMO_USER_ID } from "@/lib/mock-data"
@@ -115,6 +118,8 @@ export default function ChatPage() {
   const [stealthPractice, setStealthPractice] = useState<StealthPracticeResult | null>(null)
   const [stealthPractices, setStealthPractices] = useState<StealthPracticeResult[]>([])
   const [voiceLifecycle, setVoiceLifecycle] = useState<VoiceChatLifecycle>({ active: false, pending: false })
+  const [chatSelection, setChatSelection] = useState<{ messageId: string; text: string } | null>(null)
+  const [savingSelectionFor, setSavingSelectionFor] = useState<string | null>(null)
   const { t } = useLanguage()
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -128,6 +133,43 @@ export default function ChatPage() {
   useEffect(() => {
     scrollToBottom()
   }, [messages, scrollToBottom])
+
+  useEffect(() => {
+    function captureChatSelection() {
+      const selection = window.getSelection()
+      if (!selection || selection.isCollapsed || !selection.anchorNode || !selection.focusNode) {
+        setChatSelection(null)
+        return
+      }
+
+      const anchorElement = selection.anchorNode instanceof Element
+        ? selection.anchorNode
+        : selection.anchorNode.parentElement
+      const focusElement = selection.focusNode instanceof Element
+        ? selection.focusNode
+        : selection.focusNode.parentElement
+      const anchorBubble = anchorElement?.closest<HTMLElement>("[data-chat-message-id]")
+      const focusBubble = focusElement?.closest<HTMLElement>("[data-chat-message-id]")
+      const content = anchorBubble?.querySelector<HTMLElement>("[data-chat-message-content]")
+
+      if (
+        !anchorBubble
+        || anchorBubble !== focusBubble
+        || !content?.contains(selection.anchorNode)
+        || !content.contains(selection.focusNode)
+      ) {
+        setChatSelection(null)
+        return
+      }
+
+      const text = selection.toString().trim()
+      const messageId = anchorBubble.dataset.chatMessageId
+      setChatSelection(text && messageId ? { messageId, text } : null)
+    }
+
+    document.addEventListener("selectionchange", captureChatSelection)
+    return () => document.removeEventListener("selectionchange", captureChatSelection)
+  }, [])
 
   useEffect(() => {
     const textarea = textareaRef.current
@@ -422,6 +464,31 @@ export default function ChatPage() {
     } finally {
       setSending(false)
       textareaRef.current?.focus()
+    }
+  }
+
+  async function handleSaveSelection(message: ChatMessage, selectedText: string) {
+    if (!activeSession || savingSelectionFor || message.id.startsWith("temp-")) return
+    setSavingSelectionFor(message.id)
+    try {
+      await saveChatSelectionToNote({
+        sessionId: activeSession.id,
+        messageId: message.id,
+        messageCreatedAt: message.createdAt,
+        selectedText,
+        sourceRole: message.role,
+        topic: activeSession.topic,
+      })
+      setChatSelection(null)
+      window.getSelection()?.removeAllRanges()
+      void mutate("notes")
+      toast.success(t.chat.selectionSaved)
+    } catch (error) {
+      toast.error(t.chat.selectionSaveFailed, {
+        description: error instanceof Error ? error.message : undefined,
+      })
+    } finally {
+      setSavingSelectionFor(null)
     }
   }
 
@@ -823,7 +890,13 @@ export default function ChatPage() {
 
             <div className="flex flex-col gap-4">
               {messages.map((msg) => (
-                <ChatBubble key={msg.id} message={msg} />
+                <ChatBubble
+                  key={msg.id}
+                  message={msg}
+                  selectedText={chatSelection?.messageId === msg.id ? chatSelection.text : undefined}
+                  saving={savingSelectionFor === msg.id}
+                  onSaveSelection={handleSaveSelection}
+                />
               ))}
               {sending && (
                 <div className="flex items-center gap-2 px-4 text-sm text-muted-foreground">
@@ -837,6 +910,10 @@ export default function ChatPage() {
 
           {/* Input area */}
           <div className="border-t border-border pt-3">
+            <div className="mb-2 flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+              <BookOpenCheck className="size-3.5 shrink-0" />
+              <span>{t.chat.selectionHint}</span>
+            </div>
             <div className="relative flex items-end gap-2">
               <div className="relative flex-1">
                 <textarea
@@ -899,14 +976,29 @@ export default function ChatPage() {
 
 /* ---- Chat Bubble Component ---- */
 
-function ChatBubble({ message }: { message: ChatMessage }) {
+function ChatBubble({
+  message,
+  selectedText,
+  saving,
+  onSaveSelection,
+}: {
+  message: ChatMessage
+  selectedText?: string
+  saving: boolean
+  onSaveSelection: (message: ChatMessage, selectedText: string) => void
+}) {
   const isUser = message.role === "user"
+  const { t } = useLanguage()
 
   return (
-    <div className={cn("flex flex-col gap-1.5", isUser ? "items-end" : "items-start")}>
+    <div
+      data-chat-message-id={message.id}
+      className={cn("flex flex-col gap-1.5", isUser ? "items-end" : "items-start")}
+    >
       <div
+        data-chat-message-content
         className={cn(
-          "max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
+          "max-w-[85%] cursor-text select-text whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
           isUser
             ? "bg-primary text-primary-foreground"
             : "bg-muted/60 text-foreground",
@@ -914,6 +1006,20 @@ function ChatBubble({ message }: { message: ChatMessage }) {
       >
         {message.content}
       </div>
+      {selectedText && !message.id.startsWith("temp-") ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 gap-1.5 rounded-full bg-background px-2.5 text-xs shadow-sm"
+          disabled={saving}
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={() => onSaveSelection(message, selectedText)}
+        >
+          {saving ? <Spinner className="size-3.5" /> : <BookOpenCheck className="size-3.5" />}
+          {saving ? t.chat.savingSelection : t.chat.saveSelection}
+        </Button>
+      ) : null}
     </div>
   )
 }

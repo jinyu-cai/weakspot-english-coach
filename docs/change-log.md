@@ -18,6 +18,45 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-15 — Save selected chat text to Notebook
+
+Date: 2026-07-15 UTC
+
+Branch: `feat/chat-selection-notes`
+
+GitHub status: Ready to open a PR after local validation.
+
+Deploy status: Not deployed yet.
+
+Summary:
+
+- Added an account-scoped `POST /api/v1/notes/from-chat` endpoint that verifies
+  the chat session, message timestamp/ID, and selected text before saving.
+- Added text-selection detection inside learner and coach chat bubbles, with a
+  contextual Save to Notebook action, loading/error feedback, and English and
+  Chinese discovery copy.
+- Added a dedicated chat-selection Notebook card and Markdown export format so
+  a manual excerpt is not duplicated as both an original and a correction.
+- Preserved the source role, session, message, and bounded surrounding context;
+  learner-message notes can follow weaknesses learned from the same turn.
+
+Files changed: notes API/model/repository and integration coverage; chat and
+Notebook UI/API/types/i18n; navigation copy; this release record.
+
+Tests run: full moto/fake-AI learner loop (including learner, coach, generated
+starter, invalid-selection, persistence, and Notebook-read cases); Python
+compile; frontend standalone TypeScript, ESLint, and the Next.js production
+build. All passed.
+
+Known issues: The in-app browser runtime exposed no browser instance, so a live
+drag-select/click pass could not run locally. Selection behavior is covered by
+the browser Selection API implementation plus production compilation; the full
+save/read contract is covered in the backend integration suite.
+
+Next step: Open and merge the PR, deploy the exact merged backend archive to
+Oracle while preserving `.env`, allow Vercel to publish `main`, and verify the
+public API, CORS, frontend, and the new notes contract.
+
 ## 2026-07-15 — Reliable practice generation and selectable Deep text chat
 
 Date: 2026-07-15 UTC

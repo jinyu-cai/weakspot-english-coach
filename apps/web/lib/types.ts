@@ -511,6 +511,10 @@ export interface LearningNote {
   context: string
   examples: string[]
   createdAt: string
+  sourceType?: "chat_selection"
+  sourceRole?: "user" | "assistant"
+  sessionId?: string
+  messageId?: string
   learningState?: NoteLearningState
   relatedWeaknesses?: NoteRelatedWeakness[]
 }

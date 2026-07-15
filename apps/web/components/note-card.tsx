@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Archive, Lightbulb, BookA, GraduationCap, Trash2 } from "lucide-react"
+import { Archive, Lightbulb, BookA, GraduationCap, MessageSquareText, Trash2 } from "lucide-react"
 import type { LearningNote, NoteType } from "@/lib/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -25,6 +25,7 @@ export function NoteCard({ note, onDelete }: { note: LearningNote; onDelete?: (n
   const [deleting, setDeleting] = useState(false)
   const { language, t } = useLanguage()
   const localizedType = t.notebook[note.type]
+  const isChatSelection = note.sourceType === "chat_selection"
   const locale = language === "zh-CN" ? "zh-CN" : "en-US"
   const resolvedSkills = [...new Set(
     (note.relatedWeaknesses ?? [])
@@ -51,7 +52,15 @@ export function NoteCard({ note, onDelete }: { note: LearningNote; onDelete?: (n
               <Icon className="mr-1 size-3" />
               {localizedType}
             </Badge>
-            <span className="min-w-0 break-words font-medium [overflow-wrap:anywhere]">{note.topic}</span>
+            {isChatSelection ? (
+              <Badge variant="outline">
+                <MessageSquareText className="mr-1 size-3" />
+                {t.notebook.chatSelection}
+              </Badge>
+            ) : null}
+            {note.topic ? (
+              <span className="min-w-0 break-words font-medium [overflow-wrap:anywhere]">{note.topic}</span>
+            ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <span className="text-xs text-muted-foreground">{formatDate(note.createdAt, locale)}</span>
@@ -85,23 +94,47 @@ export function NoteCard({ note, onDelete }: { note: LearningNote; onDelete?: (n
           </div>
         ) : null}
 
-        <div className="flex flex-col gap-2 rounded-xl bg-muted/50 p-3 text-sm leading-relaxed">
-          <div className="flex items-start gap-2">
-            <span className="shrink-0 text-xs font-medium text-muted-foreground">{t.notebook.original}</span>
-            <span className="min-w-0 text-danger [overflow-wrap:anywhere]">{note.original}</span>
+        {isChatSelection ? (
+          <div className="rounded-xl bg-muted/50 p-3">
+            <div className="text-xs font-medium text-muted-foreground">{t.notebook.savedText}</div>
+            <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed [overflow-wrap:anywhere]">{note.original}</p>
           </div>
-          <div className="flex items-start gap-2">
-            <span className="shrink-0 text-xs font-medium text-muted-foreground">{t.notebook.natural}</span>
-            <span className="min-w-0 text-success [overflow-wrap:anywhere]">{note.natural}</span>
+        ) : (
+          <>
+            <div className="flex flex-col gap-2 rounded-xl bg-muted/50 p-3 text-sm leading-relaxed">
+              <div className="flex items-start gap-2">
+                <span className="shrink-0 text-xs font-medium text-muted-foreground">{t.notebook.original}</span>
+                <span className="min-w-0 text-danger [overflow-wrap:anywhere]">{note.original}</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="shrink-0 text-xs font-medium text-muted-foreground">{t.notebook.natural}</span>
+                <span className="min-w-0 text-success [overflow-wrap:anywhere]">{note.natural}</span>
+              </div>
+            </div>
+
+            <p className="text-sm leading-relaxed text-foreground [overflow-wrap:anywhere]">{note.explanation}</p>
+
+            <div className="rounded-lg border border-border p-3">
+              <div className="text-xs font-medium text-muted-foreground">{t.notebook.contextTone}</div>
+              <p className="mt-1 text-sm leading-relaxed [overflow-wrap:anywhere]">{note.context}</p>
+            </div>
+          </>
+        )}
+
+        {isChatSelection ? (
+          <div className="rounded-lg border border-border p-3">
+            <div className="text-xs font-medium text-muted-foreground">{t.notebook.source}</div>
+            <p className="mt-1 text-sm leading-relaxed">
+              {note.sourceRole === "user" ? t.notebook.fromYou : t.notebook.fromCoach}
+            </p>
+            {note.context && note.context.trim() !== note.original.trim() ? (
+              <div className="mt-3 border-t border-border pt-3">
+                <div className="text-xs font-medium text-muted-foreground">{t.notebook.messageContext}</div>
+                <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed [overflow-wrap:anywhere]">{note.context}</p>
+              </div>
+            ) : null}
           </div>
-        </div>
-
-        <p className="text-sm leading-relaxed text-foreground [overflow-wrap:anywhere]">{note.explanation}</p>
-
-        <div className="rounded-lg border border-border p-3">
-          <div className="text-xs font-medium text-muted-foreground">{t.notebook.contextTone}</div>
-          <p className="mt-1 text-sm leading-relaxed [overflow-wrap:anywhere]">{note.context}</p>
-        </div>
+        ) : null}
 
         {note.examples.length > 0 && (
           <div className="flex flex-col gap-1">

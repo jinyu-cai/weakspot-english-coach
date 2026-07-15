@@ -1521,6 +1521,14 @@ def save_chat_message(message: dict) -> None:
     _put(item)
 
 
+def get_chat_message(user_id: str, created_at: str, message_id: str) -> Optional[dict]:
+    res = table.get_item(
+        Key={"PK": user_pk(user_id), "SK": chat_message_sk(created_at, message_id)}
+    )
+    item = res.get("Item")
+    return clean(item) if item else None
+
+
 def finalize_chat_session_turn(
     user_id: str,
     session_id: str,

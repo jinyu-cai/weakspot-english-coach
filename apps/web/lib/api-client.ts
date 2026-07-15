@@ -15,6 +15,7 @@
  *  POST /practice/submit   { userId, exerciseId, userAnswer, clientAttemptId } -> PracticeSubmitResponse
  *  GET  /history/{userId}                                    -> HistoryResponse
  *  GET  /stats/daily/{userId}?timezone=<IANA>&days=7         -> DailyStatsResponse
+ *  POST /notes/from-chat    { sessionId, messageId, ... }     -> { note }
  *  POST /input-learning/analyze { sourceType, title, ... }    -> { source }
  *  GET  /input-learning?pageSize=&cursor=                    -> { sources, count, nextCursor }
  *  GET  /chat/sessions?pageSize=&cursor=                     -> { sessions, count, nextCursor }
@@ -45,6 +46,7 @@ import type {
   InputLearningSource,
   InputLearningSourcesResponse,
   InputLab2TranscriptMissionRequest,
+  LearningNote,
   LearningPlan,
   MemoryItem,
   MemoryKind,
@@ -746,6 +748,50 @@ export async function getNotes(): Promise<NotesResponse> {
     return { notes: mockNotes }
   }
   return apiFetch<NotesResponse>("/notes")
+}
+
+export async function saveChatSelectionToNote(input: {
+  sessionId: string
+  messageId: string
+  messageCreatedAt: string
+  selectedText: string
+  sourceRole: "user" | "assistant"
+  topic?: string | null
+}): Promise<LearningNote> {
+  if (USE_MOCK) {
+    await delay(250)
+    const note: LearningNote = {
+      id: `note-chat-${Date.now()}`,
+      userId: DEMO_USER_ID,
+      submissionId: input.messageId,
+      type: "expression",
+      topic: input.topic?.trim() ?? "",
+      original: input.selectedText.trim(),
+      natural: input.selectedText.trim(),
+      explanation: "",
+      context: "",
+      examples: [],
+      sourceType: "chat_selection",
+      sourceRole: input.sourceRole,
+      sessionId: input.sessionId,
+      messageId: input.messageId,
+      createdAt: new Date().toISOString(),
+      learningState: "current",
+      relatedWeaknesses: [],
+    }
+    mockNotes.unshift(note)
+    return note
+  }
+  const { note } = await apiFetch<{ note: LearningNote }>("/notes/from-chat", {
+    method: "POST",
+    body: JSON.stringify({
+      sessionId: input.sessionId,
+      messageId: input.messageId,
+      messageCreatedAt: input.messageCreatedAt,
+      selectedText: input.selectedText,
+    }),
+  })
+  return note
 }
 
 export async function deleteNote(noteId: string, createdAt: string): Promise<{ deleted: boolean; noteId: string }> {
