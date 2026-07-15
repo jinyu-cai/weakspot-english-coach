@@ -1,6 +1,6 @@
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from app.models.common import OutputLanguage, Severity
 from app.models.coach import CoachScenarioFamily
@@ -89,7 +89,12 @@ class SessionNaturalExpressionAI(BaseModel):
     natural: str
     explanationZh: str
     context: str
-    examples: List[str] = Field(default_factory=list)
+    examples: List[str] = Field(default_factory=list, max_length=2)
+
+    @field_validator("examples", mode="before")
+    @classmethod
+    def cap_examples(cls, value):
+        return value[:2] if isinstance(value, list) else value
 
 class SessionWeaknessAI(BaseModel):
     code: str
@@ -122,12 +127,12 @@ class SessionAnalysisAI(BaseModel):
     summaryZh: str
     # Bounded collections keep the atomic DynamoDB finalization below its
     # 100-item transaction limit even if a provider tries to over-generate.
-    corrections: List[SessionCorrectionAI] = Field(default_factory=list, max_length=20)
-    naturalExpressions: List[SessionNaturalExpressionAI] = Field(default_factory=list, max_length=20)
-    weaknesses: List[SessionWeaknessAI] = Field(default_factory=list, max_length=20)
-    strengthsZh: List[str] = Field(default_factory=list, max_length=20)
-    recommendedNextActionsZh: List[str] = Field(default_factory=list, max_length=20)
-    memoryCandidates: List[MemoryCandidate] = Field(default_factory=list, max_length=20)
+    corrections: List[SessionCorrectionAI] = Field(default_factory=list, max_length=12)
+    naturalExpressions: List[SessionNaturalExpressionAI] = Field(default_factory=list, max_length=8)
+    weaknesses: List[SessionWeaknessAI] = Field(default_factory=list, max_length=6)
+    strengthsZh: List[str] = Field(default_factory=list, max_length=5)
+    recommendedNextActionsZh: List[str] = Field(default_factory=list, max_length=5)
+    memoryCandidates: List[MemoryCandidate] = Field(default_factory=list, max_length=8)
     stealthProbeAssessments: List[StealthProbeAssessmentAI] = Field(
         default_factory=list,
         max_length=3,
@@ -135,3 +140,24 @@ class SessionAnalysisAI(BaseModel):
     # Kept for realtime voice and analysis drafts created before multi-target
     # text chat. New text analyses use ``stealthProbeAssessments``.
     stealthProbeAssessment: Optional[StealthProbeAssessmentAI] = None
+
+    @field_validator(
+        "corrections",
+        "naturalExpressions",
+        "weaknesses",
+        "strengthsZh",
+        "recommendedNextActionsZh",
+        "memoryCandidates",
+        mode="before",
+    )
+    @classmethod
+    def cap_generated_collections(cls, value, info: ValidationInfo):
+        limits = {
+            "corrections": 12,
+            "naturalExpressions": 8,
+            "weaknesses": 6,
+            "strengthsZh": 5,
+            "recommendedNextActionsZh": 5,
+            "memoryCandidates": 8,
+        }
+        return value[:limits[info.field_name]] if isinstance(value, list) else value

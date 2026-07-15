@@ -15,6 +15,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import hashlib
 import os
+import time
 from threading import Barrier, Event, Lock
 from typing import Any
 from unittest.mock import patch
@@ -1982,7 +1983,7 @@ def main() -> int:
             target_session_id = str(kwargs.get("session_id") or "")
             if target_session_id == first_chat_session_id:
                 first_chat_final_started.set()
-                assert release_first_chat_final.wait(timeout=5)
+                assert release_first_chat_final.wait(timeout=10)
             return original_chat_final(*args, **kwargs)
 
         def observed_chat_memory_claim(*args, **kwargs):
@@ -2035,6 +2036,12 @@ def main() -> int:
                         assert second_waiting_session is not None
                         assert second_waiting_session.get("analysisDraft")
                         assert not second_waiting_session.get("analysis")
+                        # The original three-second learner-lease deadline made
+                        # two otherwise independent session analyses race here.
+                        # Hold the first finalization beyond that old deadline;
+                        # the second request must keep waiting, not fail 500.
+                        time.sleep(3.2)
+                        assert not pending_second_chat.done()
                         release_first_chat_final.set()
                         completed_first_chat = pending_first_chat.result(timeout=8)
                         completed_second_chat = pending_second_chat.result(timeout=8)

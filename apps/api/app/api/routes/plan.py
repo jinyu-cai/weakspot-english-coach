@@ -1,5 +1,6 @@
-from uuid import uuid4
 import logging
+import time
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -29,7 +30,15 @@ def create_plan(
     identity: Identity = Depends(rate_limited("plan")),
 ):
     req.userId = identity.user_id
+    request_id = uuid4().hex[:10]
+    started = time.perf_counter()
     try:
+        logger.info(
+            "plan[%s] start user_id=%s scope=%s",
+            request_id,
+            req.userId,
+            req.errorScope,
+        )
         now = now_iso()
         profile = get_or_create_profile(req.userId)
         skills = sorted(
@@ -72,10 +81,11 @@ def create_plan(
             max_output_tokens=None if identity.has_unlimited_llm_quota else identity.max_output_tokens,
             output_language=req.outputLanguage,
             memory_context=memory_pack.get("text"),
+            trace_id=request_id,
         )
 
         days = []
-        for day in ai_plan.days:
+        for day_number, day in enumerate(ai_plan.days, start=1):
             tasks = [
                 {
                     "id": f"task_{uuid4().hex[:8]}",
@@ -99,7 +109,7 @@ def create_plan(
             ]
             days.append(
                 {
-                    "day": day.day,
+                    "day": day_number,
                     "goalZh": day.goalZh,
                     "targetSkillCodes": day.targetSkillCodes,
                     "tasks": tasks,
@@ -122,12 +132,48 @@ def create_plan(
             },
         }
         save_active_plan(plan)
+        logger.info(
+            "plan[%s] complete total_ms=%d days=%d tasks=%d exercises=%d",
+            request_id,
+            int((time.perf_counter() - started) * 1000),
+            len(days),
+            sum(len(day["tasks"]) for day in days),
+            sum(
+                len(task["exercises"])
+                for day in days
+                for task in day["tasks"]
+            ),
+        )
         return {"plan": plan}
 
     except ValueError as e:
-        raise HTTPException(status_code=502, detail=f"AI error: {e}")
+        logger.exception(
+            "plan[%s] ai_error total_ms=%d",
+            request_id,
+            int((time.perf_counter() - started) * 1000),
+        )
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "plan_ai_failed",
+                "message": "The AI could not generate a valid plan. Please try again.",
+                "requestId": request_id,
+            },
+        ) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(
+            "plan[%s] server_error total_ms=%d",
+            request_id,
+            int((time.perf_counter() - started) * 1000),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "plan_generation_failed",
+                "message": "Plan generation failed. Please try again.",
+                "requestId": request_id,
+            },
+        ) from e
 
 
 @router.get("/plan/{user_id}")

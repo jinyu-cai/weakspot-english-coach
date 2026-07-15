@@ -37,7 +37,11 @@ def current_memory_write_claim(user_id: str) -> Optional[str]:
 
 
 @contextmanager
-def memory_write_lease(user_id: str) -> Iterator[str]:
+def memory_write_lease(
+    user_id: str,
+    *,
+    wait_timeout_seconds: float = 3.0,
+) -> Iterator[str]:
     """Acquire once per call tree and reuse the token for nested memory work."""
     current = _CURRENT_LEASE.get()
     if current:
@@ -49,7 +53,7 @@ def memory_write_lease(user_id: str) -> Iterator[str]:
         return
 
     claim_id = f"mwl_{uuid4().hex}"
-    deadline = time.monotonic() + 3.0
+    deadline = time.monotonic() + max(0.0, wait_timeout_seconds)
     while not claim_memory_write_lease(user_id, claim_id):
         if time.monotonic() >= deadline:
             raise MemoryWriteBusyError(

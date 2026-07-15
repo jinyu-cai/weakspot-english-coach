@@ -115,6 +115,7 @@ export default function ChatPage() {
   const [textChatModelMode, setTextChatModelMode] = useState<TextChatModelMode>("fast")
   const [viewState, setViewState] = useState<ViewState>("chat")
   const [analysis, setAnalysis] = useState<SessionAnalysis | null>(null)
+  const [analyzingSessionIds, setAnalyzingSessionIds] = useState<Set<string>>(() => new Set())
   const [stealthPractice, setStealthPractice] = useState<StealthPracticeResult | null>(null)
   const [stealthPractices, setStealthPractices] = useState<StealthPracticeResult[]>([])
   const [voiceLifecycle, setVoiceLifecycle] = useState<VoiceChatLifecycle>({ active: false, pending: false })
@@ -125,6 +126,8 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const sessionSelectionRef = useRef(0)
+  const activeSessionIdRef = useRef<string | null>(null)
+  const analysisInFlightRef = useRef<Set<string>>(new Set())
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -265,6 +268,7 @@ export default function ChatPage() {
 
   function resetSession() {
     sessionSelectionRef.current += 1
+    activeSessionIdRef.current = null
     setVoiceLifecycle({ active: false, pending: false })
     setActiveSession(null)
     setMessages([])
@@ -274,11 +278,17 @@ export default function ChatPage() {
     setStealthPractices([])
   }
 
-  async function triggerAnalysis(sessionId: string) {
-    setViewState("analyzing")
-    setAnalysis(null)
-    setStealthPractice(null)
-    setStealthPractices([])
+  async function triggerAnalysis(sessionId: string, viewSessionId = sessionId) {
+    if (analysisInFlightRef.current.has(sessionId)) return
+    analysisInFlightRef.current.add(sessionId)
+    setAnalyzingSessionIds(new Set(analysisInFlightRef.current))
+
+    if (activeSessionIdRef.current === viewSessionId) {
+      setViewState("analyzing")
+      setAnalysis(null)
+      setStealthPractice(null)
+      setStealthPractices([])
+    }
     try {
       const result = await analyzeSession(sessionId)
       const practiceResults = result.stealthPractices?.length
@@ -286,10 +296,7 @@ export default function ChatPage() {
         : result.stealthPractice
           ? [result.stealthPractice]
           : []
-      setAnalysis(result.analysis)
-      setStealthPractice(result.stealthPractice ?? null)
-      setStealthPractices(practiceResults)
-      setActiveSession((current) => current?.id === sessionId
+      setActiveSession((current) => current?.id === viewSessionId
         ? {
             ...current,
             analysis: result.analysis,
@@ -305,10 +312,18 @@ export default function ChatPage() {
             stealthPractices: practiceResults,
           }
         : session))
-      setViewState("summary")
+      if (activeSessionIdRef.current === viewSessionId) {
+        setAnalysis(result.analysis)
+        setStealthPractice(result.stealthPractice ?? null)
+        setStealthPractices(practiceResults)
+        setViewState("summary")
+      }
     } catch {
       toast.error(t.chat.analyzeFailed)
-      setViewState("chat")
+      if (activeSessionIdRef.current === viewSessionId) setViewState("chat")
+    } finally {
+      analysisInFlightRef.current.delete(sessionId)
+      setAnalyzingSessionIds(new Set(analysisInFlightRef.current))
     }
   }
 
@@ -332,6 +347,7 @@ export default function ChatPage() {
         textChatModelMode,
       )
       setSessions((prev) => [session, ...prev])
+      activeSessionIdRef.current = session.id
       setActiveSession(session)
       setMode("text")
       setMessages([])
@@ -375,6 +391,7 @@ export default function ChatPage() {
         textChatModelMode,
       )
       setSessions((prev) => [session, ...prev])
+      activeSessionIdRef.current = session.id
       setActiveSession(session)
       setMode("text")
       setMessages(withSessionStarter(session, []))
@@ -400,12 +417,13 @@ export default function ChatPage() {
 
   async function handleSelectSession(session: ChatSession) {
     const selectionId = ++sessionSelectionRef.current
+    activeSessionIdRef.current = session.id
     setActiveSession(session)
     if (session.textModelMode) setTextChatModelMode(session.textModelMode)
     setMode(session.mode === "voice" ? "voice" : "text")
     setMessages([])
     setInput("")
-    setViewState(session.analysis ? "summary" : "chat")
+    setViewState(session.analysis ? "summary" : analyzingSessionIds.has(session.id) ? "analyzing" : "chat")
     setAnalysis(session.analysis ?? null)
     setStealthPractice(session.stealthPractice ?? null)
     setStealthPractices(session.stealthPractices ?? (session.stealthPractice ? [session.stealthPractice] : []))
@@ -417,7 +435,13 @@ export default function ChatPage() {
       setSessions((current) => current.map((item) => item.id === refreshedSession.id ? refreshedSession : item))
       setMode(refreshedSession.mode === "voice" ? "voice" : "text")
       setMessages(withSessionStarter(refreshedSession, msgs))
-      setViewState(refreshedSession.analysis ? "summary" : "chat")
+      setViewState(
+        refreshedSession.analysis
+          ? "summary"
+          : analysisInFlightRef.current.has(refreshedSession.id)
+            ? "analyzing"
+            : "chat",
+      )
       setAnalysis(refreshedSession.analysis ?? null)
       setStealthPractice(refreshedSession.stealthPractice ?? null)
       setStealthPractices(
@@ -507,7 +531,7 @@ export default function ChatPage() {
   async function handleVoiceEnd(sessionId?: string) {
     setVoiceLifecycle({ active: false, pending: false })
     if (sessionId) {
-      await triggerAnalysis(sessionId)
+      await triggerAnalysis(sessionId, activeSessionIdRef.current ?? sessionId)
     } else {
       resetSession()
     }
@@ -749,9 +773,16 @@ export default function ChatPage() {
                         </span>
                       </div>
                     </div>
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(s.createdAt).toLocaleDateString()}
-                    </span>
+                    {analyzingSessionIds.has(s.id) ? (
+                      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Spinner className="size-3.5" />
+                        {t.chat.analyzing}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(s.createdAt).toLocaleDateString()}
+                      </span>
+                    )}
                   </CardContent>
                 </Card>
               ))}

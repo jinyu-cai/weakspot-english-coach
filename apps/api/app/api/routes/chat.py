@@ -825,7 +825,7 @@ def analyze_chat_session(
         # prevents a concurrent practice attempt or second chat analysis from
         # being overwritten by a stale skill snapshot.
         memory_claim_id = learning_effects_stack.enter_context(
-            memory_write_lease(user_id)
+            memory_write_lease(user_id, wait_timeout_seconds=30.0)
         )
         now = now_iso()
         existing_skills = {s["skillCode"]: s for s in list_skills(user_id)}

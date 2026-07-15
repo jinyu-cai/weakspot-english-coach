@@ -121,7 +121,13 @@ def main() -> int:
         r = client.post("/api/v1/plan", json={"userId": user})
         assert r.status_code == 200, r.text
         plan = r.json()["plan"]
-        assert plan["days"], "expected plan days"
+        assert len(plan["days"]) == 7, plan
+        assert all(len(day["tasks"]) == 2 for day in plan["days"]), plan
+        assert all(
+            len(task["exercises"]) == 3
+            for day in plan["days"]
+            for task in day["tasks"]
+        ), plan
         print(f"3. POST /plan              -> '{plan['title']}', {len(plan['days'])} days")
 
         from app.api.routes import plan as plan_route
@@ -138,27 +144,29 @@ def main() -> int:
                 title=f"Scope test: {recent_errors[0]['scope']}",
                 days=[
                     LearningPlanDayAI(
-                        day=1,
+                        day=day,
                         goalZh="Verify error scope selection",
                         targetSkillCodes=["grammar.verb_tense"],
                         tasks=[
                             LearningPlanTaskAI(
-                                titleZh="Scope verification task",
+                                titleZh=f"Scope verification task {task_number}",
                                 descriptionZh="Confirm that the selected error source reaches plan generation.",
                                 practiceType=PracticeType.fix_sentence,
-                                estimatedMinutes=30,
+                                estimatedMinutes=15,
                                 exercises=[
                                     PlanExerciseAI(
                                         promptZh="Correct the sentence.",
-                                        question=f"Yesterday I go to class {i}.",
-                                        answer=f"Yesterday I went to class {i}.",
+                                        question=f"Yesterday I go to class {day}-{task_number}-{i}.",
+                                        answer=f"Yesterday I went to class {day}-{task_number}-{i}.",
                                         explanationZh="Yesterday signals past time, so go becomes went.",
                                     )
-                                    for i in range(1, 9)
+                                    for i in range(1, 4)
                                 ],
                             )
+                            for task_number in range(1, 3)
                         ],
                     )
+                    for day in range(1, 8)
                 ],
             )
 
@@ -187,6 +195,64 @@ def main() -> int:
             plan_route.generate_learning_plan = original_generate_plan
 
         print("   plan error scope         -> default weekly, explicit all")
+
+        from app.models.chat import SessionAnalysisAI
+        from app.services import plan_service as plan_service_module
+        from app.services import session_analysis_service as session_analysis_service_module
+        from app.services.ai_client import LLMProviderConfig
+
+        routing_provider = LLMProviderConfig(
+            api_key="deep-key",
+            base_url="https://deep.example/v1",
+            model="deep-model",
+            fast_model="fast-model",
+            fast_api_key="fast-key",
+            fast_base_url="https://fast.example/v1",
+        )
+        plan_call = {}
+        analysis_call = {}
+        original_plan_parse = plan_service_module.parse_with_model
+        original_analysis_parse = session_analysis_service_module.parse_with_model
+
+        def capture_plan_parse(**kwargs):
+            plan_call.update(kwargs)
+            return scoped_plan(recent_errors=[{"scope": "routing"}])
+
+        def capture_analysis_parse(**kwargs):
+            analysis_call.update(kwargs)
+            return SessionAnalysisAI(summaryZh="Routing test")
+
+        try:
+            plan_service_module.parse_with_model = capture_plan_parse
+            session_analysis_service_module.parse_with_model = capture_analysis_parse
+            plan_service_module.generate_learning_plan(
+                profile={},
+                skills=[],
+                recent_errors=[],
+                llm_provider=routing_provider,
+                max_output_tokens=50_000,
+            )
+            session_analysis_service_module.analyze_session(
+                messages=[{"role": "user", "content": "I went there yesterday."}],
+                llm_provider=routing_provider,
+                max_tokens=50_000,
+            )
+        finally:
+            plan_service_module.parse_with_model = original_plan_parse
+            session_analysis_service_module.parse_with_model = original_analysis_parse
+
+        assert plan_call["model"] == "fast-model", plan_call
+        assert plan_call["max_tokens"] == 12_000, plan_call
+        assert analysis_call["model"] == "fast-model", analysis_call
+        assert analysis_call["max_tokens"] == 12_000, analysis_call
+        oversized_analysis = SessionAnalysisAI(
+            summaryZh="Bounded",
+            strengthsZh=[f"Strength {index}" for index in range(10)],
+            recommendedNextActionsZh=[f"Action {index}" for index in range(10)],
+        )
+        assert len(oversized_analysis.strengthsZh) == 5, oversized_analysis
+        assert len(oversized_analysis.recommendedNextActionsZh) == 5, oversized_analysis
+        print("   generation routing       -> Fast model + bounded output contracts")
 
         r = client.get(f"/api/v1/plan/{user}")
         assert r.json()["plan"], "expected active plan"

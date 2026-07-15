@@ -162,7 +162,7 @@ def _fake_plan_exercises(kind: str) -> list[PlanExerciseAI]:
                 answer=f"Yesterday I went to practice session {i}.",
                 explanationZh="'Yesterday' signals past time, so use went instead of go.",
             )
-            for i in range(1, 9)
+            for i in range(1, 4)
         ]
 
     return [
@@ -172,7 +172,7 @@ def _fake_plan_exercises(kind: str) -> list[PlanExerciseAI]:
             answer=f"The presentation was effective because point {i} was clear.",
             explanationZh="'Effective' is more specific than 'good' when talking about results.",
         )
-        for i in range(1, 9)
+        for i in range(1, 4)
     ]
 
 
