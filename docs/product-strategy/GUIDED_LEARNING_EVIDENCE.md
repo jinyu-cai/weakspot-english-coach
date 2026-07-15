@@ -13,7 +13,7 @@ How can Weakspot English Coach help learners who do not know what to paste, what
 ### The existing back end already has a strong learning loop
 
 - `apps/api/app/services/decision_service.py` ranks the next skill and practice type from mastery gap, error density, prior failure and time since practice.
-- `apps/api/app/services/stealth_practice_service.py` selects due weakness probes, creates natural opportunities in chat, distinguishes `success`, `hinted_success`, `failure`, `avoided` and `no_opportunity`, and already supports `replay`, `variation` and `transfer` progression.
+- `apps/api/app/services/stealth_practice_service.py` selects due weakness probes and fills otherwise empty chat slots with neutral samples of under-observed skills. It creates natural opportunities, distinguishes `success`, `hinted_success`, `failure`, `avoided` and `no_opportunity`, and supports `replay`, `variation` and `transfer` progression. Neutral samples track coverage but never change mastery by themselves.
 - `apps/api/app/services/memory_service.py` requires repeated evidence across attempts, dates, task types and time before a weakness graduates. A single correct answer is not enough.
 - `apps/api/app/services/session_analysis_service.py` extracts corrections, natural expressions and weaknesses after chat.
 - `apps/api/app/services/input_learning_service.py` correctly separates grounded extraction from an attention mission when source text is unavailable. It does not invent quotations.
@@ -29,7 +29,7 @@ Conclusion: the highest-value missing layer is not another diagnostic model. It 
 - `/chat/predict` already exists in `apps/api/app/api/routes/chat.py`, but the text-chat UI does not yet expose a graduated “I’m stuck” flow.
 - `apps/web/app/input/page.tsx` supports useful before/during/after guidance, but the user still chooses the source and may need to find subtitles. The UI does not require a retell or new-context reuse that can become production evidence.
 - New profiles fall back to B1 and `grammar.verb_tense`; this is a cold-start default, not an assessment of the learner.
-- `SkillState` records mastery and success/error counts but does not explicitly model `unassessed` coverage by modality, context or independence.
+- `SkillState` records mastery and success/error counts. Chat now keeps bounded, modality-specific neutral-sampling coverage, but there is not yet one cross-surface `SkillCoverage` model spanning Diagnose, Coach, Input Learning, text chat and voice.
 
 ### Existing infrastructure that should be reused
 
@@ -68,6 +68,15 @@ Conclusion: the highest-value missing layer is not another diagnostic model. It 
 
 9. Early AI role-play evidence is promising but narrow and small-sample. The recommendation therefore treats role-play as a mission format to validate, not a proven replacement for human interaction.  
    Source: https://doi.org/10.1002/tesq.70010
+
+10. A study of 115 Japanese learners found that mixing five English grammar structures produced better one-week delayed grammaticality-judgment performance than blocked practice, with prior knowledge moderating the effect. This supports rotating skill families instead of repeatedly drilling one target, but it does not prove that hidden conversational sampling has the same effect.
+    Source: https://doi.org/10.1111/modl.12581
+
+11. In an 18-week study of 90 Chinese university learners, both segmental and suprasegmental pronunciation instruction improved sentence-level comprehensibility, while only the suprasegmental group showed maintained gains in spontaneous speech. The product therefore offers listen-and-shadow practice for stress and rhythm, but does not claim that one AI playback reproduces the studied intervention.
+    Source: https://doi.org/10.1017/S0272263120000121
+
+12. A pronunciation-teaching meta-analysis warns that effects depend on what is measured, how it is scored and whether speech is controlled or spontaneous; global spontaneous gains judged subjectively remain less clear. A second synthesis distinguishes comprehensibility from sounding native and recommends prioritizing suprasegmental practice for comprehensible speech. The current transcript-only pipeline therefore provides no automated prosody score and frames shadowing around clarity rather than accent erasure.
+    Sources: https://doi.org/10.1111/lang.12345 and https://doi.org/10.1002/tesq.3027
 
 ## Product synthesis
 
@@ -190,7 +199,7 @@ This ordering is directional and must be re-estimated during technical design.
 
 1. Add `ActivityRun` to record assignment, start, completion, skip and abandonment.
 2. Add a cross-surface `EvidenceEvent` with modality, task, opportunity, support and outcome.
-3. Add `SkillCoverage` so untested abilities can be explored deliberately.
+3. Extend the new chat-specific neutral coverage sampler into a cross-surface `SkillCoverage` model so untested abilities can be explored deliberately without equating one success with mastery.
 4. Build a small graded content catalogue with verified transcripts and rights metadata.
 5. Persist Plan completion and skip reasons so the coach can learn task fit.
 

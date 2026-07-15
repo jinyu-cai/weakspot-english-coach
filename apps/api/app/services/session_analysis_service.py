@@ -105,6 +105,7 @@ def analyze_session(
                 key: probe.get(key)
                 for key in (
                     "probeId",
+                    "probeKind",
                     "targetSkillCode",
                     "targetDescription",
                     "errorFingerprint",
@@ -140,6 +141,10 @@ def analyze_session(
      abandoned, or redirected the exact target instead of attempting it. Ordinary brevity is not avoidance.
    - Quote the learner's exact relevant words in `evidenceQuote`. Never use the coach's wording as evidence.
    - If the evidence is ambiguous, choose `no_opportunity`; do not guess.
+   - A target with `probeKind=discovery` is neutral coverage sampling, not a known weakness.
+     Classify the observed attempt by the same evidence rules, but never infer prior failure or
+     mastery from the target itself. A later weakness must still be supported independently in
+     `corrections` or `weaknesses` by an exact learner utterance.
 
 The hidden targets are internal evaluation context, not facts to add as new memory candidates:
 """ + json.dumps(safe_probes, ensure_ascii=False)

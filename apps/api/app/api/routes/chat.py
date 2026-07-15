@@ -47,7 +47,7 @@ from app.services.session_analysis_service import analyze_session
 from app.services.stealth_practice_service import (
     build_stealth_probe_instruction,
     record_stealth_probe_outcome,
-    select_stealth_probe,
+    select_conversation_probe,
 )
 
 router = APIRouter(prefix="/chat")
@@ -461,7 +461,7 @@ def send_message(
         prior_user_turns = sum(1 for message in history if message.get("role") == "user")
         if _should_schedule_text_probe(prior_user_turns, len(stealth_probes)):
             try:
-                turn_stealth_probe = select_stealth_probe(
+                turn_stealth_probe = select_conversation_probe(
                     req.userId,
                     modality="text_chat",
                     topic=_turn_stealth_context(session, history, req.text),

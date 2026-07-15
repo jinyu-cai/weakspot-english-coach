@@ -150,18 +150,21 @@ A stealth mission turns a due weakness into an optional natural conversational
 opportunity. Text chat never injects the raw weakness, old error sentence, or
 remembered named entity into ordinary memory context. It can schedule at most
 one one-shot target on learner turns 2, 4, and 6, excluding every memory and
-skill code already used in that session. The coach must skip the target when
-the current message has no natural opening. The lifecycle is:
+skill code already used in that session. If no distinct due weakness is
+eligible for a slot, it may neutrally sample one under-observed core skill. A
+neutral sample is not a suspected weakness and cannot change mastery by itself.
+The coach must skip either target when the current message has no natural
+opening. The lifecycle is:
 
 ```text
-due weakness + current turn + unused skill in this session
+due weakness OR neutral under-observed skill + current turn + unused skill
   -> bounded mission brief
   -> unused interaction move (recast | confirm | clarify | extend)
   -> one-reply naturalness gate with no old-example leakage
   -> turn-bounded opportunity gate
   -> outcome: success | hinted_success | failure | avoided | no_opportunity
-  -> retention + modality + transfer update
-  -> next due check
+  -> weakness probe: retention + modality + transfer update + next due check
+  -> neutral sample: coverage audit only; no mastery assignment
 ```
 
 The opportunity gate is essential. A message is scored only when the prompt
@@ -182,8 +185,9 @@ Outcomes have distinct meanings:
 | `avoided` | fair opportunity, but learner consistently routes around the target | keep due and vary the next context; do not label it a grammar error |
 | `no_opportunity` | target was not reasonably elicited or observable | no learner penalty and no attempt counted |
 
-Mission records keep the source weakness, activation turn, `progressionStage` (`replay`,
-`variation`, or `transfer`), modality, context, elicitation strategy, outcome,
+Mission records keep the target kind, source weakness when present, activation
+turn, `progressionStage` (`sample`, `replay`, `variation`, or `transfer`),
+modality, context, elicitation strategy, outcome,
 interaction move, evidence, hint level, and timestamps. Within one text session,
 both skill codes and interaction moves rotate. Per-skill strategy memory keeps
 bounded reward statistics for each move so the scheduler can learn which setup
@@ -196,6 +200,15 @@ conversation and never reproduces the stored mistake or its named entities.
 Guided exercises cannot advance the ladder. The hidden teaching objective is
 never shown before the response; only the post-session evidence summaries are
 returned to the learner.
+
+Neutral samples use `probeKind=discovery` and `progressionStage=sample`. Their
+modality-specific coverage statistics are kept in one bounded strategy row per
+modality, including attempts, fair opportunities, outcomes, recent probe IDs
+and interaction-move yield. Retrying the same analysis is idempotent. Even a
+confident independent success remains a sample, not mastery; a failure becomes
+a learner weakness only when the ordinary correction/weakness analysis also
+finds an exact learner utterance supporting it. This preserves the distinction
+between “not observed,” “observed once,” and “durably learned.”
 
 End-of-session analysis may also emit an ordinary correction for the same skill
 as the stealth assessment. The durable source evidence is still merged, but the

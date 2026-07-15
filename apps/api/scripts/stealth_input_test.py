@@ -136,11 +136,13 @@ def main() -> int:
         from app.services import memory_write_service as memory_write_service_module
         from app.services.memory_service import remember_candidates, retrieve_memory_pack
         from app.services.stealth_practice_service import (
+            DISCOVERY_SKILL_CODES,
             INTERACTION_MOVES,
             _choose_interaction_move,
             build_stealth_probe_instruction,
             record_guided_practice_retention,
             record_stealth_probe_outcome,
+            select_conversation_probe,
             select_stealth_probe,
             stealth_practice_summary,
         )
@@ -331,6 +333,98 @@ def main() -> int:
             "grammar.verb_tense",
             set(),
         ) != "meaning_recast"
+
+        discovery_user = f"stealth-discovery-{uuid.uuid4().hex[:8]}"
+        discovery_probe = select_conversation_probe(
+            discovery_user,
+            modality="text_chat",
+            topic="Yesterday something happened, and next I will explain why.",
+            now=now,
+        )
+        assert discovery_probe is not None
+        assert discovery_probe["probeKind"] == "discovery"
+        assert discovery_probe["targetSkillCode"] in DISCOVERY_SKILL_CODES
+        assert not discovery_probe.get("memoryId")
+        discovery_instruction = build_stealth_probe_instruction(discovery_probe)
+        assert "Neutral sampling rule" in discovery_instruction
+        assert "not a known weakness" in discovery_instruction
+        discovery_result = record_stealth_probe_outcome(
+            discovery_user,
+            discovery_probe,
+            {
+                "opportunityPresent": True,
+                "outcome": "success",
+                "evidenceQuote": "Yesterday I explained what happened.",
+                "rationale": "The learner independently supplied a usable sample.",
+                "confidence": 0.94,
+                "hintLevel": 0,
+            },
+            now=now,
+        )
+        assert discovery_result["probeKind"] == "discovery"
+        assert discovery_result["outcome"] == "success"
+        assert discovery_result["stateChanged"] is False
+        assert discovery_result["masteryBefore"] is None
+        coverage_row = next(
+            row
+            for row in list_memories(discovery_user, limit=100)
+            if (row.get("stats") or {}).get("coverageType")
+            == "neutral_conversation_sampling"
+        )
+        coverage_skill = coverage_row["stats"]["skills"][discovery_probe["targetSkillCode"]]
+        assert coverage_skill["attempts"] == 1
+        assert coverage_skill["independentSuccesses"] == 1
+        record_stealth_probe_outcome(
+            discovery_user,
+            discovery_probe,
+            {
+                "opportunityPresent": True,
+                "outcome": "success",
+                "evidenceQuote": "Yesterday I explained what happened.",
+                "rationale": "Retry of the same discovery assessment.",
+                "confidence": 0.94,
+                "hintLevel": 0,
+            },
+            now=now,
+        )
+        coverage_row = next(
+            row
+            for row in list_memories(discovery_user, limit=100)
+            if (row.get("stats") or {}).get("coverageType")
+            == "neutral_conversation_sampling"
+        )
+        assert coverage_row["stats"]["attempts"] == 1
+        next_discovery_probe = select_conversation_probe(
+            discovery_user,
+            modality="text_chat",
+            topic="Yesterday something happened, and next I will explain why.",
+            now=now,
+            exclude_skill_codes={discovery_probe["targetSkillCode"]},
+            exclude_interaction_moves={discovery_probe["interactionMove"]},
+        )
+        assert next_discovery_probe is not None
+        assert next_discovery_probe["probeKind"] == "discovery"
+        assert next_discovery_probe["targetSkillCode"] != discovery_probe["targetSkillCode"]
+        assert next_discovery_probe["interactionMove"] != discovery_probe["interactionMove"]
+        discovery_gap_result = record_stealth_probe_outcome(
+            discovery_user,
+            next_discovery_probe,
+            {
+                "opportunityPresent": True,
+                "outcome": "failure",
+                "evidenceQuote": "This is a neutral sample with an error.",
+                "rationale": "The sample was usable, but it did not demonstrate the target accurately.",
+                "confidence": 0.91,
+                "hintLevel": 0,
+            },
+            now=now,
+        )
+        assert discovery_gap_result["outcome"] == "failure"
+        assert discovery_gap_result["stateChanged"] is False
+        assert not any(
+            row.get("kind") == "weakness"
+            for row in list_memories(discovery_user, limit=100)
+        )
         print("1. due probe selection      -> future suppressed; due target selected")
 
         # 2. The opportunity gate has precedence over a contradictory failure
@@ -1229,7 +1323,74 @@ def main() -> int:
         assert all(row["outcome"] == "no_opportunity" for row in rotating_results)
         rotating_session = get_chat_session(rotating_chat_user, rotating_session_id)
         assert (rotating_session or {}).get("stealthPractices") == rotating_results
-        print("8. chat target rotation      -> one-shot probes on turns 2/4/6 use distinct weaknesses")
+
+        discovery_chat_user = f"stealth-chat-discovery-{uuid.uuid4().hex[:8]}"
+        discovery_client = TestClient(app)
+        discovery_client.cookies.set(
+            "session",
+            make_session_jwt({"sub": discovery_chat_user, "login": "discovery@example.com"}),
+        )
+        response = discovery_client.post(
+            "/api/v1/chat/sessions",
+            json={"userId": "ignored", "topic": "A relaxed conversation about daily life."},
+        )
+        assert response.status_code == 200, response.text
+        discovery_session_id = response.json()["session"]["id"]
+        for text in (
+            "Hello, it is nice to talk with you.",
+            "Yesterday something unexpected happened at home.",
+            "I can explain what happened next.",
+            "The experience gave me a lot to think about.",
+        ):
+            response = discovery_client.post(
+                "/api/v1/chat/send",
+                json={
+                    "userId": "ignored",
+                    "sessionId": discovery_session_id,
+                    "text": text,
+                },
+            )
+            assert response.status_code == 200, response.text
+        discovery_session = get_chat_session(discovery_chat_user, discovery_session_id)
+        discovery_probes = list((discovery_session or {}).get("stealthProbes") or [])
+        assert len(discovery_probes) == 2
+        assert all(row.get("probeKind") == "discovery" for row in discovery_probes)
+        assert len({row["targetSkillCode"] for row in discovery_probes}) == 2
+        assert len({row["interactionMove"] for row in discovery_probes}) == 2
+        assert all(not row.get("memoryId") for row in discovery_probes)
+        response = discovery_client.post(
+            f"/api/v1/chat/sessions/{discovery_session_id}/analyze",
+            json={"outputLanguage": "en"},
+        )
+        assert response.status_code == 200, response.text
+        discovery_results = response.json().get("stealthPractices")
+        assert isinstance(discovery_results, list) and len(discovery_results) == 2
+        assert all(row.get("probeKind") == "discovery" for row in discovery_results)
+        assert all(row.get("stateChanged") is False for row in discovery_results)
+        assert all(row.get("masteryBefore") is None for row in discovery_results)
+        assert all(row.get("nextReviewAt") is None for row in discovery_results)
+        discovery_coverage_row = next(
+            row
+            for row in list_memories(discovery_chat_user, limit=100)
+            if (row.get("stats") or {}).get("coverageType")
+            == "neutral_conversation_sampling"
+        )
+        assert discovery_coverage_row["stats"]["attempts"] == 2
+        response = discovery_client.post(
+            f"/api/v1/chat/sessions/{discovery_session_id}/analyze",
+            json={"outputLanguage": "en"},
+        )
+        assert response.status_code == 200 and response.json()["duplicate"] is True
+        discovery_coverage_row = next(
+            row
+            for row in list_memories(discovery_chat_user, limit=100)
+            if (row.get("stats") or {}).get("coverageType")
+            == "neutral_conversation_sampling"
+        )
+        assert discovery_coverage_row["stats"]["attempts"] == 2
+        print(
+            "8. chat target rotation      -> turns 2/4/6 rotate due weaknesses; empty slots sample new skills"
+        )
 
         # A text turn owns the session while its reply is being generated.
         # Analysis must fail before taking a message snapshot, and no half
