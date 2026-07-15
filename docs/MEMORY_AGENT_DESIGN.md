@@ -156,6 +156,7 @@ the current message has no natural opening. The lifecycle is:
 ```text
 due weakness + current turn + unused skill in this session
   -> bounded mission brief
+  -> unused interaction move (recast | confirm | clarify | extend)
   -> one-reply naturalness gate with no old-example leakage
   -> turn-bounded opportunity gate
   -> outcome: success | hinted_success | failure | avoided | no_opportunity
@@ -183,7 +184,12 @@ Outcomes have distinct meanings:
 
 Mission records keep the source weakness, activation turn, `progressionStage` (`replay`,
 `variation`, or `transfer`), modality, context, elicitation strategy, outcome,
-evidence, hint level, and timestamps. The stage advances only after independent
+interaction move, evidence, hint level, and timestamps. Within one text session,
+both skill codes and interaction moves rotate. Per-skill strategy memory keeps
+bounded reward statistics for each move so the scheduler can learn which setup
+creates usable opportunities without abandoning exploration. A recast,
+confirmation check, or content extension that supplies target-shaped wording
+makes later uptake `hinted_success`; it cannot count as cold recall. The stage advances only after independent
 cold success: first retrieval of the same skill family, then changed details,
 then a genuinely new setting. Even at replay, the prompt stays inside the live
 conversation and never reproduces the stored mistake or its named entities.

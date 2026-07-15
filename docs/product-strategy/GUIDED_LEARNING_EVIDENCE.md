@@ -1,6 +1,6 @@
 # Guided Learning Strategy — Evidence Notes
 
-Updated: 2026-07-13
+Updated: 2026-07-15
 
 This file is the source record for `guided-learning-strategy.artifact.json`. It separates verified repository evidence, external research, recommendations, and open assumptions so product decisions are auditable.
 
@@ -57,8 +57,8 @@ Conclusion: the highest-value missing layer is not another diagnostic model. It 
 5. Captioned-video evidence supports comprehension and vocabulary learning, but viewing alone does not demonstrate independent production. Retell and transfer steps are therefore product-design inferences, not claims that captions directly create speaking mastery.  
    Source: https://doi.org/10.1016/j.system.2013.07.013
 
-6. Oral corrective-feedback evidence supports feedback that gives learners an opportunity to self-repair instead of immediately replacing their answer.  
-   Source: https://doi.org/10.1017/S0272263109990520
+6. Oral corrective-feedback evidence supports feedback that gives learners an opportunity to self-repair instead of immediately replacing their answer. Adult ESL task-based interaction also showed a link between active participation and grammatical development. The product therefore rotates prompts, clarification, confirmation, recasts and content extensions, then treats model-supplied wording as assisted rather than independent evidence. This rotation and attribution policy are implementation inferences, not effect sizes established by either paper.
+   Sources: https://doi.org/10.1017/S0272263109990520 and https://doi.org/10.1017/S0272263199004027
 
 7. Spacing research supports delayed retrieval, and task-repetition research supports combining an immediate redo with later variations.  
    Sources: https://doi.org/10.1111/lang.12479 and https://doi.org/10.1016/j.system.2025.103868

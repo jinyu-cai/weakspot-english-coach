@@ -471,6 +471,9 @@ def send_message(
                     exclude_skill_codes={
                         str(probe.get("targetSkillCode") or "") for probe in stealth_probes
                     },
+                    exclude_interaction_moves={
+                        str(probe.get("interactionMove") or "") for probe in stealth_probes
+                    },
                 )
             except Exception:
                 logger.exception("chat[%s] stealth_selection_error", request_id)

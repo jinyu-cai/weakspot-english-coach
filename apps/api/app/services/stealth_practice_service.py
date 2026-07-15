@@ -23,6 +23,12 @@ from app.services.memory_write_service import memory_write_locked, save_memory
 PROBE_HISTORY_LIMIT = 20
 NO_OPPORTUNITY_COOLDOWN_HOURS = 12
 STRATEGY_ARMS = ("personal_story", "roleplay", "opinion_followup", "retell")
+INTERACTION_MOVES = (
+    "meaning_recast",
+    "confirmation_check",
+    "clarification_request",
+    "content_extension",
+)
 VALID_OUTCOMES = {"success", "hinted_success", "failure", "avoided", "no_opportunity"}
 SAFE_GENERATION_SKILL_CODES = {
     "grammar.verb_tense",
@@ -206,6 +212,66 @@ def _choose_strategy(memories: list[dict], skill_code: str) -> str:
     return best_arm
 
 
+def _interaction_move_stats(
+    memories: list[dict],
+    skill_code: str,
+    interaction_move: str,
+) -> tuple[int, float]:
+    """Aggregate one conversational move across every setup arm for a skill."""
+
+    attempts = 0
+    total_reward = 0.0
+    for memory in memories:
+        stats = memory.get("stats")
+        if not isinstance(stats, dict) or stats.get("skillCode") != skill_code:
+            continue
+        raw_interaction_moves = stats.get("interactionMoves")
+        if not isinstance(raw_interaction_moves, dict):
+            continue
+        move_stats = raw_interaction_moves.get(interaction_move)
+        if not isinstance(move_stats, dict):
+            continue
+        attempts += int(move_stats.get("attempts", 0))
+        total_reward += float(move_stats.get("totalReward", 0.0))
+    return attempts, total_reward
+
+
+def _choose_interaction_move(
+    memories: list[dict],
+    skill_code: str,
+    excluded_moves: set[str],
+) -> str:
+    """Rotate implicit feedback moves while learning which ones create uptake."""
+
+    candidates = [move for move in INTERACTION_MOVES if move not in excluded_moves]
+    if not candidates:
+        candidates = list(INTERACTION_MOVES)
+    move_stats = {
+        move: _interaction_move_stats(memories, skill_code, move)
+        for move in candidates
+    }
+    total_attempts = sum(attempts for attempts, _ in move_stats.values())
+    best_move = candidates[0]
+    best_score = float("-inf")
+    for move in candidates:
+        attempts, total_reward = move_stats[move]
+        if attempts == 0:
+            score = 2.0
+        else:
+            mean_reward = total_reward / attempts
+            exploration = math.sqrt(2.0 * math.log(max(2, total_attempts)) / attempts)
+            score = mean_reward + exploration
+        tie_break = (
+            int(hashlib.sha256(f"{skill_code}:{move}".encode()).hexdigest()[:4], 16)
+            / 65535
+            / 1000
+        )
+        score += tie_break
+        if score > best_score:
+            best_move, best_score = move, score
+    return best_move
+
+
 def select_stealth_probe(
     user_id: str,
     modality: str = "text_chat",
@@ -213,12 +279,16 @@ def select_stealth_probe(
     now: Optional[datetime | str] = None,
     exclude_memory_ids: Optional[set[str]] = None,
     exclude_skill_codes: Optional[set[str]] = None,
+    exclude_interaction_moves: Optional[set[str]] = None,
 ) -> Optional[dict]:
     """Choose one explainable hidden target without mutating learner state."""
     current = _as_now(now)
     normalized_modality = MODALITY_ALIASES.get(modality, modality or "text_chat")
     excluded_memories = {str(value) for value in (exclude_memory_ids or set()) if value}
     excluded_skills = {str(value) for value in (exclude_skill_codes or set()) if value}
+    excluded_moves = {
+        str(value) for value in (exclude_interaction_moves or set()) if value
+    }
     memories = list_memories(user_id, limit=500)
     weaknesses = [
         item for item in memories
@@ -309,6 +379,7 @@ def select_stealth_probe(
     skill_code = _skill_code(memory)
     fingerprint = _fingerprint(memory)
     strategy = _choose_strategy(memories, skill_code)
+    interaction_move = _choose_interaction_move(memories, skill_code, excluded_moves)
     progression_stage = _progression_stage(memory)
     top_goal = max(goals, key=lambda row: float(row.get("importance", 0.0)), default=None)
     goal_context = str((top_goal or {}).get("content") or "").strip()
@@ -323,6 +394,7 @@ def select_stealth_probe(
         "context": context[:200],
         "goalContext": goal_context[:300] or None,
         "elicitationStrategy": strategy,
+        "interactionMove": interaction_move,
         "progressionStage": progression_stage,
         "priority": round(priority, 4),
         "scoreBreakdown": score_breakdown,
@@ -386,6 +458,7 @@ def build_stealth_probe_instruction(probe: Optional[dict]) -> str:
     if not probe:
         return ""
     strategy = probe.get("elicitationStrategy", "opinion_followup")
+    interaction_move = probe.get("interactionMove", "content_extension")
     stage = probe.get("progressionStage", "replay")
     strategy_instruction = {
         "personal_story": "A personal follow-up is allowed only when it is already the obvious next question.",
@@ -393,6 +466,28 @@ def build_stealth_probe_instruction(probe: Optional[dict]) -> str:
         "opinion_followup": "An opinion follow-up is allowed only when it directly responds to the learner's point.",
         "retell": "A retell or sequence question is allowed only when the learner is already discussing an event or process.",
     }.get(strategy, "Use at most one follow-up, and only when it is the natural next conversational move.")
+    interaction_instruction = {
+        "meaning_recast": (
+            "If the learner's current message actually contains the target pattern and their meaning is clear, "
+            "briefly reflect that meaning once in natural English, then respond to the content. Do not identify, "
+            "explain, emphasize, or quote the error, and do not ask them to repeat your wording."
+        ),
+        "confirmation_check": (
+            "Only when the intended meaning is plausible but genuinely needs confirmation, confirm it once using "
+            "natural wording. The check must resolve meaning, not test grammar."
+        ),
+        "clarification_request": (
+            "Only when a real listener would not understand an important detail, ask one short content-level "
+            "clarification question that lets the learner repair the message in their own words."
+        ),
+        "content_extension": (
+            "Respond to the meaning and, only if it fits, model the target family once in a new sentence that "
+            "extends the same topic. A follow-up is optional; never force one merely to test the learner."
+        ),
+    }.get(
+        str(interaction_move),
+        "Use one brief, meaning-focused conversational move only when it naturally advances the live exchange.",
+    )
     stage_instruction = {
         "replay": "Stay entirely inside the live conversation; do not recreate the stored mistake or its old setting.",
         "variation": "Use only details the learner introduced in this conversation; do not borrow old examples.",
@@ -409,15 +504,16 @@ def build_stealth_probe_instruction(probe: Optional[dict]) -> str:
         f"Target skill family: {generation_skill_code}. {_skill_elicitation_brief(skill_code)}\n"
         f"Progression stage: {stage}. {stage_instruction}\n"
         f"Use only the live roleplay and conversation messages below as context. {strategy_instruction}\n"
-        "Naturalness gate: silently skip the check unless one subtle follow-up would be what a thoughtful human "
-        "conversation partner would ask next. Skip it if it needs a generic topic-changing segue such as 'by the way', "
-        "an unrelated named entity, a return to an earlier topic, or a second follow-up after answering. It is correct "
-        "to create no practice opportunity in this reply.\n"
+        f"Assigned interaction move: {interaction_move}. {interaction_instruction}\n"
+        "Naturalness gate: silently skip the check unless the assigned move is what a thoughtful human conversation "
+        "partner would naturally do next. Skip it if it needs a generic topic-changing segue such as 'by the way', "
+        "an unrelated named entity, a return to an earlier topic, fake confusion, or a second follow-up after answering. "
+        "It is correct to create no practice opportunity in this reply.\n"
         "Never copy or paraphrase stored evidence, old examples, a remembered correction, or an unrelated learner "
         "goal. Never introduce a product, platform, brand, person, or place merely to test spelling or capitalization. "
         "Do not ask for a named grammar rule or saved phrase. Do not announce a test, weakness, memory, score, or "
-        "correction. Ask at most one short practice-bearing follow-up, then continue normally; keep ordinary errors "
-        "uncorrected until end-of-session analysis."
+        "correction. Use at most one short practice-bearing conversational move; it does not have to be a question. "
+        "Keep ordinary errors uncorrected until end-of-session analysis."
     )
 
 
@@ -448,6 +544,25 @@ def _record_strategy_result(user_id: str, probe: dict, outcome: str, now: dateti
     attempts = int(stats.get("attempts", 0)) + 1
     total_reward = float(stats.get("totalReward", 0.0)) + _strategy_reward(outcome)
     opportunities = int(stats.get("opportunities", 0)) + (0 if outcome == "no_opportunity" else 1)
+    interaction_move = str(probe.get("interactionMove") or "content_extension")
+    raw_interaction_moves = stats.get("interactionMoves")
+    interaction_moves = (
+        dict(raw_interaction_moves) if isinstance(raw_interaction_moves, dict) else {}
+    )
+    move_stats = dict(interaction_moves.get(interaction_move) or {})
+    move_attempts = int(move_stats.get("attempts", 0)) + 1
+    move_total_reward = float(move_stats.get("totalReward", 0.0)) + _strategy_reward(outcome)
+    move_opportunities = int(move_stats.get("opportunities", 0)) + (
+        0 if outcome == "no_opportunity" else 1
+    )
+    interaction_moves[interaction_move] = {
+        "attempts": move_attempts,
+        "opportunities": move_opportunities,
+        "totalReward": round(move_total_reward, 4),
+        "meanReward": round(move_total_reward / move_attempts, 4),
+        "lastOutcome": outcome,
+        "lastAttemptAt": iso_at(now),
+    }
     now_text = iso_at(now)
     if not row:
         row = {
@@ -484,6 +599,7 @@ def _record_strategy_result(user_id: str, probe: dict, outcome: str, now: dateti
             "meanReward": round(total_reward / attempts, 4),
             "lastOutcome": outcome,
             "lastAttemptAt": now_text,
+            "interactionMoves": interaction_moves,
         },
         "expiresAt": iso_at(now + timedelta(days=180)),
         "ttl": int((now + timedelta(days=210)).timestamp()),
@@ -524,6 +640,7 @@ def _summary(
         "modality": probe.get("modality"),
         "context": probe.get("context"),
         "elicitationStrategy": probe.get("elicitationStrategy"),
+        "interactionMove": probe.get("interactionMove"),
         "progressionStage": probe.get("progressionStage", "replay"),
         "outcome": outcome,
         "messageZh": labels.get(outcome, labels["no_opportunity"]),
@@ -622,6 +739,7 @@ def record_stealth_probe_outcome(
             "modality": modality,
             "context": probe.get("context"),
             "elicitationStrategy": probe.get("elicitationStrategy"),
+            "interactionMove": probe.get("interactionMove"),
             "progressionStage": probe.get("progressionStage", "replay"),
             "outcome": "no_opportunity",
             "opportunityPresent": False,
@@ -708,6 +826,7 @@ def record_stealth_probe_outcome(
         "modality": modality,
         "context": probe.get("context"),
         "elicitationStrategy": probe.get("elicitationStrategy"),
+        "interactionMove": probe.get("interactionMove"),
         "progressionStage": probe.get("progressionStage", "replay"),
         "outcome": outcome,
         "opportunityPresent": True,
@@ -792,6 +911,7 @@ def record_guided_practice_retention(
         "modality": MODALITY_ALIASES.get(modality, modality),
         "context": (context or "guided exercise")[:200],
         "elicitationStrategy": "guided_practice",
+        "interactionMove": "explicit_scaffold",
         "progressionStage": _progression_stage(memory),
         "createdAt": iso_at(current),
     }

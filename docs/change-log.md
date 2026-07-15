@@ -18,6 +18,58 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-15 — Adaptive conversation moves for natural stealth practice
+
+Date: 2026-07-15
+
+Branch: `feature/adaptive-conversation-moves`
+
+GitHub status: local implementation and release checks complete; PR not opened yet.
+
+Deploy status: not deployed.
+
+Summary:
+
+- Added four meaning-focused interaction moves for hidden chat practice:
+  natural reformulation, meaning confirmation, genuine clarification, and
+  content extension. The three within-session weakness probes rotate both the
+  target skill and the interaction move, so practice does not collapse into a
+  repeated follow-up-question pattern.
+- Kept a strict naturalness gate. The coach must answer the real message first,
+  cannot invent confusion or use a topic-changing “by the way,” and may skip a
+  scheduled move without penalizing the learner.
+- Added adaptive move statistics to the existing per-skill strategy memory.
+  Usable opportunities and outcomes update a bounded UCB policy, allowing the
+  scheduler to learn which conversational moves work for a learner while still
+  exploring under-observed alternatives.
+- Strengthened the evidence rule: when a recast, confirmation, or extension
+  models the target wording, later uptake is `hinted_success`, never independent
+  cold recall. Session summaries reveal the conversational method only after
+  the learner has responded.
+
+Research basis: conversational interaction and active participation have
+empirical support in adult ESL development (Mackey, 1999,
+https://doi.org/10.1017/S0272263199004027), while classroom oral-feedback
+evidence reports different effects for prompts and recasts (Lyster & Saito,
+2010, https://doi.org/10.1017/S0272263109990520). These papers motivate testing
+multiple meaning-focused moves; they do not validate this exact scheduler or
+guarantee a learning effect.
+
+Tests run: Python compile and `git diff --check`; the focused stealth/Input
+Learning suite (including move rotation, adaptive exploit/explore behavior,
+strategy idempotency, opportunity gating, concurrency and analysis retry);
+backend smoke, Coach contract, full moto/fake-AI integration, MemoryAgent,
+memory benchmark, and de-dup/delete suites; frontend standalone TypeScript,
+ESLint, and the network-enabled Next.js production build all passed.
+
+Known issues: naturalness and whether a model actually supplied target-shaped
+wording still require transcript-level model judgment. The conservative
+opportunity and hint gates remain the safety boundary.
+
+Next step: open the PR, review its Vercel Preview, merge, deploy the exact
+release to Oracle and Alibaba, then review a real-model transcript before
+enabling the behavior for final demonstration traffic.
+
 ## 2026-07-14 — Alibaba final-demo parity and TTS compatibility
 
 Date: 2026-07-14

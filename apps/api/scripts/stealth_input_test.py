@@ -136,6 +136,8 @@ def main() -> int:
         from app.services import memory_write_service as memory_write_service_module
         from app.services.memory_service import remember_candidates, retrieve_memory_pack
         from app.services.stealth_practice_service import (
+            INTERACTION_MOVES,
+            _choose_interaction_move,
             build_stealth_probe_instruction,
             record_guided_practice_retention,
             record_stealth_probe_outcome,
@@ -219,13 +221,22 @@ def main() -> int:
         assert probe is not None, "a due weakness should produce a probe"
         assert probe["memoryId"] == no_op_memory["id"]
         assert probe["targetSkillCode"] == "grammar.verb_tense"
+        assert probe["interactionMove"] in INTERACTION_MOVES
         instruction = build_stealth_probe_instruction(probe)
         assert isinstance(instruction, str) and len(instruction.strip()) >= 40
         assert probe["probeId"] not in instruction or "probe" in instruction.lower()
         assert probe["targetDescription"] not in instruction
         assert "Yesterday I went to the meeting." not in instruction
         assert "for this reply only" in instruction
-        assert "at most one short practice-bearing follow-up" in instruction
+        assert "at most one short practice-bearing conversational move" in instruction
+        assert f"Assigned interaction move: {probe['interactionMove']}" in instruction
+        for interaction_move in INTERACTION_MOVES:
+            move_instruction = build_stealth_probe_instruction({
+                **probe,
+                "interactionMove": interaction_move,
+            })
+            assert f"Assigned interaction move: {interaction_move}" in move_instruction
+            assert "fake confusion" in move_instruction
         sensitive_instruction = build_stealth_probe_instruction({
             **probe,
             "targetSkillCode": "vocab.github_capitalization",
@@ -280,11 +291,46 @@ def main() -> int:
                 now=now,
                 exclude_memory_ids={row["memoryId"] for row in rotation_probes},
                 exclude_skill_codes={row["targetSkillCode"] for row in rotation_probes},
+                exclude_interaction_moves={row["interactionMove"] for row in rotation_probes},
             )
             assert selected is not None
             rotation_probes.append(selected)
         assert len({row["memoryId"] for row in rotation_probes}) == 3
         assert len({row["targetSkillCode"] for row in rotation_probes}) == 3
+        assert len({row["interactionMove"] for row in rotation_probes}) == 3
+        exploit_memory = [{
+            "stats": {
+                "skillCode": "grammar.verb_tense",
+                "interactionMoves": {
+                    move: {
+                        "attempts": 10,
+                        "totalReward": 10.0 if move == "meaning_recast" else 0.0,
+                    }
+                    for move in INTERACTION_MOVES
+                },
+            },
+        }]
+        assert _choose_interaction_move(
+            exploit_memory,
+            "grammar.verb_tense",
+            set(),
+        ) == "meaning_recast"
+        explore_memory = [{
+            "stats": {
+                "skillCode": "grammar.verb_tense",
+                "interactionMoves": {
+                    "meaning_recast": {"attempts": 100, "totalReward": 100.0},
+                    "confirmation_check": {"attempts": 1, "totalReward": 0.0},
+                    "clarification_request": {"attempts": 1, "totalReward": 0.0},
+                    "content_extension": {"attempts": 1, "totalReward": 0.0},
+                },
+            },
+        }]
+        assert _choose_interaction_move(
+            explore_memory,
+            "grammar.verb_tense",
+            set(),
+        ) != "meaning_recast"
         print("1. due probe selection      -> future suppressed; due target selected")
 
         # 2. The opportunity gate has precedence over a contradictory failure
@@ -340,6 +386,15 @@ def main() -> int:
         assert len(after_retry.get("probeHistory") or []) == history_length
         assert _retention_metrics(after_retry) == before_retention
         assert (after_retry.get("modalityMastery") or {}) == before_modality
+        strategy_row = next(
+            row for row in list_memories(no_op_user, limit=100)
+            if (row.get("stats") or {}).get("skillCode") == probe["targetSkillCode"]
+            and (row.get("stats") or {}).get("elicitationStrategy")
+            == probe["elicitationStrategy"]
+        )
+        move_stats = strategy_row["stats"]["interactionMoves"][probe["interactionMove"]]
+        assert move_stats["attempts"] == 1
+        assert move_stats["opportunities"] == 0
         assert select_stealth_probe(
             no_op_user,
             modality="text_chat",
@@ -1157,6 +1212,7 @@ def main() -> int:
         assert len(rotating_probes) == 3
         assert len({row["memoryId"] for row in rotating_probes}) == 3
         assert len({row["targetSkillCode"] for row in rotating_probes}) == 3
+        assert len({row["interactionMove"] for row in rotating_probes}) == 3
         assert [bool(value) for value in hidden_instructions] == [False, True, False, True, False, True]
         assert all("Yesterday I went to the meeting." not in value for value in hidden_instructions)
         assert all("needs recurring practice" not in value for value in hidden_instructions)

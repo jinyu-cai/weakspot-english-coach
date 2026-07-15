@@ -151,6 +151,16 @@ export function SessionSummary({
                         {t.labels.skills[practice.targetSkillCode as keyof typeof t.labels.skills]
                           ?? practice.targetSkillCode}
                       </Badge>
+                      {practice.interactionMove && (
+                        <span className="flex items-center gap-1.5 text-muted-foreground">
+                          {t.chat.summary.stealthMethod}:
+                          <Badge variant="secondary">
+                            {t.chat.summary.stealthMoves[
+                              practice.interactionMove as keyof typeof t.chat.summary.stealthMoves
+                            ] ?? practice.interactionMove.replaceAll("_", " ")}
+                          </Badge>
+                        </span>
+                      )}
                     </div>
                     {practice.evidenceQuote && (
                       <p className="leading-relaxed text-muted-foreground">
