@@ -24,6 +24,22 @@ ALLOWED_TTS_VOICES = {
     "cedar",
 }
 
+# The current Speech API exposes more voices for newer TTS models, while the
+# tts-1 family accepts only this smaller subset. Validate the combination
+# locally so an individually valid model and voice cannot fail later with a
+# provider-side 400 response.
+TTS_1_VOICES = {
+    "alloy",
+    "ash",
+    "coral",
+    "echo",
+    "fable",
+    "nova",
+    "onyx",
+    "sage",
+    "shimmer",
+}
+
 
 class TTSNotConfiguredError(RuntimeError):
     pass
@@ -50,6 +66,10 @@ def generate_speech(text: str, style: CoachSpeechStyle = "natural") -> bytes:
     model = settings.openai_tts_model.strip()
     if not model:
         raise TTSNotConfiguredError("The OpenAI speech model is not configured.")
+    if model in {"tts-1", "tts-1-hd"} and voice not in TTS_1_VOICES:
+        raise TTSNotConfiguredError(
+            f"The configured OpenAI speech voice is not supported by {model}."
+        )
 
     request: dict = {
         "model": model,

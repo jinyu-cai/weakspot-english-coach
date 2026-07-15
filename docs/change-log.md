@@ -18,6 +18,47 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-14 — Alibaba final-demo parity and TTS compatibility
+
+Date: 2026-07-14
+
+Branch: `fix/alibaba-tts-compat`
+
+GitHub status: locally validated; pending push, Preview, and merge.
+
+Deploy status: the exact `main@73d1cc4` backend archive is live on Alibaba ECS
+and the previous backend is preserved as a rollback directory. Qwen text and
+embedding checks pass, but the TTS compatibility fix in this branch still
+needs to be merged and redeployed. Cloudflare remains on Oracle; no traffic
+switch has been made.
+
+Summary:
+
+- Synchronized Alibaba with the release currently running on Oracle and
+  recorded the deployed commit plus archive SHA-256 on the ECS host.
+- Verified Docker build, DynamoDB table/TTL setup, every FastAPI route/schema,
+  the five-word Diagnose validator, Nginx/TLS, production CORS, Qwen 3.7 Max
+  and Plus, and a real 256-dimensional `text-embedding-v4` response.
+- Found that the previous default `tts-1-hd` + `marin` combination is rejected
+  by the live Speech API. Changed the default to the supported `nova` voice and
+  added local model/voice compatibility validation so this becomes a clear
+  configuration error rather than a provider-side 400.
+- Made the Alibaba production template and final-demo runbook explicit about
+  Realtime and TTS configuration.
+
+Tests run: Coach contract, backend smoke, Python compile, `git diff --check`,
+and the full moto/fake-AI integration loop passed. Live Alibaba checks passed
+for Qwen Fast, Qwen Deep, Qwen Embedding, OpenAI API connectivity, and both
+configured Realtime model IDs.
+
+Known issues: interactive OAuth and browser voice playback require a final
+browser pass during the traffic-switch window. Direct ECS Nginx/TLS is healthy,
+but Cloudflare still intentionally routes the stable API hostname to Oracle.
+
+Next step: push and merge this fix after Preview passes, redeploy the exact
+merged API archive to Oracle and Alibaba, then verify live TTS and the Realtime
+client-secret endpoint before the final traffic switch.
+
 ## 2026-07-14 — Diagnose input uses word count
 
 Date: 2026-07-14

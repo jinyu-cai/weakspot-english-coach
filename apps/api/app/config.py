@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     # quality-oriented default; deployments can change this without a rebuild.
     openai_tts_base_url: str = "https://api.openai.com/v1"
     openai_tts_model: str = "tts-1-hd"
-    openai_tts_voice: str = "marin"
+    openai_tts_voice: str = "nova"
 
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
