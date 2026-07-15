@@ -195,7 +195,10 @@ and similar meta-language requests are answered directly without adding a
 hidden check. Up to three *confirmed opportunities* may use different skills
 and interaction moves in one session; this is a conversation-fatigue guardrail,
 not the size of the skill pool. If the model skips an optional move because it
-would sound unnatural, the candidate is not persisted and consumes no slot.
+would sound unnatural, the candidate is not scored and consumes no confirmed
+opportunity slot. A bounded private attempt record still applies the minimum
+cooldown and rotates away from that skill and interaction move, preventing a
+conservative model report from causing an immediate repeat.
 When no unused due weakness fits the live message, the scheduler may instead
 sample an under-observed skill family neutrally. A neutral sample is explicitly
 not a known weakness: it records bounded modality coverage and interaction-move

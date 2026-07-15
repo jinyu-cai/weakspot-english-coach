@@ -1530,6 +1530,7 @@ def finalize_chat_session_turn(
     summary: str,
     message_count: int,
     stealth_probes: Optional[list[dict]] = None,
+    stealth_probe_history: Optional[list[dict]] = None,
 ) -> None:
     """Commit a complete chat turn and release its claim atomically.
 
@@ -1557,6 +1558,9 @@ def finalize_chat_session_turn(
     if stealth_probes is not None:
         session_set += ", stealthProbes = :stealthProbes"
         session_values[":stealthProbes"] = stealth_probes
+    if stealth_probe_history is not None:
+        session_set += ", stealthProbeHistory = :stealthProbeHistory"
+        session_values[":stealthProbeHistory"] = stealth_probe_history
 
     transaction = [
         {

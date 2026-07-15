@@ -36,8 +36,11 @@ Summary:
 - Kept a three-confirmed-opportunity session guardrail while retaining the full
   eleven-skill cross-session pool and distinct skills/moves within a chat.
 - Added a conservative structured model acknowledgement. If the coach skips an
-  optional hidden move for naturalness, that candidate is not persisted and
-  consumes no session slot.
+  optional hidden move for naturalness, that candidate is not activated or
+  scored and consumes no confirmed-opportunity slot.
+- Added a bounded private candidate-attempt history. A conservative `false`
+  does not become an assessed opportunity, but it still applies cooldown and
+  rotates the next skill/move instead of immediately repeating the setup.
 - Limited ordinary replies to at most one focused, relevant follow-up and
   prohibited unrelated segues and invented personal experiences.
 
