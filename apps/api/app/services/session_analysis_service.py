@@ -111,6 +111,7 @@ def analyze_session(
                     "modality",
                     "context",
                     "elicitationStrategy",
+                    "interactionMove",
                     "activatedAfterLearnerTurn",
                 )
             }
@@ -132,6 +133,8 @@ def analyze_session(
      created a fair, natural situation where the learner could use the target.
    - `success`: the learner independently demonstrated the target without a supplied answer.
    - `hinted_success`: the learner succeeded only after wording, a sentence frame, or another hint.
+     A meaning recast, confirmation check, or content extension that modeled the target form counts as
+     supplied wording; later uptake can be useful practice but is not independent cold recall.
    - `failure`: a fair opportunity occurred and the learner attempted it but repeated the target error.
    - `avoided`: at least one clear opportunity occurred, but the learner repeatedly worked around,
      abandoned, or redirected the exact target instead of attempting it. Ordinary brevity is not avoidance.

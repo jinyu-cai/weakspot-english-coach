@@ -340,6 +340,14 @@ export const copy = {
         stealthDescription: "Your coach found a real opportunity to revisit a remembered weak spot during this conversation.",
         stealthEvidence: "What happened",
         stealthNext: "Next natural check",
+        stealthMethod: "Conversation move",
+        stealthMoves: {
+          meaning_recast: "Natural reformulation",
+          confirmation_check: "Meaning confirmation",
+          clarification_request: "Real clarification",
+          content_extension: "Content extension",
+          explicit_scaffold: "Guided support",
+        },
         stealthOutcomes: {
           success: "Used independently",
           hinted_success: "Used after a hint",
@@ -1232,6 +1240,14 @@ export const copy = {
         stealthDescription: "教练在这次对话中找到了一个自然机会，复测记忆中的薄弱项。",
         stealthEvidence: "本次表现",
         stealthNext: "下次自然复测",
+        stealthMethod: "互动方式",
+        stealthMoves: {
+          meaning_recast: "自然重述",
+          confirmation_check: "确认理解",
+          clarification_request: "真实澄清",
+          content_extension: "顺势扩展",
+          explicit_scaffold: "引导支持",
+        },
         stealthOutcomes: {
           success: "已独立使用",
           hinted_success: "提示后使用",

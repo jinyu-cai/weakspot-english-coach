@@ -743,6 +743,7 @@ export interface StealthPracticeResult {
   modality?: string | null
   context?: string | null
   elicitationStrategy?: string | null
+  interactionMove?: string | null
   progressionStage?: string | null
   outcome: StealthPracticeOutcome
   messageZh?: string | null

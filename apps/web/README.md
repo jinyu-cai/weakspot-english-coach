@@ -117,7 +117,11 @@ learner turn stays untouched; turns 2, 4, and 6 may each receive one optional,
 one-reply probe for a different due skill (maximum three per session). Raw
 weakness examples and unrelated remembered topics are excluded from normal
 chat personalization, and the coach skips a probe unless it is the natural next
-move in the live conversation. A normal conversation may therefore create a
+move in the live conversation. The probes also rotate natural reformulation,
+meaning confirmation, genuine clarification, and content extension instead of
+repeating the same follow-up-question pattern. If the coach models target
+wording, later learner uptake is assisted evidence rather than cold recall. A
+normal conversation may therefore create a
 fair opportunity to use a due weakness,
 but the app records a learning outcome only after the backend opportunity gate
 confirms the target was actually observable. `no_opportunity` never lowers a
