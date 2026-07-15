@@ -34,7 +34,8 @@ archive with SHA-256 `26c6fb889107584d40cb090424f34941d8f27c632d08d84a96d47ed3fa
 is deployed on Oracle and Alibaba ECS. Both production `.env` files and prior
 backend directories were preserved, table/TTL setup passed, and both recreated
 containers are healthy. Cloudflare remains on Oracle; no traffic switch has
-been made.
+been made. Google OAuth is enabled through matching per-host `.env` values on
+both backends; no credential is stored in Git or this log.
 
 Summary:
 
@@ -50,9 +51,8 @@ Summary:
 - Made the Alibaba production template and final-demo runbook explicit about
   Realtime and TTS configuration.
 - Made the login page consume the backend's configured-provider list, so an
-  unconfigured Google OAuth button cannot lead to a 503 during the demo. The
-  currently configured GitHub login remains visible; Google appears
-  automatically when its server credentials are added.
+  unconfigured OAuth button cannot lead to a 503 during the demo. Google is now
+  configured on both release-matched backends and appears alongside GitHub.
 
 Tests run: Coach contract, backend smoke, Python compile, `git diff --check`,
 the full moto/fake-AI integration loop, frontend TypeScript, ESLint, and the
@@ -61,15 +61,16 @@ Qwen Deep, Qwen Embedding, OpenAI API connectivity, and both configured
 Realtime model IDs. The final release also passed a real Realtime client-secret
 request, GitHub OAuth redirect validation, the provider-capability response,
 and the complete `/coach/speech` route with a 53,280-byte MP3. No browser
-instance was available for separate visual QA.
+instance was available for separate visual QA. Google Auth deployment checks
+on both hosts confirmed `github,google`, an exact callback URI, a valid 302 to
+Google Accounts, destroyed temporary credential files, and healthy containers.
 
 Known issues:
 
 - Interactive OAuth and browser audio playback require one final manual browser
   pass during the traffic-switch window.
-- Google OAuth credentials are not configured on either backend, so the login
-  page now correctly exposes only GitHub. Adding Google later requires matching
-  credentials and callback configuration on both hosts.
+- The Google authorization redirect is validated, but completing the account
+  selection/consent round trip still requires the final manual browser pass.
 - Alibaba UFW intentionally allows ports 80/443 only from Cloudflare's official
   IP ranges. Direct ECS-IP web probes therefore time out; Nginx/TLS was verified
   locally, and public verification must go through Cloudflare after the origin
