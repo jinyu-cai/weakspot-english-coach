@@ -24,9 +24,18 @@ Date: 2026-07-15
 
 Branch: `feature/adaptive-conversation-moves`
 
-GitHub status: local implementation and release checks complete; PR not opened yet.
+GitHub status: PR #52 merged into `main` at
+`196bfb37b6edc28c7ab44fba980ebebc8a6b7640` after its Vercel Preview passed;
+the matching Vercel Production deployment also passed.
 
-Deploy status: not deployed.
+Deploy status: LIVE and release-matched. The exact backend archive from
+`main@196bfb3`, SHA-256
+`8736d809e8729acc463408dfd0a342cf95fffcbe68985db3692ee2aea36b3d8a`,
+is deployed on both Oracle and Alibaba ECS. The previous backend directories
+and both production `.env` files were preserved. Docker build, DynamoDB
+table/TTL setup, application smoke tests, release-marker checks, and container
+health checks passed on both hosts. Cloudflare still routes public API traffic
+to Oracle; no traffic switch was made.
 
 Summary:
 
@@ -62,13 +71,22 @@ backend smoke, Coach contract, full moto/fake-AI integration, MemoryAgent,
 memory benchmark, and de-dup/delete suites; frontend standalone TypeScript,
 ESLint, and the network-enabled Next.js production build all passed.
 
+Live verification: the public API health check passed. A non-persistent
+production-model transcript check passed on both providers: Qwen naturally
+recast “go / meet” as “went / met,” while DeepSeek responded naturally on the
+same neighborhood-barbecue topic. Neither response announced a correction,
+used a generic “by the way,” or introduced an unrelated topic. A deliberately
+reduced 500-token DeepSeek test exhausted its reasoning budget before emitting
+structured JSON; the check passed with the real 2,000-token production limit.
+
 Known issues: naturalness and whether a model actually supplied target-shaped
-wording still require transcript-level model judgment. The conservative
+wording still require transcript-level model judgment. Text transcripts also
+cannot establish prosody or pronunciation quality. The conservative
 opportunity and hint gates remain the safety boundary.
 
-Next step: open the PR, review its Vercel Preview, merge, deploy the exact
-release to Oracle and Alibaba, then review a real-model transcript before
-enabling the behavior for final demonstration traffic.
+Next step: add explicit assessed-skill coverage so “not yet observed” cannot be
+mistaken for mastery, then collect reliable audio evidence before adding
+prosody or pronunciation adaptation.
 
 ## 2026-07-14 — Alibaba final-demo parity and TTS compatibility
 
