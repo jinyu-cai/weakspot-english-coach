@@ -21,6 +21,8 @@ import sys
 import time
 import asyncio
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 
 SAMPLE = (
     "Yesterday I go to my university and I meet my friend. We talk about our project, "
@@ -65,6 +67,7 @@ def main() -> int:
 
         from app.api.deps import _client_ip, make_session_jwt
         from app.config import settings
+        from app.db import repositories as repository_module
         from app.db.repositories import (
             get_exercise,
             list_chat_messages,
@@ -75,7 +78,10 @@ def main() -> int:
             update_chat_session_fields,
         )
         from app.main import app
+        from app.services import memory_write_service as memory_write_service_module
+        from app.services.decision_service import recommend_next_action
         from app.services.realtime_sideband import RealtimeSidebandState, _handle_realtime_event
+        from botocore.exceptions import ClientError
         from scripts.create_table import create_table
 
         print(
@@ -192,6 +198,57 @@ def main() -> int:
         ex = r.json()["exercise"]
         assert ex["question"], "expected a question"
         print(f"4. POST /practice/generate -> skill {ex['targetSkillCode']}, type {ex['type']}")
+
+        # A DynamoDB transaction that fences a memory write can briefly overlap
+        # a normal UpdateItem claim on the same lease row. This is lock
+        # contention, not a fatal repository error, and must enter the bounded
+        # retry path instead of surfacing as a 500 response.
+        transaction_conflict = ClientError(
+            {
+                "Error": {
+                    "Code": "TransactionConflictException",
+                    "Message": "Transaction is ongoing for the item",
+                }
+            },
+            "UpdateItem",
+        )
+        with patch.object(
+            repository_module.table,
+            "update_item",
+            side_effect=transaction_conflict,
+        ):
+            assert not repository_module.claim_memory_write_lease(
+                f"practice-lease-conflict-{uuid.uuid4().hex[:8]}",
+                f"claim-{uuid.uuid4().hex}",
+            )
+
+        # Adaptive selection is read-only. It must not acquire the MemoryAgent
+        # writer lease, otherwise the four requests started by /practice race
+        # with each other's retrieval traces before reaching the model.
+        with patch.object(
+            memory_write_service_module,
+            "claim_memory_write_lease",
+            side_effect=AssertionError("read-only practice selection requested a write lease"),
+        ):
+            read_only_decision = recommend_next_action(user)
+        assert read_only_decision["targetSkillCode"]
+
+        def generate_one(_: int):
+            with TestClient(
+                app,
+                headers={"X-Owner-Token": "itest-owner-token"},
+            ) as concurrent_client:
+                return concurrent_client.post(
+                    "/api/v1/practice/generate",
+                    json={"userId": user},
+                )
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            concurrent_generations = list(executor.map(generate_one, range(4)))
+        assert all(
+            response.status_code == 200 for response in concurrent_generations
+        ), [response.text for response in concurrent_generations]
+        print("   concurrent generation    -> four exercise requests completed")
 
         # A large adaptive fingerprint used to be copied into the EXERCISE
         # record and made DynamoDB reject the PutItem at its 400 KB limit. The

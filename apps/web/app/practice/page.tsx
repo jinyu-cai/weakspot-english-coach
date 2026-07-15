@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useState } from "react"
+import { Suspense, useRef, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import { Dumbbell, RotateCcw, Target, Trophy } from "lucide-react"
@@ -32,17 +32,26 @@ function PracticeFlow() {
   const [exercises, setExercises] = useState<PracticeExercise[]>([])
   const [current, setCurrent] = useState(0)
   const [grades, setGrades] = useState<PracticeGrade[]>([])
+  const startInFlight = useRef(false)
   const { language, t } = useLanguage()
 
   const skillOptions = ["all", ...Object.keys(SKILL_LABELS)]
 
   async function startSession() {
+    if (startInFlight.current) return
+    startInFlight.current = true
     setLoading(true)
     try {
       const target = skill === "all" ? undefined : skill
-      const generated = await Promise.all(
+      const settled = await Promise.allSettled(
         Array.from({ length: SESSION_LENGTH }, () => generatePractice(DEMO_USER_ID, target)),
       )
+      const rejected = settled.find((result) => result.status === "rejected")
+      if (rejected) throw rejected.reason
+      const generated = settled.map((result) => {
+        if (result.status !== "fulfilled") throw result.reason
+        return result.value
+      })
       setExercises(generated)
       setCurrent(0)
       setGrades([])
@@ -50,6 +59,7 @@ function PracticeFlow() {
     } catch {
       toast.error(t.practice.loadFailed)
     } finally {
+      startInFlight.current = false
       setLoading(false)
     }
   }

@@ -348,7 +348,18 @@ def generate(
     except ValueError as e:
         raise HTTPException(status_code=502, detail=f"AI error: {e}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(
+            "practice generation_error user_id=%s error_type=%s",
+            req.userId,
+            type(e).__name__,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "practice_generation_failed",
+                "message": "Practice generation failed. Please try again.",
+            },
+        ) from e
 
 
 @router.post("/practice/submit")

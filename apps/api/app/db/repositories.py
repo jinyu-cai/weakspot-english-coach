@@ -342,7 +342,16 @@ def claim_memory_write_lease(
         )
         return True
     except ClientError as exc:
-        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+        error_code = exc.response.get("Error", {}).get("Code")
+        if error_code in {
+            "ConditionalCheckFailedException",
+            "TransactionConflictException",
+        }:
+            # A fenced memory write uses a DynamoDB transaction that includes
+            # this lease row. A concurrent non-transactional claim can briefly
+            # receive TransactionConflictException while that transaction is
+            # committing. Treat both outcomes as ordinary lock contention so
+            # the caller's bounded retry loop can wait for the current writer.
             return False
         raise
 
