@@ -145,6 +145,7 @@ def main() -> int:
             select_conversation_probe,
             select_stealth_probe,
             stealth_practice_summary,
+            text_probe_turn_is_ready,
         )
         from scripts.create_table import create_table
 
@@ -1117,9 +1118,34 @@ def main() -> int:
         summary = stealth_practice_summary(outcomes["success"].get("probeHistory") or [])
         assert summary is not None
 
-        # 8. Text chat does not chase one session-wide target. It waits until
-        # the second learner turn, injects the selected target once, keeps it
-        # server-side, and assesses the later learner response at session end.
+        # 8. Text chat does not chase fixed turn numbers or one session-wide
+        # target. Rich learner production may open a target on any turn, while
+        # language-help requests, thin messages, and the cooldown stay clean.
+        readiness_text = (
+            "Yesterday I cooked dinner at home because my sister visited, "
+            "and then we watched a movie together."
+        )
+        assert text_probe_turn_is_ready(readiness_text, current_user_turn=1)
+        assert not text_probe_turn_is_ready(
+            "Can you explain what wrap up means?",
+            current_user_turn=2,
+        )
+        assert not text_probe_turn_is_ready(
+            "聊天老师经常说 wrap up，这是什么意思，应该怎么用？",
+            current_user_turn=3,
+        )
+        assert not text_probe_turn_is_ready("Nice, thank you!", current_user_turn=4)
+        assert not text_probe_turn_is_ready(
+            readiness_text,
+            current_user_turn=3,
+            previous_activation_turn=1,
+        )
+        assert text_probe_turn_is_ready(
+            readiness_text,
+            current_user_turn=4,
+            previous_activation_turn=1,
+        )
+
         chat_user = f"stealth-chat-{uuid.uuid4().hex[:8]}"
         seed_weakness(chat_user, "grammar.verb_tense")
         chat_client = TestClient(app)
@@ -1212,9 +1238,23 @@ def main() -> int:
         )
         assert response.status_code == 200, response.text
         stored_session = get_chat_session(chat_user, session_id)
+        assert stored_session is not None and not stored_session.get("stealthProbes")
+        response = chat_client.post(
+            "/api/v1/chat/send",
+            json={
+                "userId": "ignored-client-id",
+                "sessionId": session_id,
+                "text": (
+                    "Yesterday I spent the afternoon at a park and talked "
+                    "with an old friend."
+                ),
+            },
+        )
+        assert response.status_code == 200, response.text
+        stored_session = get_chat_session(chat_user, session_id)
         probes = list((stored_session or {}).get("stealthProbes") or [])
         assert len(probes) == 1
-        assert probes[0]["activatedAfterLearnerTurn"] == 2
+        assert probes[0]["activatedAfterLearnerTurn"] == 3
         response = chat_client.post(
             "/api/v1/chat/send",
             json={
@@ -1257,6 +1297,73 @@ def main() -> int:
         assert duplicate_memory["retention"]["attempts"] == 1
         assert duplicate_memory["modalityMastery"]["text_chat"]["failures"] == 1
 
+        skipped_chat_user = f"stealth-chat-skipped-{uuid.uuid4().hex[:8]}"
+        seed_weakness(skipped_chat_user, "grammar.verb_tense")
+        skipped_client = TestClient(app)
+        skipped_client.cookies.set(
+            "session",
+            make_session_jwt({"sub": skipped_chat_user, "login": "skipped@example.com"}),
+        )
+        response = skipped_client.post(
+            "/api/v1/chat/sessions",
+            json={"userId": "ignored", "topic": "A relaxed conversation about recent events."},
+        )
+        assert response.status_code == 200, response.text
+        skipped_session_id = response.json()["session"]["id"]
+        original_chat_reply = chat_routes.chat_reply
+        skipped_hidden_instructions: list[str] = []
+
+        def decline_hidden_opportunity(*args, **kwargs):
+            skipped_hidden_instructions.append(
+                str(kwargs.get("hidden_practice_instruction") or "")
+            )
+            return original_chat_reply(*args, **kwargs).model_copy(
+                update={"practiceOpportunityCreated": False}
+            )
+
+        with patch.object(
+            chat_routes,
+            "chat_reply",
+            side_effect=decline_hidden_opportunity,
+        ):
+            response = skipped_client.post(
+                "/api/v1/chat/send",
+                json={
+                    "userId": "ignored",
+                    "sessionId": skipped_session_id,
+                    "text": (
+                        "Yesterday I visited a museum downtown and spent two hours "
+                        "looking at the new exhibition."
+                    ),
+                },
+            )
+        assert response.status_code == 200, response.text
+        assert skipped_hidden_instructions and skipped_hidden_instructions[0]
+        assert not (get_chat_session(skipped_chat_user, skipped_session_id) or {}).get(
+            "stealthProbes"
+        )
+
+        response = skipped_client.post(
+            "/api/v1/chat/send",
+            json={
+                "userId": "ignored",
+                "sessionId": skipped_session_id,
+                "text": (
+                    "Next weekend I plan to visit another gallery because the first "
+                    "experience was very interesting."
+                ),
+            },
+        )
+        assert response.status_code == 200, response.text
+        skipped_probes = list(
+            (get_chat_session(skipped_chat_user, skipped_session_id) or {}).get(
+                "stealthProbes"
+            )
+            or []
+        )
+        assert len(skipped_probes) == 1
+        assert skipped_probes[0]["activatedAfterLearnerTurn"] == 2
+
         rotating_chat_user = f"stealth-chat-rotation-{uuid.uuid4().hex[:8]}"
         for skill_code in (
             "grammar.verb_tense",
@@ -1285,11 +1392,15 @@ def main() -> int:
         with patch.object(chat_routes, "chat_reply", side_effect=capture_hidden_instruction):
             for text in (
                 "Hello, how is your day going?",
-                "I am trying to plan a calm evening.",
-                "Cooking at home sounds nice to me.",
-                "I also want to call a friend later.",
-                "We may talk about a movie we both watched.",
-                "After that, I will probably read for a while.",
+                "Could you explain what 'take it easy' means in this situation?",
+                "Yesterday I cooked dinner at home, and then I watched a movie with my sister.",
+                "I enjoyed it because the story was funny and the actors were very good.",
+                "How would I say that more naturally in English?",
+                "Nice, thank you!",
+                "At the weekend, I usually meet a friend in a quiet cafe near my home.",
+                "The cafe is small but it has a warm and friendly atmosphere.",
+                "What does 'cozy' mean?",
+                "Next month, we plan to visit a new town and stay there for two days.",
             ):
                 response = rotating_client.post(
                     "/api/v1/chat/send",
@@ -1307,7 +1418,19 @@ def main() -> int:
         assert len({row["memoryId"] for row in rotating_probes}) == 3
         assert len({row["targetSkillCode"] for row in rotating_probes}) == 3
         assert len({row["interactionMove"] for row in rotating_probes}) == 3
-        assert [bool(value) for value in hidden_instructions] == [False, True, False, True, False, True]
+        assert [row["activatedAfterLearnerTurn"] for row in rotating_probes] == [3, 7, 10]
+        assert [bool(value) for value in hidden_instructions] == [
+            False,
+            False,
+            True,
+            False,
+            False,
+            False,
+            True,
+            False,
+            False,
+            True,
+        ]
         assert all("Yesterday I went to the meeting." not in value for value in hidden_instructions)
         assert all("needs recurring practice" not in value for value in hidden_instructions)
         response = rotating_client.post(
@@ -1338,9 +1461,11 @@ def main() -> int:
         discovery_session_id = response.json()["session"]["id"]
         for text in (
             "Hello, it is nice to talk with you.",
-            "Yesterday something unexpected happened at home.",
-            "I can explain what happened next.",
-            "The experience gave me a lot to think about.",
+            "What does 'unexpected' mean here?",
+            "Yesterday something unexpected happened at home, and I had to change all my plans.",
+            "I first called my neighbor because I needed some help.",
+            "Thanks, that makes sense.",
+            "After that, we solved the problem together and discussed what we could do next time.",
         ):
             response = discovery_client.post(
                 "/api/v1/chat/send",
@@ -1354,6 +1479,7 @@ def main() -> int:
         discovery_session = get_chat_session(discovery_chat_user, discovery_session_id)
         discovery_probes = list((discovery_session or {}).get("stealthProbes") or [])
         assert len(discovery_probes) == 2
+        assert [row["activatedAfterLearnerTurn"] for row in discovery_probes] == [3, 6]
         assert all(row.get("probeKind") == "discovery" for row in discovery_probes)
         assert len({row["targetSkillCode"] for row in discovery_probes}) == 2
         assert len({row["interactionMove"] for row in discovery_probes}) == 2
@@ -1389,7 +1515,7 @@ def main() -> int:
         )
         assert discovery_coverage_row["stats"]["attempts"] == 2
         print(
-            "8. chat target rotation      -> turns 2/4/6 rotate due weaknesses; empty slots sample new skills"
+            "8. chat target rotation      -> live-content gates rotate skills; model skips consume no slot"
         )
 
         # A text turn owns the session while its reply is being generated.

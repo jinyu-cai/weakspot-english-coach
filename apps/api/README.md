@@ -187,12 +187,18 @@ fresh evidence for the same weakness reactivates the same row.
 
 MemoryAgent also tracks retention and modality-specific evidence from stealth
 missions. Text chat excludes weakness/strategy rows and low-relevance memories
-from ordinary reply personalization. Starting with learner turn 2, it may use a
-single one-reply naturalness-gated probe; turns 4 and 6 may rotate to other due
-skill codes, up to three distinct targets per session. When no unused due
-weakness fits an available slot, the scheduler may instead sample an
-under-observed skill family neutrally. A neutral sample is explicitly not a
-known weakness: it records bounded modality coverage and interaction-move
+from ordinary reply personalization. Text probes are event-driven rather than
+assigned to fixed turn numbers: the current learner message must contain enough
+spontaneous English, fit the selected skill, and respect a minimum cooldown
+from the last confirmed opportunity. Translation, word-meaning, pronunciation,
+and similar meta-language requests are answered directly without adding a
+hidden check. Up to three *confirmed opportunities* may use different skills
+and interaction moves in one session; this is a conversation-fatigue guardrail,
+not the size of the skill pool. If the model skips an optional move because it
+would sound unnatural, the candidate is not persisted and consumes no slot.
+When no unused due weakness fits the live message, the scheduler may instead
+sample an under-observed skill family neutrally. A neutral sample is explicitly
+not a known weakness: it records bounded modality coverage and interaction-move
 statistics, but never changes mastery or creates a weakness by itself. A later
 correction or weakness still needs exact learner evidence from end-session
 analysis. A due weakness can be woven into normal chat, but an outcome is

@@ -48,6 +48,7 @@ from app.services.stealth_practice_service import (
     build_stealth_probe_instruction,
     record_stealth_probe_outcome,
     select_conversation_probe,
+    text_probe_turn_is_ready,
 )
 
 router = APIRouter(prefix="/chat")
@@ -55,8 +56,6 @@ logger = logging.getLogger("uvicorn.error")
 
 FALLBACK_DEFAULT_TEXT_CHAT_MODEL = "deepseek-v4-flash"
 MAX_TEXT_STEALTH_PROBES = 3
-TEXT_STEALTH_PROBE_FIRST_TURN = 2
-TEXT_STEALTH_PROBE_TURN_INTERVAL = 2
 
 
 def _default_text_model() -> str:
@@ -131,19 +130,6 @@ def _session_stealth_practices(session: dict) -> list[dict]:
         return [dict(item) for item in candidates if isinstance(item, dict)]
     legacy = session.get("stealthPractice")
     return [dict(legacy)] if isinstance(legacy, dict) else []
-
-
-def _should_schedule_text_probe(prior_user_turns: int, existing_probe_count: int) -> bool:
-    """Space one-shot targets across a conversation instead of chasing every reply."""
-
-    if existing_probe_count >= MAX_TEXT_STEALTH_PROBES:
-        return False
-    current_user_turn = prior_user_turns + 1
-    scheduled_turn = (
-        TEXT_STEALTH_PROBE_FIRST_TURN
-        + existing_probe_count * TEXT_STEALTH_PROBE_TURN_INTERVAL
-    )
-    return current_user_turn >= scheduled_turn
 
 
 def _turn_stealth_context(session: dict, history: list[dict], user_text: str) -> str:
@@ -457,11 +443,23 @@ def send_message(
         history = list_chat_messages(req.userId, req.sessionId, limit=None)
         history_for_ai = _conversation_messages_for_ai(session, history)
         stealth_probes = _session_stealth_probes(session)
-        turn_stealth_probe = None
+        candidate_stealth_probe = None
         prior_user_turns = sum(1 for message in history if message.get("role") == "user")
-        if _should_schedule_text_probe(prior_user_turns, len(stealth_probes)):
+        current_user_turn = prior_user_turns + 1
+        previous_activation_turn = max(
+            (_probe_activation_turn(probe) for probe in stealth_probes),
+            default=0,
+        ) or None
+        if (
+            len(stealth_probes) < MAX_TEXT_STEALTH_PROBES
+            and text_probe_turn_is_ready(
+                req.text,
+                current_user_turn=current_user_turn,
+                previous_activation_turn=previous_activation_turn,
+            )
+        ):
             try:
-                turn_stealth_probe = select_conversation_probe(
+                candidate_stealth_probe = select_conversation_probe(
                     req.userId,
                     modality="text_chat",
                     topic=_turn_stealth_context(session, history, req.text),
@@ -474,12 +472,10 @@ def send_message(
                     exclude_interaction_moves={
                         str(probe.get("interactionMove") or "") for probe in stealth_probes
                     },
+                    live_message=req.text,
                 )
             except Exception:
                 logger.exception("chat[%s] stealth_selection_error", request_id)
-            if turn_stealth_probe:
-                turn_stealth_probe["activatedAfterLearnerTurn"] = prior_user_turns + 1
-                stealth_probes.append(turn_stealth_probe)
 
         try:
             conversation_context = _session_conversation_context(session)
@@ -514,8 +510,21 @@ def send_message(
             max_tokens=None if _unlimited_llm_output(identity) else 2000,
             trace_id=request_id,
             memory_context=memory_pack.get("text"),
-            hidden_practice_instruction=build_stealth_probe_instruction(turn_stealth_probe),
+            hidden_practice_instruction=build_stealth_probe_instruction(candidate_stealth_probe),
         )
+
+        activated_stealth_probe = None
+        if candidate_stealth_probe and ai_result.practiceOpportunityCreated:
+            candidate_stealth_probe["activatedAfterLearnerTurn"] = current_user_turn
+            stealth_probes.append(candidate_stealth_probe)
+            activated_stealth_probe = candidate_stealth_probe
+        elif candidate_stealth_probe:
+            logger.info(
+                "chat[%s] stealth_candidate_skipped target=%s move=%s",
+                request_id,
+                candidate_stealth_probe.get("targetSkillCode"),
+                candidate_stealth_probe.get("interactionMove"),
+            )
 
         assistant_now = now_iso()
         assistant_msg_id = f"cm_{uuid4().hex[:12]}"
@@ -540,7 +549,7 @@ def send_message(
             assistant_msg,
             summary_text,
             msg_count,
-            stealth_probes=stealth_probes if turn_stealth_probe else None,
+            stealth_probes=stealth_probes if activated_stealth_probe else None,
         )
         turn_claimed = False
 

@@ -18,6 +18,46 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-15 — Event-driven text-chat practice opportunities
+
+Date: 2026-07-15 UTC
+
+Branch: `fix/event-driven-chat-practice`
+
+GitHub status: Pending PR.
+
+Deploy status: Not deployed yet.
+
+Summary:
+
+- Replaced fixed learner-turn 2/4/6 checks with a content-driven readiness
+  gate. Meaningful spontaneous English, live target fit, and a minimum cooldown
+  are required; meta-language questions and thin messages remain untouched.
+- Kept a three-confirmed-opportunity session guardrail while retaining the full
+  eleven-skill cross-session pool and distinct skills/moves within a chat.
+- Added a conservative structured model acknowledgement. If the coach skips an
+  optional hidden move for naturalness, that candidate is not persisted and
+  consumes no session slot.
+- Limited ordinary replies to at most one focused, relevant follow-up and
+  prohibited unrelated segues and invented personal experiences.
+
+Files changed: backend chat route/model/prompts, stealth scheduler and release
+tests; API, web, and MemoryAgent documentation.
+
+Tests run: Python compile; backend smoke, integration, de-dup/delete,
+MemoryAgent, stealth/Input Learning, and memory benchmark suites; frontend
+TypeScript, ESLint, and production build. All passed. Direct structured-output
+checks against Oracle's DeepSeek Fast and Alibaba's Qwen Fast also passed for
+meta-language, mismatched-hidden, and natural-practice cases: the required
+internal field parsed, meta-language without a candidate remained false,
+replies stayed on topic, used no `By the way`/`GitHub`, asked at most one
+question, and invented no personal experience.
+
+Known issues: None currently known.
+
+Next step: Open/merge the PR, then deploy the exact merged release to Oracle
+and Alibaba.
+
 ## 2026-07-15 — Neutral skill discovery and unscored shadowing
 
 Date: 2026-07-15

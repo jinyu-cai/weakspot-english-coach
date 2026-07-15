@@ -64,6 +64,68 @@ MODALITY_ALIASES = {
     "spoken": "voice",
     "practice": "exercise",
 }
+TEXT_PROBE_MIN_TURNS_BETWEEN_OPPORTUNITIES = 3
+TEXT_PROBE_MIN_LIVE_OPPORTUNITY_FIT = 0.54
+_TEXT_PROBE_META_LANGUAGE_PATTERNS = (
+    re.compile(r"\bwhat\s+(?:do|does|did)\b.{0,80}\bmean\b", re.IGNORECASE),
+    re.compile(r"\bwhat\b.{0,80}\bmeans?\b", re.IGNORECASE),
+    re.compile(r"\bwhat(?:'s|\s+is)\s+the\s+meaning\b", re.IGNORECASE),
+    re.compile(
+        r"\bhow\s+(?:can|could|do|should|would)\s+(?:i|you)\b.{0,40}"
+        r"\b(?:say|tell|ask|use|pronounce|spell|write)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:translate|translation|grammar|pronunciation|spelling|capitalization)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"什么意思|是什么意思|是什么(?:意思|语气)|什么语气|"
+        r"怎么(?:说|用|表达)|如何(?:说|用|表达)|翻译|语法|发音|拼写|大小写|词义|用法"
+    ),
+)
+_TEXT_PROBE_PRODUCTION_PATTERN = re.compile(
+    r"\b(?:i|i'm|i've|i'd|i'll|me|my|we|we're|we've|our|us|"
+    r"yesterday|today|tomorrow|last|next|ago|usually|often|sometimes|"
+    r"always|never|recently|after|before|then|later|because|although|"
+    r"though|but|if|so|therefore|however|while)\b",
+    re.IGNORECASE,
+)
+
+
+def text_probe_turn_is_ready(
+    learner_text: str,
+    *,
+    current_user_turn: int,
+    previous_activation_turn: Optional[int] = None,
+) -> bool:
+    """Gate text probes by live language production, not fixed turn numbers.
+
+    A minimum gap is only a fatigue guardrail. It never makes a later turn due:
+    the learner still needs to produce enough relevant English on that turn.
+    Meta-language help such as translation, word meaning, or pronunciation is
+    answered directly without layering a hidden skill check onto it.
+    """
+
+    if current_user_turn < 1:
+        return False
+    if (
+        previous_activation_turn is not None
+        and current_user_turn - previous_activation_turn
+        < TEXT_PROBE_MIN_TURNS_BETWEEN_OPPORTUNITIES
+    ):
+        return False
+
+    normalized = " ".join((learner_text or "").split())
+    if not normalized:
+        return False
+    if any(pattern.search(normalized) for pattern in _TEXT_PROBE_META_LANGUAGE_PATTERNS):
+        return False
+
+    english_words = re.findall(r"[A-Za-z]+(?:['’][A-Za-z]+)?", normalized)
+    if len(english_words) >= 14:
+        return True
+    return len(english_words) >= 6 and bool(_TEXT_PROBE_PRODUCTION_PATTERN.search(normalized))
 
 
 def _as_now(value: Optional[datetime | str]) -> datetime:
@@ -307,6 +369,7 @@ def select_stealth_probe(
     exclude_memory_ids: Optional[set[str]] = None,
     exclude_skill_codes: Optional[set[str]] = None,
     exclude_interaction_moves: Optional[set[str]] = None,
+    live_message: Optional[str] = None,
 ) -> Optional[dict]:
     """Choose one explainable hidden target without mutating learner state."""
     current = _as_now(now)
@@ -329,6 +392,17 @@ def select_stealth_probe(
 
     ranked: list[tuple[float, dict, dict]] = []
     for memory in weaknesses:
+        skill_code = _skill_code(memory)
+        live_opportunity_fit = (
+            _discovery_opportunity_fit(skill_code, live_message)
+            if str(live_message or "").strip()
+            else None
+        )
+        if (
+            live_opportunity_fit is not None
+            and live_opportunity_fit < TEXT_PROBE_MIN_LIVE_OPPORTUNITY_FIT
+        ):
+            continue
         stored_due_at = parse_iso((memory.get("retention") or {}).get("dueAt"))
         # A scheduled future review is protected from over-testing. Memories
         # created before retention scheduling have no dueAt and remain eligible.
@@ -389,6 +463,8 @@ def select_stealth_probe(
             "transferNeed": round(transfer_need, 4),
             "fatiguePenalty": round(fatigue_penalty, 4),
         }
+        if live_opportunity_fit is not None:
+            score_breakdown["liveOpportunityFit"] = live_opportunity_fit
         priority = (
             0.28 * relapse_risk
             + 0.12 * uncertainty
@@ -398,6 +474,8 @@ def select_stealth_probe(
             + 0.22 * transfer_need
             - 0.18 * fatigue_penalty
         )
+        if live_opportunity_fit is not None:
+            priority += 0.12 * live_opportunity_fit
         ranked.append((priority, memory, score_breakdown))
 
     if not ranked:
@@ -490,7 +568,8 @@ def _discovery_opportunity_fit(skill_code: str, context: Optional[str]) -> float
         if re.search(pattern, text):
             base += 0.24
     if skill_code in {"vocab.repetition", "sentence.variety", "discourse.coherence"}:
-        base += min(0.18, len(text) / 5000)
+        word_count = len(re.findall(r"[a-z]+(?:['’][a-z]+)?", text))
+        base += min(0.18, max(0, word_count - 8) * 0.012)
     return round(_clamp(base, 0.0, 1.0), 4)
 
 
@@ -501,6 +580,7 @@ def select_discovery_probe(
     now: Optional[datetime | str] = None,
     exclude_skill_codes: Optional[set[str]] = None,
     exclude_interaction_moves: Optional[set[str]] = None,
+    live_message: Optional[str] = None,
 ) -> Optional[dict]:
     """Select one neutral, non-mastery-bearing sample of an under-observed skill."""
 
@@ -528,6 +608,16 @@ def select_discovery_probe(
 
     ranked: list[tuple[float, str, dict]] = []
     for skill_code in candidates:
+        live_opportunity_fit = (
+            _discovery_opportunity_fit(skill_code, live_message)
+            if str(live_message or "").strip()
+            else None
+        )
+        if (
+            live_opportunity_fit is not None
+            and live_opportunity_fit < TEXT_PROBE_MIN_LIVE_OPPORTUNITY_FIT
+        ):
+            continue
         stats = _coverage_skill_stats(memories, normalized_modality, skill_code)
         attempts = int(stats.get("attempts", 0))
         opportunities = int(stats.get("opportunities", 0))
@@ -546,6 +636,8 @@ def select_discovery_probe(
             + 0.25 * opportunity_fit
             + 0.15 * staleness
         )
+        if live_opportunity_fit is not None:
+            priority += 0.12 * live_opportunity_fit
         tie_break = (
             int(hashlib.sha256(f"{user_id}:{skill_code}".encode()).hexdigest()[:4], 16)
             / 65535
@@ -560,8 +652,12 @@ def select_discovery_probe(
             "opportunityFit": opportunity_fit,
             "staleness": round(staleness, 4),
         }
+        if live_opportunity_fit is not None:
+            score_breakdown["liveOpportunityFit"] = live_opportunity_fit
         ranked.append((priority + tie_break, skill_code, score_breakdown))
 
+    if not ranked:
+        return None
     priority, skill_code, score_breakdown = max(ranked, key=lambda item: item[0])
     strategy = _choose_strategy(memories, skill_code)
     interaction_move = _choose_interaction_move(memories, skill_code, excluded_moves)
@@ -597,6 +693,7 @@ def select_conversation_probe(
     exclude_memory_ids: Optional[set[str]] = None,
     exclude_skill_codes: Optional[set[str]] = None,
     exclude_interaction_moves: Optional[set[str]] = None,
+    live_message: Optional[str] = None,
 ) -> Optional[dict]:
     """Prefer a due weakness, then fill an otherwise empty slot neutrally."""
 
@@ -608,6 +705,7 @@ def select_conversation_probe(
         exclude_memory_ids=exclude_memory_ids,
         exclude_skill_codes=exclude_skill_codes,
         exclude_interaction_moves=exclude_interaction_moves,
+        live_message=live_message,
     )
     if weakness_probe is not None:
         return weakness_probe
@@ -618,6 +716,7 @@ def select_conversation_probe(
         now=now,
         exclude_skill_codes=exclude_skill_codes,
         exclude_interaction_moves=exclude_interaction_moves,
+        live_message=live_message,
     )
 
 
@@ -744,7 +843,10 @@ def build_stealth_probe_instruction(probe: Optional[dict]) -> str:
         "goal. Never introduce a product, platform, brand, person, or place merely to test spelling or capitalization. "
         "Do not ask for a named grammar rule or saved phrase. Do not announce a test, weakness, memory, score, or "
         "correction. Use at most one short practice-bearing conversational move; it does not have to be a question. "
-        "Keep ordinary errors uncorrected until end-of-session analysis."
+        "Across the whole reply, ask no more than one focused question and never stack a second alternative question. "
+        "Keep ordinary errors uncorrected until end-of-session analysis. In the structured response, set "
+        "practiceOpportunityCreated=true only when you actually used the assigned move and left a fair, relevant "
+        "opening for the learner's next reply; otherwise set it false."
     )
 
 

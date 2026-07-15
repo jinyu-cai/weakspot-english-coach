@@ -56,6 +56,12 @@ class ChatReplyAI(BaseModel):
     corrections: List[CorrectionAI] = []
     betterExpression: Optional[BetterExpressionAI] = None
     memoryCandidates: List[MemoryCandidate] = Field(default_factory=list)
+    practiceOpportunityCreated: bool = Field(
+        description=(
+            "Internal conservative acknowledgement that an optional hidden one-turn instruction "
+            "was actually used to create a fair opportunity in the next learner response."
+        ),
+    )
 
 
 class ChatPredictionAI(BaseModel):
