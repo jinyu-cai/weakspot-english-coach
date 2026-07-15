@@ -148,19 +148,26 @@ promise, and the agent still waits for an appropriate conversational context.
 
 A stealth mission turns a due weakness into an optional natural conversational
 opportunity. Text chat never injects the raw weakness, old error sentence, or
-remembered named entity into ordinary memory context. It can schedule at most
-one one-shot target on learner turns 2, 4, and 6, excluding every memory and
-skill code already used in that session. If no distinct due weakness is
-eligible for a slot, it may neutrally sample one under-observed core skill. A
-neutral sample is not a suspected weakness and cannot change mastery by itself.
-The coach must skip either target when the current message has no natural
-opening. The lifecycle is:
+remembered named entity into ordinary memory context. It does not reserve fixed
+turns. A current message becomes eligible only when it contains meaningful
+spontaneous English, has live fit with a target, and is far enough from the last
+confirmed opportunity. Meta-language help such as translation, word meaning,
+grammar explanation, and pronunciation stays probe-free. The scheduler excludes
+every memory, skill code, and interaction move already confirmed in that session
+and keeps a maximum of three confirmed opportunities as a fatigue and analysis
+guardrail. This does not limit the cross-session pool of core skills. If no
+distinct due weakness fits the live message, it may neutrally sample one
+under-observed core skill. A neutral sample is not a suspected weakness and
+cannot change mastery by itself. The coach must skip either target when the
+current message has no natural opening, and a skipped candidate consumes no
+session slot. The lifecycle is:
 
 ```text
-due weakness OR neutral under-observed skill + current turn + unused skill
+due weakness OR neutral under-observed skill + meaningful live message + unused skill
   -> bounded mission brief
   -> unused interaction move (recast | confirm | clarify | extend)
   -> one-reply naturalness gate with no old-example leakage
+  -> model acknowledgement that a fair opportunity was actually created
   -> turn-bounded opportunity gate
   -> outcome: success | hinted_success | failure | avoided | no_opportunity
   -> weakness probe: retention + modality + transfer update + next due check

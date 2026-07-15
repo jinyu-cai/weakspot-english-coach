@@ -228,6 +228,7 @@ def _fake_grade() -> PracticeGradeAIResult:
 def _fake_chat_reply() -> ChatReplyAI:
     return ChatReplyAI(
         reply="That sounds interesting! Tell me more about what happened after that. Did you enjoy the experience?",
+        practiceOpportunityCreated=True,
         corrections=[
             CorrectionAI(
                 original="I go to the park yesterday",

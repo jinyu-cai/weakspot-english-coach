@@ -423,7 +423,12 @@ def main() -> int:
         def fake_chat_reply(*, model=None, llm_provider=None, max_tokens=None, **kwargs):
             selected_text_models.append(model or (llm_provider.model if llm_provider else None))
             selected_text_max_tokens.append(max_tokens)
-            return ChatReplyAI(reply="Model routing test reply.", corrections=[], betterExpression=None)
+            return ChatReplyAI(
+                reply="Model routing test reply.",
+                corrections=[],
+                betterExpression=None,
+                practiceOpportunityCreated=False,
+            )
 
         chat_routes.chat_reply = fake_chat_reply
         model_setting_names = (

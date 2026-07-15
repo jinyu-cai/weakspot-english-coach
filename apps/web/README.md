@@ -113,11 +113,17 @@ the backend's bounded `nextCursor` pages until the archive is complete, with a
 repeated-cursor guard and ID de-duplication before rendering.
 
 The related stealth mission flow runs primarily inside text chat. The first
-learner turn stays untouched; turns 2, 4, and 6 may each receive one optional,
-one-reply probe for a different due skill (maximum three per session). Raw
-weakness examples and unrelated remembered topics are excluded from normal
-chat personalization, and the coach skips a probe unless it is the natural next
-move in the live conversation. The probes also rotate natural reformulation,
+learner turn is not treated specially and no later turn number is reserved.
+A one-reply probe is considered only when the learner is producing meaningful
+English, the live message fits an unused target, and the last confirmed
+opportunity is outside the cooldown. Translation, word-meaning, pronunciation,
+and similar language-help requests stay probe-free. Raw weakness examples and
+unrelated remembered topics are excluded from normal chat personalization, and
+the coach skips a probe unless it is the natural next move in the live
+conversation. A skipped candidate consumes no session slot. At most three
+confirmed opportunities are retained in one chat as a fatigue guardrail, while
+the cross-session scheduler continues rotating through the full core-skill
+pool. The probes also rotate natural reformulation,
 meaning confirmation, genuine clarification, and content extension instead of
 repeating the same follow-up-question pattern. If the coach models target
 wording, later learner uptake is assisted evidence rather than cold recall. A
