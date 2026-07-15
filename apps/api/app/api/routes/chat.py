@@ -56,6 +56,7 @@ logger = logging.getLogger("uvicorn.error")
 
 FALLBACK_DEFAULT_TEXT_CHAT_MODEL = "deepseek-v4-flash"
 MAX_TEXT_STEALTH_PROBES = 3
+MAX_TEXT_STEALTH_PROBE_HISTORY = 12
 
 
 def _default_text_model() -> str:
@@ -130,6 +131,16 @@ def _session_stealth_practices(session: dict) -> list[dict]:
         return [dict(item) for item in candidates if isinstance(item, dict)]
     legacy = session.get("stealthPractice")
     return [dict(legacy)] if isinstance(legacy, dict) else []
+
+
+def _session_stealth_probe_history(session: dict) -> list[dict]:
+    """Return bounded internal candidate attempts, including model-declined ones."""
+
+    candidates = session.get("stealthProbeHistory")
+    if not isinstance(candidates, list):
+        return []
+    normalized = [dict(item) for item in candidates if isinstance(item, dict)]
+    return normalized[-MAX_TEXT_STEALTH_PROBE_HISTORY:]
 
 
 def _turn_stealth_context(session: dict, history: list[dict], user_text: str) -> str:
@@ -443,19 +454,28 @@ def send_message(
         history = list_chat_messages(req.userId, req.sessionId, limit=None)
         history_for_ai = _conversation_messages_for_ai(session, history)
         stealth_probes = _session_stealth_probes(session)
+        stealth_probe_history = _session_stealth_probe_history(session)
         candidate_stealth_probe = None
         prior_user_turns = sum(1 for message in history if message.get("role") == "user")
         current_user_turn = prior_user_turns + 1
         previous_activation_turn = max(
             (_probe_activation_turn(probe) for probe in stealth_probes),
             default=0,
+        )
+        previous_candidate_turn = max(
+            (_probe_activation_turn(attempt) for attempt in stealth_probe_history),
+            default=0,
+        )
+        previous_practice_turn = max(
+            previous_activation_turn,
+            previous_candidate_turn,
         ) or None
         if (
             len(stealth_probes) < MAX_TEXT_STEALTH_PROBES
             and text_probe_turn_is_ready(
                 req.text,
                 current_user_turn=current_user_turn,
-                previous_activation_turn=previous_activation_turn,
+                previous_activation_turn=previous_practice_turn,
             )
         ):
             try:
@@ -464,13 +484,16 @@ def send_message(
                     modality="text_chat",
                     topic=_turn_stealth_context(session, history, req.text),
                     exclude_memory_ids={
-                        str(probe.get("memoryId") or "") for probe in stealth_probes
+                        str(probe.get("memoryId") or "")
+                        for probe in [*stealth_probes, *stealth_probe_history]
                     },
                     exclude_skill_codes={
-                        str(probe.get("targetSkillCode") or "") for probe in stealth_probes
+                        str(probe.get("targetSkillCode") or "")
+                        for probe in [*stealth_probes, *stealth_probe_history]
                     },
                     exclude_interaction_moves={
-                        str(probe.get("interactionMove") or "") for probe in stealth_probes
+                        str(probe.get("interactionMove") or "")
+                        for probe in [*stealth_probes, *stealth_probe_history]
                     },
                     live_message=req.text,
                 )
@@ -525,6 +548,17 @@ def send_message(
                 candidate_stealth_probe.get("targetSkillCode"),
                 candidate_stealth_probe.get("interactionMove"),
             )
+        if candidate_stealth_probe:
+            stealth_probe_history.append({
+                "probeId": candidate_stealth_probe.get("probeId"),
+                "probeKind": candidate_stealth_probe.get("probeKind"),
+                "memoryId": candidate_stealth_probe.get("memoryId"),
+                "targetSkillCode": candidate_stealth_probe.get("targetSkillCode"),
+                "interactionMove": candidate_stealth_probe.get("interactionMove"),
+                "activatedAfterLearnerTurn": current_user_turn,
+                "opportunityCreated": bool(ai_result.practiceOpportunityCreated),
+            })
+            stealth_probe_history = stealth_probe_history[-MAX_TEXT_STEALTH_PROBE_HISTORY:]
 
         assistant_now = now_iso()
         assistant_msg_id = f"cm_{uuid4().hex[:12]}"
@@ -550,6 +584,9 @@ def send_message(
             summary_text,
             msg_count,
             stealth_probes=stealth_probes if activated_stealth_probe else None,
+            stealth_probe_history=(
+                stealth_probe_history if candidate_stealth_probe else None
+            ),
         )
         turn_claimed = False
 

@@ -121,7 +121,9 @@ and similar language-help requests stay probe-free. Raw weakness examples and
 unrelated remembered topics are excluded from normal chat personalization, and
 the coach skips a probe unless it is the natural next move in the live
 conversation. A skipped candidate consumes no session slot. At most three
-confirmed opportunities are retained in one chat as a fatigue guardrail, while
+confirmed opportunities are retained in one chat as a fatigue guardrail. A
+bounded private attempt history still applies cooldown and rotation after a
+skip, preventing the next turn from retrying the same setup, while
 the cross-session scheduler continues rotating through the full core-skill
 pool. The probes also rotate natural reformulation,
 meaning confirmation, genuine clarification, and content extension instead of

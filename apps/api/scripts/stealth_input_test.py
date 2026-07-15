@@ -1164,6 +1164,7 @@ def main() -> int:
         public_session = response.json()["session"]
         assert "stealthProbe" not in public_session
         assert "stealthProbes" not in public_session
+        assert "stealthProbeHistory" not in public_session
         session_id = public_session["id"]
         stored_session = get_chat_session(chat_user, session_id)
         assert stored_session is not None
@@ -1173,6 +1174,7 @@ def main() -> int:
         assert response.status_code == 200, response.text
         assert all("stealthProbe" not in row for row in response.json()["sessions"])
         assert all("stealthProbes" not in row for row in response.json()["sessions"])
+        assert all("stealthProbeHistory" not in row for row in response.json()["sessions"])
 
         # Learner-visible chat history is cursor-paged, not capped at the old
         # 20-session repository default. Following cursors reaches every row.
@@ -1339,9 +1341,11 @@ def main() -> int:
             )
         assert response.status_code == 200, response.text
         assert skipped_hidden_instructions and skipped_hidden_instructions[0]
-        assert not (get_chat_session(skipped_chat_user, skipped_session_id) or {}).get(
-            "stealthProbes"
-        )
+        skipped_session = get_chat_session(skipped_chat_user, skipped_session_id) or {}
+        assert not skipped_session.get("stealthProbes")
+        skipped_attempts = list(skipped_session.get("stealthProbeHistory") or [])
+        assert len(skipped_attempts) == 1
+        assert skipped_attempts[0]["opportunityCreated"] is False
 
         response = skipped_client.post(
             "/api/v1/chat/send",
@@ -1355,6 +1359,30 @@ def main() -> int:
             },
         )
         assert response.status_code == 200, response.text
+        skipped_session = get_chat_session(skipped_chat_user, skipped_session_id) or {}
+        assert not skipped_session.get("stealthProbes")
+        assert len(skipped_session.get("stealthProbeHistory") or []) == 1
+        response = skipped_client.post(
+            "/api/v1/chat/send",
+            json={
+                "userId": "ignored",
+                "sessionId": skipped_session_id,
+                "text": "Thanks, that makes sense.",
+            },
+        )
+        assert response.status_code == 200, response.text
+        response = skipped_client.post(
+            "/api/v1/chat/send",
+            json={
+                "userId": "ignored",
+                "sessionId": skipped_session_id,
+                "text": (
+                    "Last year I traveled to a coastal town and stayed in a small "
+                    "hotel near the train station."
+                ),
+            },
+        )
+        assert response.status_code == 200, response.text
         skipped_probes = list(
             (get_chat_session(skipped_chat_user, skipped_session_id) or {}).get(
                 "stealthProbes"
@@ -1362,7 +1390,17 @@ def main() -> int:
             or []
         )
         assert len(skipped_probes) == 1
-        assert skipped_probes[0]["activatedAfterLearnerTurn"] == 2
+        assert skipped_probes[0]["activatedAfterLearnerTurn"] == 4
+        skipped_attempts = list(
+            (get_chat_session(skipped_chat_user, skipped_session_id) or {}).get(
+                "stealthProbeHistory"
+            )
+            or []
+        )
+        assert len(skipped_attempts) == 2
+        assert skipped_attempts[1]["opportunityCreated"] is True
+        assert skipped_attempts[1]["targetSkillCode"] != skipped_attempts[0]["targetSkillCode"]
+        assert skipped_attempts[1]["interactionMove"] != skipped_attempts[0]["interactionMove"]
 
         rotating_chat_user = f"stealth-chat-rotation-{uuid.uuid4().hex[:8]}"
         for skill_code in (
@@ -1515,7 +1553,7 @@ def main() -> int:
         )
         assert discovery_coverage_row["stats"]["attempts"] == 2
         print(
-            "8. chat target rotation      -> live-content gates rotate skills; model skips consume no slot"
+            "8. chat target rotation      -> live gates rotate; skipped candidates cool down without a slot"
         )
 
         # A text turn owns the session while its reply is being generated.

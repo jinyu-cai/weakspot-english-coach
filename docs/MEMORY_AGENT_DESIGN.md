@@ -160,7 +160,9 @@ distinct due weakness fits the live message, it may neutrally sample one
 under-observed core skill. A neutral sample is not a suspected weakness and
 cannot change mastery by itself. The coach must skip either target when the
 current message has no natural opening, and a skipped candidate consumes no
-session slot. The lifecycle is:
+confirmed-opportunity slot. Its bounded private attempt record still enforces
+the cooldown and rotates the next candidate, so a conservative model report
+cannot immediately repeat the same hidden setup. The lifecycle is:
 
 ```text
 due weakness OR neutral under-observed skill + meaningful live message + unused skill
