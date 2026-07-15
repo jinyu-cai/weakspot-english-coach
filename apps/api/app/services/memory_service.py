@@ -429,6 +429,18 @@ def list_active_memory_records(user_id: str) -> list[dict]:
     return _active_memories(user_id, expire_due=True)
 
 
+def snapshot_active_memory_records(user_id: str) -> list[dict]:
+    """Return an active read snapshot without taking the learner write lease.
+
+    Expired rows are excluded from the snapshot but are not archived inline.
+    Read-only decisions can therefore run concurrently with memory retrieval or
+    another learner update instead of competing for a lease they never mutate.
+    A lifecycle-synchronizing API read should keep using
+    ``list_active_memory_records``.
+    """
+    return _active_memories(user_id, expire_due=False)
+
+
 def _matching_memories(
     user_id: str,
     canonical_key: str,

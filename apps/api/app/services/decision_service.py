@@ -13,7 +13,7 @@ from app.db.repositories import (
     list_recent_practice_attempts,
     list_skills,
 )
-from app.services.memory_service import list_active_memory_records, parse_iso
+from app.services.memory_service import parse_iso, snapshot_active_memory_records
 
 
 PRACTICE_TYPES = ("fix_sentence", "fill_blank", "rewrite_sentence")
@@ -79,10 +79,10 @@ def _skill_scores(user_id: str) -> list[dict]:
     return scored
 
 
-def _type_scores(user_id: str, skill_code: str) -> tuple[list[dict], list[str]]:
+def _type_scores(skill_code: str, memories: list[dict]) -> tuple[list[dict], list[str]]:
     memories = [
         memory
-        for memory in list_active_memory_records(user_id)
+        for memory in memories
         if memory.get("kind") == "strategy"
         and (memory.get("stats") or {}).get("skillCode") == skill_code
     ]
@@ -138,11 +138,11 @@ def _type_scores(user_id: str, skill_code: str) -> tuple[list[dict], list[str]]:
     return type_scores, supporting
 
 
-def _progression_context(user_id: str, skill_code: str) -> dict:
+def _progression_context(skill_code: str, memories: list[dict]) -> dict:
     weakness = next(
         (
             memory
-            for memory in list_active_memory_records(user_id)
+            for memory in memories
             if memory.get("kind") == "weakness"
             and (
                 (memory.get("errorFingerprint") or {}).get("skillCode") == skill_code
@@ -194,8 +194,12 @@ def recommend_next_action(
 ) -> dict:
     skills = _skill_scores(user_id)
     target = requested_skill_code or skills[0]["skillCode"]
-    type_scores, memory_ids = _type_scores(user_id, target)
-    progression = _progression_context(user_id, target)
+    # Practice selection only reads memory. Use one non-mutating snapshot for
+    # the whole decision so four parallel exercise requests cannot serialize
+    # behind a learner-scoped MemoryAgent writer lease.
+    memories = snapshot_active_memory_records(user_id)
+    type_scores, memory_ids = _type_scores(target, memories)
+    progression = _progression_context(target, memories)
     practice_type = requested_practice_type or _stage_practice_type(target, progression["stage"], type_scores)
     chosen_skill = next((item for item in skills if item["skillCode"] == target), None)
 

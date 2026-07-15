@@ -18,6 +18,52 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-15 — Concurrent practice generation without Memory lease conflicts
+
+Date: 2026-07-15 UTC
+
+Branch: `fix/practice-generation-concurrency`
+
+GitHub status: Local branch; not pushed or opened as a PR yet.
+
+Deploy status: Not deployed. Production remains on the prior `main` release
+while this fix completes review and Preview verification.
+
+Summary:
+
+- Fixed the production `/practice/generate` 500 caused when four parallel
+  exercise requests tried to take the learner Memory write lease during an
+  otherwise read-only adaptive decision.
+- Added a non-mutating active-memory snapshot for practice selection and reused
+  one snapshot across format and progression scoring.
+- Classified DynamoDB `TransactionConflictException` on the lease row as
+  ordinary contention so the existing bounded retry loop handles a transaction
+  that is still committing.
+- Kept the Practice UI loading until all four parallel requests settle and
+  added a synchronous in-flight guard, preventing an early rejection from
+  enabling another overlapping four-request batch.
+- Added server-side exception logging with a stable, non-sensitive public error
+  payload for future practice-generation failures.
+
+Files changed: practice route/decision/memory repository services and
+concurrency regression coverage; Practice session UI; this change record.
+
+Tests run: Python compile; backend smoke; full moto/fake-AI integration loop
+with four concurrent practice generations and an injected DynamoDB transaction
+conflict; MemoryAgent; stealth/Input Learning concurrency and fencing; Memory
+benchmark; dedup/delete; frontend standalone TypeScript, focused ESLint, and
+the Next.js production build. All passed.
+
+Known issues: The in-app browser runtime exposed no browser instance, so the
+live button flow could not be replayed through browser automation. The exact
+production failure was instead matched from Oracle logs and the 136-byte API
+response, and the request pattern is covered by the new backend concurrency
+regression plus frontend compilation.
+
+Next step: Push the branch, open a PR, verify Vercel Preview, merge, deploy the
+matching backend archive to Oracle, and confirm four live generation requests
+return 200 without transaction-conflict errors.
+
 ## 2026-07-15 — Save selected chat text to Notebook
 
 Date: 2026-07-15 UTC
