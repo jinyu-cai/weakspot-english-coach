@@ -10,8 +10,10 @@ export const copy = {
     nav: {
       tagline: "It finds what you need to practice instead of asking what you want to practice.",
       brandSubtitle: "Your English study desk",
+      previewBanner: "UI PREVIEW · New learning interface — not merged to production",
       startHere: "Recommended place to start",
       startHereShort: "Start",
+      primaryTitle: "Do this first",
       loopTitle: "Learning loop",
       loopHint: "Discover → practice → remember. Pick one step; the rest follows.",
       coachTipTitle: "Coach tip",
@@ -110,13 +112,30 @@ export const copy = {
         "Instead of asking what you want to practice, WeakSpot diagnoses your real English writing - verb tense, agreement, vocabulary, clarity and more - then builds an evolving weakness profile.",
       spotlight: {
         stepLabel: "What to do now",
+        kicker: "A clearer starting desk for English practice",
         time: "5–15 min",
         title: "You do not need a study plan first",
         description:
-          "Choose one clear path below. Your coach will diagnose, practice, and remember for you — so you always know the next useful action.",
+          "Pick one path. The coach handles diagnosis, practice focus, and memory — so the next action is always obvious.",
         recommendTitle: "Not sure where to start?",
         recommendDescription: "Let the coach arrange today's mission from your time and energy.",
-        recommendCta: "Open today's mission",
+        recommendCta: "Start today's mission",
+        chooseTitle: "Choose how to begin",
+        chooseDescription: "Three ways in. Same learning profile either way.",
+        chooseHint: "One click is enough",
+        recommended: "Recommended",
+        coachCardTitle: "Your coach is ready",
+        coachCardSubtitle: "No syllabus required",
+        howItWorks: [
+          "Pick time and energy — or paste a few sentences.",
+          "Get a useful situation or clear writing feedback.",
+          "Practice the pattern that actually needs work.",
+        ],
+        loopHints: {
+          discover: "Find what your English actually needs.",
+          practice: "Use it in a real situation or exercise.",
+          remember: "Keep notes and memory for next time.",
+        },
         paths: {
           coach: {
             title: "Let the coach choose",
@@ -970,8 +989,10 @@ export const copy = {
     nav: {
       tagline: "它会发现你需要练什么，而不是先问你想练什么。",
       brandSubtitle: "你的英语学习台",
+      previewBanner: "UI 预览版 · 新学习界面 — 尚未合并到生产环境",
       startHere: "推荐从这里开始",
       startHereShort: "开始",
+      primaryTitle: "先做这些",
       loopTitle: "学习闭环",
       loopHint: "发现 → 练习 → 记住。先选一步，后面会自然跟上。",
       coachTipTitle: "教练提示",
@@ -1070,13 +1091,30 @@ export const copy = {
         "WeakSpot 不先问你想练什么，而是诊断你的真实英文写作，包括时态、主谓一致、词汇、清晰度等，并持续建立你的薄弱项画像。",
       spotlight: {
         stepLabel: "现在做什么",
+        kicker: "更清晰的英语学习入口",
         time: "5–15 分钟",
         title: "你不需要先想好学什么",
         description:
-          "先选下面一条清晰路径。教练会帮你诊断、练习并记住，让你始终知道下一步该做什么。",
+          "先选一条路径。诊断、练习重点和记忆由教练接手，让下一步始终清楚。",
         recommendTitle: "不知道从哪开始？",
         recommendDescription: "告诉教练你有多少时间和精力，它会安排今天的任务。",
-        recommendCta: "打开今日任务",
+        recommendCta: "开始今日任务",
+        chooseTitle: "选择开始方式",
+        chooseDescription: "三条入口，同一份学习画像。",
+        chooseHint: "点一下就够",
+        recommended: "推荐",
+        coachCardTitle: "教练已就绪",
+        coachCardSubtitle: "不需要先写学习大纲",
+        howItWorks: [
+          "选择时间与状态，或粘贴几句英文。",
+          "得到有用情境，或清楚的写作反馈。",
+          "只练真正需要加强的表达规律。",
+        ],
+        loopHints: {
+          discover: "发现你真正需要练的点。",
+          practice: "在真实情境或练习里用起来。",
+          remember: "笔记与记忆会带到下一次。",
+        },
         paths: {
           coach: {
             title: "让教练替我安排",

@@ -10,6 +10,7 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/s
 import { LLMProviderSettings } from "@/components/llm-provider-settings"
 import { NavSidebar } from "@/components/nav-sidebar"
 import { AppPreferences } from "@/components/app-preferences"
+import { PreviewBanner } from "@/components/preview-banner"
 import { useLanguage } from "@/components/language-provider"
 import { NAV_ITEMS } from "@/lib/nav"
 import {
@@ -228,56 +229,57 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (pathname === "/login") return children
 
   return (
-    <div className="flex min-h-screen w-full">
-      {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 left-0 hidden w-[17.5rem] overflow-y-auto border-r border-sidebar-border bg-sidebar/95 lg:block">
-        <NavSidebar />
-      </aside>
+    <div className="flex min-h-screen w-full flex-col">
+      <PreviewBanner />
 
-      <div className="flex min-w-0 w-full flex-col lg:pl-[17.5rem]">
-        {/* Top bar: always answers "where am I / what is this page for" */}
-        <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-3 border-b border-border/70 bg-background/90 px-3 py-2 backdrop-blur-xl sm:px-5 lg:px-7">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <Sheet open={open} onOpenChange={setOpen}>
-              <SheetTrigger
-                render={
-                  <Button variant="outline" size="icon" className="lg:hidden" aria-label="Open navigation">
-                    <Menu />
-                  </Button>
-                }
-              />
-              <SheetContent side="left" className="w-80 overflow-y-auto bg-sidebar p-0">
-                <SheetTitle className="sr-only">Navigation</SheetTitle>
-                <NavSidebar onNavigate={() => setOpen(false)} />
-              </SheetContent>
-            </Sheet>
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2">
-                <p className="truncate font-heading text-sm font-semibold text-foreground sm:text-base">
-                  {activeNavItem ? t.nav.items[activeNavItem.key][0] : "WeakSpot"}
-                </p>
-                {activeNavItem?.key === "mission" ? (
-                  <span className="hidden rounded-full bg-primary/12 px-2 py-0.5 text-[10px] font-semibold text-primary sm:inline">
-                    {t.nav.startHereShort}
+      <div className="flex min-h-0 flex-1 w-full">
+        {/* Desktop sidebar — dark ink rail, deliberately different from production */}
+        <aside className="fixed bottom-0 left-0 top-10 hidden w-[18rem] overflow-y-auto border-r border-[oklch(0.3_0.05_230)] lg:block">
+          <NavSidebar />
+        </aside>
+
+        <div className="flex min-w-0 w-full flex-col lg:pl-[18rem]">
+          <header className="sticky top-10 z-30 flex min-h-16 items-center justify-between gap-3 border-b border-border/70 bg-background/92 px-3 py-2 backdrop-blur-xl sm:px-5 lg:px-7">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <Sheet open={open} onOpenChange={setOpen}>
+                <SheetTrigger
+                  render={
+                    <Button variant="outline" size="icon" className="lg:hidden" aria-label="Open navigation">
+                      <Menu />
+                    </Button>
+                  }
+                />
+                <SheetContent side="left" className="w-80 overflow-y-auto border-0 bg-[oklch(0.24_0.05_230)] p-0">
+                  <SheetTitle className="sr-only">Navigation</SheetTitle>
+                  <NavSidebar onNavigate={() => setOpen(false)} />
+                </SheetContent>
+              </Sheet>
+              <div className="min-w-0">
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="truncate font-heading text-sm font-semibold text-foreground sm:text-base">
+                    {activeNavItem ? t.nav.items[activeNavItem.key][0] : "WeakSpot"}
+                  </p>
+                  <span className="hidden rounded-full bg-amber-400/25 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:text-amber-200 sm:inline">
+                    PREVIEW
                   </span>
+                </div>
+                {activeNavItem ? (
+                  <p className="hidden truncate text-[11px] text-muted-foreground sm:block">
+                    {t.nav.items[activeNavItem.key][1]}
+                  </p>
                 ) : null}
               </div>
-              {activeNavItem ? (
-                <p className="hidden truncate text-[11px] text-muted-foreground sm:block">
-                  {t.nav.items[activeNavItem.key][1]}
-                </p>
-              ) : null}
             </div>
-          </div>
 
-          <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2">
-            <LLMProviderSettings />
-            <AuthButton />
-            <AppPreferences />
-          </div>
-        </header>
+            <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2">
+              <LLMProviderSettings />
+              <AuthButton />
+              <AppPreferences />
+            </div>
+          </header>
 
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8 xl:px-10">{children}</main>
+          <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8 xl:px-10">{children}</main>
+        </div>
       </div>
     </div>
   )

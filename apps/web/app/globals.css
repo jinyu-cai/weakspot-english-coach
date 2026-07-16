@@ -338,16 +338,21 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Cream paper + ink wash — more “study desk” than generic SaaS */
+    background-color: oklch(0.97 0.014 90);
     background-image:
-      radial-gradient(48rem 42rem at 100% -8%, color-mix(in oklch, var(--primary) 8%, transparent), transparent 60%),
-      radial-gradient(40rem 36rem at -10% 105%, color-mix(in oklch, var(--chart-3) 8%, transparent), transparent 58%),
-      linear-gradient(
-        to bottom,
-        color-mix(in oklch, var(--background) 92%, white),
-        var(--background)
-      );
+      radial-gradient(42rem 36rem at 100% -6%, oklch(0.72 0.12 75 / 18%), transparent 58%),
+      radial-gradient(38rem 34rem at -8% 100%, oklch(0.55 0.08 210 / 12%), transparent 55%),
+      linear-gradient(to bottom, oklch(0.985 0.01 90), oklch(0.965 0.016 88));
     background-attachment: fixed;
     background-repeat: no-repeat;
+  }
+  .dark body,
+  :root:not(.light) body {
+    background-color: oklch(0.17 0.02 240);
+    background-image:
+      radial-gradient(42rem 36rem at 100% -6%, oklch(0.55 0.1 75 / 12%), transparent 58%),
+      radial-gradient(38rem 34rem at -8% 100%, oklch(0.45 0.08 210 / 16%), transparent 55%);
   }
   html {
     @apply font-sans;
