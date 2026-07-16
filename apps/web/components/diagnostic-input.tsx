@@ -2,12 +2,12 @@
 
 import { Microscope, Sparkles, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { Spinner } from "@/components/ui/spinner"
 import type { DiagnosisMode } from "@/lib/types"
 import { countWords } from "@/lib/text-count"
 import { useLanguage } from "@/components/language-provider"
-import { cn } from "@/lib/utils"
 
 const MIN_DIAGNOSE_WORDS = 5
 const EXAMPLE_TEXTS = [
@@ -33,54 +33,53 @@ export function DiagnosticInput({
 }) {
   const { t } = useLanguage()
   const wordCount = countWords(value)
-  const ready = wordCount >= MIN_DIAGNOSE_WORDS
 
   return (
-    <div className="study-editor overflow-hidden rounded-2xl">
-      {/* Document-like writing area — larger, calmer, primary focus */}
-      <div className="border-b border-border/70 px-4 py-2.5 sm:px-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-xs font-medium text-muted-foreground">{t.diagnose.inputLabel}</span>
-          <span className="text-[11px] tabular-nums text-muted-foreground">
-            {wordCount} {wordCount === 1 ? t.diagnose.word : t.diagnose.words}
-            {!ready ? ` · ${t.diagnose.onboarding.minimumHint}` : ""}
-          </span>
+    <Card className="border border-primary/20 shadow-sm ring-primary/10">
+      <CardContent className="flex flex-col gap-4 pt-6">
+        <div className="min-w-0">
+          <h2 className="font-heading text-lg font-semibold">{t.diagnose.onboarding.promptTitle}</h2>
         </div>
-      </div>
 
-      <label htmlFor="diagnose-input" className="sr-only">
-        {t.diagnose.inputLabel}
-      </label>
-      <Textarea
-        id="diagnose-input"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={t.diagnose.placeholder}
-        rows={12}
-        disabled={loading}
-        className="min-h-[18rem] resize-y rounded-none border-0 bg-transparent px-4 py-5 text-[1.05rem] leading-8 shadow-none focus-visible:ring-0 sm:px-6 sm:text-base sm:leading-8"
-      />
+        <label htmlFor="diagnose-input" className="sr-only">
+          {t.diagnose.inputLabel}
+        </label>
+        <Textarea
+          id="diagnose-input"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={t.diagnose.placeholder}
+          rows={7}
+          disabled={loading}
+          className="min-h-44 resize-y border-border/80 bg-background text-base leading-relaxed shadow-none focus-visible:border-primary/45"
+        />
 
-      <div className="flex flex-col gap-3 border-t border-border/70 bg-muted/25 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-2">
           {t.diagnose.onboarding.exampleLabels.map((label, index) => (
             <button
               key={label}
               type="button"
               disabled={loading}
               onClick={() => onChange(EXAMPLE_TEXTS[index] ?? EXAMPLE_TEXTS[0])}
-              className="rounded-md border border-border/80 bg-card px-2.5 py-1 text-[11px] text-muted-foreground transition hover:border-primary/30 hover:text-foreground disabled:opacity-50"
+              className="rounded-full border border-border bg-secondary/65 px-3 py-1.5 text-xs font-medium text-secondary-foreground transition hover:border-primary/35 hover:bg-primary/10 disabled:pointer-events-none disabled:opacity-50"
             >
               {label}
             </button>
           ))}
         </div>
+      </CardContent>
 
-        <div className="flex flex-wrap items-center gap-2">
+      <CardFooter className="flex flex-col items-stretch gap-3 border-t border-border/70 bg-muted/25 sm:flex-row sm:items-center sm:justify-between">
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {wordCount} {wordCount === 1 ? t.diagnose.word : t.diagnose.words}
+          {wordCount < MIN_DIAGNOSE_WORDS ? ` · ${t.diagnose.onboarding.minimumHint}` : ""}
+        </span>
+
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <div
             role="radiogroup"
             aria-label={t.diagnose.modeLabel}
-            className="inline-flex rounded-lg border border-border bg-card p-0.5"
+            className="grid w-full grid-cols-2 overflow-hidden rounded-lg border border-input bg-background p-1 sm:w-auto"
           >
             <button
               type="button"
@@ -88,14 +87,10 @@ export function DiagnosticInput({
               aria-checked={diagnosisMode === "fast"}
               disabled={loading}
               onClick={() => onDiagnosisModeChange("fast")}
-              className={cn(
-                "inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium transition",
-                diagnosisMode === "fast"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition data-[active=true]:bg-primary data-[active=true]:text-primary-foreground disabled:pointer-events-none disabled:opacity-50"
+              data-active={diagnosisMode === "fast"}
             >
-              <Zap className="size-3.5" />
+              <Zap className="size-4" />
               {t.diagnose.quick}
             </button>
             <button
@@ -104,24 +99,24 @@ export function DiagnosticInput({
               aria-checked={diagnosisMode === "deep"}
               disabled={loading}
               onClick={() => onDiagnosisModeChange("deep")}
-              className={cn(
-                "inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-xs font-medium transition",
-                diagnosisMode === "deep"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition data-[active=true]:bg-primary data-[active=true]:text-primary-foreground disabled:pointer-events-none disabled:opacity-50"
+              data-active={diagnosisMode === "deep"}
             >
-              <Microscope className="size-3.5" />
+              <Microscope className="size-4" />
               {t.diagnose.deep}
             </button>
           </div>
-
-          <Button onClick={onAnalyze} disabled={loading || !ready} className="h-9 px-4">
+          <Button
+            onClick={onAnalyze}
+            disabled={loading || wordCount < MIN_DIAGNOSE_WORDS}
+            size="lg"
+            className="h-11 w-full px-5 text-sm shadow-sm sm:w-auto"
+          >
             {loading ? <Spinner /> : <Sparkles data-icon="inline-start" />}
             {loading ? t.diagnose.analyzing : t.diagnose.analyze}
           </Button>
         </div>
-      </div>
-    </div>
+      </CardFooter>
+    </Card>
   )
 }

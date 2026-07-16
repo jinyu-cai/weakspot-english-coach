@@ -1,6 +1,6 @@
 import { Analytics } from "@vercel/analytics/next"
 import type { Metadata, Viewport } from "next"
-import { Inter, Geist_Mono, Instrument_Serif } from "next/font/google"
+import { Inter, Geist_Mono, Fredoka } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AppShell } from "@/components/app-shell"
@@ -15,11 +15,10 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 })
 
-/* Hermes site uses a custom serif (Sigurd); Instrument Serif is the close public stand-in. */
-const instrument = Instrument_Serif({
-  variable: "--font-instrument",
+const fredoka = Fredoka({
+  variable: "--font-fredoka",
   subsets: ["latin"],
-  weight: ["400"],
+  weight: ["400", "500", "600", "700"],
 })
 
 export const metadata: Metadata = {
@@ -32,8 +31,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   colorScheme: "light dark",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f4f1ea" },
-    { media: "(prefers-color-scheme: dark)", color: "#141311" },
+    { media: "(prefers-color-scheme: light)", color: "#faf5ee" },
+    { media: "(prefers-color-scheme: dark)", color: "#241e1b" },
   ],
 }
 
@@ -46,7 +45,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${inter.variable} ${geistMono.variable} ${instrument.variable} bg-background`}
+      className={`${inter.variable} ${geistMono.variable} ${fredoka.variable} bg-background`}
     >
       <body className="font-sans antialiased">
         <script

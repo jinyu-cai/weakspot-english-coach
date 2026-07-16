@@ -10,7 +10,6 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/s
 import { LLMProviderSettings } from "@/components/llm-provider-settings"
 import { NavSidebar } from "@/components/nav-sidebar"
 import { AppPreferences } from "@/components/app-preferences"
-import { PreviewBanner } from "@/components/preview-banner"
 import { useLanguage } from "@/components/language-provider"
 import { NAV_ITEMS } from "@/lib/nav"
 import {
@@ -76,11 +75,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { t } = useLanguage()
   const activeNavItem = [...NAV_ITEMS]
     .sort((a, b) => b.href.length - a.href.length)
-    .find((item) => (item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)))
+    .find((item) => item.href === "/" ? pathname === "/" : pathname.startsWith(item.href))
   const voiceHistoryGuardRef = useRef<VoiceHistoryGuard | null>(null)
   const historyTrackerRef = useRef({ initialized: false, position: 0 })
   const restoringHistoryRef = useRef(false)
 
+  // Tag each in-app history entry with a relative position. replaceState keeps
+  // the browser's Back/Forward stack intact; the URL guards against Next.js
+  // copying the previous entry's state into a newly pushed route.
   useEffect(() => {
     const state = historyStateSnapshot()
     const url = historyUrlKey()
@@ -194,6 +196,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         restoringHistoryRef.current = true
         window.history.go(restoreDelta)
       } else if (window.location.href !== guard.url) {
+        // Old browsers without the Navigation API still have position markers
+        // for routes visited during this app session. An unmarked traversal is
+        // normally a Back action into an older entry; beforeunload protects any
+        // cross-document traversal.
         restoringHistoryRef.current = true
         window.history.forward()
       }
@@ -222,52 +228,42 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (pathname === "/login") return children
 
   return (
-    <div className="flex min-h-screen w-full flex-col">
-      <PreviewBanner />
+    <div className="flex min-h-screen w-full">
+      {/* Desktop sidebar */}
+      <aside className="fixed inset-y-0 left-0 hidden w-[17rem] overflow-y-auto border-r border-sidebar-border bg-sidebar/95 lg:block">
+        <NavSidebar />
+      </aside>
 
-      <div className="flex min-h-0 flex-1 w-full">
-        {/* Wider rail for 2x2 primary tiles + compact secondary list */}
-        <aside className="fixed bottom-0 left-0 top-7 hidden w-[15.5rem] overflow-y-auto border-r border-sidebar-border bg-sidebar lg:block">
-          <NavSidebar />
-        </aside>
+      <div className="flex min-w-0 w-full flex-col lg:pl-[17rem]">
+        {/* Top bar */}
+        <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-3 border-b border-border/80 bg-background/88 px-3 py-2 backdrop-blur-xl sm:px-5 lg:px-7">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Sheet open={open} onOpenChange={setOpen}>
+              <SheetTrigger
+                render={
+                  <Button variant="outline" size="icon" className="lg:hidden" aria-label="Open navigation">
+                    <Menu />
+                  </Button>
+                }
+              />
+              <SheetContent side="left" className="w-72 overflow-y-auto bg-sidebar p-0">
+                <SheetTitle className="sr-only">Navigation</SheetTitle>
+                <NavSidebar onNavigate={() => setOpen(false)} />
+              </SheetContent>
+            </Sheet>
+            <p className="min-w-0 truncate font-heading text-sm font-semibold text-foreground sm:text-base">
+              {activeNavItem ? t.nav.items[activeNavItem.key][0] : "WeakSpot"}
+            </p>
+          </div>
 
-        <div className="flex min-w-0 w-full flex-col lg:pl-[15.5rem]">
-          <header className="sticky top-7 z-30 flex h-14 items-center justify-between gap-3 border-b border-border/60 bg-background/90 px-3 backdrop-blur-md sm:px-5">
-            <div className="flex min-w-0 items-center gap-2">
-              <Sheet open={open} onOpenChange={setOpen}>
-                <SheetTrigger
-                  render={
-                    <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open navigation">
-                      <Menu />
-                    </Button>
-                  }
-                />
-                <SheetContent side="left" className="w-72 overflow-y-auto bg-sidebar p-0">
-                  <SheetTitle className="sr-only">Navigation</SheetTitle>
-                  <NavSidebar onNavigate={() => setOpen(false)} />
-                </SheetContent>
-              </Sheet>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-foreground">
-                  {activeNavItem ? t.nav.items[activeNavItem.key][0] : "WeakSpot"}
-                </p>
-                {activeNavItem ? (
-                  <p className="hidden truncate text-[11px] text-muted-foreground sm:block">
-                    {t.nav.items[activeNavItem.key][1]}
-                  </p>
-                ) : null}
-              </div>
-            </div>
+          <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2">
+            <LLMProviderSettings />
+            <AuthButton />
+            <AppPreferences />
+          </div>
+        </header>
 
-            <div className="flex min-w-0 shrink-0 items-center gap-1">
-              <LLMProviderSettings />
-              <AuthButton />
-              <AppPreferences />
-            </div>
-          </header>
-
-          <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-7">{children}</main>
-        </div>
+        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8 xl:px-10">{children}</main>
       </div>
     </div>
   )
