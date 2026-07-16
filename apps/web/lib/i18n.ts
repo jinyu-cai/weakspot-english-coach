@@ -9,7 +9,17 @@ export const copy = {
     },
     nav: {
       tagline: "It finds what you need to practice instead of asking what you want to practice.",
+      brandSubtitle: "Your English study desk",
       startHere: "Recommended place to start",
+      startHereShort: "Start",
+      loopTitle: "Learning loop",
+      loopHint: "Discover → practice → remember. Pick one step; the rest follows.",
+      coachTipTitle: "Coach tip",
+      loop: {
+        discover: "Discover",
+        practice: "Practice",
+        remember: "Remember",
+      },
       groups: {
         start: "Start here",
         learn: "Learn",
@@ -98,8 +108,35 @@ export const copy = {
       title: "Discover what you need to practice",
       description:
         "Instead of asking what you want to practice, WeakSpot diagnoses your real English writing - verb tense, agreement, vocabulary, clarity and more - then builds an evolving weakness profile.",
+      spotlight: {
+        stepLabel: "What to do now",
+        time: "5–15 min",
+        title: "You do not need a study plan first",
+        description:
+          "Choose one clear path below. Your coach will diagnose, practice, and remember for you — so you always know the next useful action.",
+        recommendTitle: "Not sure where to start?",
+        recommendDescription: "Let the coach arrange today's mission from your time and energy.",
+        recommendCta: "Open today's mission",
+        paths: {
+          coach: {
+            title: "Let the coach choose",
+            description: "Tell it your time and energy. It invents a useful situation for you.",
+            cta: "Start mission",
+          },
+          diagnose: {
+            title: "Analyze my writing",
+            description: "Paste a few sentences and get clear feedback plus a next step.",
+            cta: "Write below",
+          },
+          chat: {
+            title: "Practice conversation",
+            description: "Talk by text or voice. The coach notices patterns as you go.",
+            cta: "Open chat",
+          },
+        },
+      },
       onboarding: {
-        eyebrow: "A gentle place to begin",
+        eyebrow: "Path B · Writing diagnosis",
         title: "Start with English you already use",
         description:
           "Paste a few sentences and your coach will turn them into clear feedback and a useful next step. You do not need to understand the rest of the app first.",
@@ -122,6 +159,7 @@ export const copy = {
         },
         privacyNote: "This text is used to generate your feedback and, under your current settings, your learning history.",
         minimumHint: "At least 5 words",
+        readyHint: "Ready to analyze",
       },
       duplicate:
         "This is identical to a previous submission, so it wasn't recorded again - your weakness profile stays accurate. Edit the text to analyze something new.",
@@ -931,7 +969,17 @@ export const copy = {
     },
     nav: {
       tagline: "它会发现你需要练什么，而不是先问你想练什么。",
+      brandSubtitle: "你的英语学习台",
       startHere: "推荐从这里开始",
+      startHereShort: "开始",
+      loopTitle: "学习闭环",
+      loopHint: "发现 → 练习 → 记住。先选一步，后面会自然跟上。",
+      coachTipTitle: "教练提示",
+      loop: {
+        discover: "发现",
+        practice: "练习",
+        remember: "记住",
+      },
       groups: {
         start: "开始学习",
         learn: "学习内容",
@@ -1020,8 +1068,35 @@ export const copy = {
       title: "发现你真正需要练习的内容",
       description:
         "WeakSpot 不先问你想练什么，而是诊断你的真实英文写作，包括时态、主谓一致、词汇、清晰度等，并持续建立你的薄弱项画像。",
+      spotlight: {
+        stepLabel: "现在做什么",
+        time: "5–15 分钟",
+        title: "你不需要先想好学什么",
+        description:
+          "先选下面一条清晰路径。教练会帮你诊断、练习并记住，让你始终知道下一步该做什么。",
+        recommendTitle: "不知道从哪开始？",
+        recommendDescription: "告诉教练你有多少时间和精力，它会安排今天的任务。",
+        recommendCta: "打开今日任务",
+        paths: {
+          coach: {
+            title: "让教练替我安排",
+            description: "选择时间和状态，教练会创造一个有用的真实情境。",
+            cta: "开始任务",
+          },
+          diagnose: {
+            title: "分析我的写作",
+            description: "粘贴几句英文，获得清楚反馈和下一步建议。",
+            cta: "在下方输入",
+          },
+          chat: {
+            title: "练习真实对话",
+            description: "用文字或语音交流，教练会边聊边发现规律。",
+            cta: "打开对话",
+          },
+        },
+      },
       onboarding: {
-        eyebrow: "从这里轻松开始",
+        eyebrow: "路径 B · 写作诊断",
         title: "从你已经在用的英文开始",
         description:
           "贴上几句英文，教练会把它变成清楚的反馈和一个可执行的下一步。你不需要先弄懂应用里的其他功能。",
@@ -1044,6 +1119,7 @@ export const copy = {
         },
         privacyNote: "这段内容会用于生成反馈，并按照你当前的设置记录到学习历史中。",
         minimumHint: "至少需要 5 个英文单词",
+        readyHint: "可以开始分析",
       },
       duplicate:
         "这次内容和之前的提交完全相同，所以没有重复记录，避免影响你的薄弱项画像。修改文本后可以分析新的内容。",

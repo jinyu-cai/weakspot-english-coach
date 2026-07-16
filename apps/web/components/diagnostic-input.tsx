@@ -33,13 +33,14 @@ export function DiagnosticInput({
 }) {
   const { t } = useLanguage()
   const wordCount = countWords(value)
+  const ready = wordCount >= MIN_DIAGNOSE_WORDS
 
   return (
-    <Card className="border border-primary/20 shadow-sm ring-primary/10">
+    <Card className="overflow-hidden border border-primary/20 shadow-[var(--shadow-card)] ring-1 ring-primary/10">
       <CardContent className="flex flex-col gap-5 pt-6 sm:pt-7">
         <div className="flex items-start gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
-            <Lightbulb className="size-4.5" />
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary/12 text-primary">
+            <Lightbulb className="size-5" />
           </span>
           <div className="min-w-0">
             <h2 className="font-heading text-lg font-semibold">{t.diagnose.onboarding.promptTitle}</h2>
@@ -49,21 +50,25 @@ export function DiagnosticInput({
           </div>
         </div>
 
-        <label htmlFor="diagnose-input" className="sr-only">
-          {t.diagnose.inputLabel}
-        </label>
-        <Textarea
-          id="diagnose-input"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={t.diagnose.placeholder}
-          rows={7}
-          disabled={loading}
-          className="min-h-48 resize-y border-border/80 bg-background text-base leading-relaxed shadow-none focus-visible:border-primary/45"
-        />
+        <div className="rounded-2xl border border-dashed border-primary/25 bg-primary/[0.03] p-1">
+          <label htmlFor="diagnose-input" className="sr-only">
+            {t.diagnose.inputLabel}
+          </label>
+          <Textarea
+            id="diagnose-input"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={t.diagnose.placeholder}
+            rows={7}
+            disabled={loading}
+            className="min-h-48 resize-y border-0 bg-background text-base leading-relaxed shadow-none focus-visible:border-0 focus-visible:ring-0"
+          />
+        </div>
 
         <div className="flex flex-col gap-2">
-          <span className="text-xs font-medium text-muted-foreground">{t.diagnose.onboarding.examplesLabel}</span>
+          <span className="text-xs font-medium text-muted-foreground">
+            {t.diagnose.onboarding.examplesLabel}
+          </span>
           <div className="flex flex-wrap gap-2">
             {t.diagnose.onboarding.exampleLabels.map((label, index) => (
               <button
@@ -80,15 +85,17 @@ export function DiagnosticInput({
         </div>
       </CardContent>
 
-      <CardFooter className="flex flex-col items-stretch gap-4 border-t border-border/70 bg-muted/25 sm:flex-row sm:items-end sm:justify-between">
+      <CardFooter className="flex flex-col items-stretch gap-4 border-t border-border/70 bg-muted/30 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex min-w-0 flex-1 flex-col gap-2 text-xs text-muted-foreground">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="tabular-nums">
+            <span className="rounded-full bg-background px-2.5 py-1 font-medium tabular-nums text-foreground">
               {wordCount} {wordCount === 1 ? t.diagnose.word : t.diagnose.words}
             </span>
-            {wordCount < MIN_DIAGNOSE_WORDS ? (
+            {ready ? (
+              <span className="font-medium text-success">{t.diagnose.onboarding.readyHint}</span>
+            ) : (
               <span className="text-warning-foreground">{t.diagnose.onboarding.minimumHint}</span>
-            ) : null}
+            )}
           </div>
           <span className="flex items-start gap-1.5 leading-relaxed">
             <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-success" />
@@ -97,10 +104,11 @@ export function DiagnosticInput({
         </div>
 
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
+          <span className="text-xs font-medium text-muted-foreground">{t.diagnose.modeLabel}</span>
           <div
             role="radiogroup"
             aria-label={t.diagnose.modeLabel}
-            className="grid w-full grid-cols-2 overflow-hidden rounded-lg border border-input bg-background p-1 sm:w-auto"
+            className="grid w-full grid-cols-2 overflow-hidden rounded-xl border border-input bg-background p-1 sm:w-auto"
           >
             <button
               type="button"
@@ -108,7 +116,7 @@ export function DiagnosticInput({
               aria-checked={diagnosisMode === "fast"}
               disabled={loading}
               onClick={() => onDiagnosisModeChange("fast")}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition data-[active=true]:bg-primary data-[active=true]:text-primary-foreground disabled:pointer-events-none disabled:opacity-50"
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition data-[active=true]:bg-primary data-[active=true]:text-primary-foreground disabled:pointer-events-none disabled:opacity-50"
               data-active={diagnosisMode === "fast"}
             >
               <Zap className="size-4" />
@@ -120,7 +128,7 @@ export function DiagnosticInput({
               aria-checked={diagnosisMode === "deep"}
               disabled={loading}
               onClick={() => onDiagnosisModeChange("deep")}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition data-[active=true]:bg-primary data-[active=true]:text-primary-foreground disabled:pointer-events-none disabled:opacity-50"
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition data-[active=true]:bg-primary data-[active=true]:text-primary-foreground disabled:pointer-events-none disabled:opacity-50"
               data-active={diagnosisMode === "deep"}
             >
               <Microscope className="size-4" />
@@ -129,7 +137,7 @@ export function DiagnosticInput({
           </div>
           <Button
             onClick={onAnalyze}
-            disabled={loading || wordCount < MIN_DIAGNOSE_WORDS}
+            disabled={loading || !ready}
             size="lg"
             className="h-11 w-full px-5 text-sm shadow-sm sm:w-auto"
           >

@@ -1,12 +1,26 @@
 "use client"
 
 import Link from "next/link"
-import { ArrowRight, Clock3, Compass, Import, Info, MessageCircle, Radio, Sparkles } from "lucide-react"
+import { useRef } from "react"
+import {
+  ArrowRight,
+  Clock3,
+  Compass,
+  Import,
+  Info,
+  MessageCircle,
+  Radio,
+  Sparkles,
+  Stethoscope,
+} from "lucide-react"
 import { useDiagnose } from "@/components/diagnose-provider"
 import { DiagnosticInput } from "@/components/diagnostic-input"
 import { DiagnosticReport } from "@/components/diagnostic-report"
 import { DiagnosticLoading } from "@/components/loading-state"
 import { useLanguage } from "@/components/language-provider"
+import { LearningLoop } from "@/components/learning-loop"
+import { StartPathCard } from "@/components/start-path-card"
+import { StepBadge } from "@/components/step-badge"
 
 const SHORTCUTS = [
   { key: "chat", href: "/chat", icon: MessageCircle },
@@ -18,63 +32,134 @@ export default function DiagnosePage() {
   const { text, setText, diagnosisMode, setDiagnosisMode, loading, result, originalText, isDuplicate, handleAnalyze } =
     useDiagnose()
   const { t } = useLanguage()
+  const diagnoseRef = useRef<HTMLDivElement>(null)
   const showOnboarding = !result
   const showShortcuts = !loading && !result
+
+  function scrollToDiagnose() {
+    diagnoseRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    window.setTimeout(() => {
+      document.getElementById("diagnose-input")?.focus()
+    }, 350)
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
       {showOnboarding ? (
-        <section className="relative overflow-hidden rounded-3xl border border-primary/25 bg-primary text-primary-foreground shadow-sm">
-          <div className="absolute -top-20 right-[-4rem] size-72 rounded-full bg-white/10 blur-2xl" />
-          <div className="relative grid gap-6 px-5 py-7 sm:px-8 sm:py-9 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-            <div className="max-w-3xl">
-              <div className="mb-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-primary-foreground/80">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/12 px-3 py-1">
-                  <Compass className="size-3.5" /> {t.nav.items.mission[0]}
-                </span>
-                <span className="inline-flex items-center gap-1"><Clock3 className="size-3.5" /> 5–15 {t.common.minutesShort}</span>
-              </div>
-              <h1 className="text-balance font-heading text-3xl font-semibold tracking-tight sm:text-4xl">{t.coach.title}</h1>
-              <p className="mt-3 max-w-2xl text-pretty text-sm leading-relaxed text-primary-foreground/80 sm:text-base">{t.coach.description}</p>
-            </div>
-            <Link
-              href="/coach"
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary-foreground px-5 py-3 text-sm font-semibold text-primary shadow-sm outline-none transition hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-3 focus-visible:ring-white/40"
-            >
-              <Sparkles className="size-4" /> {t.coach.setup.arrange} <ArrowRight className="size-4" />
-            </Link>
-          </div>
-        </section>
-      ) : null}
+        <section className="study-surface relative overflow-hidden rounded-[1.75rem] border border-border/80 p-5 shadow-[var(--shadow-card)] sm:p-7">
+          <div
+            className="pointer-events-none absolute -right-16 -top-20 size-64 rounded-full bg-primary/10 blur-3xl"
+            aria-hidden="true"
+          />
+          <div
+            className="pointer-events-none absolute -bottom-20 left-10 size-56 rounded-full bg-chart-3/15 blur-3xl"
+            aria-hidden="true"
+          />
 
-      {showOnboarding ? (
-        <section className="rounded-2xl border border-border/80 bg-card px-5 py-5 sm:px-6">
-          <div className="max-w-3xl">
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/12 px-3 py-1 text-xs font-semibold text-primary">
-                <Sparkles className="size-3.5" />
-                {t.diagnose.onboarding.eyebrow}
+          <div className="relative flex flex-col gap-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <StepBadge step="01" label={t.diagnose.spotlight.stepLabel} />
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-card/80 px-3 py-1 text-xs text-muted-foreground">
+                <Clock3 className="size-3.5" />
+                {t.diagnose.spotlight.time}
               </span>
-              <span className="text-xs text-muted-foreground">{t.diagnose.onboarding.time}</span>
             </div>
-            <h2 className="text-balance font-heading text-xl font-semibold tracking-tight sm:text-2xl">
-              {t.diagnose.onboarding.title}
-            </h2>
-            <p className="mt-2 max-w-2xl text-pretty text-sm leading-relaxed text-muted-foreground">
-              {t.diagnose.onboarding.description}
-            </p>
+
+            <div className="max-w-3xl">
+              <h1 className="text-balance font-heading text-3xl font-semibold tracking-tight sm:text-4xl">
+                {t.diagnose.spotlight.title}
+              </h1>
+              <p className="mt-3 max-w-2xl text-pretty text-sm leading-relaxed text-muted-foreground sm:text-base">
+                {t.diagnose.spotlight.description}
+              </p>
+            </div>
+
+            <LearningLoop
+              activeKey="discover"
+              steps={[
+                { key: "discover", label: t.nav.loop.discover },
+                { key: "practice", label: t.nav.loop.practice },
+                { key: "remember", label: t.nav.loop.remember },
+              ]}
+            />
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <StartPathCard
+                step="A"
+                href="/coach"
+                icon={Compass}
+                title={t.diagnose.spotlight.paths.coach.title}
+                description={t.diagnose.spotlight.paths.coach.description}
+                cta={t.diagnose.spotlight.paths.coach.cta}
+                featured
+              />
+              <StartPathCard
+                step="B"
+                icon={Stethoscope}
+                title={t.diagnose.spotlight.paths.diagnose.title}
+                description={t.diagnose.spotlight.paths.diagnose.description}
+                cta={t.diagnose.spotlight.paths.diagnose.cta}
+                onClick={scrollToDiagnose}
+              />
+              <StartPathCard
+                step="C"
+                href="/chat"
+                icon={MessageCircle}
+                title={t.diagnose.spotlight.paths.chat.title}
+                description={t.diagnose.spotlight.paths.chat.description}
+                cta={t.diagnose.spotlight.paths.chat.cta}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-primary/15 bg-primary/5 px-4 py-3">
+              <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+                <Sparkles className="size-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-foreground">{t.diagnose.spotlight.recommendTitle}</p>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {t.diagnose.spotlight.recommendDescription}
+                </p>
+              </div>
+              <Link
+                href="/coach"
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm outline-none transition hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/40"
+              >
+                {t.diagnose.spotlight.recommendCta}
+                <ArrowRight className="size-4" />
+              </Link>
+            </div>
           </div>
         </section>
       ) : null}
 
-      <DiagnosticInput
-        value={text}
-        onChange={setText}
-        onAnalyze={handleAnalyze}
-        loading={loading}
-        diagnosisMode={diagnosisMode}
-        onDiagnosisModeChange={setDiagnosisMode}
-      />
+      <div ref={diagnoseRef} className="scroll-mt-24">
+        {showOnboarding ? (
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className="mb-2">
+                <StepBadge step="B" label={t.diagnose.onboarding.eyebrow} />
+              </div>
+              <h2 className="font-heading text-xl font-semibold tracking-tight sm:text-2xl">
+                {t.diagnose.onboarding.title}
+              </h2>
+              <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                {t.diagnose.onboarding.description}
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground">{t.diagnose.onboarding.time}</p>
+          </div>
+        ) : null}
+
+        <DiagnosticInput
+          value={text}
+          onChange={setText}
+          onAnalyze={handleAnalyze}
+          loading={loading}
+          diagnosisMode={diagnosisMode}
+          onDiagnosisModeChange={setDiagnosisMode}
+        />
+      </div>
 
       {loading && <DiagnosticLoading />}
       {!loading && result && (
