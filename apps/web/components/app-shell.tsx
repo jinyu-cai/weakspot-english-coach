@@ -226,12 +226,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <PreviewBanner />
 
       <div className="flex min-h-0 flex-1 w-full">
-        <aside className="fixed bottom-0 left-0 top-8 hidden w-56 overflow-y-auto border-r border-sidebar-border bg-sidebar lg:block">
+        {/* Wider rail for 2x2 primary tiles + compact secondary list */}
+        <aside className="fixed bottom-0 left-0 top-7 hidden w-[15.5rem] overflow-y-auto border-r border-sidebar-border bg-sidebar lg:block">
           <NavSidebar />
         </aside>
 
-        <div className="flex min-w-0 w-full flex-col lg:pl-56">
-          <header className="sticky top-8 z-30 flex h-12 items-center justify-between gap-3 border-b border-border/60 bg-background/85 px-3 backdrop-blur-md sm:px-5">
+        <div className="flex min-w-0 w-full flex-col lg:pl-[15.5rem]">
+          <header className="sticky top-7 z-30 flex h-14 items-center justify-between gap-3 border-b border-border/60 bg-background/90 px-3 backdrop-blur-md sm:px-5">
             <div className="flex min-w-0 items-center gap-2">
               <Sheet open={open} onOpenChange={setOpen}>
                 <SheetTrigger
@@ -241,14 +242,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     </Button>
                   }
                 />
-                <SheetContent side="left" className="w-64 overflow-y-auto bg-sidebar p-0">
+                <SheetContent side="left" className="w-72 overflow-y-auto bg-sidebar p-0">
                   <SheetTitle className="sr-only">Navigation</SheetTitle>
                   <NavSidebar onNavigate={() => setOpen(false)} />
                 </SheetContent>
               </Sheet>
-              <p className="truncate font-heading text-lg tracking-tight text-foreground">
-                {activeNavItem ? t.nav.items[activeNavItem.key][0] : "WeakSpot"}
-              </p>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-foreground">
+                  {activeNavItem ? t.nav.items[activeNavItem.key][0] : "WeakSpot"}
+                </p>
+                {activeNavItem ? (
+                  <p className="hidden truncate text-[11px] text-muted-foreground sm:block">
+                    {t.nav.items[activeNavItem.key][1]}
+                  </p>
+                ) : null}
+              </div>
             </div>
 
             <div className="flex min-w-0 shrink-0 items-center gap-1">
@@ -258,7 +266,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </header>
 
-          <main className="flex-1 px-4 py-8 sm:px-6 lg:px-8">{children}</main>
+          <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-7">{children}</main>
         </div>
       </div>
     </div>

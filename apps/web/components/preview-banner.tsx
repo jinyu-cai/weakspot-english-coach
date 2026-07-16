@@ -7,8 +7,8 @@ export function PreviewBanner() {
   const { t } = useLanguage()
 
   return (
-    <div className="border-b border-hermes/20 bg-hermes text-white">
-      <p className="px-3 py-1.5 text-center text-[11px] font-medium tracking-wide">
+    <div className="border-b border-border/70 bg-muted/50">
+      <p className="px-3 py-1 text-center text-[11px] text-muted-foreground">
         {t.nav.previewBanner}
       </p>
     </div>

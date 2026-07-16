@@ -32,8 +32,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   colorScheme: "light dark",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f5f5f5" },
-    { media: "(prefers-color-scheme: dark)", color: "#07070a" },
+    { media: "(prefers-color-scheme: light)", color: "#f4f1ea" },
+    { media: "(prefers-color-scheme: dark)", color: "#141311" },
   ],
 }
 
@@ -55,7 +55,7 @@ export default function RootLayout({
               "try{var p=localStorage.getItem('weakspot-palette');if(p&&p!=='cream'){document.documentElement.setAttribute('data-palette',p)}var l=localStorage.getItem('weakspot-language');if(l==='zh-CN'){document.documentElement.lang=l}}catch(e){}",
           }}
         />
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           <LanguageProvider>
             <AppShell>
               <DiagnoseProvider>{children}</DiagnoseProvider>

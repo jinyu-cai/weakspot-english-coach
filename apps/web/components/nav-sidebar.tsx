@@ -8,6 +8,8 @@ import { NAV_GROUPS, NAV_ITEMS } from "@/lib/nav"
 import { getMe } from "@/lib/auth"
 import { useLanguage } from "@/components/language-provider"
 
+const PRIMARY_KEYS = ["mission", "diagnose", "chat", "practice"] as const
+
 export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
   const [isOwner, setIsOwner] = useState(false)
@@ -23,29 +25,68 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
     .find((item) => (item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)))
     ?.href
 
+  const primaryItems = PRIMARY_KEYS
+    .map((key) => visibleItems.find((item) => item.key === key))
+    .filter((item): item is (typeof visibleItems)[number] => Boolean(item))
+
+  const primaryKeySet = new Set<string>(PRIMARY_KEYS)
+
   return (
-    <div className="flex min-h-full flex-col gap-7 p-4">
+    <div className="flex min-h-full flex-col gap-6 p-3">
       <Link
         href="/"
         onClick={onNavigate}
-        className="group flex items-center gap-3 rounded-lg px-1 py-1 outline-none transition focus-visible:ring-2 focus-visible:ring-hermes/50"
+        className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 outline-none transition hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/40"
       >
-        <span className="hermes-mark transition-transform group-hover:-rotate-6">W</span>
-        <span className="flex min-w-0 flex-col leading-tight">
-          <span className="font-heading text-[1.35rem] tracking-tight text-sidebar-foreground">
+        <span className="flex size-9 items-center justify-center rounded-xl bg-primary/12 text-base" aria-hidden="true">
+          🦉
+        </span>
+        <span className="min-w-0">
+          <span className="block font-heading text-lg leading-none tracking-tight text-sidebar-foreground">
             WeakSpot
           </span>
-          <span className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
-            English Coach
-          </span>
+          <span className="mt-1 block text-[11px] text-muted-foreground">{t.nav.brandSubtitle}</span>
         </span>
       </Link>
 
-      <nav className="flex flex-1 flex-col gap-5" aria-label="Main navigation">
+      {/* Primary actions: larger, clearer, always first */}
+      <div>
+        <p className="mb-2 px-2 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
+          {t.nav.primaryTitle}
+        </p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {primaryItems.map((item) => {
+            const isActive = item.href === activeHref
+            const Icon = item.icon
+            const label = t.nav.items[item.key][0]
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onNavigate}
+                aria-current={isActive ? "page" : undefined}
+                className={cn(
+                  "flex min-h-[4.25rem] flex-col items-start justify-between rounded-xl border px-2.5 py-2 outline-none transition focus-visible:ring-2 focus-visible:ring-ring/40",
+                  isActive
+                    ? "border-primary/25 bg-primary/10 text-foreground"
+                    : "border-border/70 bg-card/60 text-muted-foreground hover:border-border hover:bg-card hover:text-foreground",
+                )}
+              >
+                <Icon className={cn("size-4", isActive ? "text-primary" : "opacity-70")} />
+                <span className="text-[12px] font-medium leading-tight">{label}</span>
+              </Link>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Everything else: compact list, less visual noise */}
+      <nav className="flex flex-1 flex-col gap-4" aria-label="Main navigation">
         {NAV_GROUPS.map((group) => {
           const items = group.items
             .map((key) => visibleItems.find((item) => item.key === key))
             .filter((item): item is (typeof visibleItems)[number] => Boolean(item))
+            .filter((item) => !primaryKeySet.has(item.key))
 
           if (items.length === 0) return null
 
@@ -53,7 +94,7 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
             <section key={group.key} aria-labelledby={`nav-group-${group.key}`}>
               <h2
                 id={`nav-group-${group.key}`}
-                className="mb-1.5 px-2.5 text-[10px] font-medium tracking-[0.16em] text-muted-foreground uppercase"
+                className="mb-1 px-2 text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase"
               >
                 {t.nav.groups[group.key]}
               </h2>
@@ -69,13 +110,13 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
                       onClick={onNavigate}
                       aria-current={isActive ? "page" : undefined}
                       className={cn(
-                        "flex h-9 items-center gap-2.5 rounded-md px-2.5 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-hermes/40",
+                        "flex h-8 items-center gap-2 rounded-lg px-2 text-[12.5px] outline-none transition focus-visible:ring-2 focus-visible:ring-ring/40",
                         isActive
-                          ? "bg-hermes font-medium text-white shadow-[0_0_0_1px_color-mix(in_srgb,#0000f2_40%,transparent)]"
-                          : "text-muted-foreground hover:bg-hermes/8 hover:text-foreground",
+                          ? "bg-muted font-medium text-foreground"
+                          : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
                       )}
                     >
-                      <Icon className={cn("size-4 shrink-0", isActive ? "opacity-100" : "opacity-70")} />
+                      <Icon className="size-3.5 shrink-0 opacity-70" />
                       <span className="truncate">{localized[0]}</span>
                     </Link>
                   )
@@ -85,11 +126,6 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
           )
         })}
       </nav>
-
-      <div className="rounded-md border border-hermes/20 bg-hermes/5 px-3 py-2.5">
-        <p className="font-heading text-sm text-foreground">{t.nav.coachTipTitle}</p>
-        <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t.nav.tagline}</p>
-      </div>
     </div>
   )
 }
