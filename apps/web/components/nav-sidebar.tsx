@@ -24,16 +24,21 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
     ?.href
 
   return (
-    <div className="flex min-h-full flex-col gap-6 p-4">
+    <div className="flex min-h-full flex-col gap-7 p-4">
       <Link
         href="/"
         onClick={onNavigate}
-        className="flex items-center gap-2.5 rounded-lg px-1.5 py-1 outline-none transition hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="group flex items-center gap-3 rounded-lg px-1 py-1 outline-none transition focus-visible:ring-2 focus-visible:ring-hermes/50"
       >
-        <span className="text-lg" aria-hidden="true">
-          🦉
+        <span className="hermes-mark transition-transform group-hover:-rotate-6">W</span>
+        <span className="flex min-w-0 flex-col leading-tight">
+          <span className="font-heading text-[1.35rem] tracking-tight text-sidebar-foreground">
+            WeakSpot
+          </span>
+          <span className="text-[10px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
+            English Coach
+          </span>
         </span>
-        <span className="text-sm font-medium tracking-tight text-sidebar-foreground">WeakSpot</span>
       </Link>
 
       <nav className="flex flex-1 flex-col gap-5" aria-label="Main navigation">
@@ -48,7 +53,7 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
             <section key={group.key} aria-labelledby={`nav-group-${group.key}`}>
               <h2
                 id={`nav-group-${group.key}`}
-                className="mb-1.5 px-2.5 text-[10px] font-medium tracking-wider text-muted-foreground uppercase"
+                className="mb-1.5 px-2.5 text-[10px] font-medium tracking-[0.16em] text-muted-foreground uppercase"
               >
                 {t.nav.groups[group.key]}
               </h2>
@@ -64,13 +69,13 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
                       onClick={onNavigate}
                       aria-current={isActive ? "page" : undefined}
                       className={cn(
-                        "flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40",
+                        "flex h-9 items-center gap-2.5 rounded-md px-2.5 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-hermes/40",
                         isActive
-                          ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-                          : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+                          ? "bg-hermes font-medium text-white shadow-[0_0_0_1px_color-mix(in_srgb,#0000f2_40%,transparent)]"
+                          : "text-muted-foreground hover:bg-hermes/8 hover:text-foreground",
                       )}
                     >
-                      <Icon className="size-4 shrink-0 opacity-80" />
+                      <Icon className={cn("size-4 shrink-0", isActive ? "opacity-100" : "opacity-70")} />
                       <span className="truncate">{localized[0]}</span>
                     </Link>
                   )
@@ -80,6 +85,11 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
           )
         })}
       </nav>
+
+      <div className="rounded-md border border-hermes/20 bg-hermes/5 px-3 py-2.5">
+        <p className="font-heading text-sm text-foreground">{t.nav.coachTipTitle}</p>
+        <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{t.nav.tagline}</p>
+      </div>
     </div>
   )
 }

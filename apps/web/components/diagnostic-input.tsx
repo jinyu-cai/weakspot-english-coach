@@ -37,89 +37,89 @@ export function DiagnosticInput({
 
   return (
     <div className="flex flex-col gap-4">
-      <label htmlFor="diagnose-input" className="sr-only">
-        {t.diagnose.inputLabel}
-      </label>
-      <Textarea
-        id="diagnose-input"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={t.diagnose.placeholder}
-        rows={8}
-        disabled={loading}
-        className="min-h-44 resize-y rounded-xl border-border bg-card text-base leading-relaxed shadow-none focus-visible:border-primary/40"
-      />
+      <div className="overflow-hidden rounded-2xl border border-hermes/20 bg-card shadow-[var(--shadow-card)]">
+        <label htmlFor="diagnose-input" className="sr-only">
+          {t.diagnose.inputLabel}
+        </label>
+        <Textarea
+          id="diagnose-input"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={t.diagnose.placeholder}
+          rows={8}
+          disabled={loading}
+          className="min-h-44 resize-y rounded-none border-0 bg-transparent px-4 py-4 text-base leading-relaxed shadow-none focus-visible:ring-0"
+        />
 
-      <div className="flex flex-wrap gap-2">
-        {t.diagnose.onboarding.exampleLabels.map((label, index) => (
-          <button
-            key={label}
-            type="button"
-            disabled={loading}
-            onClick={() => onChange(EXAMPLE_TEXTS[index] ?? EXAMPLE_TEXTS[0])}
-            className="rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition hover:border-foreground/20 hover:text-foreground disabled:opacity-50"
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span className="tabular-nums">
-            {wordCount} {wordCount === 1 ? t.diagnose.word : t.diagnose.words}
-          </span>
-          {!ready ? <span>{t.diagnose.onboarding.minimumHint}</span> : null}
-        </div>
-
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div
-            role="radiogroup"
-            aria-label={t.diagnose.modeLabel}
-            className="inline-flex rounded-lg border border-border p-0.5"
-          >
-            <button
-              type="button"
-              role="radio"
-              aria-checked={diagnosisMode === "fast"}
-              disabled={loading}
-              onClick={() => onDiagnosisModeChange("fast")}
-              className={cn(
-                "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition",
-                diagnosisMode === "fast"
-                  ? "bg-foreground text-background"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Zap className="size-3.5" />
-              {t.diagnose.quick}
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={diagnosisMode === "deep"}
-              disabled={loading}
-              onClick={() => onDiagnosisModeChange("deep")}
-              className={cn(
-                "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition",
-                diagnosisMode === "deep"
-                  ? "bg-foreground text-background"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Microscope className="size-3.5" />
-              {t.diagnose.deep}
-            </button>
+        <div className="flex flex-col gap-3 border-t border-border/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            {t.diagnose.onboarding.exampleLabels.map((label, index) => (
+              <button
+                key={label}
+                type="button"
+                disabled={loading}
+                onClick={() => onChange(EXAMPLE_TEXTS[index] ?? EXAMPLE_TEXTS[0])}
+                className="rounded-full border border-border px-2.5 py-1 text-[11px] text-muted-foreground transition hover:border-hermes/30 hover:text-hermes disabled:opacity-50"
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
-          <Button
-            onClick={onAnalyze}
-            disabled={loading || !ready}
-            className="h-9 px-4"
-          >
-            {loading ? <Spinner /> : <Sparkles data-icon="inline-start" />}
-            {loading ? t.diagnose.analyzing : t.diagnose.analyze}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] tabular-nums text-muted-foreground">
+              {wordCount} {wordCount === 1 ? t.diagnose.word : t.diagnose.words}
+              {!ready ? ` · ${t.diagnose.onboarding.minimumHint}` : ""}
+            </span>
+
+            <div
+              role="radiogroup"
+              aria-label={t.diagnose.modeLabel}
+              className="inline-flex rounded-full border border-border p-0.5"
+            >
+              <button
+                type="button"
+                role="radio"
+                aria-checked={diagnosisMode === "fast"}
+                disabled={loading}
+                onClick={() => onDiagnosisModeChange("fast")}
+                className={cn(
+                  "inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[11px] font-medium transition",
+                  diagnosisMode === "fast"
+                    ? "bg-hermes text-white"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Zap className="size-3" />
+                {t.diagnose.quick}
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={diagnosisMode === "deep"}
+                disabled={loading}
+                onClick={() => onDiagnosisModeChange("deep")}
+                className={cn(
+                  "inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[11px] font-medium transition",
+                  diagnosisMode === "deep"
+                    ? "bg-hermes text-white"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Microscope className="size-3" />
+                {t.diagnose.deep}
+              </button>
+            </div>
+
+            <Button
+              onClick={onAnalyze}
+              disabled={loading || !ready}
+              className="h-8 rounded-full bg-hermes px-4 text-white hover:bg-[#0000d0] disabled:opacity-50"
+            >
+              {loading ? <Spinner /> : <Sparkles data-icon="inline-start" />}
+              {loading ? t.diagnose.analyzing : t.diagnose.analyze}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

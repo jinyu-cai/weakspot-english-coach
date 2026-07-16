@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Info } from "lucide-react"
+import { ArrowUpRight, Info } from "lucide-react"
 import { useDiagnose } from "@/components/diagnose-provider"
 import { DiagnosticInput } from "@/components/diagnostic-input"
 import { DiagnosticReport } from "@/components/diagnostic-report"
@@ -15,14 +15,27 @@ export default function DiagnosePage() {
   const showLinks = !loading && !result
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-10">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-8">
       {!result ? (
-        <header className="space-y-2">
-          <h1 className="text-2xl font-medium tracking-tight text-foreground">
-            {t.diagnose.minimal.title}
-          </h1>
-          <p className="text-sm text-muted-foreground">{t.diagnose.minimal.subtitle}</p>
-        </header>
+        <section className="hermes-stage rounded-2xl px-5 py-6 sm:px-7 sm:py-8">
+          <div className="relative flex flex-col gap-5">
+            <div className="flex items-center gap-2">
+              <span className="hermes-mark">W</span>
+              <span className="text-[11px] font-medium tracking-[0.16em] text-hermes uppercase">
+                {t.diagnose.minimal.kicker}
+              </span>
+            </div>
+
+            <div className="max-w-xl">
+              <h1 className="font-heading text-[2.15rem] leading-[1.15] tracking-tight text-foreground sm:text-[2.6rem]">
+                {t.diagnose.minimal.title}
+              </h1>
+              <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground sm:text-[15px]">
+                {t.diagnose.minimal.subtitle}
+              </p>
+            </div>
+          </div>
+        </section>
       ) : null}
 
       <DiagnosticInput
@@ -49,17 +62,22 @@ export default function DiagnosePage() {
       )}
 
       {showLinks ? (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border/70 pt-6 text-sm">
-          <span className="text-muted-foreground">{t.diagnose.minimal.or}</span>
-          <Link href="/coach" className="text-foreground underline-offset-4 hover:underline">
-            {t.diagnose.minimal.mission}
-          </Link>
-          <Link href="/chat" className="text-foreground underline-offset-4 hover:underline">
-            {t.diagnose.minimal.chat}
-          </Link>
-          <Link href="/practice" className="text-foreground underline-offset-4 hover:underline">
-            {t.diagnose.minimal.practice}
-          </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="mr-1 text-xs text-muted-foreground">{t.diagnose.minimal.or}</span>
+          {[
+            { href: "/coach", label: t.diagnose.minimal.mission },
+            { href: "/chat", label: t.diagnose.minimal.chat },
+            { href: "/practice", label: t.diagnose.minimal.practice },
+          ].map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="inline-flex items-center gap-1 rounded-full border border-hermes/20 bg-hermes/5 px-3 py-1.5 text-xs font-medium text-hermes transition hover:border-hermes/40 hover:bg-hermes/10"
+            >
+              {item.label}
+              <ArrowUpRight className="size-3.5" />
+            </Link>
+          ))}
         </div>
       ) : null}
     </div>

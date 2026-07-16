@@ -231,7 +231,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </aside>
 
         <div className="flex min-w-0 w-full flex-col lg:pl-56">
-          <header className="sticky top-8 z-30 flex h-12 items-center justify-between gap-3 border-b border-border/60 bg-background/90 px-3 backdrop-blur-md sm:px-5">
+          <header className="sticky top-8 z-30 flex h-12 items-center justify-between gap-3 border-b border-border/60 bg-background/85 px-3 backdrop-blur-md sm:px-5">
             <div className="flex min-w-0 items-center gap-2">
               <Sheet open={open} onOpenChange={setOpen}>
                 <SheetTrigger
@@ -246,7 +246,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <NavSidebar onNavigate={() => setOpen(false)} />
                 </SheetContent>
               </Sheet>
-              <p className="truncate text-sm font-medium text-foreground">
+              <p className="truncate font-heading text-lg tracking-tight text-foreground">
                 {activeNavItem ? t.nav.items[activeNavItem.key][0] : "WeakSpot"}
               </p>
             </div>

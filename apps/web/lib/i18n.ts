@@ -10,7 +10,7 @@ export const copy = {
     nav: {
       tagline: "It finds what you need to practice instead of asking what you want to practice.",
       brandSubtitle: "Your English study desk",
-      previewBanner: "UI preview · Hermes-style minimal — not production",
+      previewBanner: "UI preview · Hermes blue · not production",
       startHere: "Start",
       startHereShort: "Start",
       primaryTitle: "Primary",
@@ -110,8 +110,9 @@ export const copy = {
       title: "Diagnose",
       description: "Analyze your English writing.",
       minimal: {
+        kicker: "WeakSpot",
         title: "Paste your English",
-        subtitle: "Get clear feedback. Then practice what matters.",
+        subtitle: "Clear feedback. Then practice what matters.",
         or: "Or",
         mission: "Mission",
         chat: "Chat",
@@ -990,7 +991,7 @@ export const copy = {
     nav: {
       tagline: "它会发现你需要练什么，而不是先问你想练什么。",
       brandSubtitle: "你的英语学习台",
-      previewBanner: "UI 预览 · Hermes 简约风格 — 非生产环境",
+      previewBanner: "UI 预览 · Hermes 艺术蓝 · 非生产环境",
       startHere: "开始",
       startHereShort: "开始",
       primaryTitle: "主要",
@@ -1090,8 +1091,9 @@ export const copy = {
       title: "诊断",
       description: "分析你的英文写作。",
       minimal: {
+        kicker: "WeakSpot",
         title: "粘贴你的英文",
-        subtitle: "获得清晰反馈，再针对练习。",
+        subtitle: "清晰反馈，再练真正需要的点。",
         or: "或",
         mission: "任务",
         chat: "对话",
