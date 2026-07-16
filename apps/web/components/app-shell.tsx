@@ -251,9 +251,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <NavSidebar onNavigate={() => setOpen(false)} />
               </SheetContent>
             </Sheet>
-            <p className="min-w-0 truncate font-heading text-sm font-semibold text-foreground sm:text-base">
-              {activeNavItem ? t.nav.items[activeNavItem.key][0] : "WeakSpot"}
-            </p>
+            <div className="min-w-0">
+              <p className="truncate font-heading text-sm font-semibold text-foreground sm:text-base">
+                {activeNavItem ? t.nav.items[activeNavItem.key][0] : "WeakSpot"}
+              </p>
+              {activeNavItem ? (
+                <p className="hidden truncate text-[11px] text-muted-foreground sm:block">
+                  {t.nav.items[activeNavItem.key][1]}
+                </p>
+              ) : null}
+            </div>
           </div>
 
           <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2">

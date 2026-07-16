@@ -1,6 +1,6 @@
 "use client"
 
-import { Microscope, Sparkles, Zap } from "lucide-react"
+import { Lightbulb, Microscope, Sparkles, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
@@ -33,12 +33,21 @@ export function DiagnosticInput({
 }) {
   const { t } = useLanguage()
   const wordCount = countWords(value)
+  const ready = wordCount >= MIN_DIAGNOSE_WORDS
 
   return (
-    <Card className="border border-primary/20 shadow-sm ring-primary/10">
-      <CardContent className="flex flex-col gap-4 pt-6">
-        <div className="min-w-0">
-          <h2 className="font-heading text-lg font-semibold">{t.diagnose.onboarding.promptTitle}</h2>
+    <Card className="border border-primary/20 shadow-sm ring-1 ring-primary/10">
+      <CardContent className="flex flex-col gap-4 pt-6 sm:pt-7">
+        <div className="flex items-start gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
+            <Lightbulb className="size-4.5" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="font-heading text-lg font-semibold">{t.diagnose.onboarding.promptTitle}</h2>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+              {t.diagnose.onboarding.promptHint}
+            </p>
+          </div>
         </div>
 
         <label htmlFor="diagnose-input" className="sr-only">
@@ -54,26 +63,36 @@ export function DiagnosticInput({
           className="min-h-44 resize-y border-border/80 bg-background text-base leading-relaxed shadow-none focus-visible:border-primary/45"
         />
 
-        <div className="flex flex-wrap gap-2">
-          {t.diagnose.onboarding.exampleLabels.map((label, index) => (
-            <button
-              key={label}
-              type="button"
-              disabled={loading}
-              onClick={() => onChange(EXAMPLE_TEXTS[index] ?? EXAMPLE_TEXTS[0])}
-              className="rounded-full border border-border bg-secondary/65 px-3 py-1.5 text-xs font-medium text-secondary-foreground transition hover:border-primary/35 hover:bg-primary/10 disabled:pointer-events-none disabled:opacity-50"
-            >
-              {label}
-            </button>
-          ))}
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t.diagnose.onboarding.examplesLabel}
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {t.diagnose.onboarding.exampleLabels.map((label, index) => (
+              <button
+                key={label}
+                type="button"
+                disabled={loading}
+                onClick={() => onChange(EXAMPLE_TEXTS[index] ?? EXAMPLE_TEXTS[0])}
+                className="rounded-full border border-border bg-secondary/65 px-3 py-1.5 text-xs font-medium text-secondary-foreground transition hover:border-primary/35 hover:bg-primary/10 disabled:pointer-events-none disabled:opacity-50"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       </CardContent>
 
       <CardFooter className="flex flex-col items-stretch gap-3 border-t border-border/70 bg-muted/25 sm:flex-row sm:items-center sm:justify-between">
-        <span className="text-xs tabular-nums text-muted-foreground">
-          {wordCount} {wordCount === 1 ? t.diagnose.word : t.diagnose.words}
-          {wordCount < MIN_DIAGNOSE_WORDS ? ` · ${t.diagnose.onboarding.minimumHint}` : ""}
-        </span>
+        <div className="flex min-w-0 flex-col gap-0.5 text-xs text-muted-foreground">
+          <span className="tabular-nums">
+            {wordCount} {wordCount === 1 ? t.diagnose.word : t.diagnose.words}
+            {!ready ? ` · ${t.diagnose.onboarding.minimumHint}` : ""}
+          </span>
+          {t.diagnose.onboarding.privacyNote ? (
+            <span className="leading-relaxed">{t.diagnose.onboarding.privacyNote}</span>
+          ) : null}
+        </div>
 
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <div
@@ -108,7 +127,7 @@ export function DiagnosticInput({
           </div>
           <Button
             onClick={onAnalyze}
-            disabled={loading || wordCount < MIN_DIAGNOSE_WORDS}
+            disabled={loading || !ready}
             size="lg"
             className="h-11 w-full px-5 text-sm shadow-sm sm:w-auto"
           >

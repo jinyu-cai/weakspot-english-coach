@@ -20,7 +20,7 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const visibleItems = NAV_ITEMS.filter((item) => !item.ownerOnly || isOwner)
   const activeHref = [...visibleItems]
     .sort((left, right) => right.href.length - left.href.length)
-    .find((item) => item.href === "/" ? pathname === "/" : pathname.startsWith(item.href))
+    .find((item) => (item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)))
     ?.href
 
   return (
@@ -31,10 +31,15 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
         className="group flex items-center gap-3 rounded-2xl px-2 py-1.5 outline-none transition focus-visible:ring-3 focus-visible:ring-ring/40"
       >
         <span className="flex size-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm transition-transform group-hover:-rotate-3">
-          <span className="text-xl" aria-hidden="true">🦉</span>
+          <span className="text-xl" aria-hidden="true">
+            🦉
+          </span>
         </span>
-        <span className="font-heading text-lg font-semibold tracking-tight text-sidebar-foreground">
-          WeakSpot
+        <span className="flex min-w-0 flex-col leading-tight">
+          <span className="font-heading text-lg font-semibold tracking-tight text-sidebar-foreground">
+            WeakSpot
+          </span>
+          <span className="text-[11px] text-muted-foreground">English Coach</span>
         </span>
       </Link>
 
@@ -73,7 +78,14 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
                       )}
                     >
                       <Icon className={cn("size-[18px] shrink-0", isActive && "text-primary")} />
-                      <span className="min-w-0 flex-1 truncate">{localized[0]}</span>
+                      <span className="min-w-0 flex-1 leading-tight">
+                        <span className="block truncate">{localized[0]}</span>
+                        {isActive ? (
+                          <span className="mt-0.5 block truncate text-[11px] font-normal text-muted-foreground">
+                            {localized[1]}
+                          </span>
+                        ) : null}
+                      </span>
                       {item.key === "mission" && !isActive ? (
                         <span className="size-1.5 rounded-full bg-primary" aria-label={t.nav.startHere} />
                       ) : null}
@@ -85,6 +97,10 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
           )
         })}
       </nav>
+
+      <div className="rounded-2xl border border-sidebar-border bg-card/70 p-3 text-xs leading-relaxed text-muted-foreground shadow-sm">
+        {t.nav.tagline}
+      </div>
     </div>
   )
 }
