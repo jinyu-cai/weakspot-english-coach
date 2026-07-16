@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { ArrowRight, Clock3, Compass, Import, Info, MessageCircle, Radio, Sparkles } from "lucide-react"
 import { useDiagnose } from "@/components/diagnose-provider"
@@ -7,6 +8,7 @@ import { DiagnosticInput } from "@/components/diagnostic-input"
 import { DiagnosticReport } from "@/components/diagnostic-report"
 import { DiagnosticLoading } from "@/components/loading-state"
 import { useLanguage } from "@/components/language-provider"
+import { getWelcomeBackMessage } from "@/lib/session-win"
 
 const SHORTCUTS = [
   { key: "chat", href: "/chat", icon: MessageCircle },
@@ -20,9 +22,20 @@ export default function DiagnosePage() {
   const { t } = useLanguage()
   const showOnboarding = !result
   const showShortcuts = !loading && !result
+  const [welcomeBack, setWelcomeBack] = useState<string | null>(null)
+
+  useEffect(() => {
+    setWelcomeBack(getWelcomeBackMessage(t))
+  }, [t])
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-7">
+      {showOnboarding && welcomeBack ? (
+        <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm leading-relaxed text-foreground">
+          {welcomeBack}
+        </div>
+      ) : null}
+
       {showOnboarding ? (
         <section className="relative overflow-hidden rounded-3xl border border-primary/25 bg-primary text-primary-foreground shadow-sm">
           <div className="pointer-events-none absolute -right-16 -top-16 size-56 rounded-full bg-white/10 blur-2xl" aria-hidden="true" />

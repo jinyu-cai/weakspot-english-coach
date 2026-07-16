@@ -30,6 +30,8 @@ import { CoachScene } from "@/components/coach-scene"
 import { DiagnosticReport } from "@/components/diagnostic-report"
 import { useLanguage } from "@/components/language-provider"
 import { SessionSummary } from "@/components/session-summary"
+import { SessionWin } from "@/components/session-win"
+import { sessionWinFromCoach } from "@/lib/session-win"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -184,7 +186,7 @@ function PhaseDots({ current, label }: { current: 1 | 2 | 3; label: string }) {
 }
 
 export default function CoachPage() {
-  const { t } = useLanguage()
+  const { language, t } = useLanguage()
   const [screen, setScreen] = useState<Screen>("setup")
   const [durationMinutes, setDurationMinutes] = useState<Duration>(5)
   const [modality, setModality] = useState<CoachMissionModality>("text")
@@ -961,6 +963,10 @@ export default function CoachPage() {
           {t.coach.feedback.reviewUntimed}
         </p>
 
+        <SessionWin
+          model={sessionWinFromCoach(diagnostic.diagnostic, t, language, hintLevel > 0)}
+        />
+
         <section className="rounded-3xl border border-success/25 bg-success/8 p-5 sm:p-7">
           <div className="flex items-start gap-3">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-success/15 text-success">
@@ -1009,7 +1015,11 @@ export default function CoachPage() {
           </Card>
         </div>
 
-        <DiagnosticReport result={diagnostic.diagnostic} originalText={submittedAnswer} />
+        <DiagnosticReport
+          result={diagnostic.diagnostic}
+          originalText={submittedAnswer}
+          showSessionWin={false}
+        />
 
         <div className="sticky bottom-3 z-10 flex flex-col gap-2 rounded-2xl border border-border bg-background/92 p-3 shadow-lg backdrop-blur sm:flex-row sm:items-center">
           <Button variant="outline" onClick={() => resetAttempt("active")}>
