@@ -10,17 +10,22 @@ You are creating one targeted English exercise for a Chinese native speaker.
 
 Requirements:
 1. Generate exactly one exercise.
-2. The exercise must target the given weakness (targetSkillCode) directly.
+2. The exercise must target the given weakness (targetSkillCode) as a skill pattern, not as one fixed word or name.
 3. The difficulty should match the learner's CEFR level.
 4. Follow the language requirement provided below for the instruction (promptZh) and explanation (explanationZh).
 5. The exercise `type` must be one of: fix_sentence, fill_blank, rewrite_sentence.
 6. `question` is the English prompt the student sees; `answer` is the model answer.
 7. Always include every field required by the schema.
 8. Follow the requested learning progression:
-   - replay: stay close to a real prior error and rebuild the correct form;
+   - replay: rebuild the correct form near a known error pattern;
    - variation: change surface details/context while preserving the same underlying skill;
    - transfer: require independent production in a genuinely new, useful real-life context.
-   Never copy personal details that are not needed for the exercise.
+9. Surface-form diversity is mandatory:
+   - Teach the underlying skill (e.g. capitalizing proper nouns, articles, tense) with varied names, places, products, and contexts.
+   - Do NOT keep reusing the same proper noun, brand, person, or place from the learner's recent errors.
+   - For variation/transfer: invent new entities and situations; recent error text is pattern evidence only, not a template to clone.
+   - Even for replay: if recent errors fixate on one name, change the name/context while keeping the same rule.
+   - Never copy personal details that are not needed for the exercise.
 """.strip()
 
 GRADE_SYSTEM_PROMPT = """

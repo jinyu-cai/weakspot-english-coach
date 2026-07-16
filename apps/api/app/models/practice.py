@@ -22,6 +22,10 @@ class GeneratePracticeRequest(BaseModel):
     # When set, force the generated exercise to this type so a learner can
     # "regenerate the same kind" of exercise (e.g. re-do a plan task).
     practiceType: Optional[PracticeType] = None
+    # Mixed / multi-item sessions pass slot + size so parallel generates diversify
+    # skills, stages, and surface forms instead of cloning one error four times.
+    sessionSlot: Optional[int] = Field(default=None, ge=0, le=20)
+    sessionSize: Optional[int] = Field(default=None, ge=1, le=20)
 
 
 class PracticeExerciseAIResult(BaseModel):
