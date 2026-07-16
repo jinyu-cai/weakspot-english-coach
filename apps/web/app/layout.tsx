@@ -54,7 +54,7 @@ export default function RootLayout({
               "try{var p=localStorage.getItem('weakspot-palette');if(p&&p!=='cream'){document.documentElement.setAttribute('data-palette',p)}var l=localStorage.getItem('weakspot-language');if(l==='zh-CN'){document.documentElement.lang=l}}catch(e){}",
           }}
         />
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
           <LanguageProvider>
             <AppShell>
               <DiagnoseProvider>{children}</DiagnoseProvider>

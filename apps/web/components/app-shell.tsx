@@ -76,14 +76,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { t } = useLanguage()
   const activeNavItem = [...NAV_ITEMS]
     .sort((a, b) => b.href.length - a.href.length)
-    .find((item) => item.href === "/" ? pathname === "/" : pathname.startsWith(item.href))
+    .find((item) => (item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)))
   const voiceHistoryGuardRef = useRef<VoiceHistoryGuard | null>(null)
   const historyTrackerRef = useRef({ initialized: false, position: 0 })
   const restoringHistoryRef = useRef(false)
 
-  // Tag each in-app history entry with a relative position. replaceState keeps
-  // the browser's Back/Forward stack intact; the URL guards against Next.js
-  // copying the previous entry's state into a newly pushed route.
   useEffect(() => {
     const state = historyStateSnapshot()
     const url = historyUrlKey()
@@ -197,10 +194,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         restoringHistoryRef.current = true
         window.history.go(restoreDelta)
       } else if (window.location.href !== guard.url) {
-        // Old browsers without the Navigation API still have position markers
-        // for routes visited during this app session. An unmarked traversal is
-        // normally a Back action into an older entry; beforeunload protects any
-        // cross-document traversal.
         restoringHistoryRef.current = true
         window.history.forward()
       }
@@ -233,52 +226,39 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <PreviewBanner />
 
       <div className="flex min-h-0 flex-1 w-full">
-        {/* Desktop sidebar — dark ink rail, deliberately different from production */}
-        <aside className="fixed bottom-0 left-0 top-10 hidden w-[18rem] overflow-y-auto border-r border-[oklch(0.3_0.05_230)] lg:block">
+        <aside className="fixed bottom-0 left-0 top-8 hidden w-56 overflow-y-auto border-r border-sidebar-border bg-sidebar lg:block">
           <NavSidebar />
         </aside>
 
-        <div className="flex min-w-0 w-full flex-col lg:pl-[18rem]">
-          <header className="sticky top-10 z-30 flex min-h-16 items-center justify-between gap-3 border-b border-border/70 bg-background/92 px-3 py-2 backdrop-blur-xl sm:px-5 lg:px-7">
-            <div className="flex min-w-0 items-center gap-2.5">
+        <div className="flex min-w-0 w-full flex-col lg:pl-56">
+          <header className="sticky top-8 z-30 flex h-12 items-center justify-between gap-3 border-b border-border/60 bg-background/90 px-3 backdrop-blur-md sm:px-5">
+            <div className="flex min-w-0 items-center gap-2">
               <Sheet open={open} onOpenChange={setOpen}>
                 <SheetTrigger
                   render={
-                    <Button variant="outline" size="icon" className="lg:hidden" aria-label="Open navigation">
+                    <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open navigation">
                       <Menu />
                     </Button>
                   }
                 />
-                <SheetContent side="left" className="w-80 overflow-y-auto border-0 bg-[oklch(0.24_0.05_230)] p-0">
+                <SheetContent side="left" className="w-64 overflow-y-auto bg-sidebar p-0">
                   <SheetTitle className="sr-only">Navigation</SheetTitle>
                   <NavSidebar onNavigate={() => setOpen(false)} />
                 </SheetContent>
               </Sheet>
-              <div className="min-w-0">
-                <div className="flex min-w-0 items-center gap-2">
-                  <p className="truncate font-heading text-sm font-semibold text-foreground sm:text-base">
-                    {activeNavItem ? t.nav.items[activeNavItem.key][0] : "WeakSpot"}
-                  </p>
-                  <span className="hidden rounded-full bg-amber-400/25 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:text-amber-200 sm:inline">
-                    PREVIEW
-                  </span>
-                </div>
-                {activeNavItem ? (
-                  <p className="hidden truncate text-[11px] text-muted-foreground sm:block">
-                    {t.nav.items[activeNavItem.key][1]}
-                  </p>
-                ) : null}
-              </div>
+              <p className="truncate text-sm font-medium text-foreground">
+                {activeNavItem ? t.nav.items[activeNavItem.key][0] : "WeakSpot"}
+              </p>
             </div>
 
-            <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2">
+            <div className="flex min-w-0 shrink-0 items-center gap-1">
               <LLMProviderSettings />
               <AuthButton />
               <AppPreferences />
             </div>
           </header>
 
-          <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8 xl:px-10">{children}</main>
+          <main className="flex-1 px-4 py-8 sm:px-6 lg:px-8">{children}</main>
         </div>
       </div>
     </div>
