@@ -19,6 +19,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { ShadowingButton } from "@/components/shadowing-button"
+import { SessionWin } from "@/components/session-win"
+import { sessionWinFromChat } from "@/lib/session-win"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/components/language-provider"
 
@@ -39,6 +41,14 @@ export function SessionSummary({
 }: SessionSummaryProps) {
   const [expandedSection, setExpandedSection] = useState<string | null>("corrections")
   const { language, t } = useLanguage()
+  const practiceResults = stealthPractices?.length
+    ? stealthPractices
+    : stealthPractice
+      ? [stealthPractice]
+      : []
+  const win = analysis
+    ? sessionWinFromChat(analysis, t, language, practiceResults)
+    : null
 
   if (analyzing) {
     return (
@@ -55,12 +65,6 @@ export function SessionSummary({
   }
 
   if (!analysis) return null
-
-  const practiceResults = stealthPractices?.length
-    ? stealthPractices
-    : stealthPractice
-      ? [stealthPractice]
-      : []
 
   const sections = [
     {
@@ -106,6 +110,12 @@ export function SessionSummary({
       </div>
 
       <div className="flex-1 overflow-y-auto">
+        {win ? (
+          <div className="border-b border-border p-4">
+            <SessionWin model={win} compact />
+          </div>
+        ) : null}
+
         {/* Summary */}
         <div className="border-b border-border bg-muted/20 px-4 py-3">
           <p className="text-sm leading-relaxed">{analysis.summaryZh}</p>

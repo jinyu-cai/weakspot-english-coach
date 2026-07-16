@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { CheckCircle2, AlertTriangle, FileText, ListChecks, CircleAlert } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { DiagnosticResult } from "@/lib/types"
@@ -9,21 +9,32 @@ import { CefrBadge } from "@/components/cefr-badge"
 import { ScoreRing } from "@/components/score-ring"
 import { ErrorCard } from "@/components/error-card"
 import { DiffView } from "@/components/diff-view"
+import { SessionWin } from "@/components/session-win"
+import { sessionWinFromDiagnose } from "@/lib/session-win"
 import { useLanguage } from "@/components/language-provider"
 
 export function DiagnosticReport({
   result,
   originalText,
+  showSessionWin = true,
 }: {
   result: DiagnosticResult
   originalText: string
+  /** Coach free-response feedback already renders its own SessionWin. */
+  showSessionWin?: boolean
 }) {
   const [showDiff, setShowDiff] = useState(true)
   const hasDiff = Boolean(originalText) && originalText !== result.correctedText
-  const { t } = useLanguage()
+  const { language, t } = useLanguage()
+  const win = useMemo(
+    () => sessionWinFromDiagnose(result, t, language),
+    [result, t, language],
+  )
 
   return (
     <div className="flex flex-col gap-6">
+      {showSessionWin ? <SessionWin model={win} /> : null}
+
       {/* Header */}
       <Card>
         <CardContent className="flex flex-col gap-6 pt-6 sm:flex-row sm:items-center">
