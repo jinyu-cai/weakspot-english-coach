@@ -35,6 +35,8 @@ export interface VoiceChatLifecycle {
 export function VoiceChatPanel({ topic, onEnd, onLifecycleChange }: VoiceChatPanelProps) {
   const [voiceModel, setVoiceModel] = useState<RealtimeVoiceModel>("gpt-realtime-mini-2025-12-15")
   const { t } = useLanguage()
+  const onEndRef = useRef(onEnd)
+  onEndRef.current = onEnd
   const {
     status,
     error,
@@ -48,7 +50,10 @@ export function VoiceChatPanel({ topic, onEnd, onLifecycleChange }: VoiceChatPan
     transcript,
     completions,
     dismissCompletions,
-  } = useRealtimeChat(DEMO_USER_ID)
+  } = useRealtimeChat(DEMO_USER_ID, {
+    // Duration-limit kicks still hand off to analysis/feedback instead of vanishing.
+    onAutoEnd: (sessionId) => onEndRef.current(sessionId),
+  })
 
   const transcriptEndRef = useRef<HTMLDivElement>(null)
 

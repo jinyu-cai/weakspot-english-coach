@@ -186,33 +186,142 @@ def _stage_practice_type(skill_code: str, stage: str, ranked_types: list[dict]) 
     return ranked_types[0]["practiceType"]
 
 
+# Within one mixed session, rotate learning stages so four parallel generates
+# do not all stick to "replay the same proper-noun error".
+_SESSION_STAGE_ROTATION = ("replay", "variation", "transfer", "variation")
+_SESSION_TYPE_ROTATION = ("fix_sentence", "fill_blank", "rewrite_sentence", "fix_sentence")
+
+
+def _pick_session_skill(
+    skills: list[dict],
+    *,
+    session_slot: int,
+    session_size: int,
+    exclude_skill_codes: Optional[list[str]] = None,
+) -> tuple[str, str]:
+    """Spread a mixed practice session across multiple high-need skills."""
+    excluded = {code for code in (exclude_skill_codes or []) if code}
+    candidates = [item for item in skills if item["skillCode"] not in excluded]
+    if not candidates:
+        candidates = list(skills)
+    if not candidates:
+        return DEFAULT_SKILL, "Cold-start default skill."
+
+    pool_size = max(session_size, 1)
+    pool = candidates[: max(pool_size, min(4, len(candidates)))]
+    chosen = pool[session_slot % len(pool)]
+    if len(pool) == 1:
+        reason = (
+            f"{chosen['skillCode']} is the only ranked learning need right now; "
+            "surface form and progression still vary across this session."
+        )
+    else:
+        reason = (
+            f"Mixed session slot {session_slot + 1}/{session_size} targets "
+            f"{chosen['skillCode']} (rank {session_slot % len(pool) + 1} of {len(pool)} "
+            "high-need skills) so one session does not drill a single entity."
+        )
+    return str(chosen["skillCode"]), reason
+
+
+def _session_progression(
+    base: dict,
+    *,
+    session_slot: Optional[int],
+    requested_skill_code: Optional[str],
+) -> dict:
+    """Vary progression inside a multi-item session without ignoring learner stage."""
+    if session_slot is None:
+        return base
+
+    rotated = _SESSION_STAGE_ROTATION[session_slot % len(_SESSION_STAGE_ROTATION)]
+    base_stage = str(base.get("stage") or "replay")
+    # Never force a harder stage than evidence supports when the learner is still
+    # on replay — but always open variation after the first item in a session.
+    if base_stage == "replay" and rotated == "transfer":
+        stage = "variation"
+    elif base_stage == "transfer":
+        # Already independent: prefer transfer/variation rather than replaying.
+        stage = "transfer" if session_slot % 2 == 0 else "variation"
+    else:
+        stage = rotated if session_slot > 0 or rotated != "replay" else base_stage
+
+    # Only the first slot keeps a tight error fingerprint. Later slots teach the
+    # same skill pattern with new surface material (or a different skill).
+    fingerprint = base.get("errorFingerprint") if stage == "replay" and session_slot == 0 else None
+    reason = (
+        f"Session slot {session_slot + 1} uses {stage} so practice diversifies "
+        f"instead of replaying one proper-noun or one sentence form."
+    )
+    if requested_skill_code and session_slot > 0:
+        reason += " Same skill is kept, but context and names must change."
+    return {
+        "stage": stage,
+        "reason": reason,
+        "memoryId": base.get("memoryId") if fingerprint is not None else None,
+        "errorFingerprint": fingerprint,
+    }
+
+
 def recommend_next_action(
     user_id: str,
     *,
     requested_skill_code: Optional[str] = None,
     requested_practice_type: Optional[str] = None,
+    session_slot: Optional[int] = None,
+    session_size: Optional[int] = None,
+    exclude_skill_codes: Optional[list[str]] = None,
 ) -> dict:
     skills = _skill_scores(user_id)
-    target = requested_skill_code or skills[0]["skillCode"]
+    size = max(1, int(session_size or 1))
+    slot = None if session_slot is None else max(0, int(session_slot))
+
+    if requested_skill_code:
+        target = requested_skill_code
+        skill_reason = f"You explicitly selected {target}."
+    elif slot is not None:
+        target, skill_reason = _pick_session_skill(
+            skills,
+            session_slot=slot,
+            session_size=size,
+            exclude_skill_codes=exclude_skill_codes,
+        )
+    else:
+        target = skills[0]["skillCode"] if skills else DEFAULT_SKILL
+        skill_reason = ""
+
     # Practice selection only reads memory. Use one non-mutating snapshot for
     # the whole decision so four parallel exercise requests cannot serialize
     # behind a learner-scoped MemoryAgent writer lease.
     memories = snapshot_active_memory_records(user_id)
     type_scores, memory_ids = _type_scores(target, memories)
-    progression = _progression_context(target, memories)
-    practice_type = requested_practice_type or _stage_practice_type(target, progression["stage"], type_scores)
-    chosen_skill = next((item for item in skills if item["skillCode"] == target), None)
-
-    if requested_skill_code:
-        skill_reason = f"You explicitly selected {target}."
-    elif chosen_skill:
-        skill_reason = (
-            f"{target} has the strongest current learning need: mastery {chosen_skill['mastery']}, "
-            f"{chosen_skill['recentErrorCount']} recent error(s), and "
-            f"{chosen_skill['daysSincePractice']} day(s) since practice."
+    progression = _session_progression(
+        _progression_context(target, memories),
+        session_slot=slot,
+        requested_skill_code=requested_skill_code,
+    )
+    if requested_practice_type:
+        practice_type = requested_practice_type
+    elif slot is not None and progression["stage"] != "transfer":
+        # Rotate formats across the session for variety when type is free.
+        preferred = _SESSION_TYPE_ROTATION[slot % len(_SESSION_TYPE_ROTATION)]
+        ranked = {item["practiceType"]: item for item in type_scores}
+        practice_type = preferred if preferred in ranked else _stage_practice_type(
+            target, progression["stage"], type_scores
         )
     else:
-        skill_reason = f"{target} is the cold-start target."
+        practice_type = _stage_practice_type(target, progression["stage"], type_scores)
+    chosen_skill = next((item for item in skills if item["skillCode"] == target), None)
+
+    if not skill_reason:
+        if chosen_skill:
+            skill_reason = (
+                f"{target} has the strongest current learning need: mastery {chosen_skill['mastery']}, "
+                f"{chosen_skill['recentErrorCount']} recent error(s), and "
+                f"{chosen_skill['daysSincePractice']} day(s) since practice."
+            )
+        else:
+            skill_reason = f"{target} is the cold-start target."
     chosen_type = next((item for item in type_scores if item["practiceType"] == practice_type), None)
     if requested_practice_type:
         type_reason = f"You explicitly selected {practice_type}."
@@ -238,8 +347,10 @@ def recommend_next_action(
         "progressionStage": progression["stage"],
         "progressionReason": progression_reason,
         "errorFingerprint": progression.get("errorFingerprint"),
+        "sessionSlot": slot,
+        "sessionSize": size if slot is not None else None,
         "skillScores": skills[:8],
         "practiceTypeScores": type_scores,
-        "policy": "hybrid-need-effectiveness-progression-v2",
+        "policy": "hybrid-need-effectiveness-progression-v3-session-diverse",
         "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }

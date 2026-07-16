@@ -22,49 +22,56 @@ export default function DiagnosePage() {
   const showShortcuts = !loading && !result
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-7">
       {showOnboarding ? (
         <section className="relative overflow-hidden rounded-3xl border border-primary/25 bg-primary text-primary-foreground shadow-sm">
-          <div className="absolute -top-20 right-[-4rem] size-72 rounded-full bg-white/10 blur-2xl" />
-          <div className="relative grid gap-6 px-5 py-7 sm:px-8 sm:py-9 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-            <div className="max-w-3xl">
-              <div className="mb-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-primary-foreground/80">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/12 px-3 py-1">
-                  <Compass className="size-3.5" /> {t.nav.items.mission[0]}
+          <div className="pointer-events-none absolute -right-16 -top-16 size-56 rounded-full bg-white/10 blur-2xl" aria-hidden="true" />
+          <div className="relative grid gap-5 px-5 py-6 sm:px-7 sm:py-7 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+            <div className="max-w-2xl">
+              <div className="mb-2.5 flex flex-wrap items-center gap-2 text-xs font-medium text-primary-foreground/80">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/12 px-2.5 py-1">
+                  <Compass className="size-3.5" />
+                  {t.nav.items.mission[0]}
                 </span>
-                <span className="inline-flex items-center gap-1"><Clock3 className="size-3.5" /> 5–15 {t.common.minutesShort}</span>
+                <span className="inline-flex items-center gap-1">
+                  <Clock3 className="size-3.5" />
+                  5–15 {t.common.minutesShort}
+                </span>
               </div>
-              <h1 className="text-balance font-heading text-3xl font-semibold tracking-tight sm:text-4xl">{t.coach.title}</h1>
-              <p className="mt-3 max-w-2xl text-pretty text-sm leading-relaxed text-primary-foreground/80 sm:text-base">{t.coach.description}</p>
+              <h1 className="text-balance font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
+                {t.coach.title}
+              </h1>
+              <p className="mt-2 max-w-xl text-pretty text-sm leading-relaxed text-primary-foreground/80">
+                {t.coach.description}
+              </p>
             </div>
             <Link
               href="/coach"
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary-foreground px-5 py-3 text-sm font-semibold text-primary shadow-sm outline-none transition hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-3 focus-visible:ring-white/40"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary-foreground px-5 py-2.5 text-sm font-semibold text-primary shadow-sm outline-none transition hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-3 focus-visible:ring-white/40"
             >
-              <Sparkles className="size-4" /> {t.coach.setup.arrange} <ArrowRight className="size-4" />
+              <Sparkles className="size-4" />
+              {t.coach.setup.arrange}
+              <ArrowRight className="size-4" />
             </Link>
           </div>
         </section>
       ) : null}
 
       {showOnboarding ? (
-        <section className="rounded-2xl border border-border/80 bg-card px-5 py-5 sm:px-6">
-          <div className="max-w-3xl">
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/12 px-3 py-1 text-xs font-semibold text-primary">
-                <Sparkles className="size-3.5" />
-                {t.diagnose.onboarding.eyebrow}
-              </span>
-              <span className="text-xs text-muted-foreground">{t.diagnose.onboarding.time}</span>
-            </div>
-            <h2 className="text-balance font-heading text-xl font-semibold tracking-tight sm:text-2xl">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold tracking-wide text-primary uppercase">
+              {t.diagnose.onboarding.eyebrow}
+            </p>
+            <h2 className="mt-1 font-heading text-xl font-semibold tracking-tight">
               {t.diagnose.onboarding.title}
             </h2>
-            <p className="mt-2 max-w-2xl text-pretty text-sm leading-relaxed text-muted-foreground">
+            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
               {t.diagnose.onboarding.description}
             </p>
           </div>
-        </section>
+          <p className="shrink-0 text-xs text-muted-foreground">{t.diagnose.onboarding.time}</p>
+        </div>
       ) : null}
 
       <DiagnosticInput
@@ -90,12 +97,14 @@ export default function DiagnosePage() {
       )}
 
       {showShortcuts ? (
-        <section className="flex flex-col gap-4 border-t border-border/70 pt-7">
+        <section className="flex flex-col gap-3 border-t border-border/70 pt-6">
           <div>
-            <h2 className="font-heading text-xl font-semibold">{t.diagnose.onboarding.otherWays}</h2>
-            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-              {t.diagnose.onboarding.otherWaysDescription}
-            </p>
+            <h2 className="font-heading text-lg font-semibold">{t.diagnose.onboarding.otherWays}</h2>
+            {t.diagnose.onboarding.otherWaysDescription ? (
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t.diagnose.onboarding.otherWaysDescription}
+              </p>
+            ) : null}
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             {SHORTCUTS.map(({ key, href, icon: Icon }) => {
@@ -104,10 +113,10 @@ export default function DiagnosePage() {
                 <Link
                   key={key}
                   href={href}
-                  className="group flex min-w-0 items-start gap-3 rounded-2xl border border-border bg-card p-4 transition hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-sm focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
+                  className="group flex min-w-0 items-start gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
                 >
                   <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <Icon className="size-4.5" />
+                    <Icon className="size-4" />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center justify-between gap-2 font-heading text-sm font-semibold">

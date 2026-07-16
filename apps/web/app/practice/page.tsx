@@ -43,8 +43,15 @@ function PracticeFlow() {
     setLoading(true)
     try {
       const target = skill === "all" ? undefined : skill
+      // Pass session slots so the backend diversifies skills/stages/surface forms
+      // instead of cloning the same proper-noun capitalization error four times.
       const settled = await Promise.allSettled(
-        Array.from({ length: SESSION_LENGTH }, () => generatePractice(DEMO_USER_ID, target)),
+        Array.from({ length: SESSION_LENGTH }, (_, sessionSlot) =>
+          generatePractice(DEMO_USER_ID, target, undefined, {
+            sessionSlot,
+            sessionSize: SESSION_LENGTH,
+          }),
+        ),
       )
       const rejected = settled.find((result) => result.status === "rejected")
       if (rejected) throw rejected.reason

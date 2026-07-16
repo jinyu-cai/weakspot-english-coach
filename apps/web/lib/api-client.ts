@@ -646,6 +646,7 @@ export async function generatePractice(
   userId: string = DEMO_USER_ID,
   targetSkillCode?: string,
   practiceType?: PracticeType,
+  options?: { sessionSlot?: number; sessionSize?: number },
 ): Promise<PracticeExercise> {
   if (USE_MOCK) {
     await delay(900)
@@ -655,7 +656,13 @@ export async function generatePractice(
   }
   const { exercise } = await apiFetch<PracticeGenerateResponse>("/practice/generate", {
     method: "POST",
-    body: JSON.stringify(withOutputLanguage({ userId, targetSkillCode, practiceType })),
+    body: JSON.stringify(withOutputLanguage({
+      userId,
+      targetSkillCode,
+      practiceType,
+      sessionSlot: options?.sessionSlot,
+      sessionSize: options?.sessionSize,
+    })),
   })
   return exercise
 }

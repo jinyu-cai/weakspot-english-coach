@@ -282,9 +282,12 @@ def generate(
             req.userId,
             requested_skill_code=req.targetSkillCode,
             requested_practice_type=requested_type,
+            session_slot=req.sessionSlot,
+            session_size=req.sessionSize,
         )
         skill_code = decision.get("targetSkillCode") or DEFAULT_SKILL
         selected_type = decision.get("practiceType") or requested_type
+        progression_stage = decision.get("progressionStage", "replay")
         taxonomy = ERROR_TAXONOMY.get(skill_code, {"label": skill_code, "zhLabel": skill_code})
 
         recent_errors = list_recent_errors(
@@ -292,22 +295,51 @@ def generate(
             limit=50,
         )
         matching_examples = [
-            {"originalText": e.get("originalText"), "correctedText": e.get("correctedText")}
+            {
+                "originalText": e.get("originalText"),
+                "correctedText": e.get("correctedText"),
+            }
             for e in recent_errors
             if e.get("code") == skill_code
         ]
-        examples = matching_examples[:8]
+        # Rotate / thin examples across session slots so later items are not
+        # glued to the same proper noun or sentence the learner already saw.
+        slot = req.sessionSlot if req.sessionSlot is not None else 0
+        if matching_examples:
+            rotated = matching_examples[slot % len(matching_examples) :] + matching_examples[
+                : slot % len(matching_examples)
+            ]
+        else:
+            rotated = []
+        if progression_stage == "transfer":
+            # Transfer should not be a cloze of the original mistake.
+            examples = []
+        elif progression_stage == "variation":
+            examples = rotated[1:4] if len(rotated) > 1 else rotated[:2]
+        else:
+            examples = rotated[:3]
 
         try:
             memory_pack = retrieve_memory_pack(
                 req.userId,
                 f"Generate the next {selected_type} exercise for {skill_code}; use relevant "
-                "learning preferences, strategies, weaknesses, and practice outcomes.",
+                "learning preferences, strategies, weaknesses, and practice outcomes. "
+                "Vary names and contexts; do not keep drilling one entity.",
                 purpose="practice_generation",
             )
         except Exception:
             logger.exception("practice memory_retrieval_error user_id=%s", req.userId)
             memory_pack = {"text": "", "items": [], "estimatedTokens": 0, "traceId": None}
+
+        diversity_note = (
+            f"Session item {(req.sessionSlot or 0) + 1}"
+            f"/{req.sessionSize or 1}. "
+            "Create a distinct surface form from other items in this session. "
+            "Do not reuse the same proper noun/brand/person/place from recent errors."
+        )
+        decision_reason = " ".join(
+            part for part in (decision.get("reason"), diversity_note) if part
+        )
 
         ai_ex = generate_practice_exercise(
             skill_code=skill_code,
@@ -318,8 +350,8 @@ def generate(
             practice_type=selected_type,
             output_language=req.outputLanguage,
             memory_context=memory_pack.get("text"),
-            decision_reason=decision.get("reason"),
-            progression_stage=decision.get("progressionStage", "replay"),
+            decision_reason=decision_reason,
+            progression_stage=progression_stage,
             error_fingerprint=decision.get("errorFingerprint"),
         )
 
