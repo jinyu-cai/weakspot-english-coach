@@ -18,6 +18,48 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-16 — UI rebalance, timed feedback, mixed practice diversity
+
+Date: 2026-07-16 UTC
+
+Branch: `ui/learning-spotlight-preview` → `main`
+
+GitHub status: PR #67 merged into `main` at
+`61a35bce80fdf764dd18ace31d6bdc0f790c2303`. Vercel Production reported success
+for that commit.
+
+Deploy status: LIVE. Backend archive `weakspot-api-61a35bc.tar.gz` (SHA-256
+`69d323df2232dc77b60dcd69dfc9fcff7ed8c97fd3078832a3f4b8880d20f930`) is deployed
+on both `oracle-us-sj` (normal production origin) and `alibaba-qwen` (demo
+standby, same app SHA). Production `.env` hashes were preserved on both hosts;
+table/TTL setup passed; containers are healthy. Cloudflare continues to route
+`enapi.jinxxx.de` to Oracle. Public health and the production frontend both
+return 200.
+
+Summary:
+
+- Rebalanced the home/diagnose UI on the original warm shell: necessary
+  guidance remains, long walls of text are reduced, and visual hierarchy is
+  clearer.
+- Coach timed missions freeze the writing timer after submit/finish so feedback
+  is never auto-closed by the original duration; voice duration kicks save the
+  transcript and hand off to analysis.
+- Mixed practice sessions diversify skills, progression stages, exercise types,
+  and surface forms so four parallel generates do not clone one proper-noun
+  capitalization error.
+
+Files changed: practice decision/generation API, Coach/voice client, home and
+shell UI, i18n, practice page session slots.
+
+Tests run: frontend TypeScript; decision session-diversity helper checks;
+Oracle/Alibaba local health; public `enapi` health; Vercel production status.
+
+Known issues: Alibaba remains healthy but is not the live Cloudflare origin
+outside the final demo window.
+
+Next step: design a learner-satisfaction / motivation loop so users keep
+returning after early wins.
+
 ## 2026-07-15 — Reliable 7-day plans and concurrent chat analysis
 
 Date: 2026-07-15 UTC
