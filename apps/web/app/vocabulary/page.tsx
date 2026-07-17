@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
-import { diagnose, generateCoachMission, getHistory } from "@/lib/api-client"
+import { diagnose, generateCoachMission, getHistory, updateActivityRun } from "@/lib/api-client"
 import { DEMO_USER_ID } from "@/lib/mock-data"
 import type { CoachMission, DiagnoseResponse } from "@/lib/types"
 
@@ -56,6 +56,12 @@ export default function VocabularyPage() {
   async function createSituation() {
     setCreating(true)
     try {
+      if (mission?.activityRunId && !diagnostic) {
+        await updateActivityRun(mission.activityRunId, {
+          status: answer.trim() ? "abandoned" : "skipped",
+          ...(answer.trim() ? { abandonReason: "Learner requested another vocabulary situation." } : { skipReason: "Learner requested another vocabulary situation." }),
+        })
+      }
       const next = await generateCoachMission({
         durationMinutes: 5,
         modality: "text",
@@ -90,7 +96,33 @@ export default function VocabularyPage() {
             `Meanings to express: ${vocabulary.conceptsToExpress.join("; ")}`,
           ].join("\n")
         : undefined
-      const result = await diagnose(DEMO_USER_ID, text, "fast", analysisContext)
+      if (mission?.activityRunId) {
+        await updateActivityRun(mission.activityRunId, {
+          status: "started",
+          hintLevel: showHint ? 1 : 0,
+          attemptCount: 1,
+        })
+      }
+      const result = await diagnose(
+        DEMO_USER_ID,
+        text,
+        "fast",
+        analysisContext,
+        mission?.activityRunId
+          ? {
+              activityRunId: mission.activityRunId,
+              missionType: "vocabulary_in_action",
+              targetSkills: mission.targetSkills,
+              modality: "text",
+              hintLevel: showHint ? 1 : 0,
+              playCount: 0,
+              contextKey: `vocabulary:${mission.id}`,
+              taskDifficulty: 0.65,
+              delayed: false,
+              novelContext: true,
+            }
+          : undefined,
+      )
       setSubmittedAnswer(text)
       setDiagnostic(result)
       await refreshEvidenceCount()
@@ -162,7 +194,16 @@ export default function VocabularyPage() {
                 disabled={analyzing}
               />
               <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-                <Button variant="outline" onClick={() => setShowHint(true)} disabled={showHint}>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowHint(true)
+                    if (mission.activityRunId) {
+                      void updateActivityRun(mission.activityRunId, { hintLevel: 1 })
+                    }
+                  }}
+                  disabled={showHint}
+                >
                   <Lightbulb className="size-4" /> {t.vocabulary.hint}
                 </Button>
                 <span className="text-xs leading-relaxed text-muted-foreground">

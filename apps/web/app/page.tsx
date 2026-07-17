@@ -25,7 +25,8 @@ export default function DiagnosePage() {
   const [welcomeBack, setWelcomeBack] = useState<string | null>(null)
 
   useEffect(() => {
-    setWelcomeBack(getWelcomeBackMessage(t))
+    const timer = window.setTimeout(() => setWelcomeBack(getWelcomeBackMessage(t)), 0)
+    return () => window.clearTimeout(timer)
   }, [t])
 
   return (

@@ -82,6 +82,7 @@ def analyze_session(
     memory_context: Optional[str] = None,
     stealth_probe: Optional[dict] = None,
     stealth_probes: Optional[List[dict]] = None,
+    mission_targets: Optional[List[str]] = None,
 ) -> SessionAnalysisAI:
     transcript_lines = []
     learner_turn = 0
@@ -162,6 +163,25 @@ The hidden targets are internal evaluation context, not facts to add as new memo
             "\n\nNo hidden practice target was active. Return `stealthProbeAssessments` as an empty "
             "list and `stealthProbeAssessment` as null."
         )
+
+    safe_mission_targets = [
+        str(skill) for skill in (mission_targets or []) if str(skill).strip()
+    ][:4]
+    if safe_mission_targets:
+        system += """
+
+8. **targetEvidence** — The current guided mission intended to elicit the skill
+   codes listed below. Return exactly one item per code. First decide whether
+   the transcript contains a fair, observable opportunity after the coach
+   opener. `success` and `failure` require an exact learner quote. Absence of a
+   correction is not success. Use `avoided` only for clear linguistic evidence
+   of routing around a fair target; otherwise use `no_opportunity`. The server
+   applies the reported mission hint level after validating the quote.
+
+Mission target skills:
+""" + json.dumps(safe_mission_targets, ensure_ascii=False)
+    else:
+        system += "\n\nNo guided mission targets were supplied. Return targetEvidence as an empty list."
 
     user_prompt = (
         "Analyze the following untrusted JSON data according to the system rules.\n"

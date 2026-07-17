@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.api.routes import admin, auth, chat, chat_import, coach, diagnose, health, history, input_learning, memory, models, notes, plan, practice, profile, realtime, stats
+from app.api.routes import admin, auth, chat, chat_import, coach, diagnose, health, history, input_learning, learning, memory, models, notes, plan, practice, profile, realtime, stats
 from app.db.repositories import MemoryWriteClaimLostError
 from app.services.memory_write_service import MemoryWriteBusyError
 
@@ -52,6 +52,7 @@ app.include_router(notes.router, prefix="/api/v1", tags=["notes"])
 app.include_router(stats.router, prefix="/api/v1", tags=["stats"])
 app.include_router(memory.router, prefix="/api/v1", tags=["memory"])
 app.include_router(input_learning.router, prefix="/api/v1", tags=["input-learning"])
+app.include_router(learning.router, prefix="/api/v1", tags=["learning"])
 
 
 @app.get("/")

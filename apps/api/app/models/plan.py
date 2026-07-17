@@ -1,4 +1,4 @@
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -77,3 +77,8 @@ class GeneratePlanRequest(BaseModel):
     userId: str
     errorScope: ErrorScope = "weekly"
     outputLanguage: OutputLanguage = "en"
+
+
+class UpdatePlanTaskRequest(BaseModel):
+    status: Literal["assigned", "started", "completed", "skipped"]
+    score: Optional[int] = Field(default=None, ge=0, le=100)

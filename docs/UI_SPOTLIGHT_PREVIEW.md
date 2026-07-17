@@ -1,7 +1,7 @@
 # UI Spotlight Preview（本地/分支预览）
 
-> **状态**：仅用于验证与设计评审。  
-> **分支**：`ui/learning-spotlight-preview`  
+> **状态**：仅用于验证与设计评审。
+> **分支**：`ui/learning-spotlight-preview`
 > **边界**：不合并 `main`、不部署生产、不改后端与数据生命周期。
 
 ## 设计主题：聚光灯学习台（Spotlight Study Desk）

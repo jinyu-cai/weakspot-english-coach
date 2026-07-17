@@ -11,8 +11,10 @@ from app.models.coach import (
     CoachSpeechRequest,
     InputLab2TranscriptMissionRequest,
 )
+from app.models.learning import CreateActivityRunRequest
 from app.services.ai_client import LLMProviderConfig
 from app.services.coach_service import generate_coach_mission, generate_transcript_mission
+from app.services.learning_service import create_activity_run, recommend_coach_mission
 from app.services.tts_service import (
     TTSNotConfiguredError,
     TTSProviderError,
@@ -32,6 +34,16 @@ def create_coach_mission(
 ):
     request_id = uuid4().hex[:10]
     try:
+        decision = recommend_coach_mission(
+            identity.user_id,
+            modality=req.modality,
+            preferred_type=req.preferredType,
+        )
+        effective_req = (
+            req
+            if req.preferredType
+            else req.model_copy(update={"preferredType": decision["recommendedType"]})
+        )
         try:
             learner_skills = sorted(
                 list_skills(identity.user_id),
@@ -54,10 +66,17 @@ def create_coach_mission(
             logger.exception("coach[%s] scenario_history_error", request_id)
             recent_scenario_families = []
 
-        return generate_coach_mission(
-            req,
+        response = generate_coach_mission(
+            effective_req,
             learner_skills=learner_skills,
             recent_scenario_families=recent_scenario_families,
+            recommended_skills=decision["targetSkills"],
+            learning_context=(
+                f"Goals: {decision['goalContext']}\n"
+                f"Preferences: {decision['preferenceContext']}\n"
+                f"Strategies: {decision['strategyContext']}\n"
+                f"Selection reason: {decision['reason']}"
+            ),
             llm_provider=llm_provider,
             max_tokens=(
                 4000
@@ -66,6 +85,33 @@ def create_coach_mission(
             ),
             trace_id=request_id,
         )
+        mission = response.mission
+        run = create_activity_run(
+            identity.user_id,
+            CreateActivityRunRequest(
+                activityType="coach",
+                sourceId=mission.id,
+                title=mission.title,
+                taskType=mission.type,
+                goal=mission.taskPrompt,
+                targetSkills=mission.targetSkills,
+                modality=effective_req.modality,
+                difficulty=effective_req.energy,
+                estimatedMinutes=effective_req.durationMinutes,
+            ),
+        )
+        payload = response.model_dump(mode="json")
+        payload["mission"]["activityRunId"] = run["id"]
+        payload["mission"]["schedulerDecision"] = {
+            "targetSkills": decision["targetSkills"],
+            "recommendedType": decision["recommendedType"],
+            "reason": decision["reason"],
+            "skillScores": decision["skillScores"][:8],
+            "missionTypeScores": decision["missionTypeScores"],
+            "policy": decision["policy"],
+            "generatedAt": decision["generatedAt"],
+        }
+        return CoachMissionResponse.model_validate(payload)
     except ValueError as exc:
         logger.exception("coach[%s] ai_error", request_id)
         raise HTTPException(

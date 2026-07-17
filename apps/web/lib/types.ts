@@ -79,6 +79,16 @@ export interface CoachMission {
   taskPrompt: string
   successCriteria: string[]
   hints: string[]
+  activityRunId?: string | null
+  schedulerDecision?: {
+    targetSkills: string[]
+    recommendedType: CoachMissionType
+    reason: string
+    policy: string
+    generatedAt: string
+    skillScores?: Array<Record<string, unknown>>
+    missionTypeScores?: Array<Record<string, unknown>>
+  } | null
   scene?: CoachSceneMission | null
   picture?: CoachPictureMission | null
   listening?: CoachListeningMission | null
@@ -212,6 +222,117 @@ export interface DiagnosticResult {
   errors: EnglishError[]
   skillUpdates: SkillUpdate[]
   recommendedNextActionsZh: string[]
+  targetEvidence?: TargetEvidence[]
+}
+
+export interface TargetEvidence {
+  skillCode: string
+  opportunityPresent: boolean
+  outcome: "success" | "failure" | "avoided" | "no_opportunity"
+  evidenceQuote: string
+  confidence: number
+}
+
+export interface DiagnoseLearningContext {
+  activityRunId: string
+  missionType: string
+  targetSkills: string[]
+  modality: string
+  hintLevel: number
+  playCount: number
+  contextKey?: string
+  taskDifficulty?: number
+  delayed?: boolean
+  novelContext?: boolean
+}
+
+export type ActivityRunStatus = "assigned" | "started" | "completed" | "abandoned" | "skipped"
+
+export interface ActivityRun {
+  id: string
+  userId: string
+  activityType: "diagnose" | "coach" | "practice" | "plan" | "input_learning" | "chat" | "vocabulary"
+  sourceId?: string | null
+  parentRunId?: string | null
+  title?: string | null
+  taskType?: string | null
+  goal?: string | null
+  targetSkills: string[]
+  modality?: string | null
+  difficulty?: string | null
+  estimatedMinutes?: number | null
+  status: ActivityRunStatus
+  hintLevel: number
+  playCount: number
+  attemptCount: number
+  completedCriteria: number[]
+  assignedAt: string
+  startedAt?: string | null
+  completedAt?: string | null
+  abandonedAt?: string | null
+  skippedAt?: string | null
+  createdAt: string
+  updatedAt: string
+  version: number
+}
+
+export interface LearningState {
+  userId: string
+  skillCode: string
+  label: string
+  zhLabel: string
+  abilityMean: number | null
+  abilityUncertainty: number
+  coverageStatus: "unassessed" | "exploring" | "enough_evidence"
+  opportunityCount: number
+  independentSuccessCount: number
+  hintedSuccessCount: number
+  failureCount: number
+  avoidedCount: number
+  noOpportunityCount: number
+  delayedIndependentTransferCount: number
+  contexts: string[]
+  taskTypes: string[]
+  modalities: Record<string, {
+    abilityMean: number | null
+    opportunityCount: number
+    lastOutcome?: string
+  }>
+  retentionStabilityDays?: number | null
+  retentionDifficulty?: number | null
+  dueAt?: string | null
+  lastEvidenceAt?: string | null
+  lastIndependentUseAt?: string | null
+  lastOutcome?: string | null
+}
+
+export interface EvidenceEvent {
+  id: string
+  clientEventId: string
+  userId: string
+  runId?: string | null
+  sourceId?: string | null
+  skillCode: string
+  outcome: "success" | "hinted_success" | "failure" | "avoided" | "no_opportunity"
+  opportunityPresent: boolean
+  supportLevel: number
+  modality: string
+  taskType: string
+  taskDifficulty: number
+  evaluatorConfidence: number
+  evidenceWeight: number
+  contextKey?: string | null
+  novelContext: boolean
+  delayed: boolean
+  evidenceQuote: string
+  createdAt: string
+}
+
+export interface LearningOverview {
+  states: LearningState[]
+  recentRuns: ActivityRun[]
+  recentEvidence: EvidenceEvent[]
+  generatedAt: string
 }
 
 export interface PlanExercise {
@@ -220,6 +341,7 @@ export interface PlanExercise {
   question: string
   answer: string
   explanationZh: string
+  activityRunId?: string | null
 }
 
 export interface LearningPlanTask {
@@ -229,6 +351,11 @@ export interface LearningPlanTask {
   practiceType: PracticeType
   estimatedMinutes: number
   completed: boolean
+  status?: "assigned" | "started" | "completed" | "skipped"
+  activityRunId?: string | null
+  score?: number | null
+  startedAt?: string | null
+  completedAt?: string | null
   exercises: PlanExercise[]
 }
 
@@ -246,6 +373,15 @@ export interface LearningPlan {
   days: LearningPlanDay[]
   createdAt: string
   updatedAt: string
+  version?: number
+  policy?: string
+  currentDay?: number
+  nextTaskId?: string | null
+  progress?: {
+    completedTasks: number
+    totalTasks: number
+    percent: number
+  }
 }
 
 export interface PracticeExercise {
@@ -257,6 +393,15 @@ export interface PracticeExercise {
   question: string
   answer?: string
   explanationZh?: string
+  activityRunId?: string | null
+  sessionId?: string | null
+  sequenceIndex?: number
+  decision?: {
+    reason?: string
+    progressionStage?: string
+    sessionPolicy?: string
+    sequenceIndex?: number
+  }
   createdAt: string
 }
 
@@ -276,6 +421,14 @@ export interface DailyStatsDay {
   averageScore: number
   errorsFound: number
   minutesEstimated: number
+  minutesTracked?: number
+  completedActivities?: number
+  learningOpportunities?: number
+  independentSuccesses?: number
+  assistedSuccesses?: number
+  failedOpportunities?: number
+  noOpportunities?: number
+  delayedTransfers?: number
   active: boolean
 }
 
@@ -289,6 +442,14 @@ export interface DailyStatsSummary {
   totalErrorsFound: number
   averageScore: number
   minutesEstimated: number
+  minutesTracked?: number
+  completedActivities?: number
+  learningOpportunities?: number
+  independentSuccesses?: number
+  assistedSuccesses?: number
+  failedOpportunities?: number
+  noOpportunities?: number
+  delayedTransfers?: number
 }
 
 export interface DailyAchievement {
@@ -441,6 +602,17 @@ export interface MemoryPack {
   tokenBudget: number
   totalCandidates: number
   traceId?: string | null
+  weaknessOverview: WeaknessOverview
+}
+
+export interface WeaknessOverview {
+  totalActive: number
+  includedCount: number
+  complete: boolean
+  format: "none" | "metrics" | "index" | "partial_index" | "omitted"
+  estimatedTokens: number
+  memoryIds: string[]
+  suppressed: boolean
 }
 
 export interface MemoryTraceSelection {
@@ -461,6 +633,7 @@ export interface MemoryTrace {
   estimatedTokens: number
   tokenBudget: number
   createdAt: string
+  weaknessOverview?: WeaknessOverview
 }
 
 export interface NextActionDecision {
@@ -581,6 +754,28 @@ export interface InputLearningSource {
   savedMemoryIds?: string[]
   items?: InputLearningItem[]
   attentionMission?: InputAttentionMission | null
+  activityRunId?: string | null
+  productionAttemptCount?: number
+  delayedReviewDueAt?: string | null
+  lastProductionAt?: string | null
+}
+
+export type InputLearningAttemptKind = "retell" | "required_reuse" | "delayed_retrieval"
+
+export interface InputLearningAttempt {
+  id: string
+  kind: InputLearningAttemptKind
+  passed: boolean
+  feedback: string
+  wordCount: number
+  matchedExpressions: string[]
+  requiredExpressions: string[]
+  delayedEligible: boolean
+  countedAsDelayed: boolean
+  dueAt?: string | null
+  activityRunId: string
+  createdAt: string
+  duplicate?: boolean
 }
 
 export interface InputLearningAnalyzeRequest {
@@ -615,6 +810,10 @@ export interface ChatSession {
   starterMessage?: string | null
   scenarioFamily?: string | null
   scenarioKey?: string | null
+  missionRunId?: string | null
+  missionType?: string | null
+  missionTargetSkills?: string[]
+  learningRunId?: string | null
   textModel?: TextChatModel | null
   textModelMode?: TextChatModelMode | null
   llmServerModelId?: string | null
@@ -850,5 +1049,20 @@ export interface DailyStatsResponse {
   summary: DailyStatsSummary
   achievements: DailyAchievement[]
   nextBestAction: NextBestAction
+  learning?: {
+    coverage: {
+      unassessed: number
+      exploring: number
+      enoughEvidence: number
+      tracked: number
+      total: number
+    }
+    assistanceRate: number
+    independentSuccesses: number
+    assistedSuccesses: number
+    failedOpportunities: number
+    noOpportunities: number
+    delayedTransfers: number
+  }
   generatedAt: string
 }

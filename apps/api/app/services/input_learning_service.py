@@ -14,6 +14,7 @@ import hashlib
 import logging
 import re
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import uuid4
 
@@ -31,6 +32,7 @@ from app.db.repositories import (
     now_iso,
     release_input_learning_source_claim,
     save_input_learning_item,
+    save_input_learning_source,
     save_memory_with_input_learning_claim,
 )
 from app.models.input_learning import (
@@ -38,7 +40,9 @@ from app.models.input_learning import (
     AttentionMission,
     InputLearningAIItem,
     InputLearningAIResult,
+    SubmitInputLearningAttemptRequest,
 )
+from app.models.learning import CreateActivityRunRequest, RecordEvidenceRequest, UpdateActivityRunRequest
 from app.models.memory import MemoryCandidate
 from app.services.ai_client import LLMProviderConfig, parse_with_model
 from app.services.memory_service import (
@@ -47,6 +51,7 @@ from app.services.memory_service import (
     retrieve_memory_pack,
 )
 from app.services.memory_write_service import current_memory_write_claim
+from app.services.learning_service import create_activity_run, record_evidence, update_activity_run
 from app.services.output_language import language_instruction
 
 
@@ -533,6 +538,22 @@ def analyze_input_learning(
             "createdAt": now,
         })
 
+    source_run = create_activity_run(
+        user_id,
+        CreateActivityRunRequest(
+            activityType="input_learning",
+            sourceId=source_id,
+            title=req.title,
+            taskType="input_to_output",
+            goal=req.goal or "Retell and reuse useful language from this input.",
+            targetSkills=["vocab.word_choice", "discourse.coherence"],
+            modality="reading" if req.sourceType in {"article", "book", "work"} else "mixed_input",
+            difficulty="personalized",
+            estimatedMinutes=10,
+        ),
+    )
+    delayed_due = datetime.now(timezone.utc) + timedelta(days=1)
+
     source = {
         "id": source_id,
         "userId": user_id,
@@ -547,6 +568,9 @@ def analyze_input_learning(
         "contentCharacters": len(material),
         "contentHash": hashlib.sha256(material.encode("utf-8")).hexdigest() if material else None,
         "itemCount": len(item_rows),
+        "activityRunId": source_run["id"],
+        "productionAttemptCount": 0,
+        "delayedReviewDueAt": delayed_due.isoformat().replace("+00:00", "Z"),
         "attentionMission": attention_mission.model_dump() if attention_mission else None,
         "memoryRecall": {
             "traceId": memory_pack.get("traceId"),
@@ -665,6 +689,172 @@ def get_input_learning_source_for_user(user_id: str, source_id: str) -> Optional
         return None
     items = list_input_learning_items(user_id, source_id)
     return {**_public_row(source), "items": [_public_row(item) for item in items]}
+
+
+def _normalized_words(value: str) -> list[str]:
+    return re.findall(r"[a-z]+(?:'[a-z]+)?", value.casefold())
+
+
+def _contains_expression(response_text: str, expression: str) -> bool:
+    response_words = _normalized_words(response_text)
+    expression_words = _normalized_words(expression)
+    if not expression_words:
+        return False
+    width = len(expression_words)
+    return any(
+        response_words[index:index + width] == expression_words
+        for index in range(max(0, len(response_words) - width + 1))
+    )
+
+
+def submit_input_learning_attempt(
+    user_id: str,
+    source_id: str,
+    req: SubmitInputLearningAttemptRequest,
+) -> dict:
+    """Score learner output without treating passive consumption as mastery."""
+    source = repo_get_input_learning_source(user_id, source_id)
+    if not source or source.get("status") != "complete":
+        raise LookupError("Input-learning source not found.")
+
+    prior_attempts = list(source.get("productionAttempts") or [])
+    duplicate = next(
+        (row for row in prior_attempts if row.get("clientAttemptId") == req.clientAttemptId),
+        None,
+    )
+    if duplicate:
+        return {**duplicate, "duplicate": True}
+
+    all_items = list_input_learning_items(user_id, source_id)
+    requested_ids = set(req.targetItemIds)
+    selected = [row for row in all_items if row.get("id") in requested_ids]
+    if not selected:
+        selected = [
+            row for row in all_items
+            if row.get("kind") in DURABLE_ITEM_KINDS
+        ][: (3 if req.kind == "retell" else 6 if req.kind == "delayed_retrieval" else 2)]
+    if req.kind != "retell" and not selected:
+        raise ValueError("Select at least one reusable expression.")
+
+    matched = [
+        row for row in selected
+        if _contains_expression(req.responseText, str(row.get("expression") or ""))
+    ]
+    words = _normalized_words(req.responseText)
+    sentence_count = len([
+        chunk for chunk in re.split(r"[.!?]+", req.responseText) if chunk.strip()
+    ])
+    due_at_text = str(source.get("delayedReviewDueAt") or "")
+    if not due_at_text:
+        try:
+            created_at = datetime.fromisoformat(
+                str(source.get("createdAt") or "").replace("Z", "+00:00")
+            )
+            due_at_text = (created_at + timedelta(days=1)).isoformat().replace("+00:00", "Z")
+        except ValueError:
+            due_at_text = ""
+    try:
+        due_at = datetime.fromisoformat(due_at_text.replace("Z", "+00:00"))
+    except ValueError:
+        due_at = datetime.now(timezone.utc) + timedelta(days=1)
+    delayed_eligible = datetime.now(timezone.utc) >= due_at
+
+    if req.kind == "retell":
+        skill_code = "discourse.coherence"
+        passed = len(words) >= 25 and sentence_count >= 2 and (not selected or len(matched) >= 1)
+        feedback = (
+            "Retell evidence recorded: you produced a multi-sentence retell and reused source language."
+            if passed
+            else "Add at least two connected sentences (about 25 words) and naturally reuse one target expression."
+        )
+    else:
+        skill_code = "vocab.word_choice"
+        required_match_count = min(2, len(selected)) if req.kind == "delayed_retrieval" else len(selected)
+        passed = len(words) >= 8 and len(matched) >= required_match_count
+        missing = [row.get("expression") for row in selected if row not in matched]
+        feedback = (
+            (
+                "You recalled and reused at least two expressions in a new response."
+                if req.kind == "delayed_retrieval"
+                else "All required expressions were used in a new response."
+            )
+            if passed
+            else (
+                "Recall and reuse at least two expressions in a meaningful response of at least 8 words."
+                if req.kind == "delayed_retrieval"
+                else f"Reuse every target in a meaningful response of at least 8 words. Missing: {', '.join(str(item) for item in missing)}"
+            )
+        )
+        if req.kind == "delayed_retrieval" and not delayed_eligible:
+            feedback += " This is useful immediate reuse, but it is too early to count as delayed retrieval."
+
+    run = create_activity_run(
+        user_id,
+        CreateActivityRunRequest(
+            activityType="input_learning",
+            sourceId=source_id,
+            parentRunId=source.get("activityRunId"),
+            title=f"{req.kind.replace('_', ' ').title()}: {source.get('title', '')}"[:240],
+            taskType=req.kind,
+            goal="Produce English from memory and reuse source language in a new context.",
+            targetSkills=[skill_code],
+            modality="writing",
+            difficulty="delayed" if req.kind == "delayed_retrieval" else "immediate",
+            estimatedMinutes=5,
+        ),
+    )
+    update_activity_run(user_id, run["id"], UpdateActivityRunRequest(status="started"))
+    event_key = hashlib.sha256(
+        f"{source_id}\0{req.clientAttemptId}".encode("utf-8")
+    ).hexdigest()[:32]
+    evidence = record_evidence(
+        user_id,
+        RecordEvidenceRequest(
+            clientEventId=f"input:{event_key}",
+            runId=run["id"],
+            sourceId=source_id,
+            skillCode=skill_code,
+            outcome="success" if passed else "failure",
+            opportunityPresent=True,
+            supportLevel=1 if req.hintUsed else 0,
+            modality="writing",
+            taskType=req.kind,
+            taskDifficulty=0.75 if req.kind == "delayed_retrieval" else 0.6,
+            evaluatorConfidence=0.8,
+            contextKey=f"input:{source.get('sourceType', 'other')}:{req.kind}",
+            novelContext=req.kind in {"required_reuse", "delayed_retrieval"},
+            delayed=req.kind == "delayed_retrieval" and delayed_eligible,
+            evidenceQuote=req.responseText[:600],
+        ),
+    )
+    update_activity_run(user_id, run["id"], UpdateActivityRunRequest(status="completed", attemptCount=1))
+    parent_run_id = source.get("activityRunId")
+    if parent_run_id:
+        update_activity_run(user_id, parent_run_id, UpdateActivityRunRequest(status="completed"))
+
+    result = {
+        "id": f"input_attempt_{event_key[:16]}",
+        "clientAttemptId": req.clientAttemptId,
+        "kind": req.kind,
+        "passed": passed,
+        "feedback": feedback,
+        "wordCount": len(words),
+        "matchedExpressions": [row.get("expression") for row in matched],
+        "requiredExpressions": [row.get("expression") for row in selected],
+        "delayedEligible": delayed_eligible,
+        "countedAsDelayed": req.kind == "delayed_retrieval" and delayed_eligible,
+        "dueAt": due_at_text,
+        "activityRunId": run["id"],
+        "evidence": evidence,
+        "createdAt": now_iso(),
+    }
+    persisted_result = {key: value for key, value in result.items() if key != "evidence"}
+    source["productionAttempts"] = [*prior_attempts, persisted_result][-20:]
+    source["productionAttemptCount"] = len(source["productionAttempts"])
+    source["lastProductionAt"] = result["createdAt"]
+    source["updatedAt"] = result["createdAt"]
+    save_input_learning_source(source)
+    return {**result, "duplicate": False}
 
 
 def delete_input_learning_source_for_user(user_id: str, source_id: str) -> bool:

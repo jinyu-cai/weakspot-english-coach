@@ -106,7 +106,7 @@ export default function DailyWinsPage() {
               icon={<Target className="size-5" />}
               label={t.stats.focusMinutes}
               value={`${data.summary.minutesEstimated}`}
-              note={t.stats.estimatedWeek}
+              note={data.summary.minutesTracked ? t.stats.trackedWeek : t.stats.estimatedWeek}
             />
             <StatTile
               icon={<Trophy className="size-5" />}
@@ -115,6 +115,33 @@ export default function DailyWinsPage() {
               note={t.stats.acrossPractice}
             />
           </div>
+
+          {data.learning ? (
+            <Card className="border-primary/20">
+              <CardHeader>
+                <CardTitle>{t.stats.evidenceTitle}</CardTitle>
+                <CardDescription>{t.stats.evidenceDescription}</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <MiniMetric label={t.stats.independentSuccesses} value={data.learning.independentSuccesses} />
+                <MiniMetric label={t.stats.assistedSuccesses} value={data.learning.assistedSuccesses} />
+                <MiniMetric label={t.stats.assistanceRate} value={data.learning.assistanceRate} suffix="%" />
+                <MiniMetric label={t.stats.delayedTransfers} value={data.learning.delayedTransfers} />
+                <div className="rounded-2xl border border-primary/20 bg-background/70 p-4 sm:col-span-2 lg:col-span-4">
+                  <div className="mb-2 flex items-center justify-between text-sm">
+                    <span>{t.stats.coverage}</span>
+                    <span className="text-muted-foreground">
+                      {data.learning.coverage.enoughEvidence}/{data.learning.coverage.total} {t.stats.enoughEvidence}
+                    </span>
+                  </div>
+                  <Progress value={(data.learning.coverage.enoughEvidence / data.learning.coverage.total) * 100} className="h-2" />
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {data.learning.coverage.unassessed} {t.stats.unassessed} · {data.learning.coverage.exploring} {t.stats.exploring}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
 
           <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
             <Card className="border-warning/20">
@@ -261,10 +288,10 @@ function StatTile({
   )
 }
 
-function MiniMetric({ label, value }: { label: string; value: number }) {
+function MiniMetric({ label, value, suffix = "" }: { label: string; value: number; suffix?: string }) {
   return (
     <div className="rounded-2xl border border-warning/20 bg-background/70 p-4">
-      <div className="font-heading text-2xl font-bold tabular-nums">{value}</div>
+      <div className="font-heading text-2xl font-bold tabular-nums">{value}{suffix}</div>
       <div className="text-xs text-muted-foreground">{label}</div>
     </div>
   )

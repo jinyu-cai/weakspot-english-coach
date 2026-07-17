@@ -13,9 +13,11 @@ from uuid import uuid4
 from app.config import settings
 from app.db.repositories import (
     get_memory,
+    expire_memory_if_due,
     list_memories,
     now_iso,
     save_memory_trace,
+    touch_memory_access,
 )
 from app.models.memory import MemoryCandidate
 from app.services.embedding_client import embed_text, embed_texts
@@ -79,6 +81,9 @@ WEAKNESS_GRADUATION_THRESHOLDS = {
 WEAKNESS_PRACTICE_EVIDENCE_LIMIT = 20
 RESOLVED_WEAKNESS_RETENTION_DAYS = 180
 WEAKNESS_PROBE_HISTORY_LIMIT = 20
+WEAKNESS_DETAIL_LIMIT = 3
+WEAKNESS_DETAIL_TOKEN_LIMIT = 140
+WEAKNESS_DETAIL_MIN_TOKEN_RESERVE = 64
 
 
 def utc_now() -> datetime:
@@ -439,6 +444,27 @@ def snapshot_active_memory_records(user_id: str) -> list[dict]:
     ``list_active_memory_records``.
     """
     return _active_memories(user_id, expire_due=False)
+
+
+def _retrieval_memory_snapshot(user_id: str) -> list[dict]:
+    """Read active memory while conditionally archiving only rows already due."""
+    now = utc_now()
+    now_text = iso_at(now)
+    active: list[dict] = []
+    for memory in list_memories(user_id, limit=settings.memory_max_items_per_user + 100):
+        if memory.get("status", ACTIVE) != ACTIVE:
+            continue
+        expires_at = parse_iso(memory.get("expiresAt"))
+        if expires_at and expires_at <= now and not memory.get("pinned"):
+            expire_memory_if_due(
+                user_id,
+                str(memory["id"]),
+                now_text,
+                _ttl_after(now),
+            )
+            continue
+        active.append(memory)
+    return active
 
 
 def _matching_memories(
@@ -1246,7 +1272,181 @@ def _recency(memory: dict, now: datetime) -> float:
     return math.pow(0.5, age_days / half_life)
 
 
-@memory_write_locked
+def _weakness_overview_sort_key(memory: dict, now: datetime) -> tuple:
+    """Put the weaknesses most useful to a downstream model first."""
+    retention = memory.get("retention") if isinstance(memory.get("retention"), dict) else {}
+    due_at = parse_iso(retention.get("dueAt"))
+    due = 1 if due_at is None or due_at <= now else 0
+    return (
+        -int(bool(memory.get("pinned"))),
+        -due,
+        -float(retention.get("relapseRisk", 0.0) or 0.0),
+        -float(memory.get("importance", 0.5) or 0.5),
+        -int(memory.get("observationCount", 1) or 1),
+        _weakness_skill_code(str(memory.get("canonicalKey") or "")),
+    )
+
+
+def _weakness_min_mastery(memory: dict) -> Optional[int]:
+    modality_mastery = memory.get("modalityMastery")
+    if not isinstance(modality_mastery, dict):
+        return None
+    values: list[float] = []
+    for state in modality_mastery.values():
+        if not isinstance(state, dict) or state.get("mastery") is None:
+            continue
+        try:
+            values.append(float(state["mastery"]))
+        except (TypeError, ValueError):
+            continue
+    return round(min(values)) if values else None
+
+
+def _weakness_due_label(memory: dict, now: datetime) -> Optional[str]:
+    retention = memory.get("retention") if isinstance(memory.get("retention"), dict) else {}
+    due_at = parse_iso(retention.get("dueAt"))
+    if due_at is None:
+        return None
+    if due_at <= now:
+        return "due"
+    days = max(1, math.ceil((due_at - now).total_seconds() / 86400))
+    return f"next={days}d"
+
+
+def _weakness_verification_state(memory: dict) -> str:
+    verification = memory.get("verification")
+    if isinstance(verification, dict):
+        return str(verification.get("state") or "legacy")
+    return "legacy"
+
+
+def _compact_weakness_metric(memory: dict, now: datetime) -> str:
+    skill_code = _weakness_skill_code(str(memory.get("canonicalKey") or ""))
+    fields = [f"n={int(memory.get('observationCount', 1) or 1)}"]
+    mastery = _weakness_min_mastery(memory)
+    if mastery is not None:
+        fields.insert(0, f"m={mastery}")
+    retention = memory.get("retention") if isinstance(memory.get("retention"), dict) else {}
+    if retention.get("relapseRisk") is not None:
+        try:
+            fields.append(f"r={float(retention['relapseRisk']):.2f}")
+        except (TypeError, ValueError):
+            pass
+    due_label = _weakness_due_label(memory, now)
+    if due_label:
+        fields.append(due_label)
+    if _weakness_verification_state(memory) == "candidate":
+        fields.append("tentative")
+    return f"- {skill_code} ({','.join(fields)})"
+
+
+def _compact_weakness_index_entry(memory: dict) -> str:
+    skill_code = _weakness_skill_code(str(memory.get("canonicalKey") or ""))
+    return skill_code + ("?" if _weakness_verification_state(memory) == "candidate" else "")
+
+
+def _build_weakness_overview(
+    weaknesses: Iterable[dict],
+    *,
+    token_budget: int,
+    now: datetime,
+    suppressed: bool = False,
+) -> tuple[str, dict]:
+    """Build an auditable, budget-aware index of active learner weaknesses.
+
+    The preferred representation carries tiny learning-state metrics for every
+    active weakness. It degrades to a complete code index before it ever drops
+    a weakness silently. Only an exceptionally small caller budget produces a
+    partial index, which is made explicit in the returned metadata.
+    """
+    ranked = sorted(list(weaknesses), key=lambda item: _weakness_overview_sort_key(item, now))
+    base = {
+        "totalActive": len(ranked),
+        "includedCount": 0,
+        "complete": not ranked,
+        "format": "none",
+        "estimatedTokens": 0,
+        "memoryIds": [],
+        "suppressed": suppressed,
+    }
+    if suppressed or not ranked or token_budget <= 0:
+        return "", base
+
+    metric_header = (
+        "Active weakness overview (complete compact historical profile; never invent a current "
+        "error from it). m=lowest modality mastery, n=observations, r=relapse risk:"
+    )
+    metric_text = "\n".join([metric_header, *(_compact_weakness_metric(row, now) for row in ranked)])
+    if estimate_tokens(metric_text) <= token_budget:
+        metadata = {
+            **base,
+            "includedCount": len(ranked),
+            "complete": True,
+            "format": "metrics",
+            "estimatedTokens": estimate_tokens(metric_text),
+            "memoryIds": [row["id"] for row in ranked],
+        }
+        return metric_text, metadata
+
+    index_header = (
+        "Active weaknesses (complete compact historical index; ?=tentative; never invent a "
+        "current error from it):"
+    )
+    index_entries = [_compact_weakness_index_entry(row) for row in ranked]
+    index_text = f"{index_header}\n- {'; '.join(index_entries)}"
+    if estimate_tokens(index_text) <= token_budget:
+        metadata = {
+            **base,
+            "includedCount": len(ranked),
+            "complete": True,
+            "format": "index",
+            "estimatedTokens": estimate_tokens(index_text),
+            "memoryIds": [row["id"] for row in ranked],
+        }
+        return index_text, metadata
+
+    partial_header = (
+        "Active weaknesses (compact index; ?=tentative; +N=omitted by context budget):"
+    )
+    included_entries: list[str] = []
+    included_rows: list[dict] = []
+    for row, entry in zip(ranked, index_entries):
+        remaining_count = len(ranked) - len(included_entries) - 1
+        proposed_entries = [*included_entries, entry]
+        suffix = f"; +{remaining_count} more" if remaining_count else ""
+        proposed = f"{partial_header}\n- {'; '.join(proposed_entries)}{suffix}"
+        if estimate_tokens(proposed) > token_budget:
+            break
+        included_entries.append(entry)
+        included_rows.append(row)
+    if not included_entries:
+        omitted_notice = (
+            f"Active weakness overview omitted by context budget ({len(ranked)} active); "
+            "detailed recall below is partial."
+        )
+        if estimate_tokens(omitted_notice) <= token_budget:
+            return omitted_notice, {
+                **base,
+                "format": "omitted",
+                "estimatedTokens": estimate_tokens(omitted_notice),
+            }
+        return "", base
+    omitted = len(ranked) - len(included_entries)
+    partial_text = (
+        f"{partial_header}\n- {'; '.join(included_entries)}"
+        + (f"; +{omitted} more" if omitted else "")
+    )
+    metadata = {
+        **base,
+        "includedCount": len(included_rows),
+        "complete": not omitted,
+        "format": "partial_index" if omitted else "index",
+        "estimatedTokens": estimate_tokens(partial_text),
+        "memoryIds": [row["id"] for row in included_rows],
+    }
+    return partial_text, metadata
+
+
 def retrieve_memory_pack(
     user_id: str,
     query: str,
@@ -1266,9 +1466,20 @@ def retrieve_memory_pack(
             "tokenBudget": budget,
             "totalCandidates": 0,
             "traceId": None,
+            "weaknessOverview": {
+                "totalActive": 0,
+                "includedCount": 0,
+                "complete": True,
+                "format": "none",
+                "estimatedTokens": 0,
+                "memoryIds": [],
+                "suppressed": False,
+            },
         }
 
-    memories = _active_memories(user_id)
+    memories = _retrieval_memory_snapshot(user_id)
+    active_weaknesses = [memory for memory in memories if memory.get("kind") == "weakness"]
+    suppress_weakness_context = purpose == "chat"
     if purpose == "chat":
         # Weaknesses and learned probe strategies are internal scheduling
         # state, not conversational personalization. Feeding their raw content
@@ -1335,7 +1546,10 @@ def retrieve_memory_pack(
         scored.append(scored_memory)
 
     scored.sort(key=lambda memory: memory["retrievalScore"], reverse=True)
-    ranked = scored[: max(result_limit * 3, result_limit)]
+    # The active set is already capacity-bounded. Keep the full ranked list so
+    # the weakness-detail cap cannot leave otherwise useful lower-ranked goals,
+    # preferences, strategies, or episodes behind an arbitrary pre-slice.
+    ranked = scored
 
     # Reserve critical learner preferences/goals even when lexical overlap is low.
     critical = sorted(
@@ -1351,14 +1565,33 @@ def retrieve_memory_pack(
             ordered.append(memory)
 
     header = (
-        "Relevant long-term learner memory (use only when helpful; current user input wins). "
-        "A [candidate] memory is tentative: confirm it naturally before relying on or asserting it:"
+        "Relevant long-term learner memory. Use only when helpful; current user input wins. "
+        "Tentative facts must be confirmed before relying on them."
     )
     lines = [header]
+    available_after_header = max(0, budget - estimate_tokens(header))
+    target_detail_reserve = max(
+        WEAKNESS_DETAIL_MIN_TOKEN_RESERVE if budget >= 200 else 24,
+        min(WEAKNESS_DETAIL_TOKEN_LIMIT * 2, budget // 3),
+    )
+    overview_budget = max(0, available_after_header - min(available_after_header, target_detail_reserve))
+    overview_text, weakness_overview = _build_weakness_overview(
+        active_weaknesses,
+        token_budget=overview_budget,
+        now=now,
+        suppressed=suppress_weakness_context,
+    )
+    if overview_text:
+        lines.append(overview_text)
+
     selected: list[dict] = []
+    selected_weaknesses = 0
+    detail_header_added = False
     for memory in ordered:
         if len(selected) >= result_limit:
             break
+        if memory.get("kind") == "weakness" and selected_weaknesses >= WEAKNESS_DETAIL_LIMIT:
+            continue
         raw_verification = memory.get("verification")
         verification_state = (
             str(raw_verification.get("state") or "legacy")
@@ -1372,25 +1605,27 @@ def retrieve_memory_pack(
         evidence = str(memory.get("evidence") or "").strip()
         if evidence:
             line += f" Evidence: {evidence}"
-        remaining = budget - estimate_tokens("\n".join(lines))
+        detail_header = "Most relevant memory details:"
+        prefix_tokens = estimate_tokens(detail_header) if not detail_header_added else 0
+        remaining = budget - estimate_tokens("\n".join(lines)) - prefix_tokens
         if remaining <= 8:
             break
-        fitted = _truncate_to_budget(line, remaining)
+        fitted = _truncate_to_budget(line, min(remaining, WEAKNESS_DETAIL_TOKEN_LIMIT))
         if not fitted:
             continue
+        if not detail_header_added:
+            lines.append(detail_header)
+            detail_header_added = True
         lines.append(fitted)
         selected.append(memory)
+        if memory.get("kind") == "weakness":
+            selected_weaknesses += 1
 
-    pack_text = "\n".join(lines) if selected else ""
+    pack_text = "\n".join(lines) if selected or overview_text else ""
     estimated = estimate_tokens(pack_text)
     now_text = iso_at(now)
     for memory in selected:
-        stored = get_memory(user_id, memory["id"])
-        if not stored or stored.get("status", ACTIVE) != ACTIVE:
-            continue
-        stored["accessCount"] = int(stored.get("accessCount", 0)) + 1
-        stored["lastAccessedAt"] = now_text
-        save_memory(stored)
+        touch_memory_access(user_id, memory["id"], now_text)
 
     trace_id: Optional[str] = None
     if record_trace:
@@ -1403,6 +1638,7 @@ def retrieve_memory_pack(
             "queryPreview": " ".join(query.split())[:180],
             "queryHash": hashlib.sha256(query.encode("utf-8")).hexdigest()[:16],
             "selectedMemoryIds": [memory["id"] for memory in selected],
+            "weaknessOverview": weakness_overview,
             "selected": [
                 {
                     "id": memory["id"],
@@ -1429,6 +1665,7 @@ def retrieve_memory_pack(
         "tokenBudget": budget,
         "totalCandidates": len(memories),
         "traceId": trace_id,
+        "weaknessOverview": weakness_overview,
     }
 
 

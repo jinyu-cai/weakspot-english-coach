@@ -44,6 +44,7 @@ import {
   generateCoachMission,
   sendChatMessage,
   synthesizeCoachSpeech,
+  updateActivityRun,
 } from "@/lib/api-client"
 import { DEMO_USER_ID } from "@/lib/mock-data"
 import type {
@@ -131,6 +132,19 @@ function analysisContextForMission(mission: CoachMission): string | undefined {
     ].join("\n")
   }
   return undefined
+}
+
+function taskDifficultyForMission(mission: CoachMission): number {
+  const normalized = mission.difficulty.toLowerCase()
+  if (normalized.includes("challenge")) return 0.8
+  if (normalized.includes("light") || normalized.includes("gentle")) return 0.35
+  return 0.55
+}
+
+function contextKeyForMission(mission: CoachMission): string {
+  return mission.scene?.scenarioKey
+    ?? mission.picture?.assetKey
+    ?? `${mission.type}:${mission.id}`
 }
 
 function ChoiceButton({
@@ -234,12 +248,14 @@ export default function CoachPage() {
   const missionRef = useRef(mission)
   const screenRef = useRef(screen)
 
-  answerRef.current = answer
-  chatMessagesRef.current = chatMessages
-  chatSessionRef.current = chatSession
-  missionRef.current = mission
-  screenRef.current = screen
-  attemptCompletedRef.current = attemptCompleted
+  useEffect(() => {
+    answerRef.current = answer
+    chatMessagesRef.current = chatMessages
+    chatSessionRef.current = chatSession
+    missionRef.current = mission
+    screenRef.current = screen
+    attemptCompletedRef.current = attemptCompleted
+  }, [answer, attemptCompleted, chatMessages, chatSession, mission, screen])
 
   const visibleHints = useMemo(
     () => mission?.hints.slice(0, hintLevel) ?? [],
@@ -359,6 +375,16 @@ export default function CoachPage() {
   async function arrangeMission(type: CoachMissionType | undefined = preferredType) {
     setGenerating(true)
     try {
+      if (mission?.activityRunId && (screen === "briefing" || screen === "active")) {
+        await updateActivityRun(mission.activityRunId, {
+          status: screen === "active" ? "abandoned" : "skipped",
+          ...(screen === "active"
+            ? { abandonReason: "Learner requested another mission before finishing." }
+            : { skipReason: "Learner requested another mission before starting." }),
+          hintLevel,
+          playCount: playsUsed,
+        })
+      }
       const nextMission = await generateCoachMission({
         durationMinutes,
         modality,
@@ -378,6 +404,14 @@ export default function CoachPage() {
 
   async function enterMission() {
     if (!mission) return
+    if (mission.activityRunId) {
+      try {
+        await updateActivityRun(mission.activityRunId, { status: "started" })
+      } catch {
+        toast.error(t.coach.errors.analyze)
+        return
+      }
+    }
     if (mission.type !== "guided_scene") {
       startWorkTimer(mission.estimatedMinutes || durationMinutes)
       setScreen("active")
@@ -409,7 +443,25 @@ export default function CoachPage() {
     setSubmittedAnswer(text)
     setAnalyzing(true)
     try {
-      const result = await diagnose(DEMO_USER_ID, text, "fast", analysisContextForMission(mission))
+      const result = await diagnose(
+        DEMO_USER_ID,
+        text,
+        "fast",
+        analysisContextForMission(mission),
+        mission.activityRunId
+          ? {
+              activityRunId: mission.activityRunId,
+              missionType: mission.type,
+              targetSkills: mission.targetSkills,
+              modality,
+              hintLevel,
+              playCount: playsUsed,
+              contextKey: contextKeyForMission(mission),
+              taskDifficulty: taskDifficultyForMission(mission),
+              novelContext: true,
+            }
+          : undefined,
+      )
       setDiagnostic(result)
       setScreen("feedback")
     } catch {
@@ -435,6 +487,10 @@ export default function CoachPage() {
           mission.scene.starterMessage,
           mission.scene.scenarioFamily,
           mission.scene.scenarioKey,
+          undefined,
+          mission.activityRunId ?? undefined,
+          mission.type,
+          mission.targetSkills,
         )
         session = createdSession
         setChatSession(createdSession)
@@ -469,7 +525,8 @@ export default function CoachPage() {
 
   async function finishRoleplay(sessionOverride?: ChatSession | null) {
     const session = sessionOverride ?? chatSession
-    if (!session || analyzing) return
+    if (!mission || !session || analyzing) return
+    const completedUserTurns = chatMessagesRef.current.filter((message) => message.role === "user").length
     // Ending the roleplay completes the timed attempt; feedback review is untimed.
     markAttemptCompleted()
     setAnalyzing(true)
@@ -482,6 +539,14 @@ export default function CoachPage() {
         result.stealthPractices
           ?? (result.stealthPractice ? [result.stealthPractice] : []),
       )
+      if (mission.activityRunId) {
+        await updateActivityRun(mission.activityRunId, {
+          status: "completed",
+          hintLevel,
+          playCount: playsUsed,
+          attemptCount: completedUserTurns,
+        })
+      }
     } catch {
       toast.error(t.coach.errors.analyze)
       // Keep the feedback screen so the learner can retry finish without losing the timer freeze.
@@ -492,34 +557,36 @@ export default function CoachPage() {
   }
 
   const handleWorkTimeUpRef = useRef<() => void>(() => {})
-  handleWorkTimeUpRef.current = () => {
-    if (timeUpHandledRef.current || attemptCompletedRef.current) return
-    if (screenRef.current !== "active") return
-    timeUpHandledRef.current = true
-    stopDictation(true)
-    stopPlayback()
-    clearWorkTimer()
-    setTimeUp(true)
-    toast.message(t.coach.mission.timeUp)
+  useEffect(() => {
+    handleWorkTimeUpRef.current = () => {
+      if (timeUpHandledRef.current || attemptCompletedRef.current) return
+      if (screenRef.current !== "active") return
+      timeUpHandledRef.current = true
+      stopDictation(true)
+      stopPlayback()
+      clearWorkTimer()
+      setTimeUp(true)
+      toast.message(t.coach.mission.timeUp)
 
-    const currentMission = missionRef.current
-    const text = answerRef.current.trim()
-    const messages = chatMessagesRef.current
-    const session = chatSessionRef.current
-    const userTurns = messages.filter((message) => message.role === "user").length
+      const currentMission = missionRef.current
+      const text = answerRef.current.trim()
+      const messages = chatMessagesRef.current
+      const session = chatSessionRef.current
+      const userTurns = messages.filter((message) => message.role === "user").length
 
-    // Prefer auto-finishing into feedback when there is enough evidence.
-    if (currentMission?.type === "guided_scene" && session && userTurns > 0) {
-      void finishRoleplay(session)
-      return
+      // Prefer auto-finishing into feedback when there is enough evidence.
+      if (currentMission?.type === "guided_scene" && session && userTurns > 0) {
+        void finishRoleplay(session)
+        return
+      }
+      if (text.length >= 20) {
+        void submitFreeResponse()
+        return
+      }
+      // Short draft: keep content on screen and let the learner submit manually.
+      // Do not return to setup or wipe the attempt.
     }
-    if (text.length >= 20) {
-      void submitFreeResponse()
-      return
-    }
-    // Short draft: keep content on screen and let the learner submit manually.
-    // Do not return to setup or wipe the attempt.
-  }
+  })
 
   useEffect(() => {
     if (workEndsAt === null || attemptCompleted || screen !== "active") return
@@ -544,7 +611,13 @@ export default function CoachPage() {
 
   function revealHint() {
     if (!mission || hintLevel >= mission.hints.length) return
-    setHintLevel((current) => current + 1)
+    const nextLevel = hintLevel + 1
+    setHintLevel(nextLevel)
+    if (mission.activityRunId) {
+      void updateActivityRun(mission.activityRunId, { hintLevel: nextLevel }).catch(() => {
+        toast.error(t.coach.errors.analyze)
+      })
+    }
   }
 
   function playBrowserSpeech(script: string) {
@@ -568,7 +641,13 @@ export default function CoachPage() {
     stopPlayback()
     const requestId = playbackRequestRef.current
     setIsSpeaking(true)
-    setPlaysUsed((current) => current + 1)
+    const nextPlayCount = playsUsed + 1
+    setPlaysUsed(nextPlayCount)
+    if (mission.activityRunId) {
+      void updateActivityRun(mission.activityRunId, { playCount: nextPlayCount }).catch(() => {
+        toast.error(t.coach.errors.analyze)
+      })
+    }
     try {
       if (!audioUrlRef.current || audioMissionIdRef.current !== mission.id) {
         if (ttsUnavailableRef.current) throw new Error("AI speech unavailable")
@@ -695,6 +774,14 @@ export default function CoachPage() {
       const next = new Set(current)
       if (next.has(index)) next.delete(index)
       else next.add(index)
+      if (mission?.activityRunId) {
+        void updateActivityRun(mission.activityRunId, {
+          status: screen === "feedback" ? "completed" : undefined,
+          completedCriteria: [...next].sort((left, right) => left - right),
+        }).catch(() => {
+          toast.error(t.coach.errors.analyze)
+        })
+      }
       return next
     })
   }

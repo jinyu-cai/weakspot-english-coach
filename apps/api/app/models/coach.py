@@ -229,6 +229,8 @@ class _PublicMissionBase(_MissionCopy):
     id: str = Field(min_length=1, max_length=80)
     estimatedMinutes: CoachDurationMinutes
     difficulty: CoachEnergy
+    activityRunId: Optional[str] = Field(default=None, max_length=100)
+    schedulerDecision: Optional[dict] = None
 
 
 class GuidedSceneMission(_PublicMissionBase):

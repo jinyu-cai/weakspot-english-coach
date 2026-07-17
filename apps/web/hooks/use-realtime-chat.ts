@@ -59,7 +59,9 @@ export function useRealtimeChat(
   const transcriptRef = useRef<TranscriptEntry[]>([])
   const disconnectPromiseRef = useRef<Promise<string | undefined> | null>(null)
   const onAutoEndRef = useRef(options?.onAutoEnd)
-  onAutoEndRef.current = options?.onAutoEnd
+  useEffect(() => {
+    onAutoEndRef.current = options?.onAutoEnd
+  }, [options?.onAutoEnd])
   const intentionalDisconnectRef = useRef(false)
   const endSessionRef = useRef<(opts?: { intentional?: boolean }) => Promise<string | undefined>>(
     async () => undefined,
@@ -358,7 +360,9 @@ export function useRealtimeChat(
     return guarded
   }, [userId, cleanup, clearPendingTranscript, persistPendingTranscript, stopMicrophone])
 
-  endSessionRef.current = endSession
+  useEffect(() => {
+    endSessionRef.current = endSession
+  }, [endSession])
 
   const disconnect = useCallback((): Promise<string | undefined> => {
     return endSession({ intentional: true })

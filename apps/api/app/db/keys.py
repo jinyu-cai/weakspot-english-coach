@@ -42,7 +42,9 @@ def chat_session_sk(session_id: str) -> str:
     return f"CHAT#{session_id}"
 
 
-def chat_message_sk(created_at: str, message_id: str) -> str:
+def chat_message_sk(created_at: str, message_id: str, session_id: str | None = None) -> str:
+    if session_id:
+        return f"CHATMSG#{session_id}#{created_at}#{message_id}"
     return f"CHATMSG#{created_at}#{message_id}"
 
 
@@ -52,3 +54,23 @@ def memory_sk(memory_id: str) -> str:
 
 def memory_trace_sk(created_at: str, trace_id: str) -> str:
     return f"MEMTRACE#{created_at}#{trace_id}"
+
+
+def activity_run_sk(run_id: str) -> str:
+    return f"RUN#{run_id}"
+
+
+def activity_completion_time_sk(completed_at: str, run_id: str) -> str:
+    return f"RUN_TIME#{completed_at}#{run_id}"
+
+
+def evidence_event_sk(event_id: str) -> str:
+    return f"EVIDENCE#{event_id}"
+
+
+def evidence_event_time_sk(created_at: str, event_id: str) -> str:
+    return f"EVIDENCE_TIME#{created_at}#{event_id}"
+
+
+def learning_state_sk(skill_code: str) -> str:
+    return f"LEARNING#{skill_code}"

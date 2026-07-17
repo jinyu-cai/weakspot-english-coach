@@ -3,10 +3,14 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from app.core.taxonomy import ERROR_TAXONOMY
 from app.db.repositories import (
-    list_recent_errors,
-    list_recent_practice_attempts,
-    list_recent_submissions,
+    list_completed_activity_runs_since,
+    list_evidence_events_since,
+    list_learning_states,
+    list_errors_since,
+    list_practice_attempts_since,
+    list_submissions_since,
     now_iso,
 )
 
@@ -42,6 +46,14 @@ def _day_template(day: date) -> dict:
         "averageScore": 0,
         "errorsFound": 0,
         "minutesEstimated": 0,
+        "minutesTracked": 0,
+        "completedActivities": 0,
+        "learningOpportunities": 0,
+        "independentSuccesses": 0,
+        "assistedSuccesses": 0,
+        "failedOpportunities": 0,
+        "noOpportunities": 0,
+        "delayedTransfers": 0,
         "active": False,
     }
 
@@ -122,15 +134,20 @@ def build_daily_stats(user_id: str, timezone_name: str | None = None, days: int 
     tz = resolve_timezone(timezone_name)
     today_local = datetime.now(timezone.utc).astimezone(tz).date()
     start_local = today_local - timedelta(days=days - 1)
+    start_utc = datetime.combine(start_local, datetime.min.time(), tzinfo=tz).astimezone(timezone.utc)
+    start_utc_text = start_utc.isoformat().replace("+00:00", "Z")
     day_map = {
         (start_local + timedelta(days=offset)).isoformat(): _day_template(start_local + timedelta(days=offset))
         for offset in range(days)
     }
     score_map: dict[str, list[int]] = {day: [] for day in day_map}
 
-    submissions = list_recent_submissions(user_id, limit=500)
-    errors = list_recent_errors(user_id, limit=500)
-    attempts = list_recent_practice_attempts(user_id, limit=500)
+    submissions = list_submissions_since(user_id, start_utc_text)
+    errors = list_errors_since(user_id, start_utc_text)
+    attempts = list_practice_attempts_since(user_id, start_utc_text)
+    runs = list_completed_activity_runs_since(user_id, start_utc_text)
+    evidence_events = list_evidence_events_since(user_id, start_utc_text)
+    learning_states = list_learning_states(user_id)
 
     for submission in submissions:
         day = local_date_for(submission["createdAt"], tz.key)
@@ -152,12 +169,55 @@ def build_daily_stats(user_id: str, timezone_name: str | None = None, days: int 
             if isinstance(score, (int, float)):
                 score_map[day].append(int(score))
 
+    for run in runs:
+        if run.get("status") != "completed" or not run.get("completedAt"):
+            continue
+        day = local_date_for(str(run["completedAt"]), tz.key)
+        if day not in day_map:
+            continue
+        day_map[day]["completedActivities"] += 1
+        if run.get("startedAt"):
+            try:
+                elapsed = (
+                    parse_iso_datetime(str(run["completedAt"]))
+                    - parse_iso_datetime(str(run["startedAt"]))
+                ).total_seconds() / 60
+                cap = max(1, int(run.get("estimatedMinutes") or 15) * 2)
+                day_map[day]["minutesTracked"] += round(max(0, min(elapsed, cap)))
+            except (TypeError, ValueError):
+                pass
+
+    for event in evidence_events:
+        created_at = event.get("createdAt")
+        if not created_at:
+            continue
+        day = local_date_for(str(created_at), tz.key)
+        if day not in day_map:
+            continue
+        outcome = str(event.get("outcome") or "")
+        if event.get("opportunityPresent"):
+            day_map[day]["learningOpportunities"] += 1
+            if outcome == "success" and int(event.get("supportLevel", 0)) == 0:
+                day_map[day]["independentSuccesses"] += 1
+                if event.get("delayed") and event.get("novelContext"):
+                    day_map[day]["delayedTransfers"] += 1
+            elif outcome == "hinted_success" or int(event.get("supportLevel", 0)) > 0:
+                day_map[day]["assistedSuccesses"] += 1
+            elif outcome in {"failure", "avoided"}:
+                day_map[day]["failedOpportunities"] += 1
+        else:
+            day_map[day]["noOpportunities"] += 1
+
     weekly = []
     for day in sorted(day_map):
         row = day_map[day]
         row["averageScore"] = _score_average(score_map[day])
-        row["minutesEstimated"] = row["checkins"] * 4 + row["practiceAttempts"] * 3
-        row["active"] = row["checkins"] > 0 or row["practiceAttempts"] > 0
+        row["minutesEstimated"] = row["minutesTracked"] or row["checkins"] * 4 + row["practiceAttempts"] * 3
+        row["active"] = (
+            row["checkins"] > 0
+            or row["practiceAttempts"] > 0
+            or row["completedActivities"] > 0
+        )
         weekly.append(row)
 
     today = day_map[today_local.isoformat()]
@@ -179,6 +239,24 @@ def build_daily_stats(user_id: str, timezone_name: str | None = None, days: int 
         "totalErrorsFound": sum(row["errorsFound"] for row in weekly),
         "averageScore": _score_average(all_scores),
         "minutesEstimated": sum(row["minutesEstimated"] for row in weekly),
+        "minutesTracked": sum(row["minutesTracked"] for row in weekly),
+        "completedActivities": sum(row["completedActivities"] for row in weekly),
+        "learningOpportunities": sum(row["learningOpportunities"] for row in weekly),
+        "independentSuccesses": sum(row["independentSuccesses"] for row in weekly),
+        "assistedSuccesses": sum(row["assistedSuccesses"] for row in weekly),
+        "failedOpportunities": sum(row["failedOpportunities"] for row in weekly),
+        "noOpportunities": sum(row["noOpportunities"] for row in weekly),
+        "delayedTransfers": sum(row["delayedTransfers"] for row in weekly),
+    }
+    successful = summary["independentSuccesses"] + summary["assistedSuccesses"]
+    exploring_count = sum(1 for state in learning_states if state.get("coverageStatus") == "exploring")
+    enough_count = sum(1 for state in learning_states if state.get("coverageStatus") == "enough_evidence")
+    coverage = {
+        "unassessed": max(0, len(ERROR_TAXONOMY) - exploring_count - enough_count),
+        "exploring": exploring_count,
+        "enoughEvidence": enough_count,
+        "tracked": len(learning_states),
+        "total": len(ERROR_TAXONOMY),
     }
 
     return {
@@ -188,5 +266,14 @@ def build_daily_stats(user_id: str, timezone_name: str | None = None, days: int 
         "summary": summary,
         "achievements": _achievements(summary, today),
         "nextBestAction": _next_best_action(today),
+        "learning": {
+            "coverage": coverage,
+            "assistanceRate": round(summary["assistedSuccesses"] / successful * 100) if successful else 0,
+            "independentSuccesses": summary["independentSuccesses"],
+            "assistedSuccesses": summary["assistedSuccesses"],
+            "failedOpportunities": summary["failedOpportunities"],
+            "noOpportunities": summary["noOpportunities"],
+            "delayedTransfers": summary["delayedTransfers"],
+        },
         "generatedAt": now_iso(),
     }

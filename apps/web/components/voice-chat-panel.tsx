@@ -36,7 +36,9 @@ export function VoiceChatPanel({ topic, onEnd, onLifecycleChange }: VoiceChatPan
   const [voiceModel, setVoiceModel] = useState<RealtimeVoiceModel>("gpt-realtime-mini-2025-12-15")
   const { t } = useLanguage()
   const onEndRef = useRef(onEnd)
-  onEndRef.current = onEnd
+  useEffect(() => {
+    onEndRef.current = onEnd
+  }, [onEnd])
   const {
     status,
     error,

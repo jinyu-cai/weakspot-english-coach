@@ -22,6 +22,8 @@
  */
 
 import type {
+  ActivityRun,
+  ActivityRunStatus,
   ChatImportAnalyzeResponse,
   ChatImportConversation,
   ChatMessage,
@@ -37,17 +39,23 @@ import type {
   DailyStatsResponse,
   DeleteSubmissionResponse,
   DiagnoseResponse,
+  DiagnoseLearningContext,
   DiagnosisMode,
+  EvidenceEvent,
   HistoryResponse,
   InputAttentionMission,
   InputLearningAnalyzeRequest,
   InputLearningAnalyzeResponse,
+  InputLearningAttempt,
+  InputLearningAttemptKind,
   InputLearningItem,
   InputLearningSource,
   InputLearningSourcesResponse,
   InputLab2TranscriptMissionRequest,
   LearningNote,
+  LearningOverview,
   LearningPlan,
+  LearningState,
   MemoryItem,
   MemoryKind,
   MemoryPack,
@@ -298,6 +306,7 @@ export async function diagnose(
   text: string,
   diagnosisMode: DiagnosisMode = "fast",
   analysisContext?: string,
+  learningContext?: DiagnoseLearningContext,
 ): Promise<DiagnoseResponse> {
   if (USE_MOCK) {
     await delay(diagnosisMode === "fast" ? 700 : 1400)
@@ -324,6 +333,7 @@ export async function diagnose(
       text,
       diagnosisMode,
       ...(analysisContext ? { analysisContext } : {}),
+      ...(learningContext ? { learningContext } : {}),
     })),
   })
 }
@@ -536,6 +546,7 @@ export async function retrieveMemories(query: string, tokenBudget = 700): Promis
     await delay(350)
     const terms = query.toLowerCase().split(/\W+/).filter(Boolean)
     const active = mockMemoryStore.filter((item) => item.status === "active")
+    let weaknessDetailCount = 0
     const ranked = active
       .map((item) => {
         const haystack = `${item.kind} ${item.canonicalKey} ${item.content} ${item.evidence}`.toLowerCase()
@@ -556,8 +567,20 @@ export async function retrieveMemories(query: string, tokenBudget = 700): Promis
         }
       })
       .sort((a, b) => (b.retrievalScore ?? 0) - (a.retrievalScore ?? 0))
+      .filter((item) => {
+        if (item.kind !== "weakness") return true
+        if (weaknessDetailCount >= 3) return false
+        weaknessDetailCount += 1
+        return true
+      })
       .slice(0, 6)
-    const text = ranked.map((item) => `- [${item.kind} | ${item.id}] ${item.content}`).join("\n")
+    const activeWeaknesses = active.filter((item) => item.kind === "weakness")
+    const weaknessIndex = activeWeaknesses.map((item) => item.canonicalKey.replace(/^weakness[.:]/, "")).join("; ")
+    const detailText = ranked.map((item) => `- [${item.kind} | ${item.id}] ${item.content}`).join("\n")
+    const text = [
+      weaknessIndex ? `Active weaknesses (complete compact historical index):\n- ${weaknessIndex}` : "",
+      detailText,
+    ].filter(Boolean).join("\nMost relevant memory details:\n")
     return {
       text,
       items: ranked,
@@ -565,6 +588,15 @@ export async function retrieveMemories(query: string, tokenBudget = 700): Promis
       tokenBudget,
       totalCandidates: active.length,
       traceId: `mtr-${Date.now()}`,
+      weaknessOverview: {
+        totalActive: activeWeaknesses.length,
+        includedCount: activeWeaknesses.length,
+        complete: true,
+        format: activeWeaknesses.length ? "index" : "none",
+        estimatedTokens: Math.ceil(weaknessIndex.length / 4),
+        memoryIds: activeWeaknesses.map((item) => item.id),
+        suppressed: false,
+      },
     }
   }
   const { memoryPack } = await apiFetch<{ memoryPack: MemoryPack }>("/memory/retrieve", {
@@ -593,6 +625,15 @@ export async function getMemoryTraces(): Promise<MemoryTrace[]> {
       estimatedTokens: 126,
       tokenBudget: 700,
       createdAt: memoryNow,
+      weaknessOverview: {
+        totalActive: 1,
+        includedCount: 1,
+        complete: true,
+        format: "index",
+        estimatedTokens: 8,
+        memoryIds: ["mem-weak-tense"],
+        suppressed: false,
+      },
     }]
   }
   const { traces } = await apiFetch<{ traces: MemoryTrace[] }>("/memory/traces?limit=20")
@@ -642,11 +683,35 @@ export async function generatePlan(
   return plan
 }
 
+export async function updatePlanTask(
+  taskId: string,
+  status: "assigned" | "started" | "completed" | "skipped",
+  score?: number,
+): Promise<LearningPlan> {
+  if (USE_MOCK) {
+    await delay(150)
+    return mockPlan
+  }
+  const { plan } = await apiFetch<{ plan: LearningPlan }>(`/plan/tasks/${taskId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status, score }),
+  })
+  return plan
+}
+
 export async function generatePractice(
   userId: string = DEMO_USER_ID,
   targetSkillCode?: string,
   practiceType?: PracticeType,
-  options?: { sessionSlot?: number; sessionSize?: number },
+  session?: {
+    sessionId?: string
+    sequenceIndex?: number
+    previousSkillCodes?: string[]
+    previousPracticeTypes?: PracticeType[]
+    parentRunId?: string
+    sessionSlot?: number
+    sessionSize?: number
+  },
 ): Promise<PracticeExercise> {
   if (USE_MOCK) {
     await delay(900)
@@ -656,13 +721,7 @@ export async function generatePractice(
   }
   const { exercise } = await apiFetch<PracticeGenerateResponse>("/practice/generate", {
     method: "POST",
-    body: JSON.stringify(withOutputLanguage({
-      userId,
-      targetSkillCode,
-      practiceType,
-      sessionSlot: options?.sessionSlot,
-      sessionSize: options?.sessionSize,
-    })),
+    body: JSON.stringify(withOutputLanguage({ userId, targetSkillCode, practiceType, ...session })),
   })
   return exercise
 }
@@ -683,6 +742,8 @@ export async function gradePracticeAdhoc(
     exerciseType?: PracticeType
     promptZh?: string
     explanationZh?: string
+    activityRunId?: string
+    completeActivityRun?: boolean
   },
 ): Promise<PracticeGrade> {
   if (USE_MOCK) {
@@ -1015,6 +1076,39 @@ export async function getInputLearningSource(sourceId: string): Promise<InputLea
   return payload.source
 }
 
+export async function submitInputLearningAttempt(
+  sourceId: string,
+  input: {
+    kind: InputLearningAttemptKind
+    responseText: string
+    targetItemIds?: string[]
+    clientAttemptId: string
+    hintUsed?: boolean
+  },
+): Promise<InputLearningAttempt> {
+  if (USE_MOCK) {
+    await delay(500)
+    return {
+      id: `input-attempt-${Date.now()}`,
+      kind: input.kind,
+      passed: input.responseText.trim().split(/\s+/).length >= 8,
+      feedback: "Your production attempt was recorded.",
+      wordCount: input.responseText.trim().split(/\s+/).length,
+      matchedExpressions: [],
+      requiredExpressions: [],
+      delayedEligible: input.kind === "delayed_retrieval",
+      countedAsDelayed: input.kind === "delayed_retrieval",
+      activityRunId: `run-mock-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+    }
+  }
+  const { attempt } = await apiFetch<{ attempt: InputLearningAttempt }>(`/input-learning/${sourceId}/attempts`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+  return attempt
+}
+
 export async function deleteInputLearningSource(sourceId: string): Promise<{ deleted: boolean; id: string }> {
   if (USE_MOCK) {
     await delay(250)
@@ -1138,6 +1232,7 @@ export async function generateCoachMission(input: CoachMissionRequest): Promise<
     return {
       ...mission,
       id: `${mission.id}-${Date.now()}`,
+      activityRunId: `run_mock_${Date.now()}`,
       estimatedMinutes: input.durationMinutes,
       difficulty: input.energy === "light" ? "Gentle stretch" : input.energy === "challenge" ? "Challenge" : "Balanced",
     }
@@ -1147,6 +1242,74 @@ export async function generateCoachMission(input: CoachMissionRequest): Promise<
     body: JSON.stringify(withOutputLanguage({ ...input })),
   })
   return payload.mission
+}
+
+export async function updateActivityRun(
+  runId: string,
+  update: {
+    status?: ActivityRunStatus
+    hintLevel?: number
+    playCount?: number
+    attemptCount?: number
+    completedCriteria?: number[]
+    skipReason?: string
+    abandonReason?: string
+    selfReportedDifficulty?: "too_easy" | "right" | "too_hard"
+  },
+): Promise<ActivityRun> {
+  if (USE_MOCK) {
+    const now = new Date().toISOString()
+    return {
+      id: runId,
+      userId: DEMO_USER_ID,
+      activityType: "coach",
+      targetSkills: [],
+      status: update.status ?? "started",
+      hintLevel: update.hintLevel ?? 0,
+      playCount: update.playCount ?? 0,
+      attemptCount: update.attemptCount ?? 0,
+      completedCriteria: update.completedCriteria ?? [],
+      assignedAt: now,
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+    }
+  }
+  const payload = await apiFetch<{ run: ActivityRun }>(`/learning/runs/${runId}`, {
+    method: "PATCH",
+    body: JSON.stringify(update),
+  })
+  return payload.run
+}
+
+export async function recordLearningEvidence(input: {
+  clientEventId: string
+  runId?: string
+  sourceId?: string
+  skillCode: string
+  outcome: "success" | "hinted_success" | "failure" | "avoided" | "no_opportunity"
+  opportunityPresent: boolean
+  supportLevel?: number
+  modality?: string
+  taskType?: string
+  taskDifficulty?: number
+  evaluatorConfidence?: number
+  contextKey?: string
+  novelContext?: boolean
+  delayed?: boolean
+  evidenceQuote?: string
+}): Promise<{ event: EvidenceEvent; state: LearningState; duplicate: boolean }> {
+  return apiFetch<{ event: EvidenceEvent; state: LearningState; duplicate: boolean }>("/learning/evidence", {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+}
+
+export async function getLearningOverview(): Promise<LearningOverview> {
+  if (USE_MOCK) {
+    return { states: [], recentRuns: [], recentEvidence: [], generatedAt: new Date().toISOString() }
+  }
+  return apiFetch<LearningOverview>("/learning/overview")
 }
 
 export async function generateInputLab2TranscriptMission(
@@ -1199,6 +1362,9 @@ export async function createChatSession(
   scenarioFamily?: string,
   scenarioKey?: string,
   textModelMode?: TextChatModelMode,
+  missionRunId?: string,
+  missionType?: string,
+  missionTargetSkills?: string[],
 ): Promise<ChatSession> {
   if (USE_MOCK) {
     await delay(300)
@@ -1210,6 +1376,9 @@ export async function createChatSession(
       starterMessage: starterMessage ?? null,
       scenarioFamily: scenarioFamily ?? null,
       scenarioKey: scenarioKey ?? null,
+      missionRunId: missionRunId ?? null,
+      missionType: missionType ?? null,
+      missionTargetSkills: missionTargetSkills ?? [],
       textModel: textModel ?? "Server default",
       textModelMode: textModelMode ?? "fast",
       messageCount: 0,
@@ -1229,6 +1398,9 @@ export async function createChatSession(
       ...(scenarioFamily ? { scenarioFamily } : {}),
       ...(scenarioKey ? { scenarioKey } : {}),
       ...(textModelMode ? { textModelMode } : {}),
+      ...(missionRunId ? { missionRunId } : {}),
+      ...(missionType ? { missionType } : {}),
+      ...(missionTargetSkills?.length ? { missionTargetSkills } : {}),
     }),
   })
   return session

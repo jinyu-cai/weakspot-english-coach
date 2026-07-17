@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from app.api.deps import Identity, get_llm_provider, rate_limited, resolve_identity
 from app.core.pagination import decode_dynamo_cursor, encode_dynamo_cursor
 from app.db.keys import user_pk
-from app.models.input_learning import AnalyzeInputLearningRequest
+from app.models.input_learning import AnalyzeInputLearningRequest, SubmitInputLearningAttemptRequest
 from app.services.ai_client import LLMProviderConfig
 from app.services.input_learning_service import (
     InputLearningInProgressError,
@@ -12,6 +12,7 @@ from app.services.input_learning_service import (
     get_input_learning_source_for_user,
     list_input_learning_sources_for_user,
     list_input_learning_sources_page_for_user,
+    submit_input_learning_attempt,
 )
 
 
@@ -109,6 +110,20 @@ def read_source(
     if not source:
         raise HTTPException(status_code=404, detail="Input-learning source not found.")
     return {"source": source}
+
+
+@router.post("/{source_id}/attempts")
+def submit_attempt(
+    source_id: str,
+    req: SubmitInputLearningAttemptRequest,
+    identity: Identity = Depends(rate_limited("practice_submit")),
+):
+    try:
+        return {"attempt": submit_input_learning_attempt(identity.user_id, source_id, req)}
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.delete("/{source_id}")
