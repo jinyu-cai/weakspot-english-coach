@@ -247,12 +247,15 @@ function PlanPracticeFlow() {
     try {
       await updatePlanTask(nextLocated.task.id, "started")
       const skillCode = nextLocated.day.targetSkillCodes?.[0] ?? DEFAULT_SKILL
+      const sessionSize = nextLocated.task.exercises.length || 3
       const fresh = await generatePractice(DEMO_USER_ID, skillCode, nextLocated.task.practiceType, {
         sessionId,
         sequenceIndex: 0,
         previousSkillCodes: [],
         previousPracticeTypes: [],
         parentRunId: nextLocated.task.activityRunId ?? undefined,
+        sessionSlot: 0,
+        sessionSize,
       })
       setSession({ task: nextLocated.task, day: nextLocated.day, exercises: [mapGeneratedExercise(fresh)] })
     } catch {
@@ -304,6 +307,8 @@ function PlanPracticeFlow() {
       previousSkillCodes: session.exercises.map((item) => skillCode),
       previousPracticeTypes: session.exercises.map(() => session.task.practiceType),
       parentRunId: session.task.activityRunId ?? undefined,
+      sessionSlot: current + 1,
+      sessionSize: total,
     })
     setSession((value) => value ? { ...value, exercises: [...value.exercises, mapGeneratedExercise(next)] } : value)
     setCurrent((value) => value + 1)
@@ -320,6 +325,8 @@ function PlanPracticeFlow() {
         previousSkillCodes: session.exercises.map(() => skillCode),
         previousPracticeTypes: session.exercises.map(() => session.task.practiceType),
         parentRunId: session.task.activityRunId ?? undefined,
+        sessionSlot: current,
+        sessionSize: session.task.exercises.length || 3,
       })
       const mapped = mapGeneratedExercise(fresh)
       setSession((prev) =>
@@ -347,6 +354,8 @@ function PlanPracticeFlow() {
         previousSkillCodes: [],
         previousPracticeTypes: [],
         parentRunId: session.task.activityRunId ?? undefined,
+        sessionSlot: 0,
+        sessionSize: session.task.exercises.length || 3,
       })
       setSession((prev) => (prev ? { ...prev, exercises: [mapGeneratedExercise(fresh)] } : prev))
       setCurrent(0)

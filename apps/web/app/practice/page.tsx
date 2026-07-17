@@ -16,6 +16,8 @@ import { Progress } from "@/components/ui/progress"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { PracticeCard } from "@/components/practice-card"
 import { ScoreRing } from "@/components/score-ring"
+import { SessionWin } from "@/components/session-win"
+import { sessionWinFromPractice } from "@/lib/session-win"
 import { useLanguage } from "@/components/language-provider"
 
 const SESSION_LENGTH = 4
@@ -52,6 +54,8 @@ function PracticeFlow() {
         sequenceIndex: 0,
         previousSkillCodes: [],
         previousPracticeTypes: [],
+        sessionSlot: 0,
+        sessionSize: SESSION_LENGTH,
       })
       setExercises([first])
       setCurrent(0)
@@ -84,6 +88,8 @@ function PracticeFlow() {
         sequenceIndex: current + 1,
         previousSkillCodes: exercises.map((item) => item.targetSkillCode),
         previousPracticeTypes: exercises.map((item) => item.type),
+        sessionSlot: current + 1,
+        sessionSize: SESSION_LENGTH,
       })
       setExercises((items) => [...items, next])
       setCurrent((value) => value + 1)
@@ -136,8 +142,10 @@ function PracticeFlow() {
   if (phase === "summary") {
     const correct = grades.filter((g) => g.isCorrect).length
     const avgScore = grades.length ? Math.round(grades.reduce((sum, g) => sum + g.score, 0) / grades.length) : 0
+    const win = sessionWinFromPractice(grades, exercises, t, language)
     return (
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+        <SessionWin model={win} />
         <Card>
           <CardHeader className="items-center text-center">
             <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10">

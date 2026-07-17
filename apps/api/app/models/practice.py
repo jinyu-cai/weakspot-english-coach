@@ -27,6 +27,10 @@ class GeneratePracticeRequest(BaseModel):
     previousSkillCodes: list[str] = Field(default_factory=list, max_length=8)
     previousPracticeTypes: list[PracticeType] = Field(default_factory=list, max_length=8)
     parentRunId: Optional[str] = Field(default=None, max_length=100)
+    # Mixed / multi-item sessions pass slot + size so parallel generates diversify
+    # skills, stages, and surface forms instead of cloning one error four times.
+    sessionSlot: Optional[int] = Field(default=None, ge=0, le=20)
+    sessionSize: Optional[int] = Field(default=None, ge=1, le=20)
 
 
 class PracticeExerciseAIResult(BaseModel):

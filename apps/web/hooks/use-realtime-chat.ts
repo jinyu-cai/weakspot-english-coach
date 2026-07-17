@@ -35,7 +35,13 @@ function transcriptMessageId(message: Record<string, unknown>, role: TranscriptE
   return `${role}:${randomId}`
 }
 
-export function useRealtimeChat(userId: string) {
+export function useRealtimeChat(
+  userId: string,
+  options?: {
+    /** Called after an unexpected disconnect (e.g. duration limit) once transcript is saved. */
+    onAutoEnd?: (sessionId?: string) => void
+  },
+) {
   const [status, setStatus] = useState<ConnectionStatus>("idle")
   const [isMicOn, setIsMicOn] = useState(true)
   const [isAiSpeaking, setIsAiSpeaking] = useState(false)
@@ -52,6 +58,14 @@ export function useRealtimeChat(userId: string) {
   const modelRef = useRef<string>("")
   const transcriptRef = useRef<TranscriptEntry[]>([])
   const disconnectPromiseRef = useRef<Promise<string | undefined> | null>(null)
+  const onAutoEndRef = useRef(options?.onAutoEnd)
+  useEffect(() => {
+    onAutoEndRef.current = options?.onAutoEnd
+  }, [options?.onAutoEnd])
+  const intentionalDisconnectRef = useRef(false)
+  const endSessionRef = useRef<(opts?: { intentional?: boolean }) => Promise<string | undefined>>(
+    async () => undefined,
+  )
 
   const aiTranscriptBufferRef = useRef("")
   const fnCallBufferRef = useRef<Record<string, { name: string; args: string }>>({})
@@ -254,12 +268,21 @@ export function useRealtimeChat(userId: string) {
         pc.onconnectionstatechange = () => {
           if (pc.connectionState === "connected") {
             setStatus("connected")
-          } else if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
-            cleanup()
-            setIsAiSpeaking(false)
-            setIsMicOn(false)
-            setStatus("error")
-            setError(getCopy(getOutputLanguage()).chat.voicePanel.connectionLost)
+          } else if (
+            (pc.connectionState === "failed" || pc.connectionState === "disconnected")
+            && !intentionalDisconnectRef.current
+          ) {
+            // Duration limit / network drop: save transcript and hand off to feedback
+            // instead of wiping the practice view.
+            void (async () => {
+              try {
+                const endedSessionId = await endSessionRef.current({ intentional: false })
+                onAutoEndRef.current?.(endedSessionId)
+              } catch {
+                setStatus("error")
+                setError(getCopy(getOutputLanguage()).chat.voicePanel.connectionLost)
+              }
+            })()
           }
         }
 
@@ -279,8 +302,9 @@ export function useRealtimeChat(userId: string) {
     [userId, status, handleDataChannelMessage, cleanup, clearPendingTranscript, persistPendingTranscript],
   )
 
-  const disconnect = useCallback((): Promise<string | undefined> => {
+  const endSession = useCallback((opts?: { intentional?: boolean }): Promise<string | undefined> => {
     if (disconnectPromiseRef.current) return disconnectPromiseRef.current
+    intentionalDisconnectRef.current = opts?.intentional !== false
 
     const pending = (async () => {
       const sid = sessionIdRef.current
@@ -325,6 +349,7 @@ export function useRealtimeChat(userId: string) {
       transcriptRef.current = []
       setTranscript([])
       setStatus("idle")
+      intentionalDisconnectRef.current = false
       return hasUserTranscript ? sid ?? undefined : undefined
     })()
 
@@ -334,6 +359,14 @@ export function useRealtimeChat(userId: string) {
     disconnectPromiseRef.current = guarded
     return guarded
   }, [userId, cleanup, clearPendingTranscript, persistPendingTranscript, stopMicrophone])
+
+  useEffect(() => {
+    endSessionRef.current = endSession
+  }, [endSession])
+
+  const disconnect = useCallback((): Promise<string | undefined> => {
+    return endSession({ intentional: true })
+  }, [endSession])
 
   const toggleMic = useCallback(() => {
     const stream = streamRef.current

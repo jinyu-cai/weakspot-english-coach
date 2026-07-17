@@ -30,6 +30,8 @@ import { CoachScene } from "@/components/coach-scene"
 import { DiagnosticReport } from "@/components/diagnostic-report"
 import { useLanguage } from "@/components/language-provider"
 import { SessionSummary } from "@/components/session-summary"
+import { SessionWin } from "@/components/session-win"
+import { sessionWinFromCoach } from "@/lib/session-win"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -198,7 +200,7 @@ function PhaseDots({ current, label }: { current: 1 | 2 | 3; label: string }) {
 }
 
 export default function CoachPage() {
-  const { t } = useLanguage()
+  const { language, t } = useLanguage()
   const [screen, setScreen] = useState<Screen>("setup")
   const [durationMinutes, setDurationMinutes] = useState<Duration>(5)
   const [modality, setModality] = useState<CoachMissionModality>("text")
@@ -215,6 +217,12 @@ export default function CoachPage() {
   const [diagnostic, setDiagnostic] = useState<DiagnoseResponse | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [checkedCriteria, setCheckedCriteria] = useState<Set<number>>(new Set())
+  /** Countdown end timestamp for the writing/speaking window only. Cleared after completion. */
+  const [workEndsAt, setWorkEndsAt] = useState<number | null>(null)
+  const [remainingSec, setRemainingSec] = useState<number | null>(null)
+  /** True once the learner has finished the attempt — timer must not close feedback. */
+  const [attemptCompleted, setAttemptCompleted] = useState(false)
+  const [timeUp, setTimeUp] = useState(false)
 
   const [chatSession, setChatSession] = useState<ChatSession | null>(null)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
@@ -232,6 +240,22 @@ export default function CoachPage() {
   const ttsUnavailableRef = useRef(false)
   const playbackRequestRef = useRef(0)
   const optimisticMessageCounterRef = useRef(0)
+  const attemptCompletedRef = useRef(false)
+  const timeUpHandledRef = useRef(false)
+  const answerRef = useRef(answer)
+  const chatMessagesRef = useRef(chatMessages)
+  const chatSessionRef = useRef(chatSession)
+  const missionRef = useRef(mission)
+  const screenRef = useRef(screen)
+
+  useEffect(() => {
+    answerRef.current = answer
+    chatMessagesRef.current = chatMessages
+    chatSessionRef.current = chatSession
+    missionRef.current = mission
+    screenRef.current = screen
+    attemptCompletedRef.current = attemptCompleted
+  }, [answer, attemptCompleted, chatMessages, chatSession, mission, screen])
 
   const visibleHints = useMemo(
     () => mission?.hints.slice(0, hintLevel) ?? [],
@@ -288,6 +312,31 @@ export default function CoachPage() {
     if (discardPendingResults) setIsDictating(false)
   }
 
+  function clearWorkTimer() {
+    setWorkEndsAt(null)
+    setRemainingSec(null)
+  }
+
+  function markAttemptCompleted() {
+    // Completing the attempt freezes the writing window permanently so feedback
+    // is never auto-dismissed by the original duration limit.
+    attemptCompletedRef.current = true
+    setAttemptCompleted(true)
+    setTimeUp(false)
+    clearWorkTimer()
+  }
+
+  function startWorkTimer(minutes: number) {
+    const safeMinutes = Math.max(1, minutes)
+    attemptCompletedRef.current = false
+    timeUpHandledRef.current = false
+    setAttemptCompleted(false)
+    setTimeUp(false)
+    const endsAt = Date.now() + safeMinutes * 60_000
+    setWorkEndsAt(endsAt)
+    setRemainingSec(safeMinutes * 60)
+  }
+
   function resetAttempt(nextScreen: Screen = "briefing") {
     stopDictation(true)
     stopPlayback(nextScreen === "setup")
@@ -305,12 +354,22 @@ export default function CoachPage() {
     setChatAnalysis(null)
     setStealthPractice(null)
     setStealthPractices([])
+    clearWorkTimer()
+    attemptCompletedRef.current = false
+    timeUpHandledRef.current = false
+    setAttemptCompleted(false)
+    setTimeUp(false)
   }
 
   function returnToBriefing() {
     stopDictation(true)
     stopPlayback()
     setScreen("briefing")
+    clearWorkTimer()
+    attemptCompletedRef.current = false
+    timeUpHandledRef.current = false
+    setAttemptCompleted(false)
+    setTimeUp(false)
   }
 
   async function arrangeMission(type: CoachMissionType | undefined = preferredType) {
@@ -354,6 +413,7 @@ export default function CoachPage() {
       }
     }
     if (mission.type !== "guided_scene") {
+      startWorkTimer(mission.estimatedMinutes || durationMinutes)
       setScreen("active")
       return
     }
@@ -369,12 +429,17 @@ export default function CoachPage() {
       }
       setChatMessages([opening])
     }
+    startWorkTimer(mission.estimatedMinutes || durationMinutes)
     setScreen("active")
   }
 
-  async function submitFreeResponse() {
-    if (!mission || answer.trim().length < 20 || analyzing || isDictating || isSpeaking) return
+  async function submitFreeResponse(options?: { allowShort?: boolean }) {
+    if (!mission || analyzing || isDictating || isSpeaking) return
     const text = answer.trim()
+    const minChars = options?.allowShort ? 1 : 20
+    if (text.length < minChars) return
+    // Stop the writing timer immediately so analysis/feedback is never cut off.
+    markAttemptCompleted()
     setSubmittedAnswer(text)
     setAnalyzing(true)
     try {
@@ -401,6 +466,7 @@ export default function CoachPage() {
       setScreen("feedback")
     } catch {
       toast.error(t.coach.errors.analyze)
+      // Stay completed so the timer cannot reappear and wipe feedback later.
     } finally {
       setAnalyzing(false)
     }
@@ -457,12 +523,16 @@ export default function CoachPage() {
     }
   }
 
-  async function finishRoleplay() {
-    if (!mission || !chatSession || analyzing) return
+  async function finishRoleplay(sessionOverride?: ChatSession | null) {
+    const session = sessionOverride ?? chatSession
+    if (!mission || !session || analyzing) return
+    const completedUserTurns = chatMessagesRef.current.filter((message) => message.role === "user").length
+    // Ending the roleplay completes the timed attempt; feedback review is untimed.
+    markAttemptCompleted()
     setAnalyzing(true)
     setScreen("chat_feedback")
     try {
-      const result = await analyzeSession(chatSession.id, hintLevel)
+      const result = await analyzeSession(session.id, hintLevel)
       setChatAnalysis(result.analysis)
       setStealthPractice(result.stealthPractice ?? null)
       setStealthPractices(
@@ -474,16 +544,70 @@ export default function CoachPage() {
           status: "completed",
           hintLevel,
           playCount: playsUsed,
-          attemptCount: userTurns,
+          attemptCount: completedUserTurns,
         })
       }
     } catch {
       toast.error(t.coach.errors.analyze)
-      setScreen("active")
+      // Keep the feedback screen so the learner can retry finish without losing the timer freeze.
+      setScreen("chat_feedback")
     } finally {
       setAnalyzing(false)
     }
   }
+
+  const handleWorkTimeUpRef = useRef<() => void>(() => {})
+  useEffect(() => {
+    handleWorkTimeUpRef.current = () => {
+      if (timeUpHandledRef.current || attemptCompletedRef.current) return
+      if (screenRef.current !== "active") return
+      timeUpHandledRef.current = true
+      stopDictation(true)
+      stopPlayback()
+      clearWorkTimer()
+      setTimeUp(true)
+      toast.message(t.coach.mission.timeUp)
+
+      const currentMission = missionRef.current
+      const text = answerRef.current.trim()
+      const messages = chatMessagesRef.current
+      const session = chatSessionRef.current
+      const userTurns = messages.filter((message) => message.role === "user").length
+
+      // Prefer auto-finishing into feedback when there is enough evidence.
+      if (currentMission?.type === "guided_scene" && session && userTurns > 0) {
+        void finishRoleplay(session)
+        return
+      }
+      if (text.length >= 20) {
+        void submitFreeResponse()
+        return
+      }
+      // Short draft: keep content on screen and let the learner submit manually.
+      // Do not return to setup or wipe the attempt.
+    }
+  })
+
+  useEffect(() => {
+    if (workEndsAt === null || attemptCompleted || screen !== "active") return
+
+    const tick = () => {
+      if (attemptCompletedRef.current || screenRef.current !== "active") {
+        clearWorkTimer()
+        return
+      }
+      const leftMs = workEndsAt - Date.now()
+      const leftSec = Math.max(0, Math.ceil(leftMs / 1000))
+      setRemainingSec(leftSec)
+      if (leftMs <= 0) {
+        handleWorkTimeUpRef.current()
+      }
+    }
+
+    tick()
+    const id = window.setInterval(tick, 250)
+    return () => window.clearInterval(id)
+  }, [workEndsAt, attemptCompleted, screen])
 
   function revealHint() {
     if (!mission || hintLevel >= mission.hints.length) return
@@ -893,6 +1017,9 @@ export default function CoachPage() {
           </div>
           <PhaseDots current={3} label={t.coach.mission.progress} />
         </div>
+        <p className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">
+          {t.coach.feedback.reviewUntimed}
+        </p>
         {hintLevel > 0 ? (
           <p className="rounded-xl border border-warning/25 bg-warning/8 px-4 py-3 text-sm text-muted-foreground">
             {t.coach.feedback.assistedNote}
@@ -918,6 +1045,14 @@ export default function CoachPage() {
           </Badge>
           <PhaseDots current={3} label={t.coach.mission.progress} />
         </div>
+
+        <p className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-muted-foreground">
+          {t.coach.feedback.reviewUntimed}
+        </p>
+
+        <SessionWin
+          model={sessionWinFromCoach(diagnostic.diagnostic, t, language, hintLevel > 0)}
+        />
 
         <section className="rounded-3xl border border-success/25 bg-success/8 p-5 sm:p-7">
           <div className="flex items-start gap-3">
@@ -967,7 +1102,11 @@ export default function CoachPage() {
           </Card>
         </div>
 
-        <DiagnosticReport result={diagnostic.diagnostic} originalText={submittedAnswer} />
+        <DiagnosticReport
+          result={diagnostic.diagnostic}
+          originalText={submittedAnswer}
+          showSessionWin={false}
+        />
 
         <div className="sticky bottom-3 z-10 flex flex-col gap-2 rounded-2xl border border-border bg-background/92 p-3 shadow-lg backdrop-blur sm:flex-row sm:items-center">
           <Button variant="outline" onClick={() => resetAttempt("active")}>
@@ -989,14 +1128,50 @@ export default function CoachPage() {
   const playLimit = mission.listening?.playLimit ?? 0
   const canPlay = playsUsed < playLimit && !isSpeaking && !isDictating
 
+  const timerLabel = remainingSec === null
+    ? null
+    : `${Math.floor(remainingSec / 60)}:${String(remainingSec % 60).padStart(2, "0")}`
+
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <Button variant="ghost" size="sm" onClick={returnToBriefing}>
           <ArrowLeft className="size-4" /> {t.coach.mission.backToBriefing}
         </Button>
-        <PhaseDots current={2} label={t.coach.mission.progress} />
+        <div className="flex flex-wrap items-center gap-2">
+          {timerLabel ? (
+            <Badge
+              variant="outline"
+              className={cn(
+                "gap-1.5 tabular-nums",
+                remainingSec !== null && remainingSec <= 60 && "border-warning/40 text-warning-foreground",
+              )}
+            >
+              <Clock3 className="size-3.5" />
+              {t.coach.mission.timeLeft}: {timerLabel}
+            </Badge>
+          ) : null}
+          <PhaseDots current={2} label={t.coach.mission.progress} />
+        </div>
       </div>
+
+      {timeUp && !attemptCompleted ? (
+        <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm">
+          <p className="font-medium text-foreground">{t.coach.mission.timeUp}</p>
+          <p className="mt-1 text-muted-foreground">{t.coach.mission.timeUpHint}</p>
+          {mission.type !== "guided_scene" && answer.trim().length > 0 ? (
+            <Button
+              className="mt-3"
+              size="sm"
+              onClick={() => void submitFreeResponse({ allowShort: true })}
+              disabled={analyzing || isDictating || isSpeaking}
+            >
+              {analyzing ? <Spinner className="size-4" /> : null}
+              {t.coach.mission.timeUpSubmit}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(19rem,0.8fr)] lg:items-start">
         <section className="min-w-0 space-y-4">

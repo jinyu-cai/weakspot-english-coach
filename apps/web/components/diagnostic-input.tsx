@@ -1,6 +1,6 @@
 "use client"
 
-import { Lightbulb, Microscope, ShieldCheck, Sparkles, Zap } from "lucide-react"
+import { Lightbulb, Microscope, Sparkles, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
@@ -33,10 +33,11 @@ export function DiagnosticInput({
 }) {
   const { t } = useLanguage()
   const wordCount = countWords(value)
+  const ready = wordCount >= MIN_DIAGNOSE_WORDS
 
   return (
-    <Card className="border border-primary/20 shadow-sm ring-primary/10">
-      <CardContent className="flex flex-col gap-5 pt-6 sm:pt-7">
+    <Card className="border border-primary/20 shadow-sm ring-1 ring-primary/10">
+      <CardContent className="flex flex-col gap-4 pt-6 sm:pt-7">
         <div className="flex items-start gap-3">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
             <Lightbulb className="size-4.5" />
@@ -59,11 +60,13 @@ export function DiagnosticInput({
           placeholder={t.diagnose.placeholder}
           rows={7}
           disabled={loading}
-          className="min-h-48 resize-y border-border/80 bg-background text-base leading-relaxed shadow-none focus-visible:border-primary/45"
+          className="min-h-44 resize-y border-border/80 bg-background text-base leading-relaxed shadow-none focus-visible:border-primary/45"
         />
 
         <div className="flex flex-col gap-2">
-          <span className="text-xs font-medium text-muted-foreground">{t.diagnose.onboarding.examplesLabel}</span>
+          <span className="text-xs font-medium text-muted-foreground">
+            {t.diagnose.onboarding.examplesLabel}
+          </span>
           <div className="flex flex-wrap gap-2">
             {t.diagnose.onboarding.exampleLabels.map((label, index) => (
               <button
@@ -80,23 +83,18 @@ export function DiagnosticInput({
         </div>
       </CardContent>
 
-      <CardFooter className="flex flex-col items-stretch gap-4 border-t border-border/70 bg-muted/25 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex min-w-0 flex-1 flex-col gap-2 text-xs text-muted-foreground">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="tabular-nums">
-              {wordCount} {wordCount === 1 ? t.diagnose.word : t.diagnose.words}
-            </span>
-            {wordCount < MIN_DIAGNOSE_WORDS ? (
-              <span className="text-warning-foreground">{t.diagnose.onboarding.minimumHint}</span>
-            ) : null}
-          </div>
-          <span className="flex items-start gap-1.5 leading-relaxed">
-            <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-success" />
-            {t.diagnose.onboarding.privacyNote}
+      <CardFooter className="flex flex-col items-stretch gap-3 border-t border-border/70 bg-muted/25 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-col gap-0.5 text-xs text-muted-foreground">
+          <span className="tabular-nums">
+            {wordCount} {wordCount === 1 ? t.diagnose.word : t.diagnose.words}
+            {!ready ? ` · ${t.diagnose.onboarding.minimumHint}` : ""}
           </span>
+          {t.diagnose.onboarding.privacyNote ? (
+            <span className="leading-relaxed">{t.diagnose.onboarding.privacyNote}</span>
+          ) : null}
         </div>
 
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <div
             role="radiogroup"
             aria-label={t.diagnose.modeLabel}
@@ -129,7 +127,7 @@ export function DiagnosticInput({
           </div>
           <Button
             onClick={onAnalyze}
-            disabled={loading || wordCount < MIN_DIAGNOSE_WORDS}
+            disabled={loading || !ready}
             size="lg"
             className="h-11 w-full px-5 text-sm shadow-sm sm:w-auto"
           >

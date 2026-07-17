@@ -20,7 +20,7 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const visibleItems = NAV_ITEMS.filter((item) => !item.ownerOnly || isOwner)
   const activeHref = [...visibleItems]
     .sort((left, right) => right.href.length - left.href.length)
-    .find((item) => item.href === "/" ? pathname === "/" : pathname.startsWith(item.href))
+    .find((item) => (item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)))
     ?.href
 
   return (
@@ -31,10 +31,14 @@ export function NavSidebar({ onNavigate }: { onNavigate?: () => void }) {
         className="group flex items-center gap-3 rounded-2xl px-2 py-1.5 outline-none transition focus-visible:ring-3 focus-visible:ring-ring/40"
       >
         <span className="flex size-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm transition-transform group-hover:-rotate-3">
-          <span className="text-xl" aria-hidden="true">🦉</span>
+          <span className="text-xl" aria-hidden="true">
+            🦉
+          </span>
         </span>
-        <span className="flex flex-col leading-tight">
-          <span className="font-heading text-lg font-semibold tracking-tight text-sidebar-foreground">WeakSpot</span>
+        <span className="flex min-w-0 flex-col leading-tight">
+          <span className="font-heading text-lg font-semibold tracking-tight text-sidebar-foreground">
+            WeakSpot
+          </span>
           <span className="text-[11px] text-muted-foreground">English Coach</span>
         </span>
       </Link>

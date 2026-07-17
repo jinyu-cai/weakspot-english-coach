@@ -704,11 +704,13 @@ export async function generatePractice(
   targetSkillCode?: string,
   practiceType?: PracticeType,
   session?: {
-    sessionId: string
-    sequenceIndex: number
-    previousSkillCodes: string[]
-    previousPracticeTypes: PracticeType[]
+    sessionId?: string
+    sequenceIndex?: number
+    previousSkillCodes?: string[]
+    previousPracticeTypes?: PracticeType[]
     parentRunId?: string
+    sessionSlot?: number
+    sessionSize?: number
   },
 ): Promise<PracticeExercise> {
   if (USE_MOCK) {
