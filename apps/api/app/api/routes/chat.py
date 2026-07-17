@@ -33,6 +33,7 @@ from app.models.chat import (
     ChatSendRequest,
     SessionAnalysisAI,
 )
+from app.models.learning import CreateActivityRunRequest, RecordEvidenceRequest, UpdateActivityRunRequest
 from app.services.ai_client import LLMProviderConfig
 from app.services.chat_service import chat_reply, predict_completion
 from app.services.model_catalog import server_model_by_id, server_model_for_name, server_model_pair
@@ -44,6 +45,7 @@ from app.services.memory_service import (
 )
 from app.services.memory_write_service import memory_write_lease
 from app.services.session_analysis_service import analyze_session
+from app.services.learning_service import create_activity_run, record_evidence, update_activity_run
 from app.services.stealth_practice_service import (
     build_stealth_probe_instruction,
     record_stealth_probe_outcome,
@@ -379,6 +381,22 @@ def create_session(
     )
     now = now_iso()
     session_id = f"cs_{uuid4().hex[:12]}"
+    learning_run_id = req.missionRunId
+    if not learning_run_id:
+        learning_run_id = create_activity_run(
+            req.userId,
+            CreateActivityRunRequest(
+                activityType="chat",
+                sourceId=session_id,
+                title=req.topic or "English conversation",
+                taskType="open_conversation",
+                goal=req.scenarioPrompt or req.topic or "Practice meaningful English conversation.",
+                targetSkills=[],
+                modality="text_chat",
+                difficulty="adaptive",
+                estimatedMinutes=10,
+            ),
+        )["id"]
     session = {
         "id": session_id,
         "userId": req.userId,
@@ -387,6 +405,10 @@ def create_session(
         "starterMessage": req.starterMessage,
         "scenarioFamily": req.scenarioFamily,
         "scenarioKey": req.scenarioKey,
+        "missionRunId": req.missionRunId,
+        "missionType": req.missionType,
+        "missionTargetSkills": req.missionTargetSkills,
+        "learningRunId": learning_run_id,
         "mode": "text",
         "textModel": text_model,
         "textModelMode": text_model_mode,
@@ -394,6 +416,7 @@ def create_session(
         "llmServerDeepModelId": deep_model_id,
         "llmServerFastModelId": fast_model_id,
         "messageCount": 0,
+        "messageKeyVersion": 2,
         "summary": None,
         "createdAt": now,
         "updatedAt": now,
@@ -477,6 +500,13 @@ def send_message(
     turn_claimed = True
 
     try:
+        learning_run_id = session.get("learningRunId") or session.get("missionRunId")
+        if learning_run_id:
+            update_activity_run(
+                req.userId,
+                str(learning_run_id),
+                UpdateActivityRunRequest(status="started"),
+            )
         logger.info(
             "chat[%s] start user_id=%s session=%s model=%s chars=%d",
             request_id, req.userId, req.sessionId, text_model, len(req.text),
@@ -809,6 +839,7 @@ def analyze_chat_session(
                 trace_id=request_id,
                 memory_context=memory_pack.get("text"),
                 stealth_probes=active_stealth_probes,
+                mission_targets=session.get("missionTargetSkills") or [],
             )
             # Store the exact LLM result before any learning state is changed.
             # If a later write fails, the retry reuses this draft verbatim.
@@ -996,6 +1027,117 @@ def analyze_chat_session(
             }
             for weakness in analysis.weaknesses
         ]
+
+        unified_learning_evidence: list[dict] = []
+        stealth_learning_codes: set[str] = set()
+        assessment_by_probe = {
+            str(item.get("probeId") or ""): item
+            for item in analysis_json.get("stealthProbeAssessments") or []
+        }
+        for probe, result in zip(active_stealth_probes, stealth_practices):
+            skill_code = str(result.get("targetSkillCode") or probe.get("targetSkillCode") or "")
+            if not skill_code:
+                continue
+            assessment = assessment_by_probe.get(str(probe.get("probeId") or ""), {})
+            outcome = str(result.get("outcome") or "no_opportunity")
+            opportunity = bool(result.get("opportunityPresent"))
+            unified_learning_evidence.append(record_evidence(
+                user_id,
+                RecordEvidenceRequest(
+                    clientEventId=f"stealth:{session_id}:{probe.get('probeId') or skill_code}",
+                    runId=session.get("learningRunId") or session.get("missionRunId"),
+                    sourceId=session_id,
+                    skillCode=skill_code,
+                    outcome=outcome,
+                    opportunityPresent=opportunity,
+                    supportLevel=int(assessment.get("hintLevel", 0) or 0),
+                    modality="voice" if session.get("mode") == "voice" else "text_chat",
+                    taskType="stealth_probe",
+                    taskDifficulty=0.6,
+                    evaluatorConfidence=float(assessment.get("confidence", 0.0) or 0.0),
+                    contextKey=str(session.get("scenarioKey") or session_id),
+                    novelContext=str(probe.get("progressionStage") or "") == "transfer",
+                    delayed=str(probe.get("progressionStage") or "") in {"variation", "transfer"},
+                    evidenceQuote=str(assessment.get("evidenceQuote") or ""),
+                ),
+            ))
+            stealth_learning_codes.add(skill_code)
+
+        mission_targets = [
+            str(skill) for skill in (session.get("missionTargetSkills") or [])
+            if str(skill) and str(skill) not in stealth_learning_codes
+        ]
+        if mission_targets:
+            target_by_code = {
+                item.skillCode: item.model_dump(mode="json")
+                for item in analysis.targetEvidence
+                if item.skillCode in mission_targets
+            }
+            errors_by_code = {
+                error["code"]: error for error in saved_errors
+                if error.get("code") in mission_targets
+            }
+            learner_text = " ".join(
+                str(message.get("content") or "")
+                for message in user_messages
+            )
+            normalized_learner_text = " ".join(learner_text.casefold().split())
+            for skill_code in mission_targets:
+                payload = dict(target_by_code.get(skill_code) or {
+                    "opportunityPresent": False,
+                    "outcome": "no_opportunity",
+                    "evidenceQuote": "",
+                    "confidence": 0.0,
+                })
+                matching_error = errors_by_code.get(skill_code)
+                if matching_error:
+                    payload.update({
+                        "opportunityPresent": True,
+                        "outcome": "failure",
+                        "evidenceQuote": matching_error.get("originalText", ""),
+                        "confidence": max(0.75, float(payload.get("confidence", 0.0))),
+                    })
+                quote = " ".join(str(payload.get("evidenceQuote") or "").casefold().split())
+                if payload.get("opportunityPresent") and (
+                    not quote or quote not in normalized_learner_text
+                ):
+                    payload.update({
+                        "opportunityPresent": False,
+                        "outcome": "no_opportunity",
+                        "evidenceQuote": "",
+                        "confidence": 0.0,
+                    })
+                unified_learning_evidence.append(record_evidence(
+                    user_id,
+                    RecordEvidenceRequest(
+                        clientEventId=f"mission-chat:{session_id}:{skill_code}",
+                        runId=session.get("learningRunId") or session.get("missionRunId"),
+                        sourceId=session_id,
+                        skillCode=skill_code,
+                        outcome=str(payload["outcome"]),
+                        opportunityPresent=bool(payload["opportunityPresent"]),
+                        supportLevel=req.hintLevel,
+                        modality="voice" if session.get("mode") == "voice" else "text_chat",
+                        taskType=str(session.get("missionType") or "guided_scene"),
+                        taskDifficulty=0.6,
+                        evaluatorConfidence=float(payload.get("confidence", 0.0)),
+                        contextKey=str(session.get("scenarioKey") or session_id),
+                        novelContext=True,
+                        evidenceQuote=str(payload.get("evidenceQuote") or ""),
+                    ),
+                ))
+        analysis_json["learningEvidence"] = unified_learning_evidence
+        learning_run_id = session.get("learningRunId") or session.get("missionRunId")
+        if learning_run_id:
+            update_activity_run(
+                user_id,
+                str(learning_run_id),
+                UpdateActivityRunRequest(
+                    status="completed",
+                    hintLevel=req.hintLevel,
+                    attemptCount=len(user_messages),
+                ),
+            )
         # Durable memory is part of analysis completion. A transient write
         # failure keeps the immutable draft retryable instead of finalizing a
         # session that permanently lost its learning evidence.

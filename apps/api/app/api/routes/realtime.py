@@ -209,6 +209,7 @@ def create_realtime_session(
             "responses": 0,
         },
         "messageCount": 0,
+        "messageKeyVersion": 2,
         "summary": None,
         "createdAt": now,
         "updatedAt": now,

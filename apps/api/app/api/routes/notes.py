@@ -70,7 +70,12 @@ def save_chat_selection(
         if not source_content:
             raise HTTPException(status_code=404, detail="Chat message not found.")
     else:
-        message = get_chat_message(identity.user_id, req.messageCreatedAt, req.messageId)
+        message = get_chat_message(
+            identity.user_id,
+            req.messageCreatedAt,
+            req.messageId,
+            req.sessionId,
+        )
         if not message or message.get("sessionId") != req.sessionId:
             raise HTTPException(status_code=404, detail="Chat message not found.")
         source_content = str(message.get("content") or "").strip()

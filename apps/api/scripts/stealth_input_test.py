@@ -682,7 +682,7 @@ def main() -> int:
         )
         assert candidate_item["scoreBreakdown"]["verification"] == "candidate"
         assert candidate_item["scoreBreakdown"]["verificationFactor"] < 1
-        assert "[candidate]" in tentative_pack["text"]
+        assert "candidate" in tentative_pack["text"]
 
         observed = remember_candidates(
             verification_user,

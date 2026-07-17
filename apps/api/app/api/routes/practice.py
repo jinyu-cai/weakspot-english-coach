@@ -33,12 +33,24 @@ from app.models.practice import (
     PracticeGradeAIResult,
     SubmitPracticeRequest,
 )
+from app.models.learning import (
+    CreateActivityRunRequest,
+    RecordEvidenceRequest,
+    UpdateActivityRunRequest,
+)
 from app.services.ai_client import LLMProviderConfig
 from app.services.practice_service import generate_practice_exercise, grade_practice
 from app.services.decision_service import recommend_next_action
 from app.services.memory_service import record_practice_outcome_memory, retrieve_memory_pack
 from app.services.memory_write_service import MemoryWriteBusyError, memory_write_locked
 from app.services.stealth_practice_service import record_guided_practice_retention
+from app.services.learning_service import (
+    create_activity_run,
+    learning_overview,
+    recommend_coach_mission,
+    record_evidence,
+    update_activity_run,
+)
 
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
@@ -119,6 +131,8 @@ def _record_practice_outcome(
     prompt_zh: str | None = None,
     explanation_zh: str | None = None,
     exercise_type: str = "fix_sentence",
+    activity_run_id: str | None = None,
+    complete_activity_run: bool = True,
 ) -> dict:
     """Persist one graded practice attempt and fold it into the learner model.
 
@@ -219,13 +233,95 @@ def _record_practice_outcome(
         now=now,
     )
 
+    if activity_run_id:
+        update_activity_run(
+            user_id,
+            activity_run_id,
+            UpdateActivityRunRequest(status="started", attemptCount=1),
+        )
+    learning_evidence = record_evidence(
+        user_id,
+        RecordEvidenceRequest(
+            clientEventId=f"practice:{attempt_id}",
+            runId=activity_run_id,
+            sourceId=exercise_id or attempt_id,
+            skillCode=skill_code,
+            outcome="success" if grade.isCorrect else "failure",
+            opportunityPresent=True,
+            supportLevel=0,
+            modality="exercise",
+            taskType=exercise_type,
+            taskDifficulty=0.7 if exercise_type == "rewrite_sentence" else 0.5,
+            evaluatorConfidence=0.95,
+            contextKey=f"practice:{exercise_type}",
+            novelContext=exercise_type == "rewrite_sentence",
+            delayed=False,
+            evidenceQuote=user_answer[:600],
+        ),
+    )
+    if activity_run_id and complete_activity_run:
+        update_activity_run(
+            user_id,
+            activity_run_id,
+            UpdateActivityRunRequest(status="completed", attemptCount=1),
+        )
+
     return {
         "attempt": attempt,
         "updatedSkill": updated_skill,
         "recordedError": recorded_error,
         "memoryUpdates": memory_updates,
         "retentionUpdate": retention_update,
+        "learningEvidence": learning_evidence,
     }
+
+
+def _select_session_decision(req: GeneratePracticeRequest) -> dict:
+    """Choose a useful but non-repetitive next item for an adaptive session."""
+    base = recommend_next_action(
+        req.userId,
+        requested_skill_code=req.targetSkillCode,
+        requested_practice_type=req.practiceType.value if req.practiceType else None,
+    )
+    prior_skills = [str(code) for code in req.previousSkillCodes]
+    prior_types = [item.value for item in req.previousPracticeTypes]
+
+    if not req.targetSkillCode:
+        learning_decision = recommend_coach_mission(req.userId, modality="text")
+        overview = learning_overview(req.userId)
+        ranked_skills = list(learning_decision.get("targetSkills") or [])
+        ranked_skills.extend(
+            str(row.get("skillCode"))
+            for row in overview.get("states") or []
+            if row.get("skillCode") not in ranked_skills
+        )
+        unused = [code for code in ranked_skills if code not in prior_skills]
+        if unused:
+            base = recommend_next_action(req.userId, requested_skill_code=unused[0])
+        base["learningScheduler"] = {
+            "policy": learning_decision.get("policy"),
+            "reason": learning_decision.get("reason"),
+            "rankedSkills": ranked_skills[:8],
+        }
+
+    if not req.practiceType:
+        ranked_types = [
+            str(row.get("practiceType"))
+            for row in base.get("practiceTypeScores") or []
+            if row.get("practiceType")
+        ]
+        unused_types = [kind for kind in ranked_types if kind not in prior_types[-2:]]
+        if unused_types:
+            base["practiceType"] = unused_types[0]
+            base["practiceTypeReason"] = (
+                f"{unused_types[0]} preserves productive difficulty while adding session variety."
+            )
+            base["reason"] = f"{base.get('skillReason', '')} {base['practiceTypeReason']}"
+
+    base["sessionPolicy"] = "adaptive-need-variety-v1"
+    base["sessionId"] = req.sessionId
+    base["sequenceIndex"] = req.sequenceIndex
+    return base
 
 
 def _practice_request_hash(endpoint: str, payload: dict) -> str:
@@ -278,11 +374,7 @@ def generate(
         profile = get_or_create_profile(req.userId)
 
         requested_type = req.practiceType.value if req.practiceType else None
-        decision = recommend_next_action(
-            req.userId,
-            requested_skill_code=req.targetSkillCode,
-            requested_practice_type=requested_type,
-        )
+        decision = _select_session_decision(req)
         skill_code = decision.get("targetSkillCode") or DEFAULT_SKILL
         selected_type = decision.get("practiceType") or requested_type
         taxonomy = ERROR_TAXONOMY.get(skill_code, {"label": skill_code, "zhLabel": skill_code})
@@ -327,7 +419,7 @@ def generate(
             "id": f"ex_{uuid4().hex[:12]}",
             "userId": req.userId,
             "type": ai_ex.type.value,
-            "targetSkillCode": ai_ex.targetSkillCode or skill_code,
+            "targetSkillCode": skill_code,
             "promptZh": ai_ex.promptZh,
             "question": ai_ex.question,
             "answer": ai_ex.answer,
@@ -342,6 +434,24 @@ def generate(
                 "estimatedTokens": memory_pack.get("estimatedTokens", 0),
             },
         }
+        run = create_activity_run(
+            req.userId,
+            CreateActivityRunRequest(
+                activityType="practice",
+                sourceId=exercise["id"],
+                parentRunId=req.parentRunId,
+                title=ai_ex.promptZh[:240],
+                taskType=ai_ex.type.value,
+                goal=decision.get("reason"),
+                targetSkills=[exercise["targetSkillCode"]],
+                modality="exercise",
+                difficulty=decision.get("progressionStage", "replay"),
+                estimatedMinutes=3,
+            ),
+        )
+        exercise["activityRunId"] = run["id"]
+        exercise["sessionId"] = req.sessionId
+        exercise["sequenceIndex"] = req.sequenceIndex
         save_exercise(_exercise_for_storage(exercise))
         return {"exercise": exercise}
 
@@ -429,6 +539,7 @@ def submit(
             prompt_zh=exercise.get("promptZh"),
             explanation_zh=exercise.get("explanationZh"),
             exercise_type=exercise.get("type", "fix_sentence"),
+            activity_run_id=exercise.get("activityRunId"),
         )
 
         result = {
@@ -438,6 +549,7 @@ def submit(
             "recordedError": outcome["recordedError"],
             "memoryUpdates": outcome["memoryUpdates"],
             "retentionUpdate": outcome["retentionUpdate"],
+            "learningEvidence": outcome["learningEvidence"],
             "clientAttemptId": stable_client_id,
         }
         complete_practice_attempt_request(
@@ -509,6 +621,8 @@ def grade_adhoc(
                 "exerciseType": req.exerciseType.value if req.exerciseType else None,
                 "promptZh": req.promptZh,
                 "explanationZh": req.explanationZh,
+                "activityRunId": req.activityRunId,
+                "completeActivityRun": req.completeActivityRun,
             },
         )
         if claim.get("claimState") == "complete":
@@ -544,6 +658,8 @@ def grade_adhoc(
             prompt_zh=req.promptZh,
             explanation_zh=req.explanationZh,
             exercise_type=req.exerciseType.value if req.exerciseType else "fix_sentence",
+            activity_run_id=req.activityRunId,
+            complete_activity_run=req.completeActivityRun,
         )
 
         result = {
@@ -553,6 +669,7 @@ def grade_adhoc(
             "recordedError": outcome["recordedError"],
             "memoryUpdates": outcome["memoryUpdates"],
             "retentionUpdate": outcome["retentionUpdate"],
+            "learningEvidence": outcome["learningEvidence"],
             "clientAttemptId": stable_client_id,
         }
         complete_practice_attempt_request(

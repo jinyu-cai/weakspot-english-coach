@@ -324,25 +324,42 @@ then x 0.75 when verification state is candidate
 ```
 
 The ranker reserves up to two important preferences/goals, then fills the rest
-by score. It writes an explainable `MEMTRACE` containing selected IDs, component
-scores, query preview/hash, candidate count, and token usage.
+by score. For non-chat tasks, retrieval also builds a separate compact overview
+of every active weakness before adding detailed rows. It writes an explainable
+`MEMTRACE` containing selected IDs, weakness-overview completeness and IDs,
+component scores, query preview/hash, candidate count, and token usage.
 
 ## Bounded Memory Pack
 
-The default pack is at most 700 estimated tokens and six memories. It is added
-to the model as a separate system message with an explicit rule that current
-input wins. Text chat also keeps only the 12 latest in-session messages.
-Planning caps raw skills at 20 and recent errors at 40 instead of sending an
-unbounded history.
+The default pack is at most 700 estimated tokens and six detailed memories. It
+is added to the model as a separate system message with an explicit rule that
+current input wins. The weakness layer does not consume those six detail slots:
+
+1. Include every active weakness as a compact profile entry with skill code,
+   weakest-modality mastery, observation count, relapse risk, and review timing.
+2. If that representation does not fit its reserved share of the token budget,
+   degrade to a complete skill-code index.
+3. If an exceptionally small caller budget cannot hold even the complete
+   index, emit a visibly partial index and return `weaknessOverview.complete=false`
+   with exact included/total counts. The omission is never silent.
+4. Add at most three query-relevant weakness records with full content and
+   evidence; other relevant memory kinds can fill the remaining detail slots.
+
+Ordinary text chat deliberately suppresses both weakness overview and raw
+weakness details. Its separately gated stealth scheduler still reads the full
+active weakness set and may select one natural practice opportunity. Text chat
+also keeps only the 12 latest in-session messages. Planning caps raw skills at
+20 and recent errors at 40 instead of sending an unbounded history.
 
 This keeps the prompt roughly constant as learner history grows:
 
 ```text
 all stored history
   -> expiry/status filter
-  -> vector + lexical hybrid ranking
-  -> critical-memory reservation
-  -> 700-token Memory Pack
+  -> all active weaknesses: compact overview (or code-index fallback)
+  -> vector + lexical hybrid ranking for detailed evidence
+  -> critical-memory reservation + at most 3 detailed weaknesses
+  -> one bounded 700-token Memory Pack
   -> Qwen diagnosis/chat/plan/practice prompt
 ```
 

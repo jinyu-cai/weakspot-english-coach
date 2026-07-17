@@ -26,9 +26,12 @@ import {
   deleteInputLearningSource,
   getInputLearningSource,
   getInputLearningSources,
+  submitInputLearningAttempt,
 } from "@/lib/api-client"
 import type {
   InputAttentionMission,
+  InputLearningAttempt,
+  InputLearningAttemptKind,
   InputLearningItem,
   InputLearningSource,
   InputLearningSourceType,
@@ -519,6 +522,7 @@ export default function InputLearningPage() {
   }) {
     const items = source.items ?? []
     const isMission = source.mode === "attention_mission"
+    const [retrievalActive, setRetrievalActive] = useState(false)
 
     return (
       <section className="flex flex-col gap-5 rounded-3xl border border-primary/15 bg-card p-5 shadow-sm sm:p-7">
@@ -562,7 +566,7 @@ export default function InputLearningPage() {
               )}
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className={cn("grid gap-4 transition-all lg:grid-cols-2", retrievalActive && "pointer-events-none select-none blur-md")}>
               {items.map((item, index) => (
                 <article key={item.id || `${item.expression}-${index}`} className="rounded-2xl border border-border bg-background p-4">
                   <div className="flex flex-wrap items-start justify-between gap-2">
@@ -597,6 +601,13 @@ export default function InputLearningPage() {
                 </article>
               ))}
             </div>
+            {!isMission && (
+              <InputOutputPractice
+                source={source}
+                items={items}
+                onRetrievalActiveChange={setRetrievalActive}
+              />
+            )}
           </div>
         )}
       </section>
@@ -641,6 +652,136 @@ export default function InputLearningPage() {
       </div>
     )
   }
+}
+
+function InputOutputPractice({
+  source,
+  items,
+  onRetrievalActiveChange,
+}: {
+  source: InputLearningSource
+  items: InputLearningItem[]
+  onRetrievalActiveChange: (active: boolean) => void
+}) {
+  const { language, t } = useLanguage()
+  const [kind, setKind] = useState<InputLearningAttemptKind>("retell")
+  const [responseText, setResponseText] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [result, setResult] = useState<InputLearningAttempt | null>(null)
+  const [openedAt] = useState(() => Date.now())
+  const clientAttemptIdRef = useRef<string | null>(null)
+  const reusableItems = items.filter((item) => item.kind !== "culture").slice(0, 2)
+  const dueAt = source.delayedReviewDueAt
+    ? new Date(source.delayedReviewDueAt)
+    : new Date(new Date(source.createdAt).getTime() + 24 * 60 * 60 * 1000)
+  const delayedReady = Boolean(dueAt && !Number.isNaN(dueAt.getTime()) && openedAt >= dueAt.getTime())
+
+  function selectKind(next: InputLearningAttemptKind) {
+    setKind(next)
+    setResult(null)
+    setResponseText("")
+    clientAttemptIdRef.current = null
+    onRetrievalActiveChange(next === "delayed_retrieval")
+  }
+
+  async function handleSubmit() {
+    if (!responseText.trim() || submitting) return
+    setSubmitting(true)
+    try {
+      const clientAttemptId = clientAttemptIdRef.current ?? crypto.randomUUID()
+      clientAttemptIdRef.current = clientAttemptId
+      const attempt = await submitInputLearningAttempt(source.id, {
+        kind,
+        responseText: responseText.trim(),
+        targetItemIds: kind === "required_reuse" ? reusableItems.map((item) => item.id) : [],
+        clientAttemptId,
+        // Immediate retell/reuse keeps the source targets visible. Only the
+        // delayed retrieval mode hides them and can count as independent.
+        hintUsed: kind !== "delayed_retrieval",
+      })
+      setResult(attempt)
+      toast.success(attempt.passed ? t.inputLearning.outputPassed : t.inputLearning.outputRecorded)
+    } catch (error) {
+      toast.error(t.inputLearning.outputFailed, {
+        description: error instanceof Error ? error.message : undefined,
+      })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="mt-2 rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:p-5">
+      <div className="flex flex-col gap-1">
+        <h3 className="font-heading text-lg font-semibold">{t.inputLearning.outputTitle}</h3>
+        <p className="text-sm text-muted-foreground">{t.inputLearning.outputDescription}</p>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        {([
+          ["retell", t.inputLearning.retellMode],
+          ["required_reuse", t.inputLearning.reuseMode],
+          ["delayed_retrieval", t.inputLearning.delayedMode],
+        ] as const).map(([value, label]) => (
+          <Button
+            key={value}
+            type="button"
+            variant={kind === value ? "default" : "outline"}
+            onClick={() => selectKind(value)}
+            disabled={value === "delayed_retrieval" && !delayedReady}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+
+      {kind === "required_reuse" ? (
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted-foreground">{t.inputLearning.requiredTargets}</span>
+          {reusableItems.map((item) => <Badge key={item.id}>{item.expression}</Badge>)}
+        </div>
+      ) : kind === "delayed_retrieval" ? (
+        <p className="mt-4 text-sm text-muted-foreground">{t.inputLearning.delayedPrompt}</p>
+      ) : (
+        <p className="mt-4 text-sm text-muted-foreground">{t.inputLearning.retellPrompt}</p>
+      )}
+
+      {!delayedReady && dueAt ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          {t.inputLearning.delayedDue} {dueAt.toLocaleString(language === "zh-CN" ? "zh-CN" : "en-US")}
+        </p>
+      ) : null}
+
+      <Textarea
+        value={responseText}
+        onChange={(event) => {
+          setResponseText(event.target.value)
+          setResult(null)
+          clientAttemptIdRef.current = null
+        }}
+        placeholder={t.inputLearning.outputPlaceholder}
+        className="mt-4 min-h-32 bg-background"
+        disabled={submitting || Boolean(result)}
+      />
+      <div className="mt-3 flex justify-end">
+        <Button onClick={() => void handleSubmit()} disabled={!responseText.trim() || submitting || Boolean(result)}>
+          {submitting ? <Sparkles className="animate-pulse" data-icon="inline-start" /> : <CheckCircle2 data-icon="inline-start" />}
+          {submitting ? t.inputLearning.outputChecking : t.inputLearning.outputSubmit}
+        </Button>
+      </div>
+
+      {result ? (
+        <div className={cn("mt-4 rounded-xl border p-3 text-sm", result.passed ? "border-emerald-500/30 bg-emerald-500/8" : "border-amber-500/30 bg-amber-500/8")}>
+          <p className="font-medium">{result.passed ? t.inputLearning.outputPassed : t.inputLearning.outputTryAgain}</p>
+          <p className="mt-1 text-muted-foreground">{result.feedback}</p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {result.wordCount} {t.inputLearning.words} · {result.matchedExpressions.length} {t.inputLearning.targetsMatched}
+            {result.countedAsDelayed ? ` · ${t.inputLearning.countedDelayed}` : ""}
+          </p>
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 function LearningReason({

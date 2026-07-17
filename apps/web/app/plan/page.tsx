@@ -5,7 +5,7 @@ import useSWR from "swr"
 import { toast } from "sonner"
 import { CalendarRange, Sparkles } from "lucide-react"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { generatePlan, getPlan } from "@/lib/api-client"
+import { generatePlan, getPlan, updatePlanTask } from "@/lib/api-client"
 import type { LearningPlan, PlanErrorScope } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
@@ -41,8 +41,9 @@ export default function PlanPage() {
     }
   }
 
-  function toggleTask(taskId: string, completed: boolean) {
+  async function toggleTask(taskId: string, completed: boolean) {
     if (!activePlan) return
+    const previous = activePlan
     const updated: LearningPlan = {
       ...activePlan,
       days: activePlan.days.map((d) => ({
@@ -52,6 +53,15 @@ export default function PlanPage() {
     }
     setPlan(updated)
     mutate({ plan: updated }, { revalidate: false })
+    try {
+      const persisted = await updatePlanTask(taskId, completed ? "completed" : "assigned")
+      setPlan(persisted)
+      mutate({ plan: persisted }, { revalidate: false })
+    } catch {
+      setPlan(previous)
+      mutate({ plan: previous }, { revalidate: false })
+      toast.error(t.plan.updateFailed)
+    }
   }
 
   return (
@@ -83,7 +93,14 @@ export default function PlanPage() {
       ) : activePlan ? (
         <>
           <div className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 p-4">
-            <p className="font-heading text-sm font-semibold text-primary">{activePlan.title}</p>
+            <div>
+              <p className="font-heading text-sm font-semibold text-primary">{activePlan.title}</p>
+              {activePlan.progress ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {activePlan.progress.completedTasks}/{activePlan.progress.totalTasks} {t.common.done} · {activePlan.progress.percent}%
+                </p>
+              ) : null}
+            </div>
             <Button variant="outline" size="sm" onClick={handleGenerate} disabled={generating}>
               {generating ? <Spinner /> : <Sparkles data-icon="inline-start" />}
               {generating ? t.plan.regenerating : t.plan.regenerate}

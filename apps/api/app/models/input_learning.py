@@ -25,6 +25,7 @@ InputLearningItemKind = Literal[
     "pronunciation",
     "culture",
 ]
+InputLearningAttemptKind = Literal["retell", "required_reuse", "delayed_retrieval"]
 
 
 class AnalyzeInputLearningRequest(BaseModel):
@@ -58,6 +59,26 @@ class AnalyzeInputLearningRequest(BaseModel):
             return None
         stripped = value.strip()
         return stripped or None
+
+
+class SubmitInputLearningAttemptRequest(BaseModel):
+    kind: InputLearningAttemptKind
+    responseText: str = Field(min_length=1, max_length=8000)
+    targetItemIds: list[str] = Field(default_factory=list, max_length=6)
+    clientAttemptId: str = Field(
+        min_length=8,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )
+    hintUsed: bool = False
+
+    @field_validator("responseText")
+    @classmethod
+    def normalize_response(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("responseText must not be blank")
+        return normalized
 
 
 class InputLearningAIItem(BaseModel):

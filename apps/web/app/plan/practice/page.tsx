@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation"
 import useSWR from "swr"
 import { toast } from "sonner"
 import { ArrowLeft, CheckCircle2, Dumbbell, Lightbulb, RefreshCw, Trophy, XCircle } from "lucide-react"
-import { generatePractice, getPlan, gradePracticeAdhoc } from "@/lib/api-client"
+import { generatePractice, getPlan, gradePracticeAdhoc, updatePlanTask } from "@/lib/api-client"
 import { DEMO_USER_ID } from "@/lib/mock-data"
 import { practiceTypeLabel, skillLabel as localizedSkillLabel } from "@/lib/practice"
 import type {
@@ -66,7 +66,7 @@ function RunnerCard({
   index: number
   total: number
   onGraded: (grade: PracticeGrade) => void
-  onNext: () => void
+  onNext: () => void | Promise<void>
   onRegenerate: () => void
   regenerating: boolean
   isLast: boolean
@@ -74,6 +74,7 @@ function RunnerCard({
   const [answer, setAnswer] = useState("")
   const [grade, setGrade] = useState<PracticeGrade | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [advancing, setAdvancing] = useState(false)
   const clientAttemptIdRef = useRef<string | null>(null)
   const { language, t } = useLanguage()
 
@@ -95,6 +96,7 @@ function RunnerCard({
         exerciseType: practiceType,
         promptZh: exercise.promptZh,
         explanationZh: exercise.explanationZh,
+        activityRunId: exercise.activityRunId ?? undefined,
       })
       setGrade(result)
       onGraded(result)
@@ -106,6 +108,18 @@ function RunnerCard({
   }
 
   const canSubmit = answer.trim().length > 0
+
+  async function handleNext() {
+    if (advancing) return
+    setAdvancing(true)
+    try {
+      await onNext()
+    } catch {
+      toast.error(t.plan.freshFailed)
+    } finally {
+      setAdvancing(false)
+    }
+  }
 
   return (
     <Card className="w-full">
@@ -186,7 +200,10 @@ function RunnerCard({
             )}
           </Button>
         ) : (
-          <Button onClick={onNext}>{isLast ? t.common.finishSession : t.common.nextQuestion}</Button>
+          <Button onClick={handleNext} disabled={advancing}>
+            {advancing ? <Spinner data-icon="inline-start" /> : null}
+            {isLast ? t.common.finishSession : t.common.nextQuestion}
+          </Button>
         )}
       </CardFooter>
     </Card>
@@ -210,26 +227,86 @@ function PlanPracticeFlow() {
   const { language, t } = useLanguage()
 
   const seededRef = useRef<string | null>(null)
+  const sessionIdRef = useRef<string | null>(null)
+
+  function mapGeneratedExercise(fresh: PracticeExercise): PlanExercise {
+    return {
+      id: fresh.id,
+      promptZh: fresh.promptZh,
+      question: fresh.question,
+      answer: fresh.answer ?? "",
+      explanationZh: fresh.explanationZh ?? "",
+      activityRunId: fresh.activityRunId,
+    }
+  }
+
+  async function seedJustInTimeTask(nextLocated: { day: LearningPlanDay; task: LearningPlanTask }) {
+    const sessionId = crypto.randomUUID()
+    sessionIdRef.current = sessionId
+    setGeneratingBatch(true)
+    try {
+      await updatePlanTask(nextLocated.task.id, "started")
+      const skillCode = nextLocated.day.targetSkillCodes?.[0] ?? DEFAULT_SKILL
+      const fresh = await generatePractice(DEMO_USER_ID, skillCode, nextLocated.task.practiceType, {
+        sessionId,
+        sequenceIndex: 0,
+        previousSkillCodes: [],
+        previousPracticeTypes: [],
+        parentRunId: nextLocated.task.activityRunId ?? undefined,
+      })
+      setSession({ task: nextLocated.task, day: nextLocated.day, exercises: [mapGeneratedExercise(fresh)] })
+    } catch {
+      setSession({
+        task: nextLocated.task,
+        day: nextLocated.day,
+        exercises: nextLocated.task.exercises ?? [],
+      })
+      toast.error(t.plan.freshFailed)
+    } finally {
+      setGeneratingBatch(false)
+    }
+  }
+
   useEffect(() => {
     if (!plan || !taskId || seededRef.current === taskId) return
     const nextLocated = findPlanTask(plan, taskId)
     if (!nextLocated) return
 
     seededRef.current = taskId
-    setSession({ task: nextLocated.task, day: nextLocated.day, exercises: nextLocated.task.exercises ?? [] })
+    setSession({ task: nextLocated.task, day: nextLocated.day, exercises: [] })
     setCurrent(0)
     setGrades([])
     setPhase("active")
+    void seedJustInTimeTask(nextLocated)
+  // seedJustInTimeTask intentionally runs once per task id.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plan, taskId])
 
   function handleGraded(grade: PracticeGrade) {
     setGrades((prev) => [...prev, grade])
   }
 
-  function handleNext() {
-    const total = session?.exercises.length ?? 0
-    if (current + 1 >= total) setPhase("summary")
-    else setCurrent((c) => c + 1)
+  async function handleNext() {
+    if (!session) return
+    const total = session.task.exercises.length || 3
+    if (current + 1 >= total) {
+      const average = grades.length
+        ? Math.round(grades.reduce((sum, item) => sum + item.score, 0) / grades.length)
+        : undefined
+      await updatePlanTask(session.task.id, "completed", average)
+      setPhase("summary")
+      return
+    }
+    const skillCode = session.day.targetSkillCodes?.[0] ?? DEFAULT_SKILL
+    const next = await generatePractice(DEMO_USER_ID, skillCode, session.task.practiceType, {
+      sessionId: sessionIdRef.current ?? crypto.randomUUID(),
+      sequenceIndex: current + 1,
+      previousSkillCodes: session.exercises.map((item) => skillCode),
+      previousPracticeTypes: session.exercises.map(() => session.task.practiceType),
+      parentRunId: session.task.activityRunId ?? undefined,
+    })
+    setSession((value) => value ? { ...value, exercises: [...value.exercises, mapGeneratedExercise(next)] } : value)
+    setCurrent((value) => value + 1)
   }
 
   async function handleRegenerate() {
@@ -237,14 +314,14 @@ function PlanPracticeFlow() {
     const skillCode = session.day.targetSkillCodes?.[0] ?? DEFAULT_SKILL
     setRegenerating(true)
     try {
-      const fresh = await generatePractice(DEMO_USER_ID, skillCode, session.task.practiceType)
-      const mapped: PlanExercise = {
-        id: fresh.id,
-        promptZh: fresh.promptZh,
-        question: fresh.question,
-        answer: fresh.answer ?? "",
-        explanationZh: fresh.explanationZh ?? "",
-      }
+      const fresh = await generatePractice(DEMO_USER_ID, skillCode, session.task.practiceType, {
+        sessionId: sessionIdRef.current ?? crypto.randomUUID(),
+        sequenceIndex: current,
+        previousSkillCodes: session.exercises.map(() => skillCode),
+        previousPracticeTypes: session.exercises.map(() => session.task.practiceType),
+        parentRunId: session.task.activityRunId ?? undefined,
+      })
+      const mapped = mapGeneratedExercise(fresh)
       setSession((prev) =>
         prev ? { ...prev, exercises: prev.exercises.map((ex, i) => (i === current ? mapped : ex)) } : prev,
       )
@@ -256,37 +333,27 @@ function PlanPracticeFlow() {
     }
   }
 
-  // Regenerate a whole fresh set of the same type/skill (used after finishing).
+  // Start a new adaptive set; later questions are generated after each grade.
   async function generateNewSet() {
     if (!session) return
     const skillCode = session.day.targetSkillCodes?.[0] ?? DEFAULT_SKILL
-    const count = session.exercises.length || 1
     setGeneratingBatch(true)
     try {
-      const results = await Promise.allSettled(
-        Array.from({ length: count }, () =>
-          generatePractice(DEMO_USER_ID, skillCode, session.task.practiceType),
-        ),
-      )
-      const fresh: PlanExercise[] = results
-        .filter((r): r is PromiseFulfilledResult<PracticeExercise> => r.status === "fulfilled")
-        .map((r) => ({
-          id: r.value.id,
-          promptZh: r.value.promptZh,
-          question: r.value.question,
-          answer: r.value.answer ?? "",
-          explanationZh: r.value.explanationZh ?? "",
-        }))
-      if (fresh.length === 0) {
-        toast.error(t.plan.newFailed)
-        return
-      }
-      setSession((prev) => (prev ? { ...prev, exercises: fresh } : prev))
+      const sessionId = crypto.randomUUID()
+      sessionIdRef.current = sessionId
+      const fresh = await generatePractice(DEMO_USER_ID, skillCode, session.task.practiceType, {
+        sessionId,
+        sequenceIndex: 0,
+        previousSkillCodes: [],
+        previousPracticeTypes: [],
+        parentRunId: session.task.activityRunId ?? undefined,
+      })
+      setSession((prev) => (prev ? { ...prev, exercises: [mapGeneratedExercise(fresh)] } : prev))
       setCurrent(0)
       setGrades([])
       setPhase("active")
       toast.success("New questions ready", {
-        description: `${fresh.length} ${practiceTypeLabel(session.task.practiceType, language)} ${t.plan.sameType}`,
+        description: `1 ${practiceTypeLabel(session.task.practiceType, language)} ${t.plan.sameType}`,
       })
     } catch {
       toast.error(t.plan.newFailed)
@@ -339,6 +406,14 @@ function PlanPracticeFlow() {
   const practiceType: PracticeType = session.task.practiceType
   const sourceExercises = session.exercises
 
+  if (sourceExercises.length === 0 && generatingBatch) {
+    return (
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
+        {backToPlan}
+        <Skeleton className="h-64 w-full rounded-xl" />
+      </div>
+    )
+  }
   if (sourceExercises.length === 0) return notFound
 
   if (phase === "summary") {
@@ -385,7 +460,8 @@ function PlanPracticeFlow() {
   }
 
   const exercise = sourceExercises[Math.min(current, sourceExercises.length - 1)]
-  const progress = (current / sourceExercises.length) * 100
+  const expectedTotal = session.task.exercises.length || 3
+  const progress = (current / expectedTotal) * 100
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
@@ -404,12 +480,12 @@ function PlanPracticeFlow() {
         skillCode={skillCode}
         practiceType={practiceType}
         index={current}
-        total={sourceExercises.length}
+        total={expectedTotal}
         onGraded={handleGraded}
         onNext={handleNext}
         onRegenerate={handleRegenerate}
         regenerating={regenerating}
-        isLast={current + 1 >= sourceExercises.length}
+        isLast={current + 1 >= expectedTotal}
       />
     </div>
   )

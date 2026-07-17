@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field, ValidationInfo, field_validator
 from app.models.common import OutputLanguage, Severity
 from app.models.coach import CoachScenarioFamily
 from app.models.memory import MemoryCandidate
+from app.models.diagnostic import TargetEvidenceAI
+from app.core.taxonomy import ERROR_TAXONOMY
 
 
 RealtimeVoiceModel = Literal["gpt-realtime-mini-2025-12-15", "gpt-realtime-2"]
@@ -22,6 +24,17 @@ class ChatCreateSessionRequest(BaseModel):
     # Optional for backwards compatibility. Older clients used the server Fast
     # slot (or the BYOK primary model) and should retain that behavior.
     textModelMode: Optional[TextChatModelMode] = None
+    missionRunId: Optional[str] = Field(default=None, max_length=100)
+    missionType: Optional[str] = Field(default=None, max_length=100)
+    missionTargetSkills: List[str] = Field(default_factory=list, max_length=4)
+
+    @field_validator("missionTargetSkills")
+    @classmethod
+    def validate_mission_skills(cls, value: List[str]) -> List[str]:
+        invalid = [skill for skill in value if skill not in ERROR_TAXONOMY]
+        if invalid:
+            raise ValueError(f"Unsupported mission target skill(s): {', '.join(invalid)}")
+        return list(dict.fromkeys(value))
 
 
 class ChatSendRequest(BaseModel):
@@ -140,6 +153,7 @@ class SessionAnalysisAI(BaseModel):
     # Kept for realtime voice and analysis drafts created before multi-target
     # text chat. New text analyses use ``stealthProbeAssessments``.
     stealthProbeAssessment: Optional[StealthProbeAssessmentAI] = None
+    targetEvidence: List[TargetEvidenceAI] = Field(default_factory=list, max_length=4)
 
     @field_validator(
         "corrections",
@@ -148,6 +162,7 @@ class SessionAnalysisAI(BaseModel):
         "strengthsZh",
         "recommendedNextActionsZh",
         "memoryCandidates",
+        "targetEvidence",
         mode="before",
     )
     @classmethod
@@ -159,5 +174,6 @@ class SessionAnalysisAI(BaseModel):
             "strengthsZh": 5,
             "recommendedNextActionsZh": 5,
             "memoryCandidates": 8,
+            "targetEvidence": 4,
         }
         return value[:limits[info.field_name]] if isinstance(value, list) else value

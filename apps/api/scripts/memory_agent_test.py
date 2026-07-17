@@ -262,7 +262,85 @@ def main() -> int:
         assert get_memory(user_id, shared["id"])["status"] == "forgotten"
         print("6. source retraction      -> corroborated memory survives, final source forgets")
 
-        # 7. API surface supports learner-owned create/edit/retrieve/forget and
+        # 7. Every active weakness gets a compact, auditable overview while
+        # only a few query-relevant records spend tokens on detailed evidence.
+        layered_user_id = f"memory-layered-{uuid.uuid4().hex[:8]}"
+        weakness_codes = [
+            "grammar.article",
+            "grammar.verb_tense",
+            "grammar.preposition",
+            "grammar.subject_verb_agreement",
+            "vocab.word_choice",
+            "sentence.structure",
+            "discourse.coherence",
+            "clarity.expression",
+        ]
+        remember_candidates(
+            layered_user_id,
+            [
+                MemoryCandidate(
+                    kind="weakness",
+                    canonicalKey=f"weakness.{code}",
+                    content=f"The learner needs recurring practice with {code}.",
+                    evidence=f"Original {index} → corrected {index}",
+                    confidence=0.9,
+                    importance=0.75 + index / 100,
+                )
+                for index, code in enumerate(weakness_codes)
+            ],
+            source_type="diagnosis",
+            source_id="layered-retrieval-source",
+        )
+        layered_pack = retrieve_memory_pack(
+            layered_user_id,
+            "Plan practice for articles, verb tense, prepositions, and expression clarity.",
+            token_budget=700,
+            limit=6,
+            purpose="diagnosis",
+        )
+        overview = layered_pack["weaknessOverview"]
+        assert overview["totalActive"] == len(weakness_codes), overview
+        assert overview["includedCount"] == len(weakness_codes), overview
+        assert overview["complete"] is True, overview
+        assert overview["format"] in {"metrics", "index"}, overview
+        assert all(code in layered_pack["text"] for code in weakness_codes), layered_pack["text"]
+        detailed_weaknesses = [
+            item for item in layered_pack["items"] if item.get("kind") == "weakness"
+        ]
+        assert 1 <= len(detailed_weaknesses) <= 3, detailed_weaknesses
+        assert layered_pack["text"].count(" Evidence: ") == len(detailed_weaknesses)
+        assert layered_pack["estimatedTokens"] <= layered_pack["tokenBudget"]
+        layered_trace = list_memory_traces(layered_user_id, limit=1)[0]
+        assert layered_trace["weaknessOverview"]["complete"] is True
+        assert len(layered_trace["weaknessOverview"]["memoryIds"]) == len(weakness_codes)
+
+        tiny_pack = retrieve_memory_pack(
+            layered_user_id,
+            "weakness profile",
+            token_budget=100,
+            limit=1,
+            purpose="diagnosis",
+            record_trace=False,
+        )
+        assert tiny_pack["estimatedTokens"] <= 100
+        assert tiny_pack["weaknessOverview"]["complete"] is False
+        assert tiny_pack["weaknessOverview"]["includedCount"] < len(weakness_codes)
+        assert "+" in tiny_pack["text"] and "more" in tiny_pack["text"]
+
+        chat_pack = retrieve_memory_pack(
+            layered_user_id,
+            "Let's have a normal conversation about weekend plans.",
+            token_budget=700,
+            limit=6,
+            purpose="chat",
+        )
+        assert chat_pack["weaknessOverview"]["suppressed"] is True
+        assert chat_pack["weaknessOverview"]["includedCount"] == 0
+        assert all(code not in chat_pack["text"] for code in weakness_codes)
+        assert not any(item.get("kind") == "weakness" for item in chat_pack["items"])
+        print("7. layered weakness recall -> all compactly indexed; <=3 detailed; chat suppressed")
+
+        # 8. API surface supports learner-owned create/edit/retrieve/forget and
         # emits an explainable retrieval trace.
         client = TestClient(app, headers={"X-Owner-Token": "memory-test-owner-token"})
         response = client.post("/api/v1/memory", json={
@@ -286,7 +364,7 @@ def main() -> int:
         assert api_pack["items"] and api_pack["items"][0].get("scoreBreakdown")
         response = client.delete(f"/api/v1/memory/{api_memory['id']}")
         assert response.status_code == 200 and response.json()["forgotten"] is True
-        print("7. Memory API             -> create/edit/retrieve/trace/forget passed")
+        print("8. Memory API             -> create/edit/retrieve/trace/forget passed")
 
         traces = list_memory_traces(user_id, limit=10)
         assert traces and traces[0].get("selected") is not None

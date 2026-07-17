@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.models.common import CEFRLevel, OutputLanguage, Severity
 from app.models.memory import MemoryCandidate
+from app.core.taxonomy import ERROR_TAXONOMY
 
 
 DiagnosisMode = Literal["fast", "deep"]
@@ -26,6 +27,7 @@ class DiagnoseRequest(BaseModel):
     diagnosisMode: DiagnosisMode = "fast"
     outputLanguage: OutputLanguage = "en"
     analysisContext: Optional[str] = Field(default=None, max_length=2400)
+    learningContext: Optional["DiagnoseLearningContext"] = None
 
     @field_validator("text")
     @classmethod
@@ -64,6 +66,42 @@ class LearningNoteAI(BaseModel):
     examples: List[str]
 
 
+class DiagnoseLearningContext(BaseModel):
+    activityRunId: str = Field(min_length=1, max_length=100)
+    missionType: str = Field(min_length=1, max_length=100)
+    targetSkills: List[str] = Field(min_length=1, max_length=4)
+    modality: str = Field(default="text", min_length=1, max_length=60)
+    hintLevel: int = Field(default=0, ge=0, le=4)
+    playCount: int = Field(default=0, ge=0, le=20)
+    contextKey: Optional[str] = Field(default=None, max_length=240)
+    taskDifficulty: float = Field(default=0.5, ge=0, le=1)
+    delayed: bool = False
+    novelContext: bool = False
+
+    @field_validator("targetSkills")
+    @classmethod
+    def validate_target_skills(cls, value: List[str]) -> List[str]:
+        invalid = [skill for skill in value if skill not in ERROR_TAXONOMY]
+        if invalid:
+            raise ValueError(f"Unsupported target skill(s): {', '.join(invalid)}")
+        return list(dict.fromkeys(value))
+
+
+class TargetEvidenceAI(BaseModel):
+    skillCode: str
+    opportunityPresent: bool
+    outcome: Literal["success", "failure", "avoided", "no_opportunity"]
+    evidenceQuote: str = ""
+    confidence: float = Field(default=0.0, ge=0, le=1)
+
+    @field_validator("skillCode")
+    @classmethod
+    def validate_skill_code(cls, value: str) -> str:
+        if value not in ERROR_TAXONOMY:
+            raise ValueError(f"Unsupported target skill: {value}")
+        return value
+
+
 class DiagnosticAIResult(BaseModel):
     cefrEstimate: CEFRLevel
     overallScore: int = Field(ge=0, le=100)
@@ -75,3 +113,4 @@ class DiagnosticAIResult(BaseModel):
     recommendedNextActionsZh: List[str]
     learningNotes: List[LearningNoteAI] = []
     memoryCandidates: List[MemoryCandidate] = Field(default_factory=list)
+    targetEvidence: List[TargetEvidenceAI] = Field(default_factory=list, max_length=4)

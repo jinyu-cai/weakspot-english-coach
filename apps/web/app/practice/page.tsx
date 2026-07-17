@@ -33,6 +33,8 @@ function PracticeFlow() {
   const [current, setCurrent] = useState(0)
   const [grades, setGrades] = useState<PracticeGrade[]>([])
   const startInFlight = useRef(false)
+  const advanceInFlight = useRef(false)
+  const sessionIdRef = useRef<string | null>(null)
   const { language, t } = useLanguage()
 
   const skillOptions = ["all", ...Object.keys(SKILL_LABELS)]
@@ -43,16 +45,15 @@ function PracticeFlow() {
     setLoading(true)
     try {
       const target = skill === "all" ? undefined : skill
-      const settled = await Promise.allSettled(
-        Array.from({ length: SESSION_LENGTH }, () => generatePractice(DEMO_USER_ID, target)),
-      )
-      const rejected = settled.find((result) => result.status === "rejected")
-      if (rejected) throw rejected.reason
-      const generated = settled.map((result) => {
-        if (result.status !== "fulfilled") throw result.reason
-        return result.value
+      const sessionId = crypto.randomUUID()
+      sessionIdRef.current = sessionId
+      const first = await generatePractice(DEMO_USER_ID, target, undefined, {
+        sessionId,
+        sequenceIndex: 0,
+        previousSkillCodes: [],
+        previousPracticeTypes: [],
       })
-      setExercises(generated)
+      setExercises([first])
       setCurrent(0)
       setGrades([])
       setPhase("active")
@@ -68,11 +69,29 @@ function PracticeFlow() {
     setGrades((prev) => [...prev, grade])
   }
 
-  function handleNext() {
-    if (current + 1 >= exercises.length) {
+  async function handleNext() {
+    if (advanceInFlight.current) return
+    if (current + 1 >= SESSION_LENGTH) {
       setPhase("summary")
-    } else {
-      setCurrent((c) => c + 1)
+      return
+    }
+    advanceInFlight.current = true
+    setLoading(true)
+    try {
+      const target = skill === "all" ? undefined : skill
+      const next = await generatePractice(DEMO_USER_ID, target, undefined, {
+        sessionId: sessionIdRef.current ?? crypto.randomUUID(),
+        sequenceIndex: current + 1,
+        previousSkillCodes: exercises.map((item) => item.targetSkillCode),
+        previousPracticeTypes: exercises.map((item) => item.type),
+      })
+      setExercises((items) => [...items, next])
+      setCurrent((value) => value + 1)
+    } catch {
+      toast.error(t.practice.loadFailed)
+    } finally {
+      advanceInFlight.current = false
+      setLoading(false)
     }
   }
 
@@ -81,10 +100,11 @@ function PracticeFlow() {
     setExercises([])
     setGrades([])
     setCurrent(0)
+    sessionIdRef.current = null
   }
 
   if (phase === "active" && exercises[current]) {
-    const progress = (current / exercises.length) * 100
+    const progress = (current / SESSION_LENGTH) * 100
     return (
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
         <div className="flex flex-col gap-2">
@@ -94,7 +114,7 @@ function PracticeFlow() {
               {skill === "all" ? t.practice.mixed : localizedSkillLabel(skill, language)}
             </span>
             <span className="tabular-nums">
-              {current + 1} / {exercises.length}
+              {current + 1} / {SESSION_LENGTH}
             </span>
           </div>
           <Progress value={progress} className="h-2" />
@@ -104,10 +124,10 @@ function PracticeFlow() {
           key={`${current}:${exercises[current].id}`}
           exercise={exercises[current]}
           index={current}
-          total={exercises.length}
+          total={SESSION_LENGTH}
           onGraded={handleGraded}
           onNext={handleNext}
-          isLast={current + 1 >= exercises.length}
+          isLast={current + 1 >= SESSION_LENGTH}
         />
       </div>
     )

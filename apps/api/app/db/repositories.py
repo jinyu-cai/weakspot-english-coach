@@ -9,12 +9,17 @@ from botocore.exceptions import ClientError
 
 from app.db.dynamodb import table
 from app.db.keys import (
+    activity_run_sk,
+    activity_completion_time_sk,
     active_plan_sk,
     attempt_sk,
     chat_message_sk,
     chat_session_sk,
     error_sk,
+    evidence_event_sk,
+    evidence_event_time_sk,
     exercise_sk,
+    learning_state_sk,
     note_sk,
     memory_sk,
     memory_trace_sk,
@@ -105,6 +110,262 @@ def put_skill(skill: dict) -> None:
     _put(item)
 
 
+# ----- Unified learning runs, evidence, and skill state -----
+
+
+class LearningStateConflictError(RuntimeError):
+    """A concurrent evidence event updated the same skill state."""
+
+
+def save_activity_run(
+    run: dict,
+    *,
+    create_only: bool = False,
+    expected_version: Optional[int] = None,
+) -> None:
+    item = {
+        **run,
+        "PK": user_pk(run["userId"]),
+        "SK": activity_run_sk(run["id"]),
+        "entityType": "ACTIVITY_RUN",
+    }
+    kwargs = {"Item": to_dynamo(item)}
+    if create_only:
+        kwargs["ConditionExpression"] = "attribute_not_exists(PK)"
+    elif expected_version is not None:
+        kwargs["ConditionExpression"] = "#version = :expected"
+        kwargs["ExpressionAttributeNames"] = {"#version": "version"}
+        kwargs["ExpressionAttributeValues"] = to_dynamo({
+            ":expected": expected_version,
+        })
+    table.put_item(**kwargs)
+    if run.get("status") == "completed" and run.get("completedAt"):
+        table.put_item(Item=to_dynamo({
+            **run,
+            "PK": user_pk(run["userId"]),
+            "SK": activity_completion_time_sk(str(run["completedAt"]), run["id"]),
+            "entityType": "ACTIVITY_RUN_TIMELINE",
+        }))
+
+
+def get_activity_run(user_id: str, run_id: str) -> Optional[dict]:
+    response = table.get_item(
+        Key={"PK": user_pk(user_id), "SK": activity_run_sk(run_id)}
+    )
+    item = response.get("Item")
+    return clean(item) if item else None
+
+
+def list_activity_runs(user_id: str, limit: int = 50) -> list[dict]:
+    if limit <= 0:
+        return []
+    response = table.query(
+        KeyConditionExpression=Key("PK").eq(user_pk(user_id))
+        & Key("SK").begins_with("RUN#"),
+        ScanIndexForward=False,
+        Limit=limit,
+    )
+    return [clean(item) for item in response.get("Items", [])]
+
+
+def list_activity_runs_since(user_id: str, since: str) -> list[dict]:
+    parsed = datetime.fromisoformat(since.replace("Z", "+00:00"))
+    compact = parsed.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    rows: list[dict] = []
+    query_kwargs = {
+        "KeyConditionExpression": Key("PK").eq(user_pk(user_id))
+        & Key("SK").between(f"RUN#run_{compact}", "RUN#~"),
+        "ScanIndexForward": True,
+    }
+    while True:
+        response = table.query(**query_kwargs)
+        rows.extend(clean(item) for item in response.get("Items", []))
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            return rows
+        query_kwargs["ExclusiveStartKey"] = last_key
+
+
+def list_completed_activity_runs_since(user_id: str, since: str) -> list[dict]:
+    rows: list[dict] = []
+    query_kwargs = {
+        "KeyConditionExpression": Key("PK").eq(user_pk(user_id))
+        & Key("SK").between(f"RUN_TIME#{since}", "RUN_TIME#~"),
+        "ScanIndexForward": True,
+    }
+    while True:
+        response = table.query(**query_kwargs)
+        rows.extend(clean(item) for item in response.get("Items", []))
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            if rows:
+                return rows
+            # Compatibility for runs completed before the projection existed.
+            return [
+                run for run in list_activity_runs(user_id, limit=500)
+                if run.get("status") == "completed"
+                and str(run.get("completedAt") or "") >= since
+            ]
+        query_kwargs["ExclusiveStartKey"] = last_key
+
+
+def get_learning_state(user_id: str, skill_code: str) -> Optional[dict]:
+    response = table.get_item(
+        Key={"PK": user_pk(user_id), "SK": learning_state_sk(skill_code)},
+        ConsistentRead=True,
+    )
+    item = response.get("Item")
+    return clean(item) if item else None
+
+
+def list_learning_states(user_id: str) -> list[dict]:
+    response = table.query(
+        KeyConditionExpression=Key("PK").eq(user_pk(user_id))
+        & Key("SK").begins_with("LEARNING#")
+    )
+    return [clean(item) for item in response.get("Items", [])]
+
+
+def get_evidence_event(user_id: str, event_id: str) -> Optional[dict]:
+    response = table.get_item(
+        Key={"PK": user_pk(user_id), "SK": evidence_event_sk(event_id)},
+        ConsistentRead=True,
+    )
+    item = response.get("Item")
+    return clean(item) if item else None
+
+
+def list_evidence_events(user_id: str, limit: Optional[int] = 500) -> list[dict]:
+    if limit is not None and limit <= 0:
+        return []
+    query_kwargs = {
+        "KeyConditionExpression": Key("PK").eq(user_pk(user_id))
+        & Key("SK").begins_with("EVIDENCE_TIME#"),
+        "ScanIndexForward": False,
+    }
+    events: list[dict] = []
+    while limit is None or len(events) < limit:
+        if limit is not None:
+            query_kwargs["Limit"] = limit - len(events)
+        response = table.query(**query_kwargs)
+        events.extend(clean(item) for item in response.get("Items", []))
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_kwargs["ExclusiveStartKey"] = last_key
+    if events:
+        return events if limit is None else events[:limit]
+
+    # Compatibility for rows written before the time-ordered projection.
+    legacy: list[dict] = []
+    legacy_kwargs = {
+        "KeyConditionExpression": Key("PK").eq(user_pk(user_id))
+        & Key("SK").begins_with("EVIDENCE#"),
+    }
+    while limit is None or len(legacy) < limit:
+        page = table.query(**legacy_kwargs)
+        legacy.extend(clean(item) for item in page.get("Items", []))
+        last_key = page.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        legacy_kwargs["ExclusiveStartKey"] = last_key
+    legacy.sort(key=lambda item: (item.get("createdAt", ""), item.get("id", "")), reverse=True)
+    return legacy if limit is None else legacy[:limit]
+
+
+def list_evidence_events_since(user_id: str, since: str) -> list[dict]:
+    rows: list[dict] = []
+    query_kwargs = {
+        "KeyConditionExpression": Key("PK").eq(user_pk(user_id))
+        & Key("SK").between(f"EVIDENCE_TIME#{since}", "EVIDENCE_TIME#~"),
+        "ScanIndexForward": True,
+    }
+    while True:
+        response = table.query(**query_kwargs)
+        rows.extend(clean(item) for item in response.get("Items", []))
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            if rows:
+                return rows
+            return [
+                event for event in list_evidence_events(user_id, limit=None)
+                if str(event.get("createdAt") or "") >= since
+            ]
+        query_kwargs["ExclusiveStartKey"] = last_key
+
+
+def save_evidence_with_learning_state(
+    event: dict,
+    state: dict,
+    *,
+    expected_state_version: int,
+) -> bool:
+    """Atomically save one idempotent event and its derived skill state.
+
+    Returns ``False`` when the event already exists. A state-version race asks
+    the caller to re-read and recompute instead of losing either update.
+    """
+
+    event_item = {
+        **event,
+        "PK": user_pk(event["userId"]),
+        "SK": evidence_event_sk(event["id"]),
+        "entityType": "EVIDENCE_EVENT",
+    }
+    event_timeline_item = {
+        **event,
+        "PK": user_pk(event["userId"]),
+        "SK": evidence_event_time_sk(event["createdAt"], event["id"]),
+        "entityType": "EVIDENCE_EVENT_TIMELINE",
+    }
+    state_item = {
+        **state,
+        "PK": user_pk(state["userId"]),
+        "SK": learning_state_sk(state["skillCode"]),
+        "entityType": "LEARNING_STATE",
+    }
+    state_put = {
+        "TableName": table.name,
+        "Item": to_dynamo(state_item),
+    }
+    if expected_state_version <= 0:
+        state_put["ConditionExpression"] = "attribute_not_exists(PK)"
+    else:
+        state_put["ConditionExpression"] = "#version = :expected"
+        state_put["ExpressionAttributeNames"] = {"#version": "version"}
+        state_put["ExpressionAttributeValues"] = to_dynamo({
+            ":expected": expected_state_version,
+        })
+
+    try:
+        table.meta.client.transact_write_items(TransactItems=[
+            {
+                "Put": {
+                    "TableName": table.name,
+                    "Item": to_dynamo(event_item),
+                    "ConditionExpression": "attribute_not_exists(PK)",
+                }
+            },
+            {
+                "Put": {
+                    "TableName": table.name,
+                    "Item": to_dynamo(event_timeline_item),
+                    "ConditionExpression": "attribute_not_exists(PK)",
+                }
+            },
+            {"Put": state_put},
+        ])
+        return True
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") != "TransactionCanceledException":
+            raise
+        if get_evidence_event(event["userId"], event["id"]):
+            return False
+        raise LearningStateConflictError(
+            "The skill state changed while this evidence was being recorded."
+        ) from exc
+
+
 def delete_skill(user_id: str, skill_code: str) -> None:
     _delete(user_pk(user_id), skill_sk(skill_code))
 
@@ -141,6 +402,26 @@ def list_recent_submissions(user_id: str, limit: Optional[int] = 10) -> list:
             break
         query_kwargs["ExclusiveStartKey"] = last_key
     return submissions if limit is None else submissions[:limit]
+
+
+def _list_time_prefixed_since(user_id: str, prefix: str, since: str) -> list[dict]:
+    rows: list[dict] = []
+    query_kwargs = {
+        "KeyConditionExpression": Key("PK").eq(user_pk(user_id))
+        & Key("SK").between(f"{prefix}{since}", f"{prefix}~"),
+        "ScanIndexForward": True,
+    }
+    while True:
+        response = table.query(**query_kwargs)
+        rows.extend(clean(item) for item in response.get("Items", []))
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            return rows
+        query_kwargs["ExclusiveStartKey"] = last_key
+
+
+def list_submissions_since(user_id: str, since: str) -> list[dict]:
+    return _list_time_prefixed_since(user_id, "SUBMISSION#", since)
 
 
 def get_submission(user_id: str, created_at: str, submission_id: str) -> Optional[dict]:
@@ -187,6 +468,10 @@ def list_recent_errors(user_id: str, limit: Optional[int] = 20) -> list:
     return errors if limit is None else errors[:limit]
 
 
+def list_errors_since(user_id: str, since: str) -> list[dict]:
+    return _list_time_prefixed_since(user_id, "ERROR#", since)
+
+
 def list_weekly_errors(user_id: str, limit: int = 100) -> list:
     week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat().replace("+00:00", "Z")
     res = table.query(
@@ -221,17 +506,152 @@ def get_submission_hash(user_id: str, text_hash: str) -> Optional[dict]:
     return clean(item) if item else None
 
 
-def put_submission_hash(user_id: str, text_hash: str, submission_id: str, submission_created_at: str) -> None:
-    _put({
+def put_submission_hash(
+    user_id: str,
+    text_hash: str,
+    submission_id: str,
+    submission_created_at: str,
+    claim_id: str,
+) -> None:
+    now = now_iso()
+    table.update_item(
+        Key={"PK": user_pk(user_id), "SK": submission_hash_sk(text_hash)},
+        UpdateExpression=(
+            "SET entityType = :entity, userId = :user, textHash = :hash, "
+            "submissionId = :submission, submissionCreatedAt = :created, "
+            "#status = :complete, completedAt = :now, updatedAt = :now "
+            "REMOVE processingClaimId, processingClaimedAt, processingClaimedAtEpoch"
+        ),
+        ConditionExpression="processingClaimId = :claim AND #status = :processing",
+        ExpressionAttributeNames={"#status": "status"},
+        ExpressionAttributeValues={
+            ":entity": "SUBHASH",
+            ":user": user_id,
+            ":hash": text_hash,
+            ":submission": submission_id,
+            ":created": submission_created_at,
+            ":complete": "complete",
+            ":processing": "processing",
+            ":claim": claim_id,
+            ":now": now,
+        },
+    )
+
+
+def claim_diagnosis_request(
+    user_id: str,
+    text_hash: str,
+    claim_id: str,
+    *,
+    stale_after_seconds: int = 900,
+) -> dict:
+    now = datetime.now(timezone.utc)
+    now_text = now.isoformat().replace("+00:00", "Z")
+    stable_id = "sub_" + hashlib.sha256(
+        f"{user_id}\0{text_hash}".encode("utf-8")
+    ).hexdigest()[:20]
+    row = {
         "PK": user_pk(user_id),
         "SK": submission_hash_sk(text_hash),
         "entityType": "SUBHASH",
         "userId": user_id,
         "textHash": text_hash,
-        "submissionId": submission_id,
-        "submissionCreatedAt": submission_created_at,
-        "createdAt": now_iso(),
-    })
+        "submissionId": stable_id,
+        "submissionCreatedAt": now_text,
+        "status": "processing",
+        "processingClaimId": claim_id,
+        "processingClaimedAt": now_text,
+        "processingClaimedAtEpoch": int(now.timestamp()),
+        "createdAt": now_text,
+        "updatedAt": now_text,
+    }
+    try:
+        table.put_item(Item=to_dynamo(row), ConditionExpression="attribute_not_exists(PK)")
+        return {**clean(row), "claimState": "acquired"}
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            raise
+
+    existing = get_submission_hash(user_id, text_hash)
+    if not existing:
+        return {"claimState": "busy"}
+    if existing.get("status") == "complete" or (
+        not existing.get("status") and existing.get("submissionId")
+    ):
+        return {**existing, "claimState": "complete"}
+    try:
+        table.update_item(
+            Key={"PK": user_pk(user_id), "SK": submission_hash_sk(text_hash)},
+            UpdateExpression=(
+                "SET #status = :processing, processingClaimId = :claim, "
+                "processingClaimedAt = :at, processingClaimedAtEpoch = :epoch, updatedAt = :at"
+            ),
+            ConditionExpression=(
+                "#status <> :complete AND (#status = :failed OR "
+                "attribute_not_exists(processingClaimId) OR processingClaimedAtEpoch < :stale)"
+            ),
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={
+                ":processing": "processing",
+                ":complete": "complete",
+                ":failed": "failed",
+                ":claim": claim_id,
+                ":at": now_text,
+                ":epoch": int(now.timestamp()),
+                ":stale": int(now.timestamp()) - max(60, stale_after_seconds),
+            },
+        )
+        current = get_submission_hash(user_id, text_hash) or existing
+        return {**current, "claimState": "acquired"}
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            raise
+        current = get_submission_hash(user_id, text_hash)
+        if current and current.get("status") == "complete":
+            return {**current, "claimState": "complete"}
+        return {**(current or existing), "claimState": "busy"}
+
+
+def save_diagnosis_draft(
+    user_id: str,
+    text_hash: str,
+    claim_id: str,
+    draft: dict,
+) -> None:
+    table.update_item(
+        Key={"PK": user_pk(user_id), "SK": submission_hash_sk(text_hash)},
+        UpdateExpression="SET diagnosticDraft = :draft, diagnosticDraftedAt = :at, updatedAt = :at",
+        ConditionExpression="processingClaimId = :claim AND #status = :processing",
+        ExpressionAttributeNames={"#status": "status"},
+        ExpressionAttributeValues=to_dynamo({
+            ":draft": draft,
+            ":at": now_iso(),
+            ":claim": claim_id,
+            ":processing": "processing",
+        }),
+    )
+
+
+def release_diagnosis_request(user_id: str, text_hash: str, claim_id: str) -> None:
+    try:
+        table.update_item(
+            Key={"PK": user_pk(user_id), "SK": submission_hash_sk(text_hash)},
+            UpdateExpression=(
+                "SET #status = :failed, updatedAt = :at "
+                "REMOVE processingClaimId, processingClaimedAt, processingClaimedAtEpoch"
+            ),
+            ConditionExpression="processingClaimId = :claim AND #status = :processing",
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={
+                ":failed": "failed",
+                ":processing": "processing",
+                ":claim": claim_id,
+                ":at": now_iso(),
+            },
+        )
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            raise
 
 
 def delete_submission_hash(user_id: str, text_hash: str) -> None:
@@ -428,6 +848,56 @@ def get_memory(user_id: str, memory_id: str) -> Optional[dict]:
     res = table.get_item(Key={"PK": user_pk(user_id), "SK": memory_sk(memory_id)})
     item = res.get("Item")
     return clean(item) if item else None
+
+
+def touch_memory_access(user_id: str, memory_id: str, accessed_at: str) -> None:
+    """Atomically record retrieval frequency without a learner-wide write lease."""
+    try:
+        table.update_item(
+            Key={"PK": user_pk(user_id), "SK": memory_sk(memory_id)},
+            UpdateExpression="ADD accessCount :one SET lastAccessedAt = :at",
+            ConditionExpression="#status = :active OR attribute_not_exists(#status)",
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={
+                ":one": 1,
+                ":at": accessed_at,
+                ":active": "active",
+            },
+        )
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            raise
+
+
+def expire_memory_if_due(
+    user_id: str,
+    memory_id: str,
+    now_text: str,
+    ttl_epoch: int,
+) -> None:
+    """Archive an expired active row with a conditional, concurrency-safe update."""
+    try:
+        table.update_item(
+            Key={"PK": user_pk(user_id), "SK": memory_sk(memory_id)},
+            UpdateExpression=(
+                "SET #status = :expired, updatedAt = :now, expiresAt = :now, #ttl = :ttl"
+            ),
+            ConditionExpression=(
+                "(#status = :active OR attribute_not_exists(#status)) AND "
+                "(attribute_not_exists(pinned) OR pinned = :false) AND expiresAt <= :now"
+            ),
+            ExpressionAttributeNames={"#status": "status", "#ttl": "ttl"},
+            ExpressionAttributeValues={
+                ":expired": "expired",
+                ":active": "active",
+                ":false": False,
+                ":now": now_text,
+                ":ttl": ttl_epoch,
+            },
+        )
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            raise
 
 
 def list_memories(user_id: str, limit: Optional[int] = 200) -> list:
@@ -864,14 +1334,21 @@ def delete_input_learning_source(user_id: str, source_id: str) -> None:
 
 # ----- Plan -----
 
-def save_active_plan(plan: dict) -> None:
+def save_active_plan(plan: dict, *, expected_version: Optional[int] = None) -> None:
     item = {
         **plan,
         "PK": user_pk(plan["userId"]),
         "SK": active_plan_sk(),
         "entityType": "PLAN",
     }
-    _put(item)
+    kwargs = {"Item": to_dynamo(item)}
+    if expected_version is not None:
+        kwargs.update({
+            "ConditionExpression": "#version = :expected",
+            "ExpressionAttributeNames": {"#version": "version"},
+            "ExpressionAttributeValues": to_dynamo({":expected": expected_version}),
+        })
+    table.put_item(**kwargs)
 
 
 def get_active_plan(user_id: str) -> Optional[dict]:
@@ -1116,6 +1593,10 @@ def list_recent_practice_attempts(user_id: str, limit: int = 100) -> list:
         Limit=limit,
     )
     return [clean(i) for i in res.get("Items", [])]
+
+
+def list_practice_attempts_since(user_id: str, since: str) -> list[dict]:
+    return _list_time_prefixed_since(user_id, "ATTEMPT#", since)
 
 
 # ----- Auth users + rate-limit counters -----
@@ -1524,18 +2005,27 @@ def save_chat_message(message: dict) -> None:
     item = {
         **message,
         "PK": user_pk(message["userId"]),
-        "SK": chat_message_sk(message["createdAt"], message["id"]),
+        "SK": chat_message_sk(message["createdAt"], message["id"], message.get("sessionId")),
         "entityType": "CHAT_MESSAGE",
     }
     _put(item)
 
 
-def get_chat_message(user_id: str, created_at: str, message_id: str) -> Optional[dict]:
-    res = table.get_item(
-        Key={"PK": user_pk(user_id), "SK": chat_message_sk(created_at, message_id)}
-    )
-    item = res.get("Item")
-    return clean(item) if item else None
+def get_chat_message(
+    user_id: str,
+    created_at: str,
+    message_id: str,
+    session_id: Optional[str] = None,
+) -> Optional[dict]:
+    keys = []
+    if session_id:
+        keys.append(chat_message_sk(created_at, message_id, session_id))
+    keys.append(chat_message_sk(created_at, message_id))
+    for sk in keys:
+        item = table.get_item(Key={"PK": user_pk(user_id), "SK": sk}).get("Item")
+        if item:
+            return clean(item)
+    return None
 
 
 def finalize_chat_session_turn(
@@ -1561,7 +2051,7 @@ def finalize_chat_session_turn(
         return to_dynamo({
             **message,
             "PK": user_pk(user_id),
-            "SK": chat_message_sk(message["createdAt"], message["id"]),
+            "SK": chat_message_sk(message["createdAt"], message["id"], session_id),
             "entityType": "CHAT_MESSAGE",
         })
 
@@ -1769,9 +2259,11 @@ def list_chat_messages(user_id: str, session_id: str, limit: Optional[int] = Non
     # Marker snapshot must precede message reads. A later commit belongs to the
     # next snapshot and cannot make only part of a new batch visible here.
     committed = _committed_chat_transcript_batch_ids(user_id, session_id)
+    session = get_chat_session(user_id, session_id) or {}
     messages = []
     query_kwargs = {
-        "KeyConditionExpression": Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("CHATMSG#"),
+        "KeyConditionExpression": Key("PK").eq(user_pk(user_id))
+        & Key("SK").begins_with(f"CHATMSG#{session_id}#"),
         "ScanIndexForward": True,
         "ConsistentRead": True,
     }
@@ -1780,15 +2272,38 @@ def list_chat_messages(user_id: str, session_id: str, limit: Optional[int] = Non
         res = table.query(**query_kwargs)
         for item in res.get("Items", []):
             message = clean(item)
-            if message.get("sessionId") == session_id:
-                batch_id = str(message.get("transcriptBatchId") or "")
-                if not batch_id or batch_id in committed:
-                    messages.append(message)
+            batch_id = str(message.get("transcriptBatchId") or "")
+            if not batch_id or batch_id in committed:
+                messages.append(message)
 
         last_key = res.get("LastEvaluatedKey")
         if not last_key:
             break
         query_kwargs["ExclusiveStartKey"] = last_key
+
+    # Sessions created before messageKeyVersion=2 used a global CHATMSG#
+    # prefix. Only those legacy sessions pay the compatibility scan.
+    if int(session.get("messageKeyVersion", 1)) < 2:
+        legacy_kwargs = {
+            "KeyConditionExpression": Key("PK").eq(user_pk(user_id))
+            & Key("SK").begins_with("CHATMSG#"),
+            "ScanIndexForward": True,
+            "ConsistentRead": True,
+        }
+        while True:
+            legacy_page = table.query(**legacy_kwargs)
+            for item in legacy_page.get("Items", []):
+                message = clean(item)
+                # The targeted v2 prefix is part of CHATMSG# too; de-duplicate.
+                if message.get("sessionId") != session_id:
+                    continue
+                batch_id = str(message.get("transcriptBatchId") or "")
+                if not batch_id or batch_id in committed:
+                    messages.append(message)
+            legacy_last_key = legacy_page.get("LastEvaluatedKey")
+            if not legacy_last_key:
+                break
+            legacy_kwargs["ExclusiveStartKey"] = legacy_last_key
 
     if committed:
         for item in _list_chat_transcript_stage_items(user_id, session_id):
@@ -1799,6 +2314,7 @@ def list_chat_messages(user_id: str, session_id: str, limit: Optional[int] = Non
                 for message in item.get("messages") or []
                 if isinstance(message, dict)
             )
+    messages = list({str(message.get("id")): message for message in messages}.values())
     messages.sort(key=lambda message: (str(message.get("createdAt") or ""), str(message.get("id") or "")))
     return messages[:limit] if limit is not None else messages
 

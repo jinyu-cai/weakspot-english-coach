@@ -178,6 +178,7 @@ def _public_response(
     *,
     listening_script: str | None = None,
     scenario_family: CoachScenarioFamily | None = None,
+    target_skills: list[str] | None = None,
 ) -> CoachMissionResponse:
     payload = mission_content.model_dump(mode="json")
     if payload.get("type") == "vocabulary_in_action":
@@ -194,6 +195,8 @@ def _public_response(
             "script": listening_script,
             "playLimit": play_limit,
         }
+    if target_skills:
+        payload["targetSkills"] = target_skills[:4]
     payload.update(
         {
             "id": f"mission_{uuid4().hex[:12]}",
@@ -209,6 +212,8 @@ def generate_coach_mission(
     *,
     learner_skills: list[dict] | None = None,
     recent_scenario_families: list[str] | None = None,
+    recommended_skills: list[str] | None = None,
+    learning_context: str | None = None,
     llm_provider: LLMProviderConfig | None = None,
     max_tokens: int | None = 3000,
     trace_id: str | None = None,
@@ -231,6 +236,12 @@ Create one mission with this configuration:
 - recent generated scenario families to avoid repeating: {recent_family_context}
 
 {_compact_skill_context(learner_skills)}
+
+Scheduler-selected target skills (use these exact codes):
+{', '.join(recommended_skills or []) or 'none'}
+
+Learner goals, preferences, and proven strategy context:
+{learning_context or 'none'}
 
 Allowed target skill codes:
 grammar.verb_tense, grammar.article, grammar.preposition,
@@ -258,7 +269,12 @@ Allowed first-party picture assets (use only for picture_story):
         trace_id=trace_id,
     )
     mission_content = cast(BaseModel, result.mission)
-    return _public_response(mission_content, req, scenario_family=selected_family)
+    return _public_response(
+        mission_content,
+        req,
+        scenario_family=selected_family,
+        target_skills=recommended_skills,
+    )
 
 
 def _bounded_transcript_excerpt(transcript: str, duration_minutes: int) -> str:

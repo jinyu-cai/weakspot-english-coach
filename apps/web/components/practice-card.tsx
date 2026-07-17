@@ -20,7 +20,7 @@ type Props = {
   index: number
   total: number
   onGraded: (grade: PracticeGrade) => void
-  onNext: () => void
+  onNext: () => void | Promise<void>
   isLast: boolean
 }
 
@@ -28,6 +28,7 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
   const [answer, setAnswer] = useState("")
   const [grade, setGrade] = useState<PracticeGrade | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [advancing, setAdvancing] = useState(false)
   const clientAttemptIdRef = useRef<string | null>(null)
   const { language, t } = useLanguage()
 
@@ -50,11 +51,14 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
     }
   }
 
-  function handleNext() {
-    setAnswer("")
-    setGrade(null)
-    clientAttemptIdRef.current = null
-    onNext()
+  async function handleNext() {
+    if (advancing) return
+    setAdvancing(true)
+    try {
+      await onNext()
+    } finally {
+      setAdvancing(false)
+    }
   }
 
   const canSubmit = answer.trim().length > 0
@@ -127,7 +131,10 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
             )}
           </Button>
         ) : (
-          <Button onClick={handleNext}>{isLast ? t.common.finishSession : t.common.nextQuestion}</Button>
+          <Button onClick={handleNext} disabled={advancing}>
+            {advancing ? <Spinner data-icon="inline-start" /> : null}
+            {isLast ? t.common.finishSession : t.common.nextQuestion}
+          </Button>
         )}
       </CardFooter>
     </Card>
