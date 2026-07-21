@@ -30,6 +30,21 @@ chinese_cues="$(grep -Ec '^[0-9]+$' "$output_dir/subtitles-zh.srt")"
   exit 1
 }
 
+dynamic_clip_indices=(01 02 04 06 07 08 10 11 12 14 15)
+minimum_unique_frames=999999
+for index in "${dynamic_clip_indices[@]}"; do
+  clip="$output_dir/clips/$index.mp4"
+  [[ -f "$clip" ]] || { echo "Missing dynamic clip: $clip" >&2; exit 1; }
+  unique_frames="$(ffmpeg -loglevel error -i "$clip" -vf mpdecimate -an -f framemd5 - | grep -Ec '^[0-9]+,')"
+  [[ "$unique_frames" -ge 5 ]] || {
+    echo "Dynamic clip $index is effectively still: unique_frames=$unique_frames" >&2
+    exit 1
+  }
+  if [[ "$unique_frames" -lt "$minimum_unique_frames" ]]; then
+    minimum_unique_frames="$unique_frames"
+  fi
+done
+
 for index in $(seq 1 20); do
   midpoint="$(jq -r --argjson index "$index" '(.segments[$index - 1].start + .segments[$index - 1].end) / 2' "$timeline")"
   ffmpeg -loglevel error -y -ss "$midpoint" -i "$video" -frames:v 1 "$frames_dir/$(printf '%02d' "$index").png"
@@ -46,5 +61,6 @@ long_silence_count="$(grep -c 'silence_start' "$silence_log" || true)"
 echo "FINAL VIDEO QA PASSED"
 echo "duration=$duration"
 echo "segments=$segment_count english_cues=$english_cues chinese_cues=$chinese_cues"
+echo "dynamic_clips=${#dynamic_clip_indices[@]} minimum_unique_frames=$minimum_unique_frames"
 echo "long_silences=$long_silence_count"
 echo "contact_sheet=$qa_dir/sentence-midpoints.jpg"

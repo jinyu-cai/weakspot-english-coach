@@ -107,11 +107,15 @@ Live evidence completed:
 
 Final video QA completed:
 
-- 174.033 seconds; 1920×1080; constant 30 fps; H.264 + 48 kHz mono AAC;
+- 174.000 seconds; 1920×1080; constant 30 fps; H.264 + 48 kHz mono AAC;
 - 20 narration segments, 20 English cues, and 20 Chinese cues;
-- every visual cut starts on a narration-sentence boundary;
+- visual cuts track narration-sentence boundaries with a measured maximum
+  cumulative start drift of 51.7 milliseconds;
 - no detected silence longer than 0.8 seconds;
-- fixed screenshots and hard cuts only—no digital zoom/pan jitter;
+- 11 product clips contain real production-browser interactions; every dynamic
+  clip has at least 12 distinct decoded frames after duplicate-frame removal;
+- static cards are limited to explanatory evidence, architecture, code, health,
+  and closing sections, with no digital zoom or pan jitter;
 - the previous demo audio and its 17–19 second voice intrusion are not reused.
 
 Still required: public YouTube upload, Devpost submission, and `/feedback`
