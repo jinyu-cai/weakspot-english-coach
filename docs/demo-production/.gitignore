@@ -1,0 +1,6 @@
+clips/
+output/
+.venv/
+.uv-cache/
+__pycache__/
+*.pyc

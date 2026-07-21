@@ -38,7 +38,9 @@ def main() -> int:
     os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
     os.environ.setdefault("USE_FAKE_AI", "true")
     os.environ.setdefault("OWNER_BYPASS_TOKEN", "dedup-owner-token")
-    os.environ.setdefault("SESSION_SECRET", "dedup-session-secret")
+    os.environ.setdefault(
+        "SESSION_SECRET", "dedup-test-session-secret-at-least-32-bytes"
+    )
 
     try:
         import moto

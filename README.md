@@ -110,7 +110,9 @@ selection, and the complete MemoryAgent flow using the current source code.
 
 After that, use [Architecture](docs/ARCHITECTURE.md) for the production view,
 [MemoryAgent Design](docs/MEMORY_AGENT_DESIGN.md) for algorithm details, and
-[Local Testing](LOCAL_TESTING.md) while making changes.
+[Local Testing](LOCAL_TESTING.md) while making changes. A comprehensive Chinese
+[source walkthrough](docs/PROJECT_CODE_WALKTHROUGH_ZH.md) follows the current
+request, service, storage, and UI paths function by function.
 
 ## Quickstart
 
@@ -173,6 +175,7 @@ method and live-embedding option.
 
 - [Devpost submission draft](docs/SUBMISSION.md)
 - [Under-three-minute demo script](docs/DEMO_VIDEO_SCRIPT.md)
+- [Demo video production pack](docs/demo-production/README.md)
 - [MemoryAgent technical design](docs/MEMORY_AGENT_DESIGN.md)
 - [Alibaba Cloud deployment evidence checklist](docs/ALIBABA_QWEN_DEPLOYMENT.md)
 

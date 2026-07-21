@@ -1,0 +1,13 @@
+Most AI English tutors forget you after a conversation. Each new session makes you repeat your goals, preferences, and recurring difficulties. WeakSpot is different. Its persistent memory learns your weaknesses and what practice works.
+
+I can start by pasting a short English sample. Qwen diagnoses it and identifies useful future memory. WeakSpot stores my everyday communication goal, concise-feedback preference, and evidenced tense and agreement weaknesses. No separate profile or extra memory call is needed.
+
+But writing is only one entry point. In normal text or voice chat, the coach answers my intent first. A natural opening lets it quietly bring a due weakness into a relevant follow-up. That tests independent transfer, not repetition of a recent correction. If unsure what to practice, I choose time, response mode, and energy. Those choices and memory select the task; I can also choose the format. The five formats are roleplay, picture story, listen and retell, decision response, and vocabulary in action. Picture Story asks me to describe, infer, or narrate from a built-in illustration. Listen and Retell gives limited plays of an original passage, then asks me to retell or respond. Scenarios provide a role, audience, goal, and constraints for a realistic response. The chat home also creates fresh roleplays and avoids recently used scenario families.
+
+Results return to memory, showing whether weaknesses transfer across contexts and modes. New sessions never send the learner's full history to the model. Hybrid vector and lexical retrieval selects at most six memories within seven hundred tokens. Duplicates merge, conflicts are archived, and memories decay or expire by policy. Learners can inspect, correct, pin, or forget any memory.
+
+Memory also improves the coach's next decision. Every attempt updates evidence for the weakness, task format, and level of assistance. Selection combines mastery gap, recent errors, spacing, past outcomes, difficulty, and exploration—not just the lowest score. The recommendation explains why it matters now and links to supporting memories.
+
+Next.js and FastAPI run in Docker on Alibaba Cloud ECS. Qwen Max handles deep work, Plus handles fast interactions, and text-embedding-v4 powers hybrid recall. DynamoDB stores cross-session memories, lifecycle metadata, and auditable recall traces.
+
+Our reproducible benchmark reaches one-hundred-percent Recall at Six, filters stale memories, respects every token budget, and cuts sample context by eighty-two-point-six percent. WeakSpot English Coach remembers not only your mistakes, but your goals and the ways you learn best.

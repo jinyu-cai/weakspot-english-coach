@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+production_dir="$(cd "$(dirname "$0")" && pwd)"
+captures_dir="$production_dir/output/browser-captures"
+clips_dir="$production_dir/clips"
+public_recall="$captures_dir/04-recall-traces-public.png"
+font="/System/Library/Fonts/Supplemental/Arial.ttf"
+
+mkdir -p "$clips_dir"
+
+if [[ ! -f "$captures_dir/04-recall-traces.png" ]]; then
+  echo "Missing browser capture: $captures_dir/04-recall-traces.png" >&2
+  exit 1
+fi
+
+# Keep the real recall UI and token count while hiding private learner memories
+# before producing a video intended for public hackathon submission.
+magick "$captures_dir/04-recall-traces.png" \
+  -fill '#fffdf9' -stroke '#e4ddd3' -strokewidth 2 \
+  -draw 'roundrectangle 946,372 1492,770 18,18' \
+  -font "$font" -fill '#5f574f' -stroke none -pointsize 24 \
+  -gravity NorthWest -annotate +1040+470 'Memory details hidden\nfor public demo' \
+  "$public_recall"
+
+outputs=(
+  "$clips_dir/01-hook.mp4"
+  "$clips_dir/02-accumulation.mp4"
+  "$clips_dir/03-recall.mp4"
+  "$clips_dir/04-forgetting.mp4"
+  "$clips_dir/05-decision.mp4"
+)
+durations=(16 32 28 23 28)
+
+timeline="$production_dir/output/timeline-qwen.json"
+if [[ -f "$timeline" ]] && command -v jq >/dev/null 2>&1; then
+  durations=()
+  while IFS= read -r duration; do
+    durations+=("$duration")
+  done < <(jq -r '.scenes[0:5][].duration' "$timeline")
+fi
+
+scene_images=(
+  "$captures_dir/01-memory-center.png"
+  "$captures_dir/15-memory-general-goal.png"
+  "$captures_dir/14-diagnosis-general.png"
+  "$captures_dir/13-natural-weakness-chat.png"
+  "$captures_dir/08-coach-formats.png"
+  "$captures_dir/09-picture-story.png"
+  "$captures_dir/10-listen-retell.png"
+  "$captures_dir/11-chat-home-qwen.png"
+  "$captures_dir/12-dynamic-chat.png"
+  "$public_recall"
+  "$captures_dir/05-archived-memories.png"
+  "$captures_dir/07-personalized-mission.png"
+  "$captures_dir/06-todays-mission.png"
+)
+
+for image in "${scene_images[@]}"; do
+  if [[ ! -f "$image" ]]; then
+    echo "Missing browser capture: $image" >&2
+    exit 1
+  fi
+done
+
+render_scene() {
+  local output="$1"
+  local duration="$2"
+  shift 2
+  local images=("$@")
+  local count="${#images[@]}"
+  local segment_duration
+  local frames
+  local filter=""
+  local concat_inputs=""
+  local index
+  local ffmpeg_inputs=()
+
+  segment_duration="$(awk -v seconds="$duration" -v count="$count" 'BEGIN { printf "%.9f", seconds / count }')"
+  frames="$(awk -v seconds="$duration" 'BEGIN { printf "%d", (seconds * 30) + 0.999 }')"
+
+  for index in "${!images[@]}"; do
+    ffmpeg_inputs+=( -loop 1 -t "$segment_duration" -i "${images[$index]}" )
+    # Keep every capture pixel-stable. Hard cuts make the real UI changes
+    # readable without reintroducing subpixel zoom jitter around text.
+    filter+="[$index:v]scale=1920:1080:force_original_aspect_ratio=decrease,"
+    filter+="pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0xf7f2e9,"
+    filter+="setsar=1,fps=30,trim=duration=$segment_duration,setpts=PTS-STARTPTS,format=yuv420p[v$index];"
+    concat_inputs+="[v$index]"
+  done
+  filter+="$concat_inputs"
+  filter+="concat=n=$count:v=1:a=0,trim=duration=$duration,setpts=PTS-STARTPTS[v]"
+
+  ffmpeg -y -v error "${ffmpeg_inputs[@]}" \
+    -filter_complex "$filter" -map '[v]' -frames:v "$frames" -an \
+    -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p \
+    -movflags +faststart "$output"
+  echo "Created $output"
+}
+
+render_scene "${outputs[0]}" "${durations[0]}" \
+  "$captures_dir/01-memory-center.png" \
+  "$captures_dir/15-memory-general-goal.png"
+
+render_scene "${outputs[1]}" "${durations[1]}" \
+  "$captures_dir/14-diagnosis-general.png" \
+  "$captures_dir/15-memory-general-goal.png"
+
+render_scene "${outputs[2]}" "${durations[2]}" \
+  "$captures_dir/13-natural-weakness-chat.png" \
+  "$captures_dir/08-coach-formats.png" \
+  "$captures_dir/09-picture-story.png" \
+  "$captures_dir/10-listen-retell.png" \
+  "$captures_dir/11-chat-home-qwen.png" \
+  "$captures_dir/12-dynamic-chat.png"
+
+render_scene "${outputs[3]}" "${durations[3]}" \
+  "$public_recall" \
+  "$captures_dir/05-archived-memories.png" \
+  "$captures_dir/15-memory-general-goal.png"
+
+render_scene "${outputs[4]}" "${durations[4]}" \
+  "$captures_dir/07-personalized-mission.png" \
+  "$captures_dir/06-todays-mission.png" \
+  "$captures_dir/08-coach-formats.png"

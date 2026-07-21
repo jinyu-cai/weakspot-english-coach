@@ -44,7 +44,9 @@ def main() -> int:
         os.environ.setdefault("OWNER_BYPASS_TOKEN", "itest-owner-token")
         os.environ.setdefault("GUEST_DAILY_LIMIT", "3")
         os.environ.setdefault("USER_DAILY_LIMIT", "20")
-        os.environ.setdefault("SESSION_SECRET", "itest-session-secret")
+        os.environ.setdefault(
+            "SESSION_SECRET", "integration-test-session-secret-at-least-32-bytes"
+        )
         try:
             import moto
         except ImportError:

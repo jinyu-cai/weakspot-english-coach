@@ -26,6 +26,7 @@ yarn-error.log*
 .env*
 !apps/api/.env.example
 !apps/api/deploy/.env.production.example
+!docs/demo-production/.env.example
 
 # backend local/runtime files
 apps/api/.venv/

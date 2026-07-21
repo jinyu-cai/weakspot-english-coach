@@ -1,0 +1,99 @@
+1
+00:00:00,000 --> 00:00:07,500
+Most AI tutors forget you when the conversation ends.
+In every new session, you have to repeat your goals and preferences.
+
+2
+00:00:07,500 --> 00:00:16,000
+WeakSpot is different. It is an English coach with persistent memory
+that learns what works for each learner across sessions.
+
+3
+00:00:16,000 --> 00:00:24,000
+Here, I only submit a short piece of writing.
+Qwen diagnoses the language and identifies durable information.
+
+4
+00:00:24,000 --> 00:00:32,500
+In the same structured response,
+it proposes durable memory candidates.
+
+5
+00:00:32,500 --> 00:00:41,000
+WeakSpot stores my communication goal, concise-feedback preference,
+and evidenced grammar weaknesses.
+
+6
+00:00:41,000 --> 00:00:48,000
+No separate memory workflow
+or additional model call is required.
+
+7
+00:00:48,000 --> 00:00:56,500
+In a new session, WeakSpot does not send
+the learner's entire history back to the model.
+
+8
+00:00:56,500 --> 00:01:05,000
+Qwen text-embedding-v4 and lexical matching
+retrieve the most relevant memories.
+
+9
+00:01:05,000 --> 00:01:16,000
+The final Memory Pack contains no more than six memories
+and must fit inside a 700-token budget.
+
+10
+00:01:16,000 --> 00:01:24,000
+This is not an append-only transcript.
+Equivalent observations are merged instead of duplicated.
+
+11
+00:01:24,000 --> 00:01:32,000
+Conflicting evidence replaces the active fact,
+and the previous version is archived as superseded.
+
+12
+00:01:32,000 --> 00:01:39,000
+The learner can inspect, correct, pin,
+or forget any memory.
+
+13
+00:01:39,000 --> 00:01:48,000
+Every graded attempt updates strategy evidence
+for a specific skill and exercise format.
+
+14
+00:01:48,000 --> 00:01:58,000
+WeakSpot combines mastery gap, error density, spacing,
+historical performance, productive difficulty, and exploration.
+
+15
+00:01:58,000 --> 00:02:07,000
+The recommendation explains why it was selected
+and links back to the supporting memories.
+
+16
+00:02:07,000 --> 00:02:16,000
+The FastAPI backend runs in Docker on Alibaba Cloud ECS.
+Qwen 3.7 Max handles deep analysis and planning.
+
+17
+00:02:16,000 --> 00:02:25,000
+Qwen 3.7 Plus handles faster workflows,
+and text-embedding-v4 powers the hybrid memory ranker.
+
+18
+00:02:25,000 --> 00:02:34,000
+DynamoDB stores cross-session memory,
+lifecycle metadata, and auditable recall traces.
+
+19
+00:02:34,000 --> 00:02:44,000
+The benchmark reaches 100% Recall at Six,
+respects every token budget, and reduces context by 82.6%.
+
+20
+00:02:44,000 --> 00:02:54,000
+WeakSpot remembers not only your mistakes,
+but your goals and how you learn best.

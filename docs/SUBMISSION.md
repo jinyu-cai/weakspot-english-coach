@@ -11,7 +11,7 @@
 - **Qwen services:** `qwen3.7-max`, `qwen3.7-plus`, `text-embedding-v4`
 - **Persistence:** Amazon DynamoDB single-table design
 - **License:** MIT
-- **Repository:** `[ADD PUBLIC GITHUB URL]`
+- **Repository:** https://github.com/jinyu-cai/weakspot-english-coach
 - **Demo video:** `[ADD PUBLIC VIDEO URL — under 3 minutes]`
 
 The Devpost page currently lists the deadline as **July 20, 2026 at 2:00 PM
