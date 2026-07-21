@@ -11,7 +11,7 @@
 - **License:** MIT
 - **Demo video:** `[ADD PUBLIC YOUTUBE URL — maximum 3:00]`
 - **Codex Session ID:** `[ADD THE SESSION ID RETURNED BY /feedback]`
-- **Build Week commit:** `[ADD FINAL COMMIT SHA]`
+- **Build Week feature merge:** `ffd994ee203925562f6d2206d21545df571511f7`
 
 Official submission deadline: **July 21, 2026 at 5:00 PM PDT**. Recheck the
 [official dates](https://openai.devpost.com/details/dates),
@@ -193,10 +193,10 @@ and the resulting attempt changes future decisions.
   `gpt-5.6-sol`, and API `responses`.
 - [x] Generate two real missions and capture application logs showing
   `openai_mission ... upstream_ok` without exposing keys or learner content.
-- [ ] Check the visible GPT-5.6 evidence panel on desktop and mobile.
-- [ ] Add the final commit SHA and timestamped Codex evidence.
+- [x] Check the visible GPT-5.6 evidence panel at the fixed desktop capture viewport.
+- [x] Add the feature merge SHA and timestamped Codex evidence.
 - [ ] Run `/feedback` in the main Codex build session and paste its Session ID.
 - [ ] Record a public YouTube video no longer than three minutes with audio that
   explains the product, Codex collaboration, and GPT-5.6 runtime use.
-- [ ] Verify the live app is accessible without judge-specific local setup.
+- [x] Verify the live app is accessible without judge-specific local setup.
 - [ ] Submit before the official deadline.

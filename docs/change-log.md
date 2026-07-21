@@ -22,16 +22,18 @@ Next step:
 
 Date: 2026-07-20 PDT
 
-Branch: `codex/openai-build-week-gpt56`; final commit pending
+Branch: `codex/openai-build-week-gpt56`
 
-GitHub status: local implementation complete; final commit, push, and PR are
-pending so the existing dirty worktree can be reviewed before publication.
+GitHub status: PR #70 merged into `main` at
+`ffd994ee203925562f6d2206d21545df571511f7`. Vercel Preview and Production both
+completed successfully.
 
-Deploy status: **backend LIVE on Oracle production**. The server's existing
+Deploy status: **frontend and backend LIVE**. The server's existing
 `OPENAI_API_KEY` was verified without exposing it, a minimal Responses API probe
 returned `READY` from `gpt-5.6-sol`, and the Build Week backend archive was
 deployed on 2026-07-20 PDT. Public health and a real Coach Mission both passed.
-The matching Vercel frontend deployment remains pending the final source push.
+Vercel Production deployment `4mEndEFNzSgh4C5BuXiBmM1eaWqf` published the
+matching frontend at `https://englearning.jinxxx.de`.
 
 Summary:
 
@@ -85,15 +87,20 @@ Tests run:
 - Vercel Preview — commit `dae5e40` built successfully; the project protects
   preview deployments with Vercel SSO, so judges still need the production
   custom domain after merge
+- PR #70 — merged cleanly; Vercel Production passed for merge commit `ffd994e`
+- Browser production QA — real GPT-5.6 guided-scene, picture-story, and
+  listen-and-retell missions visibly showed actual runtime metadata and the
+  four-section planner insight
+- Final video — 174.033 seconds, 1920×1080/30fps/H.264, 48 kHz mono AAC,
+  default Chinese plus selectable English captions, 20 sentence-aligned cuts,
+  and zero detected silences longer than 0.8 seconds
 
-Known issues: the Vercel Preview passed but requires project SSO. The production
-frontend merge/deployment, `/feedback` Session ID, final screen recording,
-YouTube upload, and Devpost submission remain pending. The final narration is
-complete, but it intentionally has not been combined with old Qwen-only footage.
+Known issues: `/feedback` Session ID, YouTube upload, and Devpost submission
+remain owner-controlled. Mobile-specific visual QA was not captured; the final
+competition video uses the required fixed 1920×1080 desktop viewport.
 
-Next step: publish the matching frontend, verify the planner panel in the live
-browser, then capture the OpenAI-specific product footage and finish the final
-repository/submission steps.
+Next step: review the final MP4, run `/feedback`, upload the video to YouTube,
+and paste the final links into Devpost before the deadline.
 
 ## 2026-07-16 — Session Win end cards (learner satisfaction P0)
 

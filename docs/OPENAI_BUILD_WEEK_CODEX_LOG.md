@@ -11,9 +11,10 @@ for the timestamped Codex session or Git history.
   feature, preserve the existing product, and prepare the required Devpost and
   video evidence.
 - **Codex Session ID:** `[ADD AFTER RUNNING /feedback IN THE MAIN BUILD SESSION]`
-- **Final commit:** `[ADD FINAL COMMIT SHA]`
-- **Deployment:** Backend live at `https://enapi.jinxxx.de` on 2026-07-20 PDT;
-  matching Vercel frontend source deployment pending
+- **Feature merge commit:** `ffd994ee203925562f6d2206d21545df571511f7`
+- **Deployment:** backend live at `https://enapi.jinxxx.de`; frontend live at
+  `https://englearning.jinxxx.de`; Vercel Production deployment
+  `4mEndEFNzSgh4C5BuXiBmM1eaWqf`
 
 ## What Codex contributed
 
@@ -33,6 +34,8 @@ for the timestamped Codex session or Git history.
 7. Ran the full local validation matrix, verified the existing Oracle OpenAI
    credential without printing it, deployed the backend with a preserved `.env`
    backup, and completed a real public GPT-5.6 mission call.
+8. Created and merged PR #70, verified Vercel Production, captured fresh public
+   product states, and built the final sentence-aligned demo video.
 
 ## Key engineering decisions
 
@@ -102,8 +105,17 @@ Live evidence completed:
   for commit `dae5e40`; Preview SSO means production remains the judge-facing
   surface.
 
-Still required: production frontend deployment and recording, final commit,
-public YouTube upload, Devpost submission, and `/feedback` Session ID.
+Final video QA completed:
+
+- 174.033 seconds; 1920×1080; constant 30 fps; H.264 + 48 kHz mono AAC;
+- 20 narration segments, 20 English cues, and 20 Chinese cues;
+- every visual cut starts on a narration-sentence boundary;
+- no detected silence longer than 0.8 seconds;
+- fixed screenshots and hard cuts only—no digital zoom/pan jitter;
+- the previous demo audio and its 17–19 second voice intrusion are not reused.
+
+Still required: public YouTube upload, Devpost submission, and `/feedback`
+Session ID.
 
 Video-production audio completed separately from the runtime model: Qwen Audio
 3 TTS Plus generated 20 sentence clips with the configured `longanlingxin`
