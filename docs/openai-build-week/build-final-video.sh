@@ -6,6 +6,7 @@ output_dir="$production_dir/output"
 captures_dir="$output_dir/captures"
 cards_dir="$output_dir/cards"
 clips_dir="$output_dir/clips"
+recordings_dir="$output_dir/recordings"
 timeline="$output_dir/timeline-qwen.json"
 audio="$output_dir/voiceover-qwen-mastered.m4a"
 subtitles_zh="$output_dir/subtitles-zh.srt"
@@ -69,24 +70,39 @@ render_multi() {
     "$clips_dir/$(printf '%02d' "$index").mp4"
 }
 
-# Every cut starts at a real narration sentence boundary. All captures are
-# fixed-pixel browser screenshots or clearly labeled evidence cards, so there
-# is no digital pan/zoom jitter.
-render_multi 1 "$captures_dir/01-home.png" "$captures_dir/03-memory.png"
-render_multi 2 "$captures_dir/02-dashboard.png" "$captures_dir/03-memory.png"
+render_recording() {
+  local index="$1"
+  local recording="$2"
+  local source_start="${3:-0}"
+  local duration
+  duration="$(duration_for "$index")"
+  [[ -f "$recording" ]] || { echo "Missing recording: $recording" >&2; exit 1; }
+  ffmpeg -loglevel error -y -ss "$source_start" -i "$recording" \
+    -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x0b1220,setsar=1,fps=30,tpad=stop_mode=clone:stop_duration=$duration,trim=duration=$duration,setpts=PTS-STARTPTS,format=yuv420p" \
+    -an -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p \
+    "$clips_dir/$(printf '%02d' "$index").mp4"
+}
+
+# Every cut starts at a real narration sentence boundary. Product sections use
+# continuous frames captured from the live browser while navigation, selection,
+# generation, messaging, scrolling, recall, pinning, and editing actually run.
+# Evidence cards remain fixed and use hard cuts only, so there is no synthetic
+# pan/zoom jitter.
+render_recording 1 "$recordings_dir/01-navigation.mp4" 0
+render_recording 2 "$recordings_dir/01-navigation.mp4" 4
 render_still 3 "$cards_dir/03-build-week-title.png"
-render_still 4 "$captures_dir/04-coach-setup.png"
+render_recording 4 "$recordings_dir/02-mission-setup-loading.mp4" 0
 render_still 5 "$cards_dir/05-scheduler.png"
-render_still 6 "$captures_dir/07-gpt56-mission.png"
-render_still 7 "$captures_dir/07-gpt56-mission.png"
-render_still 8 "$captures_dir/07-gpt56-mission.png"
+render_recording 6 "$recordings_dir/02-mission-setup-loading.mp4" 5.8
+render_recording 7 "$recordings_dir/02-mission-result.mp4" 0
+render_recording 8 "$recordings_dir/02-mission-result.mp4" 9.667
 render_still 9 "$cards_dir/09-structured-output.png"
-render_multi 10 "$captures_dir/08-practice-formats.png" "$captures_dir/09-picture-story.png" "$captures_dir/10-listen-retell.png"
-render_still 11 "$captures_dir/10-chat.png"
-render_still 12 "$production_dir/../demo-production/output/browser-captures/13-natural-weakness-chat.png"
+render_recording 10 "$recordings_dir/03-formats.mp4" 0
+render_recording 11 "$recordings_dir/04-chat.mp4" 0
+render_recording 12 "$recordings_dir/04-chat.mp4" 23
 render_still 13 "$cards_dir/13-evidence-loop.png"
-render_still 14 "$captures_dir/03-memory.png"
-render_still 15 "$production_dir/../demo-production/output/browser-captures/03-memory-cards.png"
+render_recording 14 "$recordings_dir/05-recall.mp4" 3.5
+render_recording 15 "$recordings_dir/05-memory-controls.mp4" 2.5
 render_still 16 "$captures_dir/16-github-pr.png"
 render_multi 17 "$cards_dir/17-code.png" "$cards_dir/17-tests.png"
 render_still 18 "$cards_dir/18-architecture.png"

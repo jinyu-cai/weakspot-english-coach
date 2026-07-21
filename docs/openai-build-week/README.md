@@ -3,11 +3,19 @@
 Target: a public English demo video at **2:50–2:58**, never over 3:00.
 
 Current production status: **final MP4 generated and verified**. The exact
-174-second narration, sentence-aligned English/Chinese subtitles, fixed-viewport
-production captures, and evidence cards are assembled into
+174-second narration, sentence-aligned English/Chinese subtitles, live browser
+interaction recordings, and evidence cards are assembled into
 `output/weakspot-openai-build-week-final.mp4`. The app footage was captured only
 after PR #70 reached Vercel Production and real missions visibly returned
 `gpt-5.6-sol · Responses API` with all four planner-insight sections.
+
+The product sections are no longer still-image slides. They contain real browser
+frames captured while the production app navigates, changes Coach settings,
+waits for a GPT-5.6 mission, scrolls the returned evidence, switches among all
+five practice formats, sends and receives a chat message, retrieves a bounded
+Memory Pack, and pins, unpins, and edits a memory. Static cards are used only for
+the Build Week title, scheduler explanation, typed contract, evidence loop,
+code/tests, architecture, public health proof, and closing slate.
 
 The previous Qwen video is not submission-ready for OpenAI Build Week. Product
 footage can be reused, but remove the Qwen Cloud marketplace/console sequence,
@@ -24,10 +32,11 @@ does not explain Codex or GPT-5.6.
   real English SRT timing, and the aligned reviewed Chinese SRT.
 - `build-evidence-cards.sh` — renders clearly labeled architecture, code, test,
   health, and end cards without secrets.
-- `build-final-video.sh` — maps each narration sentence to a stable product
-  capture/evidence card and exports the bilingual-captioned MP4.
-- `qa-final-video.sh` — validates duration and cue counts, detects long silence,
-  and extracts one midpoint frame per narration sentence for visual review.
+- `build-final-video.sh` — maps each narration sentence to a real browser
+  recording or evidence card and exports the bilingual-captioned MP4.
+- `qa-final-video.sh` — validates duration and cue counts, verifies that every
+  product clip contains multiple distinct frames, detects long silence, and
+  extracts one midpoint frame per narration sentence for visual review.
 
 ## Capture prerequisites
 
@@ -82,11 +91,12 @@ bash docs/openai-build-week/build-final-video.sh
 bash docs/openai-build-week/qa-final-video.sh
 ```
 
-Verified result: 174.033 seconds, 1920×1080, constant 30 fps, H.264 video,
+Verified result: 174.000 seconds, 1920×1080, constant 30 fps, H.264 video,
 48 kHz mono AAC narration, default Simplified Chinese captions, selectable
-English captions, 20 sentence-aligned visual segments, and no detected silence
-longer than 0.8 seconds. The old demo audio—including its 17–19 second voice
-intrusion—is not used anywhere in this build.
+English captions, 20 sentence-aligned visual segments, 11 verified dynamic
+product clips, and no detected silence longer than 0.8 seconds. The old demo
+audio—including its 17–19 second voice intrusion—is not used anywhere in this
+build.
 
 ## Stabilizing the picture
 
