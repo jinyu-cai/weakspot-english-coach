@@ -2,14 +2,14 @@
 
 **A cross-session English coach that remembers what works for each learner.**
 
-WeakSpot is being meaningfully extended for **OpenAI Build Week 2026 —
+WeakSpot was meaningfully extended during **OpenAI Build Week 2026 —
 Education** with a new **GPT-5.6 Adaptive Mission Planner**, built in
-collaboration with Codex. The existing product already accumulated goals,
-preferences, recurring weaknesses, learning strategies, and practice outcomes.
-The Build Week extension turns that bounded evidence into a fresh production
-mission and exposes a learner-facing explanation of why the task was chosen,
-which evidence shaped it, how difficulty changed, and what the coach will
-observe.
+collaboration with Codex. Before the event, the product already accumulated
+goals, preferences, recurring weaknesses, learning strategies, and practice
+outcomes. The Build Week extension turns that bounded evidence into a fresh
+production mission and exposes a learner-facing explanation of why the task was
+chosen, which evidence shaped it, how difficulty changed, and what the coach
+will observe.
 
 Codex is the development agent, not a model embedded in the website. At
 runtime, the new planner calls the official OpenAI **Responses API** with
@@ -29,7 +29,7 @@ Primary API: [enapi.jinxxx.de/api/v1/health](https://enapi.jinxxx.de/api/v1/heal
 | Evidence-bounded personalization | The model receives the scheduler's selected skills plus bounded goal, preference, strategy, weakness, and recency context |
 | Visible runtime proof | The UI renders the model returned by the API, `Responses API`, “why now,” evidence, adaptation, and evaluation focus |
 | Privacy and integrity | `store=false`, a hashed safety identifier, server-only keys, and a hard refusal to label a non-GPT-5.6 model as this feature |
-| Safe rollout | `OPENAI_BUILD_WEEK_ENABLED` is opt-in, preserving existing Qwen/DeepSeek routes until the OpenAI deployment is validated |
+| Safe rollout | `OPENAI_BUILD_WEEK_ENABLED` isolates the validated OpenAI path while preserving the existing Qwen/DeepSeek routes |
 
 The main implementation is in
 [`openai_mission_service.py`](apps/api/app/services/openai_mission_service.py),
@@ -37,26 +37,60 @@ with the planner contract in [`coach.py`](apps/api/app/models/coach.py), prompt
 and routing in [`coach_service.py`](apps/api/app/services/coach_service.py), and
 the visible evidence panel in [`Coach Mode`](apps/web/app/coach/page.tsx).
 
-### How Codex was used
+### How Codex accelerated the project
 
-Codex inspected the existing multi-provider architecture, checked current
-official GPT-5.6 and Structured Outputs guidance, chose a separate Responses
-API adapter instead of a blind model-string replacement, implemented the
-backend and UI contract, added an offline mocked Responses API contract test,
-and prepared the Devpost/video handoff. Important decisions were kept explicit:
+Codex served as the engineering collaborator from architecture audit through
+the final submission build. It accelerated the workflow in concrete ways:
 
-- Codex does not run inside the product; GPT-5.6 does.
-- Existing providers remain intact so the new work is a measurable extension,
-  not a rewrite that hides the pre-existing foundation.
-- The GPT-5.6 badge is derived from runtime response metadata and appears only
-  on the OpenAI path.
-- Structured output, user-data retention boundaries, and the model allowlist
-  are enforced in code and covered by tests.
+- **Architecture:** traced the existing FastAPI/Next.js multi-provider and
+  memory paths, identified the smallest safe extension boundary, and compared
+  implementation options against current OpenAI guidance.
+- **Implementation:** created the dedicated Responses API adapter, Pydantic
+  contract, routing and privacy guards, frontend evidence panel, runtime model
+  metadata, and public capability health proof.
+- **Validation:** added a mocked Responses API contract test, compiled the
+  backend, ran the existing smoke/integration suites, type-checked the frontend,
+  and verified the deployed GPT-5.6 path through real browser interactions.
+- **Delivery:** maintained the implementation record, prepared the Devpost
+  narrative, created and merged the pull requests, and rebuilt the final
+  174-second demo with real product footage and automated audiovisual QA.
 
-The timestamped build record is in
-[`OPENAI_BUILD_WEEK_CODEX_LOG.md`](docs/OPENAI_BUILD_WEEK_CODEX_LOG.md). The
-required Codex Session ID from `/feedback` and final commit SHA must be added
-after the live validation pass.
+Codex does not run inside the product. The deployed website calls GPT-5.6 at
+runtime; Codex accelerated the decisions, code, testing, deployment verification,
+documentation, and demo production that made that feature submission-ready.
+
+### Key product, engineering, and design decisions I made
+
+I retained product ownership and made the following decisions after reviewing
+the evidence and alternatives with Codex:
+
+- **Extend instead of relabel:** preserve the pre-existing Qwen/DeepSeek
+  product and add a dedicated OpenAI runtime path, rather than presenting a
+  model-string swap as new work.
+- **Separate selection from generation:** keep the deterministic scheduler in
+  charge of what the learner should practice, then use GPT-5.6 to turn that
+  decision into a natural production mission.
+- **Bound the evidence:** send only the selected goal, preference, weakness,
+  strategy, and recency evidence instead of forwarding the learner's complete
+  history.
+- **Make personalization inspectable:** show why the task was selected, which
+  evidence was used, how the requested time/modality/energy changed it, and
+  what observable language signals will be evaluated.
+- **Require runtime truth:** display the model returned by OpenAI only on the
+  Responses path, fail closed for a non-GPT-5.6 configuration, keep credentials
+  server-side, and disable response storage.
+
+GPT-5.6 contributes the final runtime mission and evidence explanation. Codex
+contributed the accelerated engineering workflow that made the integration
+safe, testable, visible, and reproducible. The dated implementation is preserved
+in [PR #70](https://github.com/jinyu-cai/weakspot-english-coach/pull/70), the
+reproducible demo build in
+[PR #71](https://github.com/jinyu-cai/weakspot-english-coach/pull/71), and the
+real-interaction recording update in
+[PR #72](https://github.com/jinyu-cai/weakspot-english-coach/pull/72). The
+timestamped collaboration record is in
+[`OPENAI_BUILD_WEEK_CODEX_LOG.md`](docs/OPENAI_BUILD_WEEK_CODEX_LOG.md); the
+required `/feedback` Session ID is supplied separately in the Devpost form.
 
 ### Enable and verify GPT-5.6
 
@@ -74,6 +108,23 @@ briefing shows `gpt-5.6-sol · Responses API` plus the adaptive planner evidence
 panel. If the feature is enabled without a key, or configured with a model that
 does not start with `gpt-5.6`, the request fails instead of silently falling
 back and producing misleading demo evidence.
+
+### Judge quick test
+
+1. Open the [live Coach](https://englearning.jinxxx.de/coach) and use the
+   available GitHub or Google sign-in.
+2. Choose a duration, response mode, energy level, and practice format, then
+   select **Arrange today's mission**.
+3. Confirm the returned briefing displays `gpt-5.6-sol · Responses API` and the
+   **Why now**, **Evidence used**, **Adaptation**, and **What to observe**
+   sections.
+4. Optionally inspect the public
+   [health response](https://enapi.jinxxx.de/api/v1/health) for the secret-free
+   OpenAI capability metadata.
+
+The general text-chat provider is a separate, pre-existing route and may use a
+configured DeepSeek or Qwen model. The judge-facing GPT-5.6 runtime proof is the
+model metadata returned with a newly generated Coach mission.
 
 ## Existing MemoryAgent foundation
 
@@ -221,6 +272,7 @@ structured model output:
 
 ```bash
 cd apps/api
+uv run python -m scripts.coach_contract_test
 uv run python -m scripts.smoke_test
 DYNAMODB_ENDPOINT_URL= uv run python -m scripts.integration_test
 DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_agent_test
