@@ -111,7 +111,7 @@ export default function ChatPage() {
   const [selectedServerFastModelId, setSelectedServerFastModelId] = useState(
     () => loadLLMSettings().serverFastModelId || DEFAULT_SERVER_FAST_MODEL_ID,
   )
-  const [sceneGenerationMode, setSceneGenerationMode] = useState<CoachGenerationMode>("fast")
+  const [sceneGenerationMode, setSceneGenerationMode] = useState<CoachGenerationMode>("deep")
   const [textChatModelMode, setTextChatModelMode] = useState<TextChatModelMode>("fast")
   const [viewState, setViewState] = useState<ViewState>("chat")
   const [analysis, setAnalysis] = useState<SessionAnalysis | null>(null)
@@ -372,11 +372,13 @@ export default function ChatPage() {
     sessionSelectionRef.current += 1
     setCreatingSession(true)
     try {
+      const isLongForm = sceneGenerationMode === "deep"
       const mission = await generateCoachMission({
-        durationMinutes: 10,
+        durationMinutes: isLongForm ? 15 : 10,
         modality: "text",
         energy: "normal",
         generationMode: sceneGenerationMode,
+        runtimeMode: "selected_provider",
         preferredType: "guided_scene",
       })
       if (!mission.scene) throw new Error("Generated mission has no scene")
