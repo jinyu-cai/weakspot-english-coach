@@ -2,10 +2,12 @@
 
 Target: a public English demo video at **2:50–2:58**, never over 3:00.
 
-Current production status: the exact 174-second narration and sentence-aligned
-English/Chinese subtitles have been generated in the ignored local `output/`
-directory. Final browser footage is intentionally pending the real deployed
-GPT-5.6 path; no mock screen will be presented as live evidence.
+Current production status: **final MP4 generated and verified**. The exact
+174-second narration, sentence-aligned English/Chinese subtitles, fixed-viewport
+production captures, and evidence cards are assembled into
+`output/weakspot-openai-build-week-final.mp4`. The app footage was captured only
+after PR #70 reached Vercel Production and real missions visibly returned
+`gpt-5.6-sol · Responses API` with all four planner-insight sections.
 
 The previous Qwen video is not submission-ready for OpenAI Build Week. Product
 footage can be reused, but remove the Qwen Cloud marketplace/console sequence,
@@ -20,10 +22,16 @@ does not explain Codex or GPT-5.6.
 - `voiceover-en.txt` — the exact 20-sentence TTS input.
 - `generate-narration.sh` — generates sentence-level Qwen Audio narration,
   real English SRT timing, and the aligned reviewed Chinese SRT.
+- `build-evidence-cards.sh` — renders clearly labeled architecture, code, test,
+  health, and end cards without secrets.
+- `build-final-video.sh` — maps each narration sentence to a stable product
+  capture/evidence card and exports the bilingual-captioned MP4.
+- `qa-final-video.sh` — validates duration and cue counts, detects long silence,
+  and extracts one midpoint frame per narration sentence for visual review.
 
 ## Capture prerequisites
 
-Do not record the final GPT-5.6 sequence until all of these are true:
+The final sequence was recorded only after these were true:
 
 1. The final commit is deployed.
 2. The backend has `OPENAI_BUILD_WEEK_ENABLED=true` and a server-side key.
@@ -33,7 +41,9 @@ Do not record the final GPT-5.6 sequence until all of these are true:
    and all four planner-insight sections.
 5. Backend logs show `openai_mission ... upstream_ok` for that request without
    exposing the key or raw learner text.
-6. The main Codex session has a `/feedback` Session ID.
+
+The only remaining submission-time item is the main Codex session's `/feedback`
+Session ID; it does not alter the already captured runtime proof.
 
 ## Audio/subtitle workflow
 
@@ -63,6 +73,20 @@ configuration is intentionally kept unchanged. The command does not print the
 key. Expected outputs are
 `output/voiceover-qwen-mastered.m4a`, `output/subtitles-qwen.srt`,
 `output/subtitles-zh.srt`, and `output/timeline-qwen.json`.
+
+Build and verify the final video:
+
+```bash
+bash docs/openai-build-week/build-evidence-cards.sh
+bash docs/openai-build-week/build-final-video.sh
+bash docs/openai-build-week/qa-final-video.sh
+```
+
+Verified result: 174.033 seconds, 1920×1080, constant 30 fps, H.264 video,
+48 kHz mono AAC narration, default Simplified Chinese captions, selectable
+English captions, 20 sentence-aligned visual segments, and no detected silence
+longer than 0.8 seconds. The old demo audio—including its 17–19 second voice
+intrusion—is not used anywhere in this build.
 
 ## Stabilizing the picture
 
