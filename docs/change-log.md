@@ -18,6 +18,75 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-20 — OpenAI Build Week GPT-5.6 Adaptive Mission Planner
+
+Date: 2026-07-20 PDT
+
+Branch: `codex/openai-build-week-gpt56`; final commit pending
+
+GitHub status: local implementation complete; final commit, push, and PR are
+pending so the existing dirty worktree can be reviewed before publication.
+
+Deploy status: **backend LIVE on Oracle production**. The server's existing
+`OPENAI_API_KEY` was verified without exposing it, a minimal Responses API probe
+returned `READY` from `gpt-5.6-sol`, and the Build Week backend archive was
+deployed on 2026-07-20 PDT. Public health and a real Coach Mission both passed.
+The matching Vercel frontend deployment remains pending the final source push.
+
+Summary:
+
+- Added an opt-in `gpt-5.6-sol` Coach Mission path through the official OpenAI
+  Responses API with native Pydantic Structured Outputs.
+- Added structured `plannerInsight`: why now, evidence used, task adaptation,
+  and evaluation focus.
+- Added runtime model/API metadata and a visible evidence panel that appears
+  only for OpenAI-generated missions.
+- Added `store=false`, hashed safety identifier, server-only configuration,
+  model guard, public secret-free capability health, mocked API contract tests,
+  README explanation, Devpost draft, Codex log, and a new sub-three-minute video
+  production pack.
+- Preserved the existing Qwen/DeepSeek behavior when the Build Week switch is
+  disabled.
+- Reused the production server's existing OpenAI credential, enabled the
+  Build Week switch with a secret-preserving helper, and kept a timestamped
+  `.env` backup before changing configuration.
+
+Tests run:
+
+- `UV_CACHE_DIR=.uv-cache uv run python -m scripts.coach_contract_test` — pass
+- `UV_CACHE_DIR=.uv-cache uv run python -m compileall -q app scripts/coach_contract_test.py` — pass
+- `pnpm exec tsc --noEmit` — pass
+- `UV_CACHE_DIR=.uv-cache uv run python -m scripts.smoke_test` — pass
+- `DYNAMODB_ENDPOINT_URL= uv run python -m scripts.integration_test` — pass
+- `DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_agent_test` — pass
+- `DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark` — pass;
+  Recall@6 `1.0`, stale suppression and budget compliance true, context
+  reduction `0.873`
+- `DYNAMODB_ENDPOINT_URL= uv run python -m scripts.learning_loop_test` — pass
+- `pnpm lint` — pass
+- `pnpm build` — pass after allowing the configured Google Fonts download
+- Qwen Audio narration — 20 aligned sentence clips, exact 174.000-second AAC
+  master, English SRT, and reviewed Chinese SRT generated
+- OpenAI access probe — `gpt-5.6-sol` Responses API returned `READY`
+- Public health — `enabled=true`, `configured=true`, model `gpt-5.6-sol`, API
+  `responses`, feature `adaptive_mission_planner_v1`
+- Public end-to-end mission — HTTP 200, mission `mission_8af078f6caf7`, actual
+  runtime metadata `OpenAI / gpt-5.6-sol / responses / medium`, and all four
+  planner-insight sections populated
+- Server trace — `upstream_ok`, OpenAI response ID recorded, 21.596-second
+  upstream duration, and 2,404 total tokens; no key or learner content logged
+- Deployment archive SHA-256 —
+  `94d7c349089746ac2c505cbb6f326a38fe415ea7e527c3cd651096b2c630ae4e`
+
+Known issues: the frontend source deployment, final Git commit/PR, `/feedback`
+Session ID, final screen recording, YouTube upload, and Devpost submission remain
+pending. The final narration is complete, but it intentionally has not been
+combined with old Qwen-only footage.
+
+Next step: publish the matching frontend, verify the planner panel in the live
+browser, then capture the OpenAI-specific product footage and finish the final
+repository/submission steps.
+
 ## 2026-07-16 — Session Win end cards (learner satisfaction P0)
 
 Date: 2026-07-16 UTC

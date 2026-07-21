@@ -184,6 +184,19 @@ The helper rebuilds the image, runs the idempotent table/TTL setup, recreates
 the service, and checks local health. Deploy the backend before a frontend that
 depends on new endpoints.
 
+For the OpenAI Build Week deployment, first verify the existing server-side
+OpenAI key, then enable the audited GPT-5.6 mission path without printing or
+replacing that key:
+
+```bash
+bash deploy/enable_openai_build_week.sh
+bash deploy/start_backend.sh
+```
+
+The enable helper backs up `.env`, sets the official Responses API URL,
+`gpt-5.6-sol`, and `medium` reasoning, and refuses to proceed when no server-side
+OpenAI key is present.
+
 ## Logs / restart
 
 ```bash

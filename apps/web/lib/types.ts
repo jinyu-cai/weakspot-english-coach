@@ -67,6 +67,21 @@ export interface CoachVocabularyMission {
   conceptsToExpress: string[]
 }
 
+export interface CoachPlannerInsight {
+  whyNow: string
+  evidenceUsed: string[]
+  adaptation: string
+  evaluationFocus: string[]
+}
+
+export interface CoachGenerationMetadata {
+  provider: "OpenAI"
+  model: string
+  api: "responses"
+  reasoningEffort: "none" | "low" | "medium" | "high" | "xhigh" | "max"
+  feature: "adaptive_mission_planner_v1"
+}
+
 export interface CoachMission {
   id: string
   type: CoachMissionType
@@ -89,6 +104,8 @@ export interface CoachMission {
     skillScores?: Array<Record<string, unknown>>
     missionTypeScores?: Array<Record<string, unknown>>
   } | null
+  plannerInsight?: CoachPlannerInsight | null
+  generation?: CoachGenerationMetadata | null
   scene?: CoachSceneMission | null
   picture?: CoachPictureMission | null
   listening?: CoachListeningMission | null

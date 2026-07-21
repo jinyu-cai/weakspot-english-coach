@@ -112,6 +112,7 @@ def synthesize_sentence(
     language: str,
     instruction: str | None,
     speech_rate: float,
+    seed: int,
 ) -> None:
     synthesizer = SpeechSynthesizer(
         model=model,
@@ -120,14 +121,23 @@ def synthesize_sentence(
         volume=55,
         speech_rate=speech_rate,
         pitch_rate=1.0,
-        seed=2026,
+        seed=seed,
         instruction=instruction,
         language_hints=[language],
         additional_params={"enable_aigc_tag": True},
     )
     audio = synthesizer.call(sentence, timeout_millis=300_000)
     if not audio:
-        raise RuntimeError("Qwen returned no audio data.")
+        response = synthesizer.get_response()
+        status = getattr(response, "status_code", None)
+        code = getattr(response, "code", None)
+        message = str(getattr(response, "message", "") or "")[:300]
+        request_id = synthesizer.get_last_request_id()
+        raise RuntimeError(
+            "Qwen returned no audio data "
+            f"(status={status}, code={code}, request_id={request_id}, "
+            f"message={message})."
+        )
     temporary = output.with_suffix(output.suffix + ".tmp")
     temporary.write_bytes(audio)
     temporary.replace(output)
@@ -141,6 +151,38 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--target-duration", type=float, default=TARGET_DURATION_SECONDS)
+    parser.add_argument(
+        "--scene-sentence-counts",
+        default=",".join(str(count) for count in SCENE_SENTENCE_COUNTS),
+        help="Comma-separated sentence counts per video scene.",
+    )
+    parser.add_argument(
+        "--instruction",
+        default=None,
+        help="Override QWEN_TTS_INSTRUCTION for every generated sentence.",
+    )
+    parser.add_argument(
+        "--regenerate-segment",
+        type=int,
+        action="append",
+        default=[],
+        help="Regenerate only this 1-based sentence number; may be repeated.",
+    )
+    parser.add_argument(
+        "--replacement-seed",
+        type=int,
+        default=2027,
+        help="Seed used only for explicitly regenerated sentence clips.",
+    )
+    parser.add_argument(
+        "--replacement-instruction",
+        default=(
+            "Natural US English. Use exactly one warm female narrator voice "
+            "throughout. No second speaker, voice changes, sound effects, or "
+            "introductory words. Read only the supplied sentence."
+        ),
+        help="TTS instruction used only for explicitly regenerated clips.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser
 
@@ -154,20 +196,43 @@ def main() -> int:
     voice = required_env("QWEN_TTS_VOICE")
     websocket_url = required_env("DASHSCOPE_WEBSOCKET_BASE_URL")
     language = os.environ.get("QWEN_TTS_LANGUAGE", "en").strip() or "en"
-    instruction = os.environ.get("QWEN_TTS_INSTRUCTION", "").strip() or None
+    instruction = (
+        args.instruction
+        if args.instruction is not None
+        else os.environ.get("QWEN_TTS_INSTRUCTION", "").strip() or None
+    )
     speech_rate = float(os.environ.get("QWEN_TTS_SPEECH_RATE", "1.0"))
+    try:
+        scene_sentence_counts = tuple(
+            int(value.strip())
+            for value in args.scene_sentence_counts.split(",")
+            if value.strip()
+        )
+    except ValueError as exc:
+        raise ValueError("--scene-sentence-counts must contain integers.") from exc
+    if not scene_sentence_counts or any(count <= 0 for count in scene_sentence_counts):
+        raise ValueError("--scene-sentence-counts values must all be positive.")
 
     text = " ".join(args.input.read_text(encoding="utf-8").split())
     sentences = [item.strip() for item in SENTENCE_BOUNDARY.split(text) if item.strip()]
-    if sum(SCENE_SENTENCE_COUNTS) != len(sentences):
+    if sum(scene_sentence_counts) != len(sentences):
         raise ValueError(
-            f"Expected {sum(SCENE_SENTENCE_COUNTS)} narration sentences, found "
-            f"{len(sentences)}. Update SCENE_SENTENCE_COUNTS if the script changed."
+            f"Scene counts expect {sum(scene_sentence_counts)} narration sentences, "
+            f"but the input contains {len(sentences)}."
         )
     if not 0.5 <= speech_rate <= 2.0:
         raise ValueError("QWEN_TTS_SPEECH_RATE must be between 0.5 and 2.0.")
     if args.target_duration <= 0:
         raise ValueError("--target-duration must be positive.")
+    regenerate_segments = set(args.regenerate_segment)
+    invalid_segments = sorted(
+        index for index in regenerate_segments if not 1 <= index <= len(sentences)
+    )
+    if invalid_segments:
+        raise ValueError(
+            f"Invalid --regenerate-segment values: {invalid_segments}; "
+            f"expected 1 through {len(sentences)}."
+        )
 
     settings = {
         "model": model,
@@ -207,7 +272,12 @@ def main() -> int:
     segment_paths: list[Path] = []
     for index, sentence in enumerate(sentences, start=1):
         segment_path = segments_dir / f"{index:02d}.mp3"
-        reusable = previous_fingerprint == fingerprint and segment_path.exists()
+        forced = index in regenerate_segments
+        reusable = (
+            not forced
+            and previous_fingerprint == fingerprint
+            and segment_path.exists()
+        )
         if reusable:
             try:
                 reusable = duration(segment_path) > 0.2
@@ -223,8 +293,11 @@ def main() -> int:
                 model=model,
                 voice=voice,
                 language=language,
-                instruction=instruction,
+                instruction=(
+                    args.replacement_instruction if forced else instruction
+                ),
                 speech_rate=speech_rate,
+                seed=args.replacement_seed if forced else 2026,
             )
         segment_paths.append(segment_path)
 
@@ -324,7 +397,7 @@ def main() -> int:
 
     scene_ranges: list[dict[str, object]] = []
     first_sentence = 0
-    for scene_index, count in enumerate(SCENE_SENTENCE_COUNTS, start=1):
+    for scene_index, count in enumerate(scene_sentence_counts, start=1):
         selected = timeline_segments[first_sentence : first_sentence + count]
         scene_ranges.append(
             {

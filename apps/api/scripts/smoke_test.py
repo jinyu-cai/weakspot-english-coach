@@ -19,14 +19,27 @@ def main() -> None:
     # 1. Import the FastAPI app (exercises config, routes, services, db, models)
     #    and build the OpenAPI schema (exercises every route + request model).
     from app.main import app
+    from app.api.routes.health import health_check
 
     paths = sorted(app.openapi().get("paths", {}).keys())
     print("Imported app OK. API routes:")
     for p in paths:
         print("   ", p)
+    health_payload = health_check()
+    assert health_payload["status"] == "ok"
+    assert health_payload["capabilities"]["openaiBuildWeek"]["model"].startswith("gpt-5.6")
+    assert health_payload["capabilities"]["openaiBuildWeek"]["api"] == "responses"
 
     # 2. JSON schema generation for every AI response model.
     from app.models.chat_import import ChatImportAIResult
+    from app.models.coach import (
+        GPT56CoachMissionAIResult,
+        GPT56DecisionResponseMissionAIResult,
+        GPT56GuidedSceneMissionAIResult,
+        GPT56ListenRetellMissionAIResult,
+        GPT56PictureStoryMissionAIResult,
+        GPT56VocabularyInActionMissionAIResult,
+    )
     from app.models.diagnostic import DiagnoseRequest, DiagnosticAIResult
     from app.models.plan import LearningPlanAIResult
     from app.models.practice import (
@@ -41,6 +54,12 @@ def main() -> None:
         LearningPlanAIResult,
         PracticeExerciseAIResult,
         PracticeGradeAIResult,
+        GPT56CoachMissionAIResult,
+        GPT56GuidedSceneMissionAIResult,
+        GPT56PictureStoryMissionAIResult,
+        GPT56ListenRetellMissionAIResult,
+        GPT56DecisionResponseMissionAIResult,
+        GPT56VocabularyInActionMissionAIResult,
     ):
         schema = model.model_json_schema()
         assert "properties" in schema, model.__name__

@@ -8,11 +8,19 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.models.coach import (
+    CoachGenerationMetadata,
     CoachMissionAIResult,
     CoachMissionRequest,
     CoachMissionResponse,
+    CoachPlannerInsight,
     CoachScenarioFamily,
     DecisionResponseMissionAIResult,
+    GPT56CoachMissionAIResult,
+    GPT56DecisionResponseMissionAIResult,
+    GPT56GuidedSceneMissionAIResult,
+    GPT56ListenRetellMissionAIResult,
+    GPT56PictureStoryMissionAIResult,
+    GPT56VocabularyInActionMissionAIResult,
     GuidedSceneMissionAIResult,
     InputLab2TranscriptMissionRequest,
     ListenRetellMissionAIResult,
@@ -21,6 +29,7 @@ from app.models.coach import (
     VocabularyInActionMissionAIResult,
 )
 from app.services.ai_client import LLMProviderConfig, parse_with_model
+from app.services.openai_mission_service import parse_gpt56_mission
 from app.services.output_language import language_instruction
 
 
@@ -92,6 +101,23 @@ Type requirements:
 """.strip()
 
 
+GPT56_PLANNER_PROMPT = """
+This request is the GPT-5.6 Adaptive Mission Planner extension. In addition to
+the mission, return plannerInsight with an evidence-bounded explanation:
+- whyNow: explain in learner-friendly language why this task is useful now.
+- evidenceUsed: give 1-4 concise observations grounded only in the scheduler,
+  skill, goal, preference, and strategy context supplied below. Never invent a
+  learner fact. If history is missing, say that the task is diagnostic.
+- adaptation: explain how the requested duration, modality, and energy shaped
+  the task and why this is a useful transfer context rather than a repeat.
+- evaluationFocus: give 2-4 observable language signals to review after the
+  attempt. Do not reveal a model answer or hidden grading key.
+
+Keep the explanation compact. The plannerInsight and mission must agree on the
+same target skills, task type, and difficulty.
+""".strip()
+
+
 TRANSCRIPT_SYSTEM_PROMPT = """
 You are designing an owner-only English listening-and-retelling prototype around
 a transcript supplied by the product owner. Create the learner-facing scaffold,
@@ -144,6 +170,20 @@ def _response_model_for_request(req: CoachMissionRequest) -> Type[BaseModel]:
     return CoachMissionAIResult
 
 
+def _gpt56_response_model_for_request(req: CoachMissionRequest) -> Type[BaseModel]:
+    if req.preferredType == "guided_scene":
+        return GPT56GuidedSceneMissionAIResult
+    if req.preferredType == "picture_story":
+        return GPT56PictureStoryMissionAIResult
+    if req.preferredType == "listen_retell":
+        return GPT56ListenRetellMissionAIResult
+    if req.preferredType == "decision_response":
+        return GPT56DecisionResponseMissionAIResult
+    if req.preferredType == "vocabulary_in_action":
+        return GPT56VocabularyInActionMissionAIResult
+    return GPT56CoachMissionAIResult
+
+
 def select_scenario_family(recent_families: list[str] | None = None) -> CoachScenarioFamily:
     """Prefer a family absent from recent generated chats; repeats remain possible later."""
 
@@ -179,6 +219,8 @@ def _public_response(
     listening_script: str | None = None,
     scenario_family: CoachScenarioFamily | None = None,
     target_skills: list[str] | None = None,
+    planner_insight: CoachPlannerInsight | None = None,
+    generation: CoachGenerationMetadata | None = None,
 ) -> CoachMissionResponse:
     payload = mission_content.model_dump(mode="json")
     if payload.get("type") == "vocabulary_in_action":
@@ -204,6 +246,10 @@ def _public_response(
             "difficulty": req.energy,
         }
     )
+    if planner_insight is not None:
+        payload["plannerInsight"] = planner_insight.model_dump(mode="json")
+    if generation is not None:
+        payload["generation"] = generation.model_dump(mode="json")
     return CoachMissionResponse.model_validate({"mission": payload})
 
 
@@ -215,6 +261,7 @@ def generate_coach_mission(
     recommended_skills: list[str] | None = None,
     learning_context: str | None = None,
     llm_provider: LLMProviderConfig | None = None,
+    user_id: str = "anonymous",
     max_tokens: int | None = 3000,
     trace_id: str | None = None,
 ) -> CoachMissionResponse:
@@ -253,27 +300,46 @@ Allowed first-party picture assets (use only for picture_story):
 {asset_catalog}
 """.strip()
 
-    response_model = _response_model_for_request(req)
-    result = parse_with_model(
-        messages=[
-            {
-                "role": "system",
-                "content": f"{MISSION_SYSTEM_PROMPT}\n\n{language_instruction(req.outputLanguage)}",
-            },
-            {"role": "user", "content": user_prompt},
-        ],
-        response_model=response_model,
-        max_tokens=max_tokens,
-        model=selected_coach_model(req, llm_provider),
-        provider=llm_provider,
-        trace_id=trace_id,
-    )
+    base_system_prompt = f"{MISSION_SYSTEM_PROMPT}\n\n{language_instruction(req.outputLanguage)}"
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                f"{base_system_prompt}\n\n{GPT56_PLANNER_PROMPT}"
+                if settings.openai_build_week_enabled
+                else base_system_prompt
+            ),
+        },
+        {"role": "user", "content": user_prompt},
+    ]
+    planner_insight: CoachPlannerInsight | None = None
+    generation: CoachGenerationMetadata | None = None
+    if settings.openai_build_week_enabled:
+        result, generation = parse_gpt56_mission(
+            messages=messages,
+            response_model=_gpt56_response_model_for_request(req),
+            user_id=user_id,
+            max_output_tokens=max_tokens,
+            trace_id=trace_id,
+        )
+        planner_insight = result.plannerInsight
+    else:
+        result = parse_with_model(
+            messages=messages,
+            response_model=_response_model_for_request(req),
+            max_tokens=max_tokens,
+            model=selected_coach_model(req, llm_provider),
+            provider=llm_provider,
+            trace_id=trace_id,
+        )
     mission_content = cast(BaseModel, result.mission)
     return _public_response(
         mission_content,
         req,
         scenario_family=selected_family,
         target_skills=recommended_skills,
+        planner_insight=planner_insight,
+        generation=generation,
     )
 
 
