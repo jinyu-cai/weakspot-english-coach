@@ -1214,7 +1214,15 @@ def heuristic_memory_candidates(text: str) -> list[MemoryCandidate]:
 
 def _tokens(text: str) -> list[str]:
     lowered = text.lower()
-    words = re.findall(r"[a-z0-9][a-z0-9_.-]*", lowered)
+    raw_words = re.findall(r"[a-z0-9][a-z0-9_.-]*", lowered)
+    words: list[str] = []
+    for word in raw_words:
+        words.append(word)
+        # Canonical keys and skill labels use dots, underscores, and hyphens.
+        # Preserve the exact token while also exposing its meaningful parts so
+        # lexical fallback can match "sentence structure rewrite" naturally.
+        if re.search(r"[._-]", word):
+            words.extend(part for part in re.split(r"[._-]+", word) if part)
     cjk = "".join(re.findall(r"[\u3400-\u9fff]", lowered))
     words.extend(cjk[index : index + 2] for index in range(max(0, len(cjk) - 1)))
     if len(cjk) == 1:
@@ -1242,12 +1250,31 @@ def cosine_similarity(left: Optional[list[float]], right: Optional[list[float]])
     return max(0.0, min(1.0, (dot / (left_norm * right_norm) + 1.0) / 2.0))
 
 
+TOKEN_ESTIMATE_METHOD = "conservative_unicode_v2"
+_TOKEN_ESTIMATE_PARTS = re.compile(
+    r"[A-Za-z0-9]+|[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]|[^\s]"
+)
+
+
 def estimate_tokens(text: str) -> int:
+    """Return a conservative, tokenizer-independent context estimate.
+
+    Qwen's production tokenizer is not bundled with this service. ASCII word
+    runs are therefore charged at least one token per four characters, while
+    punctuation, CJK/Kana/Hangul, emoji, and line breaks are charged
+    individually. Retrieval also applies a configurable safety reserve before
+    this estimate reaches the caller's advertised ceiling.
+    """
+
     if not text:
         return 0
-    cjk_count = len(re.findall(r"[\u3400-\u9fff]", text))
-    other_count = max(0, len(text) - cjk_count)
-    return cjk_count + math.ceil(other_count / 4)
+    total = text.count("\n")
+    for part in _TOKEN_ESTIMATE_PARTS.findall(text):
+        if part.isascii() and part.isalnum():
+            total += max(1, math.ceil(len(part) / 4))
+        else:
+            total += max(1, len(part))
+    return total
 
 
 def _truncate_to_budget(text: str, budget: int) -> str:
@@ -1369,8 +1396,10 @@ def _build_weakness_overview(
         "memoryIds": [],
         "suppressed": suppressed,
     }
-    if suppressed or not ranked or token_budget <= 0:
+    if suppressed or not ranked:
         return "", base
+    if token_budget <= 0:
+        return "", {**base, "complete": False, "format": "omitted"}
 
     metric_header = (
         "Active weakness overview (complete compact historical profile; never invent a current "
@@ -1430,7 +1459,7 @@ def _build_weakness_overview(
                 "format": "omitted",
                 "estimatedTokens": estimate_tokens(omitted_notice),
             }
-        return "", base
+        return "", {**base, "complete": False, "format": "omitted"}
     omitted = len(ranked) - len(included_entries)
     partial_text = (
         f"{partial_header}\n- {'; '.join(included_entries)}"
@@ -1456,14 +1485,26 @@ def retrieve_memory_pack(
     purpose: str = "general",
     record_trace: bool = True,
 ) -> dict:
-    budget = max(100, min(2000, token_budget or settings.memory_context_token_budget))
+    requested_budget = max(
+        100,
+        min(2000, token_budget or settings.memory_context_token_budget),
+    )
+    safety_ratio = max(
+        0.5,
+        min(1.0, float(settings.memory_context_token_safety_ratio)),
+    )
+    effective_budget = max(1, math.floor(requested_budget * safety_ratio))
     result_limit = max(1, min(20, limit or settings.memory_retrieval_limit))
     if not settings.memory_enabled:
         return {
             "text": "",
             "items": [],
             "estimatedTokens": 0,
-            "tokenBudget": budget,
+            "tokenBudget": requested_budget,
+            "effectiveTokenBudget": effective_budget,
+            "tokenEstimateMethod": TOKEN_ESTIMATE_METHOD,
+            "budgetSafetyRatio": safety_ratio,
+            "budgetCompliant": True,
             "totalCandidates": 0,
             "traceId": None,
             "weaknessOverview": {
@@ -1559,7 +1600,9 @@ def retrieve_memory_pack(
     )[:2]
     ordered: list[dict] = []
     seen: set[str] = set()
-    for memory in [*critical, *ranked]:
+    # The best query match must survive a tight pack. Critical goals and
+    # preferences are then reserved before the rest of the ranked list.
+    for memory in [*ranked[:1], *critical, *ranked]:
         if memory["id"] not in seen:
             seen.add(memory["id"])
             ordered.append(memory)
@@ -1569,10 +1612,13 @@ def retrieve_memory_pack(
         "Tentative facts must be confirmed before relying on them."
     )
     lines = [header]
-    available_after_header = max(0, budget - estimate_tokens(header))
+    available_after_header = max(
+        0,
+        effective_budget - estimate_tokens(header) - 1,
+    )
     target_detail_reserve = max(
-        WEAKNESS_DETAIL_MIN_TOKEN_RESERVE if budget >= 200 else 24,
-        min(WEAKNESS_DETAIL_TOKEN_LIMIT * 2, budget // 3),
+        WEAKNESS_DETAIL_MIN_TOKEN_RESERVE if effective_budget >= 200 else 24,
+        min(WEAKNESS_DETAIL_TOKEN_LIMIT * 2, effective_budget // 3),
     )
     overview_budget = max(0, available_after_header - min(available_after_header, target_detail_reserve))
     overview_text, weakness_overview = _build_weakness_overview(
@@ -1607,7 +1653,13 @@ def retrieve_memory_pack(
             line += f" Evidence: {evidence}"
         detail_header = "Most relevant memory details:"
         prefix_tokens = estimate_tokens(detail_header) if not detail_header_added else 0
-        remaining = budget - estimate_tokens("\n".join(lines)) - prefix_tokens
+        separator_tokens = 2 if not detail_header_added else 1
+        remaining = (
+            effective_budget
+            - estimate_tokens("\n".join(lines))
+            - prefix_tokens
+            - separator_tokens
+        )
         if remaining <= 8:
             break
         fitted = _truncate_to_budget(line, min(remaining, WEAKNESS_DETAIL_TOKEN_LIMIT))
@@ -1623,6 +1675,9 @@ def retrieve_memory_pack(
 
     pack_text = "\n".join(lines) if selected or overview_text else ""
     estimated = estimate_tokens(pack_text)
+    if estimated > effective_budget:
+        pack_text = _truncate_to_budget(pack_text, effective_budget)
+        estimated = estimate_tokens(pack_text)
     now_text = iso_at(now)
     for memory in selected:
         touch_memory_access(user_id, memory["id"], now_text)
@@ -1651,7 +1706,11 @@ def retrieve_memory_pack(
             ],
             "totalCandidates": len(memories),
             "estimatedTokens": estimated,
-            "tokenBudget": budget,
+            "tokenBudget": requested_budget,
+            "effectiveTokenBudget": effective_budget,
+            "tokenEstimateMethod": TOKEN_ESTIMATE_METHOD,
+            "budgetSafetyRatio": safety_ratio,
+            "budgetCompliant": estimated <= effective_budget,
             "createdAt": now_text,
             "expiresAt": iso_at(expires),
             "ttl": _ttl_after(expires, grace_days=0),
@@ -1662,7 +1721,11 @@ def retrieve_memory_pack(
         "text": pack_text,
         "items": [public_memory(memory) for memory in selected],
         "estimatedTokens": estimated,
-        "tokenBudget": budget,
+        "tokenBudget": requested_budget,
+        "effectiveTokenBudget": effective_budget,
+        "tokenEstimateMethod": TOKEN_ESTIMATE_METHOD,
+        "budgetSafetyRatio": safety_ratio,
+        "budgetCompliant": estimated <= effective_budget,
         "totalCandidates": len(memories),
         "traceId": trace_id,
         "weaknessOverview": weakness_overview,

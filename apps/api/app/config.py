@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     qwen_model_studio_base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
     qwen_model_studio_model: str = "qwen3.7-max"
     qwen_model_studio_fast_model: str = "qwen3.7-plus"
+    # Embeddings may use a Qwen key without changing the server's default text
+    # provider. This keeps Oracle on DeepSeek while enabling Model Studio
+    # semantic retrieval and stealth-practice topic matching.
+    qwen_embedding_api_key: str = ""
+    qwen_embedding_base_url: str = ""
     qwen_embedding_model: str = "text-embedding-v4"
     qwen_embedding_dimensions: int = 256
     openai_api_key: str = ""
@@ -64,6 +69,10 @@ class Settings(BaseSettings):
     # --- MemoryAgent ---
     memory_enabled: bool = True
     memory_context_token_budget: int = 700
+    # The project does not bundle Qwen's private production tokenizer. Build
+    # packs against a conservative estimate below the advertised ceiling so
+    # tokenizer drift cannot routinely push a 700-token pack over the limit.
+    memory_context_token_safety_ratio: float = 0.85
     memory_retrieval_limit: int = 6
     memory_max_items_per_user: int = 200
     memory_chat_recent_messages: int = 12
@@ -97,6 +106,14 @@ class Settings(BaseSettings):
     @property
     def uses_qwen_model_studio(self) -> bool:
         return bool(self.qwen_model_studio_api_key)
+
+    @property
+    def embedding_api_key(self) -> str:
+        return self.qwen_embedding_api_key or self.qwen_model_studio_api_key
+
+    @property
+    def embedding_base_url(self) -> str:
+        return self.qwen_embedding_base_url or self.qwen_model_studio_base_url
 
     @property
     def default_llm_api_key(self) -> str:

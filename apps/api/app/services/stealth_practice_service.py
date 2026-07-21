@@ -16,7 +16,15 @@ from typing import Optional
 from uuid import uuid4
 
 from app.db.repositories import get_memory, list_memories
-from app.services.memory_service import iso_at, normalize_canonical_key, parse_iso, public_memory, utc_now
+from app.services.embedding_client import embed_texts
+from app.services.memory_service import (
+    cosine_similarity,
+    iso_at,
+    normalize_canonical_key,
+    parse_iso,
+    public_memory,
+    utc_now,
+)
 from app.services.memory_write_service import memory_write_locked, save_memory
 
 
@@ -66,6 +74,9 @@ MODALITY_ALIASES = {
 }
 TEXT_PROBE_MIN_TURNS_BETWEEN_OPPORTUNITIES = 3
 TEXT_PROBE_MIN_LIVE_OPPORTUNITY_FIT = 0.54
+# Qwen text-embedding-v4 accepts ten texts per synchronous batch. Reserve one
+# slot for the live message and prefilter at most nine candidate affordances.
+STEALTH_SEMANTIC_CANDIDATE_LIMIT = 9
 _TEXT_PROBE_META_LANGUAGE_PATTERNS = (
     re.compile(r"\bwhat\s+(?:do|does|did)\b.{0,80}\bmean\b", re.IGNORECASE),
     re.compile(r"\bwhat\b.{0,80}\bmeans?\b", re.IGNORECASE),
@@ -166,6 +177,68 @@ def _topic_overlap(topic: Optional[str], memory: dict, goals: list[dict]) -> flo
     code = str(fingerprint.get("skillCode") or memory.get("canonicalKey") or "")
     broad_fit = 0.6 if code.startswith(("grammar.", "sentence.", "discourse.", "clarity.")) else 0.35
     return round(_clamp(max(overlap, broad_fit), 0.0, 1.0), 4)
+
+
+def _weakness_opportunity_text(memory: dict) -> str:
+    """Build a compact semantic description of a fair practice opportunity."""
+
+    skill_code = _skill_code(memory)
+    fingerprint = memory.get("errorFingerprint")
+    fingerprint = fingerprint if isinstance(fingerprint, dict) else {}
+    contexts = fingerprint.get("contexts")
+    context_text = " ".join(
+        str(value).strip()
+        for value in (contexts if isinstance(contexts, list) else [])[:4]
+        if str(value).strip()
+    )
+    return " ".join(
+        part
+        for part in (
+            DISCOVERY_TARGET_DESCRIPTIONS.get(skill_code, "Use the target naturally."),
+            str(memory.get("content") or "").strip(),
+            context_text,
+        )
+        if part
+    )[:1200]
+
+
+def _semantic_opportunity_fits(
+    live_message: Optional[str],
+    candidates: list[tuple[str, str]],
+) -> dict[str, float]:
+    """Compare the live message with candidate practice affordances.
+
+    Failure is deliberately silent: ``embed_texts`` returns ``None`` entries
+    and selection falls back to the existing lexical/regex fit.
+    """
+
+    message = " ".join(str(live_message or "").split())
+    if not message or not candidates:
+        return {}
+    vectors = embed_texts([message, *(text for _, text in candidates)])
+    if not vectors or vectors[0] is None:
+        return {}
+    query_vector = vectors[0]
+    fits: dict[str, float] = {}
+    for (candidate_id, _), vector in zip(candidates, vectors[1:]):
+        similarity = cosine_similarity(query_vector, vector)
+        if similarity is not None:
+            fits[candidate_id] = round(similarity, 4)
+    return fits
+
+
+def _live_opportunity_components(
+    skill_code: str,
+    live_message: Optional[str],
+    semantic_fit: Optional[float],
+) -> tuple[Optional[float], Optional[float], Optional[float]]:
+    if not str(live_message or "").strip():
+        return None, None, None
+    keyword_fit = _discovery_opportunity_fit(skill_code, live_message)
+    if semantic_fit is None:
+        return keyword_fit, keyword_fit, None
+    hybrid_fit = _clamp(0.55 * keyword_fit + 0.45 * semantic_fit, 0.0, 1.0)
+    return round(hybrid_fit, 4), keyword_fit, round(semantic_fit, 4)
 
 
 def _retention_state(memory: dict, now: datetime) -> dict:
@@ -389,14 +462,31 @@ def select_stealth_probe(
     if not weaknesses:
         return None
     goals = [item for item in memories if item.get("kind") == "goal" and item.get("status", "active") == "active"]
+    semantic_weaknesses = sorted(
+        weaknesses,
+        key=lambda memory: (
+            _discovery_opportunity_fit(_skill_code(memory), live_message),
+            float(memory.get("importance", 0.5)),
+        ),
+        reverse=True,
+    )[:STEALTH_SEMANTIC_CANDIDATE_LIMIT]
+    semantic_live_fits = _semantic_opportunity_fits(
+        live_message,
+        [
+            (str(memory.get("id") or ""), _weakness_opportunity_text(memory))
+            for memory in semantic_weaknesses
+        ],
+    )
 
     ranked: list[tuple[float, dict, dict]] = []
     for memory in weaknesses:
         skill_code = _skill_code(memory)
-        live_opportunity_fit = (
-            _discovery_opportunity_fit(skill_code, live_message)
-            if str(live_message or "").strip()
-            else None
+        live_opportunity_fit, live_keyword_fit, live_semantic_fit = (
+            _live_opportunity_components(
+                skill_code,
+                live_message,
+                semantic_live_fits.get(str(memory.get("id") or "")),
+            )
         )
         if (
             live_opportunity_fit is not None
@@ -439,8 +529,13 @@ def select_stealth_probe(
         ):
             continue
         fatigue_penalty = min(1.0, len(recent_probes) / 4.0) + (0.6 if hours_since_probe < 12 else 0.0)
-        opportunity_fit = _topic_overlap(topic, memory, goals)
-        goal_relevance = opportunity_fit if goals else 0.45
+        context_opportunity_fit = _topic_overlap(topic, memory, goals)
+        opportunity_fit = (
+            round(0.35 * context_opportunity_fit + 0.65 * live_opportunity_fit, 4)
+            if live_opportunity_fit is not None
+            else context_opportunity_fit
+        )
+        goal_relevance = context_opportunity_fit if goals else 0.45
         uncertainty = 1.0 - float(memory.get("confidence", 0.7))
         transfer_count = len(memory.get("transferContexts") or [])
         progression_stage = _progression_stage(memory)
@@ -459,12 +554,16 @@ def select_stealth_probe(
             "uncertainty": round(uncertainty, 4),
             "goalRelevance": round(goal_relevance, 4),
             "opportunityFit": round(opportunity_fit, 4),
+            "contextOpportunityFit": round(context_opportunity_fit, 4),
             "staleness": round(staleness, 4),
             "transferNeed": round(transfer_need, 4),
             "fatiguePenalty": round(fatigue_penalty, 4),
         }
         if live_opportunity_fit is not None:
             score_breakdown["liveOpportunityFit"] = live_opportunity_fit
+            score_breakdown["liveKeywordFit"] = live_keyword_fit
+        if live_semantic_fit is not None:
+            score_breakdown["liveSemanticFit"] = live_semantic_fit
         priority = (
             0.28 * relapse_risk
             + 0.12 * uncertainty
@@ -605,13 +704,27 @@ def select_discovery_probe(
     ]
     if not candidates:
         return None
+    semantic_candidates = sorted(
+        candidates,
+        key=lambda skill_code: _discovery_opportunity_fit(skill_code, live_message),
+        reverse=True,
+    )[:STEALTH_SEMANTIC_CANDIDATE_LIMIT]
+    semantic_live_fits = _semantic_opportunity_fits(
+        live_message,
+        [
+            (skill_code, DISCOVERY_TARGET_DESCRIPTIONS[skill_code])
+            for skill_code in semantic_candidates
+        ],
+    )
 
     ranked: list[tuple[float, str, dict]] = []
     for skill_code in candidates:
-        live_opportunity_fit = (
-            _discovery_opportunity_fit(skill_code, live_message)
-            if str(live_message or "").strip()
-            else None
+        live_opportunity_fit, live_keyword_fit, live_semantic_fit = (
+            _live_opportunity_components(
+                skill_code,
+                live_message,
+                semantic_live_fits.get(skill_code),
+            )
         )
         if (
             live_opportunity_fit is not None
@@ -627,7 +740,12 @@ def select_discovery_probe(
             if last_attempt is None
             else _clamp((current - last_attempt).total_seconds() / (30 * 86400), 0.0, 1.0)
         )
-        opportunity_fit = _discovery_opportunity_fit(skill_code, topic)
+        context_opportunity_fit = _discovery_opportunity_fit(skill_code, topic)
+        opportunity_fit = (
+            round(0.35 * context_opportunity_fit + 0.65 * live_opportunity_fit, 4)
+            if live_opportunity_fit is not None
+            else context_opportunity_fit
+        )
         attempt_gap = 1.0 / (1.0 + attempts)
         evidence_gap = 1.0 / (1.0 + opportunities)
         priority = (
@@ -650,10 +768,14 @@ def select_discovery_probe(
             "attemptGap": round(attempt_gap, 4),
             "evidenceGap": round(evidence_gap, 4),
             "opportunityFit": opportunity_fit,
+            "contextOpportunityFit": context_opportunity_fit,
             "staleness": round(staleness, 4),
         }
         if live_opportunity_fit is not None:
             score_breakdown["liveOpportunityFit"] = live_opportunity_fit
+            score_breakdown["liveKeywordFit"] = live_keyword_fit
+        if live_semantic_fit is not None:
+            score_breakdown["liveSemanticFit"] = live_semantic_fit
         ranked.append((priority + tie_break, skill_code, score_breakdown))
 
     if not ranked:

@@ -5,7 +5,8 @@ Default is deterministic lexical fallback (no external calls):
     DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
 
 To exercise live Qwen text-embedding-v4 retrieval, set
-MEMORY_BENCHMARK_LIVE=1 and configure QWEN_MODEL_STUDIO_API_KEY.
+MEMORY_BENCHMARK_LIVE=1 and configure QWEN_EMBEDDING_API_KEY or
+QWEN_MODEL_STUDIO_API_KEY.
 """
 
 import json
@@ -131,6 +132,8 @@ def main() -> int:
             ("Choose a sentence structure rewrite exercise using past performance", "strategy.practice.sentence.structure.rewrite_sentence"),
         ]
         hits = 0
+        missed_expected_keys = []
+        missed_case_selections = {}
         packs = []
         stale_ids = {"mem_stale_expired", "mem_stale_superseded"}
         stale_selected: set[str] = set()
@@ -145,7 +148,13 @@ def main() -> int:
             packs.append(pack)
             selected_keys = {item.get("canonicalKey") for item in pack["items"]}
             selected_ids = {item.get("id") for item in pack["items"]}
-            hits += int(expected_key in selected_keys)
+            hit = expected_key in selected_keys
+            hits += int(hit)
+            if not hit:
+                missed_expected_keys.append(expected_key)
+                missed_case_selections[expected_key] = sorted(
+                    str(key) for key in selected_keys if key
+                )
             stale_selected.update(stale_ids & selected_ids)
 
         raw_context = "\n".join(candidate.content for candidate in fixtures)
@@ -153,19 +162,28 @@ def main() -> int:
         average_pack_tokens = round(sum(pack["estimatedTokens"] for pack in packs) / len(packs), 1)
         recall_at_6 = round(hits / len(cases), 3)
         context_reduction = round(1 - average_pack_tokens / raw_tokens, 3)
-        budget_compliance = all(pack["estimatedTokens"] <= pack["tokenBudget"] for pack in packs)
+        budget_compliance = all(
+            pack["budgetCompliant"]
+            and pack["estimatedTokens"] <= pack["effectiveTokenBudget"]
+            <= pack["tokenBudget"]
+            for pack in packs
+        )
         stale_suppression = not stale_selected
 
         result = {
-            "mode": "qwen-text-embedding-v4" if live and settings.qwen_model_studio_api_key else "lexical-fallback",
+            "mode": "qwen-text-embedding-v4" if live and settings.embedding_api_key else "lexical-fallback",
             "cases": len(cases),
             "recallAt6": recall_at_6,
+            "missedExpectedKeys": missed_expected_keys,
+            "missedCaseSelections": missed_case_selections,
             "staleSuppression": stale_suppression,
             "budgetCompliance": budget_compliance,
             "rawHistoryEstimatedTokens": raw_tokens,
             "averageMemoryPackTokens": average_pack_tokens,
             "contextReduction": context_reduction,
             "tokenBudget": 220,
+            "effectiveTokenBudget": packs[0]["effectiveTokenBudget"],
+            "tokenEstimateMethod": packs[0]["tokenEstimateMethod"],
         }
         print(json.dumps(result, indent=2))
 

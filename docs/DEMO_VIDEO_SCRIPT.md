@@ -33,7 +33,8 @@ evidence, confidence, and observation count.
 > In a new session, the system does not dump the entire history into the prompt.
 > Qwen text-embedding-v4 and lexical ranking combine semantic match,
 > importance, recency, and access history. Critical goals and preferences are
-> reserved, then everything must fit inside this 700-token Memory Pack.
+> reserved, then the Memory Pack uses a 700 estimated-token ceiling with a
+> fifteen-percent safety reserve.
 
 **Show:** token bar and “Why recalled” component scores.
 
@@ -80,7 +81,7 @@ public `/api/v1/health`, safe backend log lines showing `qwen3.7-max` or
 
 > The reproducible benchmark reaches 100 percent Recall at 6 on the test set,
 > suppresses stale memory, respects every token budget, and cuts sample context
-> by 82.6 percent. WeakSpot English Coach: a Qwen MemoryAgent that learns not
+> by 87.3 percent. WeakSpot English Coach: a Qwen MemoryAgent that learns not
 > only your mistakes, but what you want and how you learn best.
 
 ## Capture checklist

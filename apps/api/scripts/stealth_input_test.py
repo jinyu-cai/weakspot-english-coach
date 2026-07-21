@@ -135,6 +135,7 @@ def main() -> int:
         from app.models.practice import PracticeGradeAIResult
         from app.services import input_learning_service as input_service
         from app.services import memory_write_service as memory_write_service_module
+        from app.services import stealth_practice_service as stealth_service_module
         from app.services.memory_service import remember_candidates, retrieve_memory_pack
         from app.services.stealth_practice_service import (
             DISCOVERY_SKILL_CODES,
@@ -335,6 +336,43 @@ def main() -> int:
             "grammar.verb_tense",
             set(),
         ) != "meaning_recast"
+
+        # The current learner message now receives one embedding and directly
+        # changes the hidden-target ranking. Keyword/regex fit remains the
+        # deterministic fallback when the embedding service is unavailable.
+        semantic_user = f"stealth-semantic-{uuid.uuid4().hex[:8]}"
+        seed_weakness(semantic_user, "grammar.verb_tense")
+        seed_weakness(semantic_user, "style.register")
+        original_embed_texts = stealth_service_module.embed_texts
+
+        def semantic_test_embeddings(texts: list[str]) -> list[list[float]]:
+            assert len(texts) <= 10, texts
+            return [
+                [1.0, 0.0]
+                if index == 0 or "live social situation" in text.casefold()
+                else [-1.0, 0.0]
+                for index, text in enumerate(texts)
+            ]
+
+        stealth_service_module.embed_texts = semantic_test_embeddings
+        try:
+            semantic_probe = select_stealth_probe(
+                semantic_user,
+                modality="text_chat",
+                topic="A polite apology email to an important client after a delay.",
+                live_message=(
+                    "I need to write a polite apology email to an important client "
+                    "after a delay."
+                ),
+                now=now,
+            )
+        finally:
+            stealth_service_module.embed_texts = original_embed_texts
+        assert semantic_probe is not None
+        assert semantic_probe["targetSkillCode"] == "style.register", semantic_probe
+        assert semantic_probe["scoreBreakdown"]["liveSemanticFit"] == 1.0
+        assert semantic_probe["scoreBreakdown"]["liveKeywordFit"] > 0
+        print("   semantic live fit        -> embedding changes topic-appropriate target")
 
         discovery_user = f"stealth-discovery-{uuid.uuid4().hex[:8]}"
         discovery_probe = select_conversation_probe(

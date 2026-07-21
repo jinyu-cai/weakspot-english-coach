@@ -17,9 +17,9 @@ Primary API: [enapi.jinxxx.de/api/v1/health](https://enapi.jinxxx.de/api/v1/heal
 | --- | --- |
 | Autonomous experience accumulation | Qwen extracts durable memory candidates during diagnosis/chat; practice outcomes update strategy statistics automatically |
 | Preferences and goals | Remembers feedback style, explanation language, learning focus, IELTS/career goals, and explicit manual memories |
-| Efficient retrieval | Qwen `text-embedding-v4` (256d) + lexical hybrid ranking + importance, recency, and access signals |
+| Efficient retrieval | Qwen `text-embedding-v4` (256d) + lexical hybrid ranking; the same embeddings help match Stealth Practice to the live topic |
 | Timely forgetting | Kind-specific expiration, evidence-based weakness graduation and relapse, conflict replacement, capacity pruning, user-controlled forget, DynamoDB TTL |
-| Limited-context recall | At most six memories in a default 700-token Memory Pack; text chat keeps 12 recent turns |
+| Limited-context recall | At most six memories under a 700 estimated-token ceiling with a 15% safety reserve; text chat keeps 12 recent turns |
 | Improving decisions | Next skill and exercise format use mastery, error density, spacing, historical score, productive difficulty, and exploration |
 | Explainability | Memory Center shows every memory; recall traces show selected IDs, component scores, and token use |
 
@@ -45,6 +45,7 @@ flowchart LR
     Stable -. final demo origin .-> Ali[Alibaba Cloud ECS\nNginx + FastAPI + Qwen]
     Ali -->|structured generation| Qwen[Qwen 3.7 Max / Plus]
     Ali -->|256d embeddings| Embed[Qwen text-embedding-v4]
+    Oracle -. embedding-only calls .-> Embed
     Oracle --> Memory[Memory lifecycle + hybrid ranker]
     Ali --> Memory
     Memory <--> DB[(DynamoDB single table)]
@@ -145,6 +146,10 @@ QWEN_EMBEDDING_MODEL=text-embedding-v4
 QWEN_EMBEDDING_DIMENSIONS=256
 ```
 
+An embedding-only deployment can instead set `QWEN_EMBEDDING_API_KEY` and
+`QWEN_EMBEDDING_BASE_URL`; this enables Model Studio vectors without changing
+the server's default text provider.
+
 ## Tests and benchmark
 
 All backend tests below run without external services by using moto and fake
@@ -167,8 +172,8 @@ pnpm build
 ```
 
 The deterministic MemoryAgent benchmark achieves Recall@6 `1.00`, suppresses
-expired/superseded rows, stays within every token budget, and reduces the sample
-context by `82.6%`. See [MemoryAgent Design](docs/MEMORY_AGENT_DESIGN.md) for the
+expired/superseded rows, stays within every conservative effective budget, and
+reduces the sample context by `87.3%`. See [MemoryAgent Design](docs/MEMORY_AGENT_DESIGN.md) for the
 method and live-embedding option.
 
 ## Submission material

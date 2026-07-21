@@ -23,7 +23,7 @@ flowchart TB
     AliAPI --> Mem
     Mem -->|embeddings| Emb[Model Studio text-embedding-v4 / 256d]
     Mem <--> DB[(Amazon DynamoDB\nWeakSpotEnglishCoach)]
-    Mem --> Pack[Bounded Memory Pack\n<= 700 estimated tokens]
+    Mem --> Pack[Bounded Memory Pack\n700 requested / 595 effective estimate]
 
     OracleAPI --> Decide[Outcome-aware decision policy]
     AliAPI --> Decide
@@ -122,8 +122,11 @@ importance, 10% recency, 5% access frequency, and 5% critical kind. Pinned
 memories receive a 15% boost. Up to two important goals/preferences are
 reserved, then remaining slots are filled by score.
 
-The default Memory Pack contains at most six memories and 700 estimated tokens.
-Text chat adds only the 12 newest local messages. Plan generation caps raw
+The default Memory Pack accepts a 700 estimated-token ceiling but builds against
+an effective 595-token budget (85% safety ratio) using the auditable
+`conservative_unicode_v2` estimate. Traces expose the requested and effective
+budgets, estimate method, and compliance result. Text chat adds only the 12
+newest local messages. Plan generation caps raw
 skills at 20 and recent errors at 40. Prompt size therefore stays bounded as a
 learner's stored history grows.
 

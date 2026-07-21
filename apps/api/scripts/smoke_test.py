@@ -143,6 +143,15 @@ def main() -> None:
         "test-deepseek-key",
         mixed_settings.deepseek_base_url,
     )
+    embedding_only_settings = Settings(
+        qwen_embedding_api_key="test-embedding-key",
+        qwen_embedding_base_url="https://embedding.example/v1",
+        deepseek_api_key="test-deepseek-key",
+    )
+    assert embedding_only_settings.uses_qwen_model_studio is False
+    assert embedding_only_settings.default_llm_model == "deepseek-v4-pro"
+    assert embedding_only_settings.embedding_api_key == "test-embedding-key"
+    assert embedding_only_settings.embedding_base_url == "https://embedding.example/v1"
     print("Qwen Model Studio defaults + safe model catalog + JSON routing OK.")
 
     from app.core.mastery import update_skill_from_error

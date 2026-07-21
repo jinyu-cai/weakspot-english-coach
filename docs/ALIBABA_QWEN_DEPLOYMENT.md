@@ -65,6 +65,7 @@ QWEN_EMBEDDING_MODEL=text-embedding-v4
 QWEN_EMBEDDING_DIMENSIONS=256
 MEMORY_ENABLED=true
 MEMORY_CONTEXT_TOKEN_BUDGET=700
+MEMORY_CONTEXT_TOKEN_SAFETY_RATIO=0.85
 
 # Voice features remain OpenAI-backed and are independent of Qwen text routing.
 OPENAI_API_KEY=your_openai_api_key
@@ -74,6 +75,11 @@ OPENAI_TTS_BASE_URL=https://api.openai.com/v1
 OPENAI_TTS_MODEL=tts-1-hd
 OPENAI_TTS_VOICE=nova
 ```
+
+For an embedding-only host such as the normal Oracle deployment, omit
+`QWEN_MODEL_STUDIO_API_KEY` and set `QWEN_EMBEDDING_API_KEY` plus
+`QWEN_EMBEDDING_BASE_URL`. The text provider remains DeepSeek while MemoryAgent
+retrieval and Stealth Practice use Model Studio embeddings.
 
 For the China (Beijing) endpoint, use
 `https://dashscope.aliyuncs.com/compatible-mode/v1`. If Model Studio gives you

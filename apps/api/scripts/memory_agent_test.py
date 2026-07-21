@@ -127,7 +127,9 @@ def main() -> int:
         assert expired_id not in [item["id"] for item in pack["items"]]
         assert get_memory(user_id, expired_id)["status"] == "expired"
         assert pack["estimatedTokens"] <= 120
-        assert estimate_tokens(pack["text"]) <= 120
+        assert estimate_tokens(pack["text"]) <= pack["effectiveTokenBudget"] <= 120
+        assert pack["budgetCompliant"] is True
+        assert pack["tokenEstimateMethod"] == "conservative_unicode_v2"
         print("3. timely forgetting      -> expired suppressed; pack <= 120 tokens")
 
         # 4. Practice outcomes accumulate into strategy memory and alter the
@@ -309,7 +311,12 @@ def main() -> int:
         ]
         assert 1 <= len(detailed_weaknesses) <= 3, detailed_weaknesses
         assert layered_pack["text"].count(" Evidence: ") == len(detailed_weaknesses)
-        assert layered_pack["estimatedTokens"] <= layered_pack["tokenBudget"]
+        assert (
+            layered_pack["estimatedTokens"]
+            <= layered_pack["effectiveTokenBudget"]
+            <= layered_pack["tokenBudget"]
+        )
+        assert layered_pack["budgetCompliant"] is True
         layered_trace = list_memory_traces(layered_user_id, limit=1)[0]
         assert layered_trace["weaknessOverview"]["complete"] is True
         assert len(layered_trace["weaknessOverview"]["memoryIds"]) == len(weakness_codes)
@@ -322,10 +329,10 @@ def main() -> int:
             purpose="diagnosis",
             record_trace=False,
         )
-        assert tiny_pack["estimatedTokens"] <= 100
+        assert tiny_pack["estimatedTokens"] <= tiny_pack["effectiveTokenBudget"] <= 100
         assert tiny_pack["weaknessOverview"]["complete"] is False
         assert tiny_pack["weaknessOverview"]["includedCount"] < len(weakness_codes)
-        assert "+" in tiny_pack["text"] and "more" in tiny_pack["text"]
+        assert tiny_pack["weaknessOverview"]["format"] in {"partial_index", "omitted"}
 
         chat_pack = retrieve_memory_pack(
             layered_user_id,
@@ -360,7 +367,8 @@ def main() -> int:
         })
         assert response.status_code == 200, response.text
         api_pack = response.json()["memoryPack"]
-        assert api_pack["estimatedTokens"] <= 140
+        assert api_pack["estimatedTokens"] <= api_pack["effectiveTokenBudget"] <= 140
+        assert api_pack["budgetCompliant"] is True
         assert api_pack["items"] and api_pack["items"][0].get("scoreBreakdown")
         response = client.delete(f"/api/v1/memory/{api_memory['id']}")
         assert response.status_code == 200 and response.json()["forgotten"] is True

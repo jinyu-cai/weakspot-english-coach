@@ -64,6 +64,9 @@ practice decision. They can edit, pin, or forget any memory.
 - Alibaba Model Studio `text-embedding-v4` produces 256-dimensional vectors.
 - Retrieval combines vector similarity, lexical match, importance, recency,
   access frequency, and critical preference/goal signals.
+- Stealth Practice embeds the live learner message and candidate practice
+  affordances, then blends semantic fit with keyword/skill signals; failure
+  falls back to the deterministic keyword path.
 - The deterministic fallback stays functional when embedding service is
   unavailable.
 - Memory is capped at 200 active rows per learner; low-value old episodes are
@@ -82,8 +85,10 @@ practice decision. They can edit, pin, or forget any memory.
 
 ### Critical recall within a limited context window
 
-- The default Memory Pack is at most six memories and 700 estimated tokens.
-- Up to two important preferences/goals are reserved before score-based fill.
+- The default Memory Pack is at most six memories under a 700 estimated-token
+  ceiling. A 15% safety reserve makes the effective construction budget 595.
+- The top query match is protected first, then up to two important
+  preferences/goals are reserved before score-based fill.
 - Text chat uses only the 12 latest local messages.
 - Plan generation caps raw skills/errors instead of transmitting all history.
 - `MEMTRACE#` rows make selection and token use auditable.
@@ -129,9 +134,9 @@ Secret-free deterministic benchmark (`moto` + lexical fallback):
 | Recall@6 | 1.00 (5/5 fixtures) |
 | Expired/superseded suppression | 100% |
 | Token-budget compliance | 100% |
-| Raw fixture history | 1,266 estimated tokens |
-| Average Memory Pack | 220 estimated tokens |
-| Context reduction | 82.6% |
+| Raw fixture history | 1,444 conservative estimated tokens |
+| Average Memory Pack | 183.8 conservative estimated tokens |
+| Context reduction | 87.3% |
 
 Run it with:
 

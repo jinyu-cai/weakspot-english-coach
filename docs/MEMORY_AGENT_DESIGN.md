@@ -164,6 +164,16 @@ confirmed-opportunity slot. Its bounded private attempt record still enforces
 the cooldown and rotates the next candidate, so a conservative model report
 cannot immediately repeat the same hidden setup. The lifecycle is:
 
+Live fit is a real hybrid signal rather than keyword matching alone. The
+scheduler embeds the current learner message and a privacy-bounded practice
+affordance for up to nine keyword-prefiltered candidates with
+`text-embedding-v4` (one bounded ten-item batch including the message), then
+combines 55% keyword/skill fit with 45% semantic similarity. Other candidates
+retain keyword fallback scoring. That hybrid affects both the
+minimum natural-opportunity gate and target priority. If Model Studio is
+unavailable, the semantic component disappears and the existing deterministic
+keyword/regex path continues unchanged.
+
 ```text
 due weakness OR neutral under-observed skill + meaningful live message + unused skill
   -> bounded mission brief
@@ -323,17 +333,23 @@ For memory `m` and query `q`, the score is:
 then x 0.75 when verification state is candidate
 ```
 
-The ranker reserves up to two important preferences/goals, then fills the rest
-by score. For non-chat tasks, retrieval also builds a separate compact overview
+The ranker protects the best query match, then reserves up to two important
+preferences/goals before filling the rest by score. For non-chat tasks,
+retrieval also builds a separate compact overview
 of every active weakness before adding detailed rows. It writes an explainable
 `MEMTRACE` containing selected IDs, weakness-overview completeness and IDs,
 component scores, query preview/hash, candidate count, and token usage.
 
 ## Bounded Memory Pack
 
-The default pack is at most 700 estimated tokens and six detailed memories. It
-is added to the model as a separate system message with an explicit rule that
-current input wins. The weakness layer does not consume those six detail slots:
+The default pack accepts a 700 estimated-token ceiling and six detailed
+memories. Because the service does not bundle Qwen's private production
+tokenizer, it uses the conservative `conservative_unicode_v2` estimator and an
+85% safety ratio: the default construction budget is therefore 595 estimated
+units. `MEMTRACE` records `tokenBudget`, `effectiveTokenBudget`, the estimate
+method, safety ratio, and compliance result. The pack is added to the model as
+a separate system message with an explicit rule that current input wins. The
+weakness layer does not consume those six detail slots:
 
 1. Include every active weakness as a compact profile entry with skill code,
    weakest-modality mastery, observation count, relapse risk, and review timing.
@@ -359,7 +375,7 @@ all stored history
   -> all active weaknesses: compact overview (or code-index fallback)
   -> vector + lexical hybrid ranking for detailed evidence
   -> critical-memory reservation + at most 3 detailed weaknesses
-  -> one bounded 700-token Memory Pack
+  -> one bounded Memory Pack (700 requested, 595 effective estimate by default)
   -> Qwen diagnosis/chat/plan/practice prompt
 ```
 
@@ -415,9 +431,9 @@ The deterministic benchmark currently reports:
 Recall@6:               1.00 (5/5 fixtures)
 Stale-memory suppression: pass
 Token-budget compliance: pass
-Raw history:            1,266 estimated tokens
-Average Memory Pack:      220 estimated tokens
-Context reduction:       82.6%
+Raw history:            1,444 conservative estimated tokens
+Average Memory Pack:    183.8 conservative estimated tokens
+Context reduction:       87.3%
 ```
 
 Set `MEMORY_BENCHMARK_LIVE=1` with a Model Studio key to exercise the live Qwen
