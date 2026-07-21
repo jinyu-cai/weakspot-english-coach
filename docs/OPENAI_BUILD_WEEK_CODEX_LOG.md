@@ -89,13 +89,20 @@ Live evidence completed:
 - public health reports enabled/configured with `gpt-5.6-sol` and `responses`;
 - public mission `mission_8af078f6caf7` reports the OpenAI-returned model and
   contains all four planner-insight sections;
+- public picture-story mission `mission_55c5ac47c15f` independently reports
+  `gpt-5.6-sol`, four evidence items, and four evaluation-focus items;
 - backend trace records `openai_mission ... upstream_ok`, the response ID,
   21.596-second upstream time, and 2,404 total tokens;
+- the second trace records a distinct response ID, 14.091-second upstream time,
+  and 2,104 total tokens;
 - deployed backend archive SHA-256 is
   `94d7c349089746ac2c505cbb6f326a38fe415ea7e527c3cd651096b2c630ae4e`;
 - the pre-change production `.env` is preserved as a timestamped server backup.
+- Vercel successfully built Preview deployment `9ib8oZ6s7Wr3vsVF9n7pdZJdHDJ3`
+  for commit `dae5e40`; Preview SSO means production remains the judge-facing
+  surface.
 
-Still required: the matching frontend deployment and recording, final commit,
+Still required: production frontend deployment and recording, final commit,
 public YouTube upload, Devpost submission, and `/feedback` Session ID.
 
 Video-production audio completed separately from the runtime model: Qwen Audio

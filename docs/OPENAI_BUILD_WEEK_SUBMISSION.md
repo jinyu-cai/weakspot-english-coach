@@ -152,9 +152,10 @@ double and verifies the exact model, reasoning setting, Pydantic parser, no-stor
 flag, hashed safety identifier, returned runtime metadata, and planner insight.
 It does not pretend to be a live OpenAI request. Separate live validation is now
 complete: public health reports the enabled/configured GPT-5.6 capability, and
-mission `mission_8af078f6caf7` returned `gpt-5.6-sol` from the Responses API
-with all four evidence fields. The matching backend log records an OpenAI
-response ID and `upstream_ok` without logging the key or learner text.
+missions `mission_8af078f6caf7` and `mission_55c5ac47c15f` returned
+`gpt-5.6-sol` from the Responses API with all four evidence fields. Their
+matching backend traces record distinct OpenAI response IDs and `upstream_ok`
+without logging the key or learner text.
 
 ## Judging criteria mapping
 
@@ -190,7 +191,7 @@ and the resulting attempt changes future decisions.
 - [x] Set `OPENAI_BUILD_WEEK_ENABLED=true` and deploy the backend working tree.
 - [x] Confirm health reports `enabled: true`, `configured: true`, model
   `gpt-5.6-sol`, and API `responses`.
-- [ ] Generate a second real mission and capture application logs showing
+- [x] Generate two real missions and capture application logs showing
   `openai_mission ... upstream_ok` without exposing keys or learner content.
 - [ ] Check the visible GPT-5.6 evidence panel on desktop and mobile.
 - [ ] Add the final commit SHA and timestamped Codex evidence.

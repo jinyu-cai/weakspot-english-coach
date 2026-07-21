@@ -73,15 +73,23 @@ Tests run:
 - Public end-to-end mission — HTTP 200, mission `mission_8af078f6caf7`, actual
   runtime metadata `OpenAI / gpt-5.6-sol / responses / medium`, and all four
   planner-insight sections populated
+- Second public mission — HTTP 200, picture-story mission
+  `mission_55c5ac47c15f`, the same actual GPT-5.6 runtime metadata, four cited
+  evidence items, and four evaluation-focus items
 - Server trace — `upstream_ok`, OpenAI response ID recorded, 21.596-second
   upstream duration, and 2,404 total tokens; no key or learner content logged
+- Second server trace — `upstream_ok`, a distinct OpenAI response ID,
+  14.091-second upstream duration, and 2,104 total tokens
 - Deployment archive SHA-256 —
   `94d7c349089746ac2c505cbb6f326a38fe415ea7e527c3cd651096b2c630ae4e`
+- Vercel Preview — commit `dae5e40` built successfully; the project protects
+  preview deployments with Vercel SSO, so judges still need the production
+  custom domain after merge
 
-Known issues: the frontend source deployment, final Git commit/PR, `/feedback`
-Session ID, final screen recording, YouTube upload, and Devpost submission remain
-pending. The final narration is complete, but it intentionally has not been
-combined with old Qwen-only footage.
+Known issues: the Vercel Preview passed but requires project SSO. The production
+frontend merge/deployment, `/feedback` Session ID, final screen recording,
+YouTube upload, and Devpost submission remain pending. The final narration is
+complete, but it intentionally has not been combined with old Qwen-only footage.
 
 Next step: publish the matching frontend, verify the planner panel in the live
 browser, then capture the OpenAI-specific product footage and finish the final
