@@ -33,12 +33,22 @@ outputs=(
 durations=(16 32 28 23 28)
 
 timeline="$production_dir/output/timeline-qwen.json"
-if [[ -f "$timeline" ]] && command -v jq >/dev/null 2>&1; then
-  durations=()
-  while IFS= read -r duration; do
-    durations+=("$duration")
-  done < <(jq -r '.scenes[0:5][].duration' "$timeline")
+if [[ ! -f "$timeline" ]] || ! command -v jq >/dev/null 2>&1; then
+  echo "Exact visual timing requires $timeline and jq" >&2
+  exit 1
 fi
+
+durations=()
+while IFS= read -r duration; do
+  durations+=("$duration")
+done < <(jq -r '.scenes[0:5][].duration' "$timeline")
+
+segment_span() {
+  local first="$1"
+  local last="$2"
+  jq -r --argjson first "$first" --argjson last "$last" \
+    '.segments[$last - 1].end - .segments[$first - 1].start' "$timeline"
+}
 
 scene_images=(
   "$captures_dir/01-memory-center.png"
@@ -52,6 +62,7 @@ scene_images=(
   "$captures_dir/12-dynamic-chat.png"
   "$public_recall"
   "$captures_dir/05-archived-memories.png"
+  "$captures_dir/03-memory-cards.png"
   "$captures_dir/07-personalized-mission.png"
   "$captures_dir/06-todays-mission.png"
 )
@@ -67,27 +78,43 @@ render_scene() {
   local output="$1"
   local duration="$2"
   shift 2
-  local images=("$@")
-  local count="${#images[@]}"
-  local segment_duration
+  if (( $# == 0 || $# % 2 != 0 )); then
+    echo "render_scene expects image/duration pairs" >&2
+    exit 1
+  fi
+  local count="$(( $# / 2 ))"
   local frames
   local filter=""
   local concat_inputs=""
-  local index
+  local image
+  local clip_duration
+  local index=0
+  local total_duration=0
   local ffmpeg_inputs=()
 
-  segment_duration="$(awk -v seconds="$duration" -v count="$count" 'BEGIN { printf "%.9f", seconds / count }')"
   frames="$(awk -v seconds="$duration" 'BEGIN { printf "%d", (seconds * 30) + 0.999 }')"
 
-  for index in "${!images[@]}"; do
-    ffmpeg_inputs+=( -loop 1 -t "$segment_duration" -i "${images[$index]}" )
+  while (( $# )); do
+    image="$1"
+    clip_duration="$2"
+    shift 2
+    total_duration="$(awk -v total="$total_duration" -v part="$clip_duration" 'BEGIN { printf "%.9f", total + part }')"
+    ffmpeg_inputs+=( -loop 1 -t "$clip_duration" -i "$image" )
     # Keep every capture pixel-stable. Hard cuts make the real UI changes
     # readable without reintroducing subpixel zoom jitter around text.
     filter+="[$index:v]scale=1920:1080:force_original_aspect_ratio=decrease,"
     filter+="pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0xf7f2e9,"
-    filter+="setsar=1,fps=30,trim=duration=$segment_duration,setpts=PTS-STARTPTS,format=yuv420p[v$index];"
+    filter+="setsar=1,fps=30,trim=duration=$clip_duration,setpts=PTS-STARTPTS,format=yuv420p[v$index];"
     concat_inputs+="[v$index]"
+    index="$(( index + 1 ))"
   done
+
+  if ! awk -v expected="$duration" -v actual="$total_duration" \
+    'BEGIN { difference = expected - actual; if (difference < 0) difference = -difference; exit(difference <= 0.002 ? 0 : 1) }'; then
+    echo "Scene duration mismatch for $output: expected $duration, got $total_duration" >&2
+    exit 1
+  fi
+
   filter+="$concat_inputs"
   filter+="concat=n=$count:v=1:a=0,trim=duration=$duration,setpts=PTS-STARTPTS[v]"
 
@@ -99,27 +126,30 @@ render_scene() {
 }
 
 render_scene "${outputs[0]}" "${durations[0]}" \
-  "$captures_dir/01-memory-center.png" \
-  "$captures_dir/15-memory-general-goal.png"
+  "$captures_dir/01-memory-center.png" "$(segment_span 1 2)" \
+  "$captures_dir/15-memory-general-goal.png" "$(segment_span 3 4)"
 
 render_scene "${outputs[1]}" "${durations[1]}" \
-  "$captures_dir/14-diagnosis-general.png" \
-  "$captures_dir/15-memory-general-goal.png"
+  "$captures_dir/14-diagnosis-general.png" "$(segment_span 5 6)" \
+  "$captures_dir/15-memory-general-goal.png" "$(segment_span 7 8)"
 
 render_scene "${outputs[2]}" "${durations[2]}" \
-  "$captures_dir/13-natural-weakness-chat.png" \
-  "$captures_dir/08-coach-formats.png" \
-  "$captures_dir/09-picture-story.png" \
-  "$captures_dir/10-listen-retell.png" \
-  "$captures_dir/11-chat-home-qwen.png" \
-  "$captures_dir/12-dynamic-chat.png"
+  "$captures_dir/14-diagnosis-general.png" "$(segment_span 9 9)" \
+  "$captures_dir/13-natural-weakness-chat.png" "$(segment_span 10 12)" \
+  "$captures_dir/08-coach-formats.png" "$(segment_span 13 15)" \
+  "$captures_dir/09-picture-story.png" "$(segment_span 16 16)" \
+  "$captures_dir/10-listen-retell.png" "$(segment_span 17 17)" \
+  "$captures_dir/07-personalized-mission.png" "$(segment_span 18 18)" \
+  "$captures_dir/11-chat-home-qwen.png" "$(segment_span 19 19)"
 
 render_scene "${outputs[3]}" "${durations[3]}" \
-  "$public_recall" \
-  "$captures_dir/05-archived-memories.png" \
-  "$captures_dir/15-memory-general-goal.png"
+  "$captures_dir/15-memory-general-goal.png" "$(segment_span 20 20)" \
+  "$public_recall" "$(segment_span 21 22)" \
+  "$captures_dir/05-archived-memories.png" "$(segment_span 23 23)" \
+  "$captures_dir/15-memory-general-goal.png" "$(segment_span 24 24)"
 
 render_scene "${outputs[4]}" "${durations[4]}" \
-  "$captures_dir/07-personalized-mission.png" \
-  "$captures_dir/06-todays-mission.png" \
-  "$captures_dir/08-coach-formats.png"
+  "$captures_dir/06-todays-mission.png" "$(segment_span 25 25)" \
+  "$captures_dir/03-memory-cards.png" "$(segment_span 26 26)" \
+  "$captures_dir/06-todays-mission.png" "$(segment_span 27 27)" \
+  "$captures_dir/07-personalized-mission.png" "$(segment_span 28 28)"

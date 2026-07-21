@@ -9,6 +9,8 @@ Target: a public, English-language hackathon demo video at **2:54**.
 - `subtitles-zh-review.md` — revised Chinese narration/subtitle copy for review.
 - `subtitles-zh-review.srt` — provisional Chinese review captions; final timing
   is regenerated from the revised sentence-level Qwen audio after approval.
+- `align-zh-subtitles.py` — applies the real sentence-level Qwen timings to the
+  reviewed Chinese captions and writes `output/subtitles-zh.srt`.
 - `shot-list.md` — exact screen actions and recording requirements.
 - `generate-qwen-voiceover.sh` — installs the official SDK in an ignored local
   environment and generates the narration with Qwen Audio 3 TTS Plus.
@@ -26,13 +28,13 @@ Generated files are written to `output/`. Raw screen recordings belong in
 
 | Clip | Target duration | Content |
 | --- | ---: | --- |
-| `01-hook.mp4` | 16.7s | Home page and Memory Center |
-| `02-accumulation.mp4` | 28.5s | Diagnosis and created memories |
-| `03-recall.mp4` | 24.9s | Recall Preview and 700-token budget |
-| `04-forgetting.mp4` | 24.3s | Superseded memory and Forget action |
-| `05-decision.mp4` | 27.5s | Strategy statistics and Next Practice |
-| `06-architecture.mp4` | 29.0s | Architecture, ECS, health, logs, storage |
-| `07-close.mp4` | 23.1s | Benchmark, GitHub, MIT license, product close |
+| `01-hook.mp4` | 14.3s | Memory Center and durable learner context |
+| `02-accumulation.mp4` | 18.3s | Generic communication goal diagnosis and created memories |
+| `03-recall.mp4` | 58.1s | Natural chat, five Coach formats, picture story, listen-and-retell, dynamic scene |
+| `04-forgetting.mp4` | 25.4s | Bounded recall, lifecycle, and learner control |
+| `05-decision.mp4` | 21.6s | Outcome-driven recommendation and task choice |
+| `06-architecture.mp4` | 18.2s | Alibaba architecture and actual Qwen model screens |
+| `07-close.mp4` | 18.1s | Benchmark and product close |
 
 The renderer trims long clips and holds the last frame of short clips. Record a
 few seconds longer than each target when practical.
@@ -70,6 +72,12 @@ It creates `output/voiceover-qwen-mastered.m4a`,
 automatically prefers the aligned subtitle file and uses the same timeline for
 scene boundaries, so narration, captions, and visuals change together.
 
+Align the approved Chinese captions to those exact sentence timings:
+
+```bash
+python3 docs/demo-production/align-zh-subtitles.py
+```
+
 The raw result is `output/voiceover-qwen.mp3`. The mastering command makes an
 exact 2:54 file at `output/voiceover-qwen-mastered.m4a`, normalizes it for video,
 and preserves the entire narration. Both renderers prefer this mastered Qwen
@@ -98,9 +106,9 @@ bash docs/demo-production/render-final.sh
 ```
 
 The final output is `docs/demo-production/output/weakspot-demo-final.mp4`.
-The MP4 contains a default English subtitle track; upload
-`output/subtitles-qwen.srt` separately to YouTube so captions remain available
-there as a selectable accessibility track.
+The MP4 contains default Simplified Chinese captions and a selectable English
+caption track. Upload `output/subtitles-zh.srt` and `output/subtitles-qwen.srt`
+separately when the publishing platform supports external caption files.
 
 Scenes 6 and 7 can be built immediately from the checked-in architecture and
 the freshly verified benchmark result:

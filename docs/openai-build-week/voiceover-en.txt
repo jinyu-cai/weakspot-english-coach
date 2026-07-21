@@ -1,0 +1,20 @@
+Most AI language tutors correct one answer, but they do not know which weakness should return tomorrow or which practice actually helped.
+WeakSpot is a cross-session English coach that turns learning evidence into the next useful real-world task.
+For OpenAI Build Week, I extended the existing product with a GPT-5.6 Adaptive Mission Planner.
+I choose only my available time, whether I want to type or speak, and my energy level.
+The scheduler ranks weak, uncertain, overdue, relevant, and recently repeated skills.
+Then GPT-5.6 Sol receives that bounded decision context through the OpenAI Responses API and creates one structured mission.
+This is not a static template: the page shows OpenAI's returned model, the Responses API, and the planner's evidence.
+I see why to practice now, which evidence was used, how the task adapted, and what the coach will observe.
+The output is validated with native Pydantic Structured Outputs, so the task and its evidence trail follow one typed contract.
+It can create live roleplay, picture description and inference, listening and retelling, situational decisions, or vocabulary in a realistic message.
+In normal chat, WeakSpot can also place a previously weak skill into a natural follow-up without announcing a test.
+This checks whether I can transfer the skill independently in a new context, instead of repeating the correction I just saw.
+Every attempt returns evidence: independent or assisted success, failure, avoidance, modality, task type, and delayed transfer.
+The next request does not send the full history.
+WeakSpot retrieves at most six relevant memories inside a fixed budget, and I can inspect, edit, pin, or forget each one.
+Codex was my engineering collaborator, not the model embedded in the website.
+Codex audited the multi-provider system, checked OpenAI guidance, designed the Responses path, implemented the feature, and added contract tests and submission documentation.
+At runtime, the site calls GPT-5.6 Sol; the server protects the key, disables storage, hashes the safety identifier, and blocks misleading model labels.
+Public health shows the enabled feature, model, and API without credentials, while the build log separates this extension from earlier work.
+WeakSpot does not just remember mistakes; with GPT-5.6, it turns the right evidence into the right challenge, at the right moment.

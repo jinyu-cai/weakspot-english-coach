@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -34,6 +34,19 @@ class Settings(BaseSettings):
     qwen_embedding_model: str = "text-embedding-v4"
     qwen_embedding_dimensions: int = 256
     openai_api_key: str = ""
+    # OpenAI Build Week extension. When enabled, Coach Mode uses the official
+    # Responses API and GPT-5.6 Sol for adaptive mission generation. The
+    # dedicated key may be omitted to reuse OPENAI_API_KEY; both remain
+    # server-side. Keeping this opt-in avoids silently changing the provider of
+    # existing Qwen/DeepSeek deployments.
+    openai_build_week_enabled: bool = False
+    openai_build_week_api_key: str = ""
+    openai_build_week_base_url: str = "https://api.openai.com/v1"
+    openai_build_week_model: str = "gpt-5.6-sol"
+    openai_build_week_reasoning_effort: Literal[
+        "none", "low", "medium", "high", "xhigh", "max"
+    ] = "medium"
+    openai_build_week_timeout_seconds: float = 180.0
     openai_realtime_model: str = "gpt-realtime-mini-2025-12-15"
     openai_realtime_models: str = "gpt-realtime-mini-2025-12-15,gpt-realtime-2"
     # OpenAI Speech API. The same server-side key may be used for Realtime and
@@ -142,6 +155,10 @@ class Settings(BaseSettings):
     @property
     def openai_realtime_model_list(self) -> List[str]:
         return [model.strip() for model in self.openai_realtime_models.split(",") if model.strip()]
+
+    @property
+    def openai_build_week_effective_api_key(self) -> str:
+        return self.openai_build_week_api_key or self.openai_api_key
 
     @property
     def owner_login_set(self) -> set:

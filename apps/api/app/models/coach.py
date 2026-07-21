@@ -51,6 +51,7 @@ CoachSkillCode = Literal[
 ]
 CoachCriterion = Annotated[str, Field(min_length=1, max_length=300)]
 CoachHint = Annotated[str, Field(min_length=1, max_length=500)]
+CoachPlannerEvidence = Annotated[str, Field(min_length=1, max_length=300)]
 
 
 class CoachMissionRequest(BaseModel):
@@ -225,12 +226,61 @@ class TranscriptMissionPlanAIResult(BaseModel):
     mission: TranscriptMissionPlanAI
 
 
+class CoachPlannerInsight(BaseModel):
+    """Learner-facing evidence trail produced with the GPT-5.6 mission."""
+
+    whyNow: str = Field(min_length=1, max_length=700)
+    evidenceUsed: list[CoachPlannerEvidence] = Field(min_length=1, max_length=4)
+    adaptation: str = Field(min_length=1, max_length=700)
+    evaluationFocus: list[CoachPlannerEvidence] = Field(min_length=2, max_length=4)
+
+
+class GPT56CoachMissionAIResult(BaseModel):
+    mission: CoachMissionAI
+    plannerInsight: CoachPlannerInsight
+
+
+class GPT56GuidedSceneMissionAIResult(BaseModel):
+    mission: GuidedSceneMissionAI
+    plannerInsight: CoachPlannerInsight
+
+
+class GPT56PictureStoryMissionAIResult(BaseModel):
+    mission: PictureStoryMissionAI
+    plannerInsight: CoachPlannerInsight
+
+
+class GPT56ListenRetellMissionAIResult(BaseModel):
+    mission: ListenRetellMissionAI
+    plannerInsight: CoachPlannerInsight
+
+
+class GPT56DecisionResponseMissionAIResult(BaseModel):
+    mission: DecisionResponseMissionAI
+    plannerInsight: CoachPlannerInsight
+
+
+class GPT56VocabularyInActionMissionAIResult(BaseModel):
+    mission: VocabularyInActionMissionAI
+    plannerInsight: CoachPlannerInsight
+
+
+class CoachGenerationMetadata(BaseModel):
+    provider: Literal["OpenAI"]
+    model: str = Field(min_length=1, max_length=160)
+    api: Literal["responses"] = "responses"
+    reasoningEffort: Literal["none", "low", "medium", "high", "xhigh", "max"]
+    feature: Literal["adaptive_mission_planner_v1"] = "adaptive_mission_planner_v1"
+
+
 class _PublicMissionBase(_MissionCopy):
     id: str = Field(min_length=1, max_length=80)
     estimatedMinutes: CoachDurationMinutes
     difficulty: CoachEnergy
     activityRunId: Optional[str] = Field(default=None, max_length=100)
     schedulerDecision: Optional[dict] = None
+    plannerInsight: Optional[CoachPlannerInsight] = None
+    generation: Optional[CoachGenerationMetadata] = None
 
 
 class GuidedSceneMission(_PublicMissionBase):

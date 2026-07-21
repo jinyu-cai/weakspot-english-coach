@@ -5,11 +5,24 @@ production_dir="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(cd "$production_dir/../.." && pwd)"
 assets_dir="$production_dir/output/evidence-cards"
 clips_dir="$production_dir/clips"
+timeline="$production_dir/output/timeline-qwen.json"
 font_regular="/System/Library/Fonts/Supplemental/Arial.ttf"
 font_bold="/System/Library/Fonts/Supplemental/Arial Bold.ttf"
 font_mono="/System/Library/Fonts/Menlo.ttc"
 
 mkdir -p "$assets_dir" "$clips_dir"
+
+if [[ ! -f "$timeline" ]] || ! command -v jq >/dev/null 2>&1; then
+  echo "Exact visual timing requires $timeline and jq" >&2
+  exit 1
+fi
+
+segment_span() {
+  local first="$1"
+  local last="$2"
+  jq -r --argjson first "$first" --argjson last "$last" \
+    '.segments[$last - 1].end - .segments[$first - 1].start' "$timeline"
+}
 
 magick -size 880x880 xc:'#0f172a' \
   -font "$font_bold" -fill '#63e6be' -pointsize 26 \
@@ -122,25 +135,30 @@ magick -size 1920x1080 xc:'#0b1220' \
   -fill '#94a3b8' -pointsize 24 -annotate +0+105 'Open source · MIT License' \
   "$assets_dir/07-close.png"
 
+architecture_duration="$(segment_span 29 29)"
+models_duration="$(segment_span 30 30)"
+model_half="$(awk -v duration="$models_duration" 'BEGIN { printf "%.9f", duration / 2 }')"
+dynamodb_duration="$(segment_span 31 31)"
+benchmark_duration="$(segment_span 32 32)"
+close_duration="$(segment_span 33 33)"
+
 ffmpeg -y \
-  -loop 1 -t 4 -i "$assets_dir/06-architecture.png" \
-  -loop 1 -t 4 -i "$assets_dir/06-deployment-proof.png" \
-  -loop 1 -t 4 -i "$production_dir/output/browser-captures/11-chat-home-qwen.png" \
-  -loop 1 -t 4 -i "$production_dir/output/browser-captures/08-qwen-model-marketplace.png" \
-  -loop 1 -t 4 -i "$production_dir/output/browser-captures/09-qwen-cloud-console.png" \
+  -loop 1 -t "$architecture_duration" -i "$assets_dir/06-architecture.png" \
+  -loop 1 -t "$model_half" -i "$production_dir/output/browser-captures/11-chat-home-qwen.png" \
+  -loop 1 -t "$model_half" -i "$production_dir/output/browser-captures/09-qwen-cloud-console.png" \
+  -loop 1 -t "$dynamodb_duration" -i "$assets_dir/06-deployment-proof.png" \
   -filter_complex \
   "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x0b1220,fps=30,setsar=1,format=yuv420p[a];\
    [1:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x0b1220,fps=30,setsar=1,format=yuv420p[b];\
    [2:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x0b1220,fps=30,setsar=1,format=yuv420p[c];\
    [3:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x0b1220,fps=30,setsar=1,format=yuv420p[d];\
-   [4:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x0b1220,fps=30,setsar=1,format=yuv420p[e];\
-   [a][b][c][d][e]concat=n=5:v=1:a=0[v]" \
+   [a][b][c][d]concat=n=4:v=1:a=0[v]" \
   -map '[v]' -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p \
   -movflags +faststart "$clips_dir/06-architecture.mp4"
 
 ffmpeg -y \
-  -loop 1 -t 11 -i "$assets_dir/07-benchmark.png" \
-  -loop 1 -t 9 -i "$assets_dir/07-close.png" \
+  -loop 1 -t "$benchmark_duration" -i "$assets_dir/07-benchmark.png" \
+  -loop 1 -t "$close_duration" -i "$assets_dir/07-close.png" \
   -filter_complex \
   "[0:v]fps=30,setsar=1,format=yuv420p[a];\
    [1:v]fps=30,setsar=1,format=yuv420p[b];\

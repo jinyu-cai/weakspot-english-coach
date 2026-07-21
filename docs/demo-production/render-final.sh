@@ -24,9 +24,11 @@ clips=(
   "$clips_dir/07-close.mp4"
 )
 durations=(16 32 28 23 28 27 20)
+target_duration=174
 
 timeline="$output_dir/timeline-qwen.json"
 if [[ -f "$timeline" ]] && command -v jq >/dev/null 2>&1; then
+  target_duration="$(jq -r '.target_duration' "$timeline")"
   durations=()
   while IFS= read -r duration; do
     durations+=("$duration")
@@ -86,7 +88,9 @@ for index in "${!clips[@]}"; do
   filter+="setsar=1,fps=30,tpad=stop_mode=clone:stop_duration=$duration,"
   filter+="trim=duration=$duration,setpts=PTS-STARTPTS[v$index];"
 done
-filter+="[v0][v1][v2][v3][v4][v5][v6]concat=n=7:v=1:a=0,format=yuv420p[video]"
+filter+="[v0][v1][v2][v3][v4][v5][v6]concat=n=7:v=1:a=0,"
+filter+="tpad=stop_mode=clone:stop_duration=1,trim=duration=$target_duration,"
+filter+="format=yuv420p[video]"
 
 ffmpeg -y \
   -i "${clips[0]}" -i "${clips[1]}" -i "${clips[2]}" \
@@ -97,6 +101,6 @@ ffmpeg -y \
   -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p \
   -c:a aac -b:a 192k -ar 48000 \
   -c:s mov_text "${subtitle_options[@]}" \
-  -t 174 -movflags +faststart "$final_video"
+  -t "$target_duration" -movflags +faststart "$final_video"
 
 echo "Created $final_video"

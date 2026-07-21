@@ -78,6 +78,7 @@ def create_coach_mission(
                 f"Selection reason: {decision['reason']}"
             ),
             llm_provider=llm_provider,
+            user_id=identity.user_id,
             max_tokens=(
                 4000
                 if identity.has_unlimited_llm_quota

@@ -910,11 +910,51 @@ export default function CoachPage() {
               <Badge variant="secondary" className="gap-1.5"><MissionIcon className="size-3.5" /> {mission.eyebrow}</Badge>
               <Badge variant="outline"><Clock3 className="size-3.5" /> {mission.estimatedMinutes} {t.common.minutesShort}</Badge>
               <Badge variant="outline">{difficultyLabel}</Badge>
+              {mission.generation?.provider === "OpenAI" ? (
+                <Badge className="gap-1.5 border-primary/25 bg-primary/10 text-primary" variant="outline">
+                  <Sparkles className="size-3.5" /> {mission.generation.model} · Responses API
+                </Badge>
+              ) : null}
             </div>
             <CardTitle className="text-balance font-heading text-3xl sm:text-4xl">{mission.title}</CardTitle>
             <CardDescription className="max-w-2xl text-base leading-relaxed">{mission.briefing}</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-5 sm:p-8 sm:pt-0">
+            {mission.plannerInsight && mission.generation?.provider === "OpenAI" ? (
+              <section className="grid gap-4 rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/8 via-card to-card p-5">
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+                    <Sparkles className="size-4" /> {t.coach.mission.openaiPlanner}
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {t.coach.mission.openaiPlannerDetail}
+                  </p>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <div className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{t.coach.mission.whyNow}</div>
+                    <p className="mt-1.5 text-sm leading-relaxed">{mission.plannerInsight.whyNow}</p>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{t.coach.mission.adaptation}</div>
+                    <p className="mt-1.5 text-sm leading-relaxed">{mission.plannerInsight.adaptation}</p>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{t.coach.mission.evidenceUsed}</div>
+                    <ul className="mt-1.5 grid gap-1 text-sm leading-relaxed text-muted-foreground">
+                      {mission.plannerInsight.evidenceUsed.map((item, index) => <li key={`${index}-${item}`}>• {item}</li>)}
+                    </ul>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{t.coach.mission.evaluationFocus}</div>
+                    <ul className="mt-1.5 grid gap-1 text-sm leading-relaxed text-muted-foreground">
+                      {mission.plannerInsight.evaluationFocus.map((item, index) => <li key={`${index}-${item}`}>• {item}</li>)}
+                    </ul>
+                  </div>
+                </div>
+              </section>
+            ) : null}
+
             {mission.scene ? (
               <div className="grid gap-3 sm:grid-cols-2">
                 {[

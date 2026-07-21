@@ -2,21 +2,85 @@
 
 **A cross-session English coach that remembers what works for each learner.**
 
-WeakSpot is being submitted to the **Qwen Cloud Hackathon — Track 1:
-MemoryAgent**. It diagnoses real English, autonomously accumulates learner
-preferences, goals, recurring weaknesses, learning strategies, and recent
-experience, then uses a bounded, explainable Memory Pack to make the next
-conversation, plan, and exercise more accurate.
+WeakSpot is being meaningfully extended for **OpenAI Build Week 2026 —
+Education** with a new **GPT-5.6 Adaptive Mission Planner**, built in
+collaboration with Codex. The existing product already accumulated goals,
+preferences, recurring weaknesses, learning strategies, and practice outcomes.
+The Build Week extension turns that bounded evidence into a fresh production
+mission and exposes a learner-facing explanation of why the task was chosen,
+which evidence shaped it, how difficulty changed, and what the coach will
+observe.
+
+Codex is the development agent, not a model embedded in the website. At
+runtime, the new planner calls the official OpenAI **Responses API** with
+`gpt-5.6-sol` and native Pydantic Structured Outputs. The older Qwen
+MemoryAgent implementation remains documented below as the foundation this
+submission extends.
 
 Live app: [englearning.jinxxx.de](https://englearning.jinxxx.de)<br>
 Primary API: [enapi.jinxxx.de/api/v1/health](https://enapi.jinxxx.de/api/v1/health)
 
-## Why this is a MemoryAgent
+## OpenAI Build Week extension
+
+| New capability | Implementation |
+| --- | --- |
+| GPT-5.6 mission planning | Official OpenAI Responses API with explicit `gpt-5.6-sol` and `medium` reasoning |
+| Structured task + rationale | Native Pydantic Structured Outputs return the mission and `plannerInsight` in one response |
+| Evidence-bounded personalization | The model receives the scheduler's selected skills plus bounded goal, preference, strategy, weakness, and recency context |
+| Visible runtime proof | The UI renders the model returned by the API, `Responses API`, “why now,” evidence, adaptation, and evaluation focus |
+| Privacy and integrity | `store=false`, a hashed safety identifier, server-only keys, and a hard refusal to label a non-GPT-5.6 model as this feature |
+| Safe rollout | `OPENAI_BUILD_WEEK_ENABLED` is opt-in, preserving existing Qwen/DeepSeek routes until the OpenAI deployment is validated |
+
+The main implementation is in
+[`openai_mission_service.py`](apps/api/app/services/openai_mission_service.py),
+with the planner contract in [`coach.py`](apps/api/app/models/coach.py), prompt
+and routing in [`coach_service.py`](apps/api/app/services/coach_service.py), and
+the visible evidence panel in [`Coach Mode`](apps/web/app/coach/page.tsx).
+
+### How Codex was used
+
+Codex inspected the existing multi-provider architecture, checked current
+official GPT-5.6 and Structured Outputs guidance, chose a separate Responses
+API adapter instead of a blind model-string replacement, implemented the
+backend and UI contract, added an offline mocked Responses API contract test,
+and prepared the Devpost/video handoff. Important decisions were kept explicit:
+
+- Codex does not run inside the product; GPT-5.6 does.
+- Existing providers remain intact so the new work is a measurable extension,
+  not a rewrite that hides the pre-existing foundation.
+- The GPT-5.6 badge is derived from runtime response metadata and appears only
+  on the OpenAI path.
+- Structured output, user-data retention boundaries, and the model allowlist
+  are enforced in code and covered by tests.
+
+The timestamped build record is in
+[`OPENAI_BUILD_WEEK_CODEX_LOG.md`](docs/OPENAI_BUILD_WEEK_CODEX_LOG.md). The
+required Codex Session ID from `/feedback` and final commit SHA must be added
+after the live validation pass.
+
+### Enable and verify GPT-5.6
+
+```bash
+# apps/api/.env — never commit the real key
+OPENAI_API_KEY=...
+OPENAI_BUILD_WEEK_ENABLED=true
+OPENAI_BUILD_WEEK_MODEL=gpt-5.6-sol
+OPENAI_BUILD_WEEK_REASONING_EFFORT=medium
+```
+
+After deployment, `/api/v1/health` reports whether the feature is enabled and
+configured without exposing the key. Generate a Coach mission and confirm the
+briefing shows `gpt-5.6-sol · Responses API` plus the adaptive planner evidence
+panel. If the feature is enabled without a key, or configured with a model that
+does not start with `gpt-5.6`, the request fails instead of silently falling
+back and producing misleading demo evidence.
+
+## Existing MemoryAgent foundation
 
 | Capability | Implementation |
 | --- | --- |
 | Autonomous experience accumulation | Qwen extracts durable memory candidates during diagnosis/chat; practice outcomes update strategy statistics automatically |
-| Preferences and goals | Remembers feedback style, explanation language, learning focus, IELTS/career goals, and explicit manual memories |
+| Preferences and goals | Remembers feedback style, explanation language, learning focus, learner-defined communication/work/exam goals, and explicit manual memories |
 | Efficient retrieval | Qwen `text-embedding-v4` (256d) + lexical hybrid ranking; the same embeddings help match Stealth Practice to the live topic |
 | Timely forgetting | Kind-specific expiration, evidence-based weakness graduation and relapse, conflict replacement, capacity pruning, user-controlled forget, DynamoDB TTL |
 | Limited-context recall | At most six memories under a 700 estimated-token ceiling with a 15% safety reserve; text chat keeps 12 recent turns |
@@ -41,23 +105,21 @@ diagnose / chat / import / practice
 ```mermaid
 flowchart LR
     Browser[Next.js on Vercel] -->|HTTPS| Stable[enapi.jinxxx.de\nCloudflare]
-    Stable -->|daily origin| Oracle[Oracle Cloud\nNginx + FastAPI + DeepSeek]
-    Stable -. final demo origin .-> Ali[Alibaba Cloud ECS\nNginx + FastAPI + Qwen]
-    Ali -->|structured generation| Qwen[Qwen 3.7 Max / Plus]
-    Ali -->|256d embeddings| Embed[Qwen text-embedding-v4]
-    Oracle -. embedding-only calls .-> Embed
-    Oracle --> Memory[Memory lifecycle + hybrid ranker]
-    Ali --> Memory
+    Stable --> API[Active FastAPI origin]
+    API --> Scheduler[Adaptive mission scheduler]
+    Scheduler -->|bounded decision context| OpenAI[OpenAI Responses API\ngpt-5.6-sol]
+    API --> Memory[Memory lifecycle + hybrid ranker]
+    API -. existing provider routes .-> Qwen[Qwen 3.7 Max / Plus]
+    API -. existing embeddings .-> Embed[Qwen text-embedding-v4]
     Memory <--> DB[(DynamoDB single table)]
 ```
 
-Oracle Cloud is the normal production origin. Alibaba Cloud ECS stays healthy
-and on the same release, but receives production traffic only during the final
-Qwen Cloud Hackathon demonstration/evidence window. The stable API hostname and
-Vercel environment variable do not change; Cloudflare switches only the origin,
-and both servers share the same DynamoDB learner state. See
+The hosting origin is independent from the new model path: whichever FastAPI
+origin serves the request calls OpenAI directly for Build Week missions. The
+older Oracle/Alibaba/Qwen deployment history remains in
 [Architecture](docs/ARCHITECTURE.md) and the
-[Alibaba/Qwen deployment runbook](docs/ALIBABA_QWEN_DEPLOYMENT.md).
+[Alibaba/Qwen deployment runbook](docs/ALIBABA_QWEN_DEPLOYMENT.md), but Qwen
+Cloud console footage is not required in the OpenAI Build Week demo.
 
 ## Product features
 
@@ -84,18 +146,19 @@ in [Coach Mode / Input Lab 2.0 P0](docs/COACH_MODE_P0.md).
 | Layer | Technology |
 | --- | --- |
 | Frontend | Next.js 16, TypeScript, Tailwind CSS, shadcn/ui, Vercel |
+| Build Week planner | OpenAI Responses API, `gpt-5.6-sol`, Pydantic Structured Outputs |
 | Daily backend | FastAPI/Python 3.11 in Docker on Oracle Cloud, Nginx, TLS, DeepSeek |
-| Final-demo backend | Same FastAPI release on Alibaba Cloud ECS with Qwen Model Studio |
+| Existing alternate backend | Same FastAPI release on Alibaba Cloud ECS |
 | Qwen | Model Studio `qwen3.7-max`, `qwen3.7-plus`, `text-embedding-v4` |
 | Persistence | Amazon DynamoDB single-table design with TTL |
-| Traffic switch | Stable Cloudflare API hostname; Oracle normally, Alibaba only for final demo |
+| Traffic routing | Stable Cloudflare API hostname in front of the active FastAPI origin |
 | Voice | OpenAI Realtime API for voice chat; OpenAI Speech API for Coach listening; browser speech fallback |
 | Auth | GitHub/Google OAuth, server-resolved identity, per-tier limits |
 
 ## Repository
 
 ```text
-apps/api/   FastAPI, Qwen integration, DynamoDB, MemoryAgent, tests, deploy
+apps/api/   FastAPI, GPT-5.6/Qwen integrations, DynamoDB, MemoryAgent, tests, deploy
 apps/web/   Next.js application and Memory Center
 docs/       architecture, MemoryAgent design, submission, demo, deployment
 ```
@@ -135,7 +198,8 @@ pnpm install
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm dev
 ```
 
-Configure Alibaba Model Studio in `apps/api/.env`:
+The OpenAI Build Week planner configuration is shown above. The pre-existing
+MemoryAgent foundation may also use Alibaba Model Studio in `apps/api/.env`:
 
 ```bash
 QWEN_MODEL_STUDIO_API_KEY=...
@@ -178,7 +242,10 @@ method and live-embedding option.
 
 ## Submission material
 
-- [Devpost submission draft](docs/SUBMISSION.md)
+- [OpenAI Build Week Devpost draft](docs/OPENAI_BUILD_WEEK_SUBMISSION.md)
+- [OpenAI Build Week video production pack](docs/openai-build-week/README.md)
+- [Codex collaboration log](docs/OPENAI_BUILD_WEEK_CODEX_LOG.md)
+- [Original Qwen Devpost submission draft](docs/SUBMISSION.md)
 - [Under-three-minute demo script](docs/DEMO_VIDEO_SCRIPT.md)
 - [Demo video production pack](docs/demo-production/README.md)
 - [MemoryAgent technical design](docs/MEMORY_AGENT_DESIGN.md)

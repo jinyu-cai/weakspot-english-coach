@@ -7,6 +7,8 @@ Run from ``apps/api``:
 No network, DynamoDB, or model-provider call is made.
 """
 
+from types import SimpleNamespace
+
 from fastapi import HTTPException
 from pydantic import ValidationError
 
@@ -21,6 +23,9 @@ from app.config import settings
 from app.main import app
 from app.models.chat import ChatCreateSessionRequest
 from app.models.coach import (
+    CoachPlannerInsight,
+    DecisionResponseMissionAIResult,
+    GPT56DecisionResponseMissionAIResult,
     CoachMissionRequest,
     CoachSpeechRequest,
     InputLab2TranscriptMissionRequest,
@@ -35,6 +40,8 @@ from app.services.coach_service import (
     select_scenario_family,
 )
 from app.services import tts_service
+from app.services import openai_mission_service
+from app.services.fake_ai import fake_for
 from app.services.diagnose_service import build_diagnose_user_prompt
 
 
@@ -45,7 +52,9 @@ def main() -> None:
     assert "/api/v1/coach/speech" in paths
 
     previous_fake_ai = settings.use_fake_ai
+    previous_build_week_enabled = settings.openai_build_week_enabled
     settings.use_fake_ai = True
+    settings.openai_build_week_enabled = False
     try:
         for mission_type in (
             "guided_scene",
@@ -82,6 +91,69 @@ def main() -> None:
         )
     finally:
         settings.use_fake_ai = previous_fake_ai
+        settings.openai_build_week_enabled = previous_build_week_enabled
+
+    captured_responses_request = {}
+    parsed_mission = GPT56DecisionResponseMissionAIResult(
+        mission=fake_for(DecisionResponseMissionAIResult).mission,
+        plannerInsight=CoachPlannerInsight(
+            whyNow="This target is due for a fresh transfer check.",
+            evidenceUsed=["The scheduler selected clarity.expression."],
+            adaptation="A short text decision matches the requested energy and modality.",
+            evaluationFocus=["Clear decision", "Appropriate register"],
+        ),
+    )
+
+    class _FakeResponses:
+        @staticmethod
+        def parse(**kwargs):
+            captured_responses_request.update(kwargs)
+            return SimpleNamespace(
+                id="resp_contract",
+                model="gpt-5.6-sol",
+                output_parsed=parsed_mission,
+                output_text="",
+                usage=SimpleNamespace(input_tokens=400, output_tokens=200, total_tokens=600),
+            )
+
+    class _FakeOpenAIResponsesClient:
+        responses = _FakeResponses()
+
+        def __init__(self, **_kwargs):
+            pass
+
+    previous_openai_client = openai_mission_service.OpenAI
+    previous_build_week_key = settings.openai_build_week_api_key
+    previous_build_week_model = settings.openai_build_week_model
+    previous_build_week_reasoning = settings.openai_build_week_reasoning_effort
+    try:
+        settings.openai_build_week_enabled = True
+        settings.openai_build_week_api_key = "test-only-key"
+        settings.openai_build_week_model = "gpt-5.6-sol"
+        settings.openai_build_week_reasoning_effort = "medium"
+        openai_mission_service.OpenAI = _FakeOpenAIResponsesClient
+        gpt56_response = generate_coach_mission(
+            CoachMissionRequest(preferredType="decision_response"),
+            recommended_skills=["clarity.expression"],
+            learning_context="Selection reason: a transfer check is due.",
+            user_id="private-product-user-id",
+        )
+        assert gpt56_response.mission.generation is not None
+        assert gpt56_response.mission.generation.model == "gpt-5.6-sol"
+        assert gpt56_response.mission.generation.api == "responses"
+        assert gpt56_response.mission.plannerInsight is not None
+        assert captured_responses_request["model"] == "gpt-5.6-sol"
+        assert captured_responses_request["reasoning"] == {"effort": "medium"}
+        assert captured_responses_request["store"] is False
+        assert captured_responses_request["text_format"] is GPT56DecisionResponseMissionAIResult
+        assert captured_responses_request["safety_identifier"].startswith("weakspot_")
+        assert "private-product-user-id" not in captured_responses_request["safety_identifier"]
+    finally:
+        settings.openai_build_week_enabled = previous_build_week_enabled
+        settings.openai_build_week_api_key = previous_build_week_key
+        settings.openai_build_week_model = previous_build_week_model
+        settings.openai_build_week_reasoning_effort = previous_build_week_reasoning
+        openai_mission_service.OpenAI = previous_openai_client
 
     only_unused = SCENARIO_FAMILIES[-1]
     assert select_scenario_family(list(SCENARIO_FAMILIES[:-1])) == only_unused
