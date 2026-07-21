@@ -118,6 +118,35 @@ same target skills, task type, and difficulty.
 """.strip()
 
 
+def guided_scene_design_requirements(req: CoachMissionRequest) -> str:
+    """Give Deep 15-minute chat scenes enough structure to sustain a real conversation."""
+
+    if (
+        req.preferredType != "guided_scene"
+        or req.generationMode != "deep"
+        or req.durationMinutes != 15
+    ):
+        return ""
+    return """
+Long-form guided_scene requirements:
+- Design this roleplay to sustain roughly 12-20 learner/assistant turns rather
+  than resolving after one request and one answer.
+- scenarioPrompt is an internal facilitator brief. Give it a coherent arc with
+  an opening state, 4-6 progressive beats, at least two mild complications,
+  information the assistant reveals only after relevant learner questions, and
+  a clear but non-forced ending condition.
+- The assistant must reveal only one useful development at a time, ask natural
+  follow-up questions, react to the learner's choices, and avoid dumping the
+  full scenario plan into one message.
+- Allow more than one reasonable path to success. Do not solve the situation for
+  the learner, rush to agreement, repeat the same obstacle, or end the roleplay
+  until the learner has clarified needs, handled complications, and negotiated
+  a workable outcome.
+- Keep starterMessage short and in character; save the later beats for the live
+  conversation.
+""".strip()
+
+
 TRANSCRIPT_SYSTEM_PROMPT = """
 You are designing an owner-only English listening-and-retelling prototype around
 a transcript supplied by the product owner. Create the learner-facing scaffold,
@@ -154,6 +183,15 @@ def selected_coach_model(
             return provider.model
         return settings.default_llm_model
     return _selected_fast_model(provider)
+
+
+def uses_adaptive_mission_planner(req: CoachMissionRequest) -> bool:
+    """Keep Build Week planning as the default while allowing Chat to use its selected provider."""
+
+    return (
+        settings.openai_build_week_enabled
+        and req.runtimeMode == "adaptive_planner"
+    )
 
 
 def _response_model_for_request(req: CoachMissionRequest) -> Type[BaseModel]:
@@ -271,6 +309,7 @@ def generate_coach_mission(
     requested_type = req.preferredType or "Choose the most useful of the five types."
     selected_family = select_scenario_family(recent_scenario_families)
     recent_family_context = ", ".join((recent_scenario_families or [])[:8]) or "none"
+    scene_design = guided_scene_design_requirements(req)
     user_prompt = f"""
 Create one mission with this configuration:
 - durationMinutes: {req.durationMinutes}
@@ -281,6 +320,8 @@ Create one mission with this configuration:
 - variation seed: {uuid4().hex}
 - required guided_scene scenarioFamily: {selected_family}
 - recent generated scenario families to avoid repeating: {recent_family_context}
+
+{scene_design}
 
 {_compact_skill_context(learner_skills)}
 
@@ -301,12 +342,13 @@ Allowed first-party picture assets (use only for picture_story):
 """.strip()
 
     base_system_prompt = f"{MISSION_SYSTEM_PROMPT}\n\n{language_instruction(req.outputLanguage)}"
+    use_adaptive_planner = uses_adaptive_mission_planner(req)
     messages = [
         {
             "role": "system",
             "content": (
                 f"{base_system_prompt}\n\n{GPT56_PLANNER_PROMPT}"
-                if settings.openai_build_week_enabled
+                if use_adaptive_planner
                 else base_system_prompt
             ),
         },
@@ -314,7 +356,7 @@ Allowed first-party picture assets (use only for picture_story):
     ]
     planner_insight: CoachPlannerInsight | None = None
     generation: CoachGenerationMetadata | None = None
-    if settings.openai_build_week_enabled:
+    if use_adaptive_planner:
         result, generation = parse_gpt56_mission(
             messages=messages,
             response_model=_gpt56_response_model_for_request(req),

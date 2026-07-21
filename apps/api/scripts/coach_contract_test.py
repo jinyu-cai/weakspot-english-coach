@@ -36,8 +36,10 @@ from app.services.coach_service import (
     SCENARIO_FAMILIES,
     generate_coach_mission,
     generate_transcript_mission,
+    guided_scene_design_requirements,
     selected_coach_model,
     select_scenario_family,
+    uses_adaptive_mission_planner,
 )
 from app.services import tts_service
 from app.services import openai_mission_service
@@ -172,6 +174,28 @@ def main() -> None:
     assert selected_coach_model(
         CoachMissionRequest(generationMode="deep"), model_pair
     ) == "deep-model"
+
+    long_scene_request = CoachMissionRequest(
+        durationMinutes=15,
+        generationMode="deep",
+        runtimeMode="selected_provider",
+        preferredType="guided_scene",
+    )
+    long_scene_requirements = guided_scene_design_requirements(long_scene_request)
+    assert "12-20 learner/assistant turns" in long_scene_requirements
+    assert "4-6 progressive beats" in long_scene_requirements
+    assert "reveal only one useful development at a time" in long_scene_requirements
+    assert guided_scene_design_requirements(
+        long_scene_request.model_copy(update={"generationMode": "fast"})
+    ) == ""
+    settings.openai_build_week_enabled = True
+    try:
+        assert uses_adaptive_mission_planner(
+            CoachMissionRequest(runtimeMode="adaptive_planner")
+        )
+        assert not uses_adaptive_mission_planner(long_scene_request)
+    finally:
+        settings.openai_build_week_enabled = previous_build_week_enabled
 
     scene_session = ChatCreateSessionRequest(
         userId="ignored-by-server",

@@ -16,6 +16,7 @@ CoachDurationMinutes = Literal[5, 10, 15]
 CoachModality = Literal["text", "voice"]
 CoachEnergy = Literal["light", "normal", "challenge"]
 CoachGenerationMode = Literal["fast", "deep"]
+CoachMissionRuntime = Literal["adaptive_planner", "selected_provider"]
 CoachScenarioFamily = Literal[
     "service_recovery",
     "workplace_alignment",
@@ -61,6 +62,7 @@ class CoachMissionRequest(BaseModel):
     modality: CoachModality = "text"
     energy: CoachEnergy = "normal"
     generationMode: CoachGenerationMode = "fast"
+    runtimeMode: CoachMissionRuntime = "adaptive_planner"
     preferredType: Optional[CoachMissionType] = None
     outputLanguage: OutputLanguage = "en"
 

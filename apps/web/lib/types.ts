@@ -30,6 +30,7 @@ export type CoachMissionType =
 export type CoachMissionModality = "text" | "voice"
 export type CoachMissionEnergy = "light" | "normal" | "challenge"
 export type CoachGenerationMode = "fast" | "deep"
+export type CoachMissionRuntime = "adaptive_planner" | "selected_provider"
 
 export interface CoachSceneMission {
   setting: string
@@ -118,6 +119,7 @@ export interface CoachMissionRequest {
   modality: CoachMissionModality
   energy: CoachMissionEnergy
   generationMode?: CoachGenerationMode
+  runtimeMode?: CoachMissionRuntime
   preferredType?: CoachMissionType
 }
 
