@@ -189,7 +189,7 @@ Use [DEMO_VIDEO_SCRIPT.md](DEMO_VIDEO_SCRIPT.md) for the narration.
 - [ ] Switch the stable API origin to Alibaba only for evidence capture, then
       return it to Oracle
 - [ ] Deploy the final frontend revision to Vercel
-- [ ] Make repository public and insert its URL above
+- [x] Make repository public and insert its URL above
 - [ ] Capture Alibaba ECS + Model Studio + DynamoDB proof without secrets
 - [ ] Record/upload public video and insert its URL above
 - [ ] Add project screenshots and architecture diagram to Devpost
