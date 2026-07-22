@@ -78,6 +78,17 @@ def main() -> None:
                 )
             if mission_type == "vocabulary_in_action":
                 assert "vocab.word_choice" in response.mission.targetSkills
+                assert response.mission.vocabulary.targetWord
+                assert response.mission.vocabulary.targetWord in response.mission.vocabulary.wordForms
+                assert response.mission.vocabulary.targetWord.lower() in response.mission.taskPrompt.lower()
+                assert len(response.mission.vocabulary.collocations) >= 2
+                assert len(response.mission.vocabulary.exampleSentences) >= 2
+
+        excluded_request = CoachMissionRequest(
+            preferredType="vocabulary_in_action",
+            excludedVocabulary=["Accountable", "accountable", " precise "],
+        )
+        assert excluded_request.excludedVocabulary == ["accountable", "precise"]
 
         owner_source = "This owner-created sample explains a change of plans in clear English. " * 5
         transcript_response = generate_transcript_mission(

@@ -61,6 +61,15 @@ export interface CoachDecisionMission {
 }
 
 export interface CoachVocabularyMission {
+  targetWord: string
+  wordForms: string[]
+  partOfSpeech: string
+  meaning: string
+  recognitionTip: string
+  usageNote: string
+  collocations: string[]
+  exampleSentences: string[]
+  commonMistake: string
   situation: string
   communicativeGoal: string
   audience: string
@@ -121,9 +130,10 @@ export interface CoachMissionRequest {
   generationMode?: CoachGenerationMode
   runtimeMode?: CoachMissionRuntime
   preferredType?: CoachMissionType
+  excludedVocabulary?: string[]
 }
 
-export interface InputLab2TranscriptMissionRequest extends Omit<CoachMissionRequest, "preferredType" | "generationMode"> {
+export interface InputLab2TranscriptMissionRequest extends Omit<CoachMissionRequest, "preferredType" | "generationMode" | "excludedVocabulary"> {
   title: string
   transcript: string
   rightsBasis: string

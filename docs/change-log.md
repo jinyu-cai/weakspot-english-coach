@@ -18,6 +18,62 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-21 — Vocabulary learn-one-word flow
+
+Date: 2026-07-21 PDT
+
+Branch: `feat/vocabulary-learning-flow`
+
+GitHub status: Local implementation and validation complete; PR pending.
+
+Deploy status: Not deployed yet. This release requires the merged backend on
+the normal Oracle production origin and the matching frontend through Vercel.
+
+Summary:
+
+- Replaced the generic contextual-message Vocabulary page with a dedicated
+  three-stage lesson: recognize one target word, notice usage patterns, then
+  apply it in a realistic response.
+- Added target-word meaning, part of speech, spoken playback, recognition cue,
+  collocations, examples, common misuse guidance, accepted word forms, and a
+  target-presence submission gate.
+- Added an “already know this word” action that records a skip without mastery
+  evidence and excludes up to 30 browser-known words from later generation.
+- Extended the backend structured-output contract and generation prompt so a
+  vocabulary mission supplies the complete teaching scaffold and always keeps
+  `vocab.word_choice` among its measured skills.
+- Recorded generated vocabulary missions as `vocabulary` activity runs and
+  added matching English/Chinese UI copy, mock data, and contract coverage.
+
+Files changed:
+
+- `apps/api/app/api/routes/coach.py`
+- `apps/api/app/models/coach.py`
+- `apps/api/app/services/coach_service.py`
+- `apps/api/app/services/fake_ai.py`
+- `apps/api/scripts/coach_contract_test.py`
+- `apps/web/app/vocabulary/page.tsx`
+- `apps/web/lib/api-client.ts`
+- `apps/web/lib/i18n.ts`
+- `apps/web/lib/types.ts`
+
+Tests run:
+
+- `npm run lint` — pass
+- `npx tsc --noEmit` — pass
+- `npm run build` — pass
+- `UV_CACHE_DIR=.uv-cache uv run python -m scripts.coach_contract_test` — pass
+- Python compileall and `git diff --check` — pass
+- Local browser QA — all three lesson stages, target-word submit gate, and
+  zero console errors passed
+
+Known issues: The known-word exclusion list is intentionally browser-local and
+does not synchronize across devices.
+
+Next step: Open and merge the PR, deploy the merged API release to Oracle, let
+Vercel publish `main`, then verify public API health and the live Vocabulary
+flow.
+
 ## 2026-07-20 — OpenAI Build Week GPT-5.6 Adaptive Mission Planner
 
 Date: 2026-07-20 PDT

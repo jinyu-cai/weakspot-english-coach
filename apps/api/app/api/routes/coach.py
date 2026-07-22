@@ -90,7 +90,9 @@ def create_coach_mission(
         run = create_activity_run(
             identity.user_id,
             CreateActivityRunRequest(
-                activityType="coach",
+                activityType=(
+                    "vocabulary" if mission.type == "vocabulary_in_action" else "coach"
+                ),
                 sourceId=mission.id,
                 title=mission.title,
                 taskType=mission.type,
