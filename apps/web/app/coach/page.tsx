@@ -60,9 +60,59 @@ import type {
 } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { shouldSendFromChatComposer } from "@/lib/chat-composer"
+import {
+  finishTaskResume,
+  loadTaskResume,
+  startTaskResume,
+  updateTaskResume,
+} from "@/lib/task-resume"
 
 type Duration = 5 | 10 | 15
 type Screen = "setup" | "briefing" | "active" | "feedback" | "chat_feedback"
+
+interface CoachSnapshot {
+  screen: Screen
+  durationMinutes: Duration
+  modality: CoachMissionModality
+  energy: CoachMissionEnergy
+  preferredType?: CoachMissionType
+  mission: CoachMission
+  answer: string
+  submittedAnswer: string
+  hintLevel: number
+  playsUsed: number
+  checkedCriteria: number[]
+  workEndsAt: number | null
+  remainingSec: number | null
+  timeUp: boolean
+  chatSession: ChatSession | null
+  chatMessages: ChatMessage[]
+}
+
+function restoredCoachState(): CoachSnapshot | null {
+  const resume = loadTaskResume()
+  if (resume?.feature !== "coach" || !resume.draft || typeof resume.draft !== "object") return null
+  const snapshot = resume.draft as Partial<CoachSnapshot>
+  if (!snapshot.mission || !snapshot.screen) return null
+  return {
+    screen: snapshot.screen === "active" || snapshot.screen === "briefing" ? snapshot.screen : "briefing",
+    durationMinutes: snapshot.durationMinutes === 10 || snapshot.durationMinutes === 15 ? snapshot.durationMinutes : 5,
+    modality: snapshot.modality === "voice" ? "voice" : "text",
+    energy: snapshot.energy === "normal" || snapshot.energy === "challenge" ? snapshot.energy : "light",
+    preferredType: snapshot.preferredType,
+    mission: snapshot.mission,
+    answer: typeof snapshot.answer === "string" ? snapshot.answer : "",
+    submittedAnswer: typeof snapshot.submittedAnswer === "string" ? snapshot.submittedAnswer : "",
+    hintLevel: typeof snapshot.hintLevel === "number" ? snapshot.hintLevel : 0,
+    playsUsed: typeof snapshot.playsUsed === "number" ? snapshot.playsUsed : 0,
+    checkedCriteria: Array.isArray(snapshot.checkedCriteria) ? snapshot.checkedCriteria : [],
+    workEndsAt: typeof snapshot.workEndsAt === "number" ? snapshot.workEndsAt : null,
+    remainingSec: typeof snapshot.remainingSec === "number" ? snapshot.remainingSec : null,
+    timeUp: snapshot.timeUp === true,
+    chatSession: snapshot.chatSession ?? null,
+    chatMessages: Array.isArray(snapshot.chatMessages) ? snapshot.chatMessages : [],
+  }
+}
 
 type RecognitionResultLike = {
   isFinal: boolean
@@ -246,10 +296,63 @@ export default function CoachPage() {
   const screenRef = useRef(screen)
 
   useEffect(() => {
+    const restored = restoredCoachState()
+    if (!restored) return
+    const timer = window.setTimeout(() => {
+      setScreen(restored.screen)
+      setDurationMinutes(restored.durationMinutes)
+      setModality(restored.modality)
+      setEnergy(restored.energy)
+      setPreferredType(restored.preferredType)
+      setMission(restored.mission)
+      setAnswer(restored.answer)
+      setSubmittedAnswer(restored.submittedAnswer)
+      setHintLevel(restored.hintLevel)
+      setPlaysUsed(restored.playsUsed)
+      setCheckedCriteria(new Set(restored.checkedCriteria))
+      setWorkEndsAt(restored.workEndsAt)
+      setRemainingSec(restored.remainingSec)
+      setTimeUp(restored.timeUp)
+      setChatSession(restored.chatSession)
+      setChatMessages(restored.chatMessages)
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  useEffect(() => {
     chatMessagesRef.current = chatMessages
     screenRef.current = screen
     attemptCompletedRef.current = attemptCompleted
   }, [attemptCompleted, chatMessages, screen])
+
+  useEffect(() => {
+    if (!mission || (screen !== "briefing" && screen !== "active")) return
+    const timer = window.setTimeout(() => {
+      const snapshot: CoachSnapshot = {
+        screen,
+        durationMinutes,
+        modality,
+        energy,
+        preferredType,
+        mission,
+        answer,
+        submittedAnswer,
+        hintLevel,
+        playsUsed,
+        checkedCriteria: [...checkedCriteria],
+        workEndsAt,
+        remainingSec: workEndsAt ? Math.max(0, Math.ceil((workEndsAt - Date.now()) / 1000)) : null,
+        timeUp,
+        chatSession,
+        chatMessages,
+      }
+      updateTaskResume(
+        { step: screen, draft: snapshot },
+        { feature: "coach", taskId: mission.id },
+      )
+    }, 180)
+    return () => window.clearTimeout(timer)
+  }, [answer, chatMessages, chatSession, checkedCriteria, durationMinutes, energy, hintLevel, mission, modality, playsUsed, preferredType, screen, submittedAnswer, timeUp, workEndsAt])
 
   const visibleHints = useMemo(
     () => mission?.hints.slice(0, hintLevel) ?? [],
@@ -383,12 +486,41 @@ export default function CoachPage() {
         durationMinutes,
         modality,
         energy,
+        generationMode: "deep",
         ...(type ? { preferredType: type } : {}),
       })
+      if (mission && (screen === "briefing" || screen === "active")) {
+        finishTaskResume("coach", "abandoned")
+      }
       stopPlayback(true)
       ttsUnavailableRef.current = false
       setMission(nextMission)
       resetAttempt("briefing")
+      startTaskResume({
+        feature: "coach",
+        href: "/coach",
+        taskId: nextMission.id,
+        title: nextMission.title,
+        step: "briefing",
+        draft: {
+          screen: "briefing",
+          durationMinutes,
+          modality,
+          energy,
+          preferredType: type,
+          mission: nextMission,
+          answer: "",
+          submittedAnswer: "",
+          hintLevel: 0,
+          playsUsed: 0,
+          checkedCriteria: [],
+          workEndsAt: null,
+          remainingSec: null,
+          timeUp: false,
+          chatSession: null,
+          chatMessages: [],
+        } satisfies CoachSnapshot,
+      })
     } catch {
       toast.error(t.coach.errors.generate)
     } finally {
@@ -440,7 +572,7 @@ export default function CoachPage() {
       const result = await diagnose(
         DEMO_USER_ID,
         text,
-        "fast",
+        "deep",
         analysisContextForMission(mission),
         mission.activityRunId
           ? {
@@ -458,6 +590,7 @@ export default function CoachPage() {
       )
       setDiagnostic(result)
       setScreen("feedback")
+      finishTaskResume("coach", "completed")
     } catch {
       toast.error(t.coach.errors.analyze)
       // Stay completed so the timer cannot reappear and wipe feedback later.
@@ -541,6 +674,7 @@ export default function CoachPage() {
           attemptCount: completedUserTurns,
         })
       }
+      finishTaskResume("coach", "completed")
     } catch {
       toast.error(t.coach.errors.analyze)
       // Keep the feedback screen so the learner can retry finish without losing the timer freeze.

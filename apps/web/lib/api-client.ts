@@ -128,15 +128,31 @@ async function getErrorMessage(res: Response, path: string) {
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}/api/v1${path}`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...getLLMProviderHeaders(),
-      ...(init?.headers ?? {}),
-    },
-    ...init,
-  })
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 20_000)
+  const abortFromCaller = () => controller.abort()
+  init?.signal?.addEventListener("abort", abortFromCaller, { once: true })
+  let res: Response
+  try {
+    res = await fetch(`${API_BASE_URL}/api/v1${path}`, {
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...getLLMProviderHeaders(),
+        ...(init?.headers ?? {}),
+      },
+      ...init,
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (controller.signal.aborted && !init?.signal?.aborted) {
+      throw new Error("The request timed out. Your current work is still safe.")
+    }
+    throw error
+  } finally {
+    clearTimeout(timeout)
+    init?.signal?.removeEventListener("abort", abortFromCaller)
+  }
   if (!res.ok) {
     const message = await getErrorMessage(res, path)
     if (res.status === 429 && typeof window !== "undefined") {

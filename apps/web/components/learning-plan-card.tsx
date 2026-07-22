@@ -105,16 +105,20 @@ export function LearningPlanCard({
 
             return (
               <div key={task.id} className="rounded-xl border border-border transition-colors">
-                <label className="flex cursor-pointer items-start gap-3 p-3 hover:bg-muted/50">
+                <div className="flex items-start gap-3 p-3 hover:bg-muted/50">
                   <Checkbox
+                    id={`plan-task-${task.id}`}
                     checked={task.completed}
                     onCheckedChange={(checked) => onToggleTask(task.id, checked === true)}
                     className="mt-0.5"
                   />
                   <div className="flex flex-1 flex-col gap-1">
-                    <span className={cn("text-sm font-medium", task.completed && "text-muted-foreground line-through")}>
+                    <label
+                      htmlFor={`plan-task-${task.id}`}
+                      className={cn("cursor-pointer text-sm font-medium", task.completed && "text-muted-foreground line-through")}
+                    >
                       {task.titleZh}
-                    </span>
+                    </label>
                     <span className="text-xs leading-relaxed text-muted-foreground">{task.descriptionZh}</span>
                     <div className="flex items-center gap-2 pt-1">
                       <Badge variant="outline">{practiceTypeLabel(task.practiceType, language)}</Badge>
@@ -154,7 +158,7 @@ export function LearningPlanCard({
                       {isExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
                     </Button>
                   )}
-                </label>
+                </div>
                 {isExpanded && hasExercises && (
                   <div className="flex flex-col gap-2 border-t border-border/60 p-3">
                     {task.exercises.map((ex, i) => (

@@ -14,15 +14,17 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { EmptyState } from "@/components/empty-state"
 import { NoteCard } from "@/components/note-card"
 import { useLanguage } from "@/components/language-provider"
+import { AsyncErrorState, useLoadingTimeout } from "@/components/async-state"
 
 const notebookTabClass = "h-auto min-h-10 w-full flex-none gap-1 px-2 py-1.5 text-xs whitespace-nowrap [overflow-wrap:normal] sm:text-sm"
 const notebookCountClass = "ml-0.5 px-1.5 tabular-nums"
 
 export default function NotebookPage() {
-  const { data, isLoading } = useSWR("notes", () => getNotes())
+  const { data, isLoading, error, mutate: retryNotes } = useSWR("notes", () => getNotes(), { keepPreviousData: true })
   const notes = data?.notes ?? []
   const { language, t } = useLanguage()
   const [noteView, setNoteView] = useState<"current" | "previous" | "all">("current")
+  const timedOut = useLoadingTimeout(isLoading && !data)
 
   const currentNotes = notes.filter((note) => note.learningState !== "previous")
   const previousNotes = notes.filter((note) => note.learningState === "previous")
@@ -126,7 +128,11 @@ export default function NotebookPage() {
         </p>
       </header>
 
-      {isLoading ? (
+      {error && data ? <AsyncErrorState feature="notebook" error={error} onRetry={retryNotes} compact /> : null}
+
+      {(timedOut || error) && !data ? (
+        <AsyncErrorState feature="notebook" error={error} timedOut={timedOut} onRetry={retryNotes} />
+      ) : isLoading && !data ? (
         <div className="flex flex-col gap-4">
           <Skeleton className="h-10 w-64 rounded-lg" />
           <Skeleton className="h-40 w-full rounded-xl" />

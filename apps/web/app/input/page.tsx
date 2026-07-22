@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import useSWR, { mutate } from "swr"
 import { toast } from "sonner"
 import {
@@ -44,8 +44,20 @@ import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
+import { AsyncErrorState, useLoadingTimeout } from "@/components/async-state"
+import { finishTaskResume, loadTaskResume, startTaskResume, updateTaskResume } from "@/lib/task-resume"
 
 type InputFlow = "capture" | "mission"
+
+interface InputDraft {
+  flow: InputFlow
+  sourceType: InputLearningSourceType
+  title: string
+  content: string
+  notes: string
+  goal: string
+  targetItemCount: number
+}
 
 const SOURCE_TYPES: InputLearningSourceType[] = [
   "series",
@@ -96,11 +108,11 @@ export default function InputLearningPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const resultRef = useRef<HTMLDivElement>(null)
 
-  const { data: historyData, isLoading: historyLoading } = useSWR(
+  const { data: historyData, isLoading: historyLoading, error: historyError, mutate: retryHistory } = useSWR(
     "input-learning:sources",
     getInputLearningSources,
   )
-  const { data: selectedSource, isLoading: detailLoading } = useSWR(
+  const { data: selectedSource, isLoading: detailLoading, error: detailError, mutate: retryDetail } = useSWR(
     selectedSourceId ? ["input-learning:source", selectedSourceId] : null,
     ([, id]) => getInputLearningSource(id),
     {
@@ -113,6 +125,45 @@ export default function InputLearningPage() {
   const selectedLabel = t.inputLearning.sourceTypes[sourceType]
   const inputLength = content.trim().length
   const isCapture = flow === "capture"
+  const historyTimedOut = useLoadingTimeout(historyLoading && !historyData)
+  const detailTimedOut = useLoadingTimeout(detailLoading && !selectedSource && !latestSource)
+
+  useEffect(() => {
+    const resume = loadTaskResume()
+    if (resume?.feature !== "input" || !resume.draft || typeof resume.draft !== "object") return
+    const restored = resume.draft as InputDraft
+    const timer = window.setTimeout(() => {
+      setFlow(restored.flow)
+      setSourceType(restored.sourceType)
+      setTitle(restored.title)
+      setContent(restored.content)
+      setNotes(restored.notes)
+      setGoal(restored.goal)
+      setTargetItemCount(restored.targetItemCount)
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  useEffect(() => {
+    if (!title.trim() && !content.trim() && !notes.trim() && !goal.trim()) return
+    const timer = window.setTimeout(() => {
+      const draft: InputDraft = { flow, sourceType, title, content, notes, goal, targetItemCount }
+      const current = loadTaskResume()
+      if (current?.feature === "input") {
+        updateTaskResume({ step: flow, draft }, { feature: "input", taskId: current.taskId })
+      } else {
+        startTaskResume({
+          feature: "input",
+          href: "/input",
+          taskId: `input-${Date.now()}`,
+          title: title.trim() || (language === "zh-CN" ? "输入学习草稿" : "Input learning draft"),
+          step: flow,
+          draft,
+        })
+      }
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [content, flow, goal, language, notes, sourceType, targetItemCount, title])
 
   const historyGroups = useMemo(() => {
     return sources.reduce<Record<string, InputLearningSource[]>>((groups, source) => {
@@ -152,6 +203,7 @@ export default function InputLearningPage() {
         targetItemCount,
       })
       setLatestSource(source)
+      finishTaskResume("input", "completed")
       setSelectedSourceId(null)
       await mutate("input-learning:sources")
       toast.success(isCapture ? t.inputLearning.createdCapture : t.inputLearning.createdMission)
@@ -404,7 +456,9 @@ export default function InputLearningPage() {
       </section>
 
       <div ref={resultRef} className="scroll-mt-24">
-        {detailLoading && !latestSource ? (
+        {(detailTimedOut || detailError) && !latestSource && !selectedSource ? (
+          <AsyncErrorState feature="input-detail" error={detailError} timedOut={detailTimedOut} onRetry={retryDetail} />
+        ) : detailLoading && !latestSource ? (
           <ResultSkeleton />
         ) : visibleSource ? (
           <InputLearningPack
@@ -427,7 +481,10 @@ export default function InputLearningPage() {
           {sources.length > 0 && <Badge variant="secondary">{sources.length}</Badge>}
         </div>
 
-        {historyLoading ? (
+        {historyError && historyData ? <AsyncErrorState feature="input-history" error={historyError} onRetry={retryHistory} compact /> : null}
+        {(historyTimedOut || historyError) && !historyData ? (
+          <AsyncErrorState feature="input-history" error={historyError} timedOut={historyTimedOut} onRetry={retryHistory} />
+        ) : historyLoading && !historyData ? (
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
             {[0, 1, 2].map((item) => <Skeleton key={item} className="h-32 rounded-xl" />)}
           </div>

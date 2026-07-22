@@ -17,11 +17,19 @@ import { SkillBarChart } from "@/components/skill-bar-chart"
 import { WeaknessRadar } from "@/components/weakness-radar"
 import type { CEFRLevel } from "@/lib/types"
 import { useLanguage } from "@/components/language-provider"
+import { AsyncErrorState, useLoadingTimeout } from "@/components/async-state"
 
 export default function DashboardPage() {
-  const { data, isLoading } = useSWR("profile", () => getProfile())
-  const { data: learning, isLoading: learningLoading } = useSWR("learning-overview", getLearningOverview)
+  const { data, isLoading, error, mutate: retryProfile } = useSWR("profile", () => getProfile(), { keepPreviousData: true })
+  const {
+    data: learning,
+    isLoading: learningLoading,
+    error: learningError,
+    mutate: retryLearning,
+  } = useSWR("learning-overview", getLearningOverview, { keepPreviousData: true })
   const { language, t } = useLanguage()
+  const profileTimedOut = useLoadingTimeout(isLoading && !data)
+  const learningTimedOut = useLoadingTimeout(learningLoading && !learning)
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
@@ -30,8 +38,13 @@ export default function DashboardPage() {
         <p className="text-muted-foreground">{t.dashboard.description}</p>
       </header>
 
+      {error && data ? <AsyncErrorState feature="dashboard-profile" error={error} onRetry={retryProfile} compact /> : null}
+      {learningError && learning ? <AsyncErrorState feature="dashboard-evidence" error={learningError} onRetry={retryLearning} compact /> : null}
+
       {/* Stat cards */}
-      {isLoading || !data ? (
+      {(profileTimedOut || error) && !data ? (
+        <AsyncErrorState feature="dashboard-profile" error={error} timedOut={profileTimedOut} onRetry={retryProfile} />
+      ) : isLoading || !data ? (
         <CardsLoading count={3} />
       ) : (
         <div className="grid gap-4 sm:grid-cols-3">
@@ -62,7 +75,9 @@ export default function DashboardPage() {
           <CardDescription>{t.dashboard.evidenceModelDescription}</CardDescription>
         </CardHeader>
         <CardContent>
-          {learningLoading || !learning ? (
+          {(learningTimedOut || learningError) && !learning ? (
+            <AsyncErrorState feature="dashboard-evidence" error={learningError} timedOut={learningTimedOut} onRetry={retryLearning} />
+          ) : learningLoading || !learning ? (
             <Skeleton className="h-72 w-full rounded-xl" />
           ) : (() => {
             const enough = learning.states.filter((state) => state.coverageStatus === "enough_evidence").length
@@ -122,7 +137,9 @@ export default function DashboardPage() {
           <CardDescription>{t.dashboard.modelDescription}</CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading || !data ? (
+          {(profileTimedOut || error) && !data ? (
+            <AsyncErrorState feature="dashboard-profile-chart" error={error} timedOut={profileTimedOut} onRetry={retryProfile} />
+          ) : isLoading || !data ? (
             <Skeleton className="h-72 w-full rounded-xl" />
           ) : (
             <Tabs defaultValue="bar">

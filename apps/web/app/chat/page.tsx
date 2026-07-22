@@ -12,7 +12,7 @@ import {
   MessageCircle,
   Mic,
   Plus,
-  RefreshCw,
+  Sparkles,
   WandSparkles,
 } from "lucide-react"
 import {
@@ -20,7 +20,6 @@ import {
   createChatSession,
   getChatMessages,
   getChatSessions,
-  getServerLLMModels,
   generateCoachMission,
   saveChatSelectionToNote,
   sendChatMessage,
@@ -29,22 +28,9 @@ import { DEMO_USER_ID } from "@/lib/mock-data"
 import type {
   ChatMessage,
   ChatSession,
-  CoachGenerationMode,
   SessionAnalysis,
   StealthPracticeResult,
-  TextChatModelMode,
 } from "@/lib/types"
-import {
-  DEFAULT_SERVER_DEEP_MODEL_ID,
-  DEFAULT_SERVER_FAST_MODEL_ID,
-  formatServerModelSelection,
-  loadLLMSettings,
-  LLM_SETTINGS_CHANGE_EVENT,
-  normalizeServerModelSettings,
-  saveLLMSettings,
-  serverModelsForMode,
-  type ServerLLMModel,
-} from "@/lib/llm-settings"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -56,14 +42,16 @@ import { cn } from "@/lib/utils"
 import { shouldSendFromChatComposer } from "@/lib/chat-composer"
 import { useLanguage } from "@/components/language-provider"
 import { setVoiceNavigationLocked } from "@/lib/voice-navigation-guard"
+import { AsyncErrorState, useLoadingTimeout } from "@/components/async-state"
+import {
+  finishTaskResume,
+  loadTaskResume,
+  startTaskResume,
+  updateTaskResume,
+} from "@/lib/task-resume"
 
 type ChatMode = "text" | "voice"
 type ViewState = "chat" | "analyzing" | "summary"
-
-function formatTextModel(model: string | null | undefined, models: ServerLLMModel[]) {
-  if (!model) return "Server default"
-  return models.find((option) => option.model === model)?.label ?? model
-}
 
 function withSessionStarter(session: ChatSession, messages: ChatMessage[]): ChatMessage[] {
   const starter = session.starterMessage?.trim()
@@ -100,19 +88,9 @@ export default function ChatPage() {
   const [input, setInput] = useState("")
   const [sending, setSending] = useState(false)
   const [loadingSessions, setLoadingSessions] = useState(true)
+  const [sessionsError, setSessionsError] = useState<unknown>(null)
   const [creatingSession, setCreatingSession] = useState(false)
   const [mode, setMode] = useState<ChatMode>("voice")
-  const [serverModels, setServerModels] = useState<ServerLLMModel[]>([])
-  const [loadingModels, setLoadingModels] = useState(true)
-  const [modelsError, setModelsError] = useState(false)
-  const [selectedServerDeepModelId, setSelectedServerDeepModelId] = useState(
-    () => loadLLMSettings().serverDeepModelId || DEFAULT_SERVER_DEEP_MODEL_ID,
-  )
-  const [selectedServerFastModelId, setSelectedServerFastModelId] = useState(
-    () => loadLLMSettings().serverFastModelId || DEFAULT_SERVER_FAST_MODEL_ID,
-  )
-  const [sceneGenerationMode, setSceneGenerationMode] = useState<CoachGenerationMode>("deep")
-  const [textChatModelMode, setTextChatModelMode] = useState<TextChatModelMode>("fast")
   const [viewState, setViewState] = useState<ViewState>("chat")
   const [analysis, setAnalysis] = useState<SessionAnalysis | null>(null)
   const [analyzingSessionIds, setAnalyzingSessionIds] = useState<Set<string>>(() => new Set())
@@ -121,13 +99,17 @@ export default function ChatPage() {
   const [voiceLifecycle, setVoiceLifecycle] = useState<VoiceChatLifecycle>({ active: false, pending: false })
   const [chatSelection, setChatSelection] = useState<{ messageId: string; text: string } | null>(null)
   const [savingSelectionFor, setSavingSelectionFor] = useState<string | null>(null)
-  const { t } = useLanguage()
+  const { language, t } = useLanguage()
+  const sessionsTimedOut = useLoadingTimeout(loadingSessions)
+  const sceneGenerationMode = "deep" as const
+  const textChatModelMode = "fast" as const
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const sessionSelectionRef = useRef(0)
   const activeSessionIdRef = useRef<string | null>(null)
   const analysisInFlightRef = useRef<Set<string>>(new Set())
+  const resumeAttemptedRef = useRef(false)
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -183,88 +165,41 @@ export default function ChatPage() {
   }, [input])
 
   useEffect(() => {
-    getChatSessions(DEMO_USER_ID)
-      .then(setSessions)
-      .catch(() => {})
-      .finally(() => setLoadingSessions(false))
-  }, [])
+    if (!activeSession) return
+    const timer = window.setTimeout(() => {
+      updateTaskResume(
+        { draft: input, step: viewState === "chat" ? "conversation" : viewState },
+        { feature: "chat", taskId: activeSession.id },
+      )
+    }, 180)
+    return () => window.clearTimeout(timer)
+  }, [activeSession, input, viewState])
 
-  async function retryServerModels() {
-    setLoadingModels(true)
-    setModelsError(false)
+  const loadSessions = useCallback(async () => {
+    setLoadingSessions(true)
+    setSessionsError(null)
     try {
-      const models = await getServerLLMModels()
-      if (models.length === 0) throw new Error("No server models available.")
-      setServerModels(models)
-      const normalized = normalizeServerModelSettings(loadLLMSettings(), models)
-      setSelectedServerDeepModelId(normalized.serverDeepModelId)
-      setSelectedServerFastModelId(normalized.serverFastModelId)
-    } catch {
-      setServerModels([])
-      setModelsError(true)
+      setSessions(await getChatSessions(DEMO_USER_ID))
+      return true
+    } catch (error) {
+      setSessionsError(error)
+      return false
     } finally {
-      setLoadingModels(false)
-    }
-  }
-
-  useEffect(() => {
-    let active = true
-    void getServerLLMModels()
-      .then((models) => {
-        if (!active) return
-        if (models.length === 0) throw new Error("No server models available.")
-        setServerModels(models)
-        const normalized = normalizeServerModelSettings(loadLLMSettings(), models)
-        setSelectedServerDeepModelId(normalized.serverDeepModelId)
-        setSelectedServerFastModelId(normalized.serverFastModelId)
-      })
-      .catch(() => {
-        if (!active) return
-        setServerModels([])
-        setModelsError(true)
-      })
-      .finally(() => {
-        if (active) setLoadingModels(false)
-      })
-    return () => {
-      active = false
+      setLoadingSessions(false)
     }
   }, [])
 
   useEffect(() => {
-    const syncServerModel = () => {
-      const settings = loadLLMSettings()
-      setSelectedServerDeepModelId(settings.serverDeepModelId || DEFAULT_SERVER_DEEP_MODEL_ID)
-      setSelectedServerFastModelId(settings.serverFastModelId || DEFAULT_SERVER_FAST_MODEL_ID)
-    }
-    window.addEventListener(LLM_SETTINGS_CHANGE_EVENT, syncServerModel)
-    return () => window.removeEventListener(LLM_SETTINGS_CHANGE_EVENT, syncServerModel)
-  }, [])
+    const timer = window.setTimeout(() => void loadSessions(), 0)
+    return () => window.clearTimeout(timer)
+  }, [loadSessions])
 
-  const deepServerModels = serverModelsForMode(serverModels, "deep")
-  const fastServerModels = serverModelsForMode(serverModels, "fast")
-  const selectedDeepServerModel = deepServerModels.find((model) => model.id === selectedServerDeepModelId)
-  const selectedFastServerModel = fastServerModels.find((model) => model.id === selectedServerFastModelId)
   const voiceNavigationLocked = voiceLifecycle.active || voiceLifecycle.pending
 
   useEffect(() => {
     setVoiceNavigationLocked(voiceNavigationLocked)
     return () => setVoiceNavigationLocked(false)
   }, [voiceNavigationLocked])
-
-  function selectServerModel(mode: "deep" | "fast", serverModelId: string) {
-    const current = loadLLMSettings()
-    const next = {
-      ...current,
-      [mode === "deep" ? "serverDeepModelId" : "serverFastModelId"]: serverModelId,
-      apiKey: "",
-      model: "",
-      fastModel: "",
-    }
-    saveLLMSettings(next)
-    setSelectedServerDeepModelId(next.serverDeepModelId)
-    setSelectedServerFastModelId(next.serverFastModelId)
-  }
 
   function resetSession() {
     sessionSelectionRef.current += 1
@@ -285,6 +220,10 @@ export default function ChatPage() {
 
     if (activeSessionIdRef.current === viewSessionId) {
       setViewState("analyzing")
+      updateTaskResume(
+        { step: "analyzing" },
+        { feature: "chat", taskId: sessionId },
+      )
       setAnalysis(null)
       setStealthPractice(null)
       setStealthPractices([])
@@ -317,6 +256,7 @@ export default function ChatPage() {
         setStealthPractice(result.stealthPractice ?? null)
         setStealthPractices(practiceResults)
         setViewState("summary")
+        finishTaskResume("chat", "completed")
       }
     } catch {
       toast.error(t.chat.analyzeFailed)
@@ -356,6 +296,14 @@ export default function ChatPage() {
       setAnalysis(null)
       setStealthPractice(null)
       setStealthPractices([])
+      startTaskResume({
+        feature: "chat",
+        href: "/chat",
+        taskId: session.id,
+        title: session.topic || t.chat.freeChat,
+        step: "conversation",
+        draft: "",
+      })
     } catch {
       toast.error(t.chat.createFailed)
     } finally {
@@ -402,6 +350,14 @@ export default function ChatPage() {
       setAnalysis(null)
       setStealthPractice(null)
       setStealthPractices([])
+      startTaskResume({
+        feature: "chat",
+        href: "/chat",
+        taskId: session.id,
+        title: mission.title,
+        step: "conversation",
+        draft: "",
+      })
     } catch {
       toast.error(t.chat.dynamicCreateFailed)
     } finally {
@@ -421,10 +377,10 @@ export default function ChatPage() {
     const selectionId = ++sessionSelectionRef.current
     activeSessionIdRef.current = session.id
     setActiveSession(session)
-    if (session.textModelMode) setTextChatModelMode(session.textModelMode)
     setMode(session.mode === "voice" ? "voice" : "text")
     setMessages([])
-    setInput("")
+    const resume = loadTaskResume()
+    setInput(resume?.feature === "chat" && resume.taskId === session.id && typeof resume.draft === "string" ? resume.draft : "")
     setViewState(session.analysis ? "summary" : analyzingSessionIds.has(session.id) ? "analyzing" : "chat")
     setAnalysis(session.analysis ?? null)
     setStealthPractice(session.stealthPractice ?? null)
@@ -433,7 +389,6 @@ export default function ChatPage() {
       const { session: refreshedSession, messages: msgs } = await getChatMessages(session.id, DEMO_USER_ID)
       if (sessionSelectionRef.current !== selectionId) return
       setActiveSession(refreshedSession)
-      if (refreshedSession.textModelMode) setTextChatModelMode(refreshedSession.textModelMode)
       setSessions((current) => current.map((item) => item.id === refreshedSession.id ? refreshedSession : item))
       setMode(refreshedSession.mode === "voice" ? "voice" : "text")
       setMessages(withSessionStarter(refreshedSession, msgs))
@@ -450,11 +405,35 @@ export default function ChatPage() {
         refreshedSession.stealthPractices
           ?? (refreshedSession.stealthPractice ? [refreshedSession.stealthPractice] : []),
       )
+      if (!refreshedSession.analysis) {
+        startTaskResume({
+          feature: "chat",
+          href: "/chat",
+          taskId: refreshedSession.id,
+          title: refreshedSession.topic || t.chat.freeChat,
+          step: analysisInFlightRef.current.has(refreshedSession.id) ? "analyzing" : "conversation",
+          draft: resume?.feature === "chat" && resume.taskId === refreshedSession.id ? resume.draft : "",
+        })
+      }
     } catch {
       if (sessionSelectionRef.current !== selectionId) return
       toast.error(t.chat.loadFailed)
     }
   }
+
+  useEffect(() => {
+    if (loadingSessions || resumeAttemptedRef.current) return
+    resumeAttemptedRef.current = true
+    const resume = loadTaskResume()
+    if (resume?.feature !== "chat") return
+    const session = sessions.find((item) => item.id === resume.taskId)
+    const timer = session ? window.setTimeout(() => void handleSelectSession(session), 0) : null
+    return () => {
+      if (timer !== null) window.clearTimeout(timer)
+    }
+    // The session list is the resume boundary; handleSelectSession is a local action.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadingSessions, sessions])
 
   async function handleSend() {
     if (!input.trim() || !activeSession || sending) return
@@ -561,107 +540,20 @@ export default function ChatPage() {
             <h1 className="font-heading text-3xl font-bold tracking-tight">{t.chat.title}</h1>
             <p className="text-muted-foreground">{t.chat.description}</p>
           </div>
-          <details className="group w-full min-w-0 rounded-xl border border-border/70 bg-muted/20 p-3 text-xs font-medium text-muted-foreground">
-            <summary className="cursor-pointer list-none outline-none transition group-open:mb-3 group-open:text-foreground">
-              {t.settings.serverModel}
-            </summary>
-            <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-              <label className="grid min-w-0 gap-1">
-                <span>{t.settings.deepModel}</span>
-                <select
-                  aria-label={t.settings.deepModel}
-                  value={selectedServerDeepModelId}
-                  onChange={(event) => selectServerModel("deep", event.target.value)}
-                  disabled={loadingModels && serverModels.length === 0}
-                  title={selectedDeepServerModel ? formatServerModelSelection(selectedDeepServerModel) : selectedServerDeepModelId}
-                  className="h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 pr-8 text-sm font-medium text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-60"
-                >
-                  {loadingModels && serverModels.length === 0 ? (
-                    <option value={selectedServerDeepModelId}>{t.settings.serverModelsLoading}</option>
-                  ) : deepServerModels.length === 0 ? (
-                    <option value={selectedServerDeepModelId}>{selectedServerDeepModelId}</option>
-                  ) : (
-                    deepServerModels.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {formatServerModelSelection(model)}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </label>
-              <label className="grid min-w-0 gap-1">
-                <span>{t.settings.fastModel}</span>
-                <select
-                  aria-label={t.settings.fastModel}
-                  value={selectedServerFastModelId}
-                  onChange={(event) => selectServerModel("fast", event.target.value)}
-                  disabled={loadingModels && serverModels.length === 0}
-                  title={selectedFastServerModel ? formatServerModelSelection(selectedFastServerModel) : selectedServerFastModelId}
-                  className="h-10 w-full min-w-0 rounded-lg border border-border bg-background px-3 pr-8 text-sm font-medium text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-60"
-                >
-                  {loadingModels && serverModels.length === 0 ? (
-                    <option value={selectedServerFastModelId}>{t.settings.serverModelsLoading}</option>
-                  ) : fastServerModels.length === 0 ? (
-                    <option value={selectedServerFastModelId}>{selectedServerFastModelId}</option>
-                  ) : (
-                    fastServerModels.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {formatServerModelSelection(model)}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </label>
+          <div className="flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
+            <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
+            <div>
+              <p className="font-medium text-foreground">
+                {language === "zh-CN" ? "模型由任务自动选择" : "Models are selected for the task"}
+              </p>
+              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                {language === "zh-CN"
+                  ? "普通回复保持流畅；场景规划、诊断、评分和总结始终使用深度策略。具体模型可在顶部高级设置中管理。"
+                  : "Everyday replies stay responsive; planning, diagnosis, scoring, and summaries always use the deep strategy. Model IDs remain in Advanced settings."}
+              </p>
             </div>
-            <div className="mt-2 flex justify-end">
-              {modelsError && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  title={t.common.tryAgain}
-                  aria-label={t.common.tryAgain}
-                  onClick={() => void retryServerModels()}
-                >
-                  <RefreshCw />
-                </Button>
-              )}
-            </div>
-            {modelsError && <span className="text-destructive">{t.settings.serverModelsFailed}</span>}
-          </details>
-        </header>
-
-        <div className="flex flex-col gap-3 rounded-xl border border-border/70 bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <span className="text-sm font-medium text-foreground">{t.chat.replyModel}</span>
-            <span className="text-xs text-muted-foreground">{t.chat.replyModelHint}</span>
           </div>
-          <ToggleGroup
-            value={[textChatModelMode]}
-            onValueChange={(values) => {
-              const selected = values[0]
-              if (selected === "fast" || selected === "deep") setTextChatModelMode(selected)
-            }}
-            disabled={creatingSession}
-            className="shrink-0 rounded-lg border border-border bg-background p-0.5"
-            aria-label={t.chat.replyModel}
-          >
-            <ToggleGroupItem
-              value="fast"
-              className="h-8 rounded-md px-3 text-xs"
-              title={`${t.chat.replyFastHint}: ${selectedFastServerModel ? formatServerModelSelection(selectedFastServerModel) : selectedServerFastModelId}`}
-            >
-              {t.chat.sceneGenerationFast}
-            </ToggleGroupItem>
-            <ToggleGroupItem
-              value="deep"
-              className="h-8 rounded-md px-3 text-xs"
-              title={`${t.chat.replyDeepHint}: ${selectedDeepServerModel ? formatServerModelSelection(selectedDeepServerModel) : selectedServerDeepModelId}`}
-            >
-              {t.chat.sceneGenerationDeep}
-            </ToggleGroupItem>
-          </ToggleGroup>
-        </div>
+        </header>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Card className="overflow-hidden border-primary/25 bg-primary/7 transition-all hover:border-primary/45 hover:shadow-md sm:col-span-2 lg:col-span-3">
@@ -682,34 +574,10 @@ export default function ChatPage() {
                   <span className="mt-0.5 block text-sm leading-relaxed text-muted-foreground">{t.chat.scenarios.dynamic[1]}</span>
                 </span>
               </button>
-              <div className="flex shrink-0 items-center justify-between gap-3 border-t border-primary/15 pt-3 sm:flex-col sm:items-end sm:border-t-0 sm:pt-0">
-                <span className="text-xs font-medium text-muted-foreground">{t.chat.sceneGenerationModel}</span>
-                <ToggleGroup
-                  value={[sceneGenerationMode]}
-                  onValueChange={(values) => {
-                    const selected = values[0]
-                    if (selected === "fast" || selected === "deep") setSceneGenerationMode(selected)
-                  }}
-                  disabled={creatingSession}
-                  className="rounded-lg border border-primary/20 bg-background/75 p-0.5"
-                  aria-label={t.chat.sceneGenerationModel}
-                >
-                  <ToggleGroupItem
-                    value="fast"
-                    className="h-8 rounded-md px-3 text-xs"
-                    title={`${t.chat.sceneGenerationFastHint}: ${selectedFastServerModel ? formatServerModelSelection(selectedFastServerModel) : selectedServerFastModelId}`}
-                  >
-                    {t.chat.sceneGenerationFast}
-                  </ToggleGroupItem>
-                  <ToggleGroupItem
-                    value="deep"
-                    className="h-8 rounded-md px-3 text-xs"
-                    title={`${t.chat.sceneGenerationDeepHint}: ${selectedDeepServerModel ? formatServerModelSelection(selectedDeepServerModel) : selectedServerDeepModelId}`}
-                  >
-                    {t.chat.sceneGenerationDeep}
-                  </ToggleGroupItem>
-                </ToggleGroup>
-              </div>
+              <Badge variant="secondary" className="shrink-0">
+                <Sparkles className="size-3.5" />
+                {language === "zh-CN" ? "深度场景规划" : "Deep scene planning"}
+              </Badge>
             </CardContent>
           </Card>
           {SCENARIOS.map((s) => {
@@ -792,11 +660,17 @@ export default function ChatPage() {
           </div>
         )}
 
-        {loadingSessions && (
-          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Spinner className="size-4" /> {t.common.loading}
+        {loadingSessions && !sessionsTimedOut && sessions.length === 0 ? (
+          <div className="grid gap-2" aria-label={t.common.loading}>
+            {[0, 1, 2].map((item) => <div key={item} className="h-16 animate-pulse rounded-xl bg-muted" />)}
           </div>
-        )}
+        ) : null}
+        {loadingSessions && sessionsTimedOut ? (
+          <AsyncErrorState feature="chat-sessions" timedOut onRetry={loadSessions} />
+        ) : null}
+        {!loadingSessions && sessionsError ? (
+          <AsyncErrorState feature="chat-sessions" error={sessionsError} onRetry={loadSessions} compact={sessions.length > 0} />
+        ) : null}
       </div>
     )
   }
@@ -833,15 +707,6 @@ export default function ChatPage() {
           </div>
         </div>
         <div className="flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto sm:justify-end">
-          {viewState === "chat" && mode === "text" && (
-            <Badge
-              variant="secondary"
-              className="hidden h-7 max-w-48 rounded-md px-2.5 text-xs md:inline-flex"
-              title={formatTextModel(activeSession.textModel, serverModels)}
-            >
-              <span className="truncate">{formatTextModel(activeSession.textModel, serverModels)}</span>
-            </Badge>
-          )}
           {viewState === "chat" && (
             <ToggleGroup
               value={[mode]}

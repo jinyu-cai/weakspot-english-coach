@@ -24,6 +24,19 @@ export type SessionWinModel = {
 
 const LAST_WIN_KEY = "weakspot-last-session-win"
 
+export function getRecentSessionWin(): { source: SessionWinSource; at: number } | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = window.localStorage.getItem(LAST_WIN_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { source?: SessionWinSource; at?: number }
+    if (!parsed.source || !parsed.at || !Number.isFinite(parsed.at)) return null
+    return { source: parsed.source, at: parsed.at }
+  } catch {
+    return null
+  }
+}
+
 export function markSessionWin(source: SessionWinSource) {
   if (typeof window === "undefined") return
   try {
