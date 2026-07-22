@@ -18,6 +18,64 @@ Known issues:
 Next step:
 ```
 
+## 2026-07-21 — Task-aware model routing and faster Practice grading
+
+Date: 2026-07-21 PDT
+
+Branch: `fix/task-aware-model-routing` → `main`
+
+GitHub status: PR #78 merged into `main` at
+`b14221d9dde20138e043d595cfcbdb5452e845f0`. Vercel Preview passed, and the
+production site served the release's updated English and Chinese model-setting
+copy.
+
+Deploy status: **frontend and backend LIVE**. The exact merged `apps/api`
+archive with SHA-256
+`2bb3f38900b3cd57c903b5afa001db75dc4ede27272a274d494283dfad7475ae`
+was deployed to `oracle-us-sj`. The production `.env` SHA-256 remained
+`a5cadc0b42b301dd3103f3c88681000d40bbe0690f8dd54cce4d2f4cddeb66e9`,
+and the prior backend remains recoverable at
+`/home/ubuntu/weakspot-backend.rollback-b14221d`.
+
+Summary:
+
+- Added one shared Deep/Fast routing policy for provider-neutral text models.
+- Routed Practice exercise generation to Deep and Practice Submit Answer grading
+  to Fast, capped grading output at 2,048 tokens, and disabled high reasoning on
+  the Fast grading call.
+- Disabled high reasoning across other explicitly Fast paths, including fast
+  diagnosis/import, text chat, completion prediction, and fast Coach generation.
+- Moved the 7-day learning plan and end-of-chat durable learning analysis to
+  Deep because their outputs are complex and update lasting learner state.
+- Made Coach mission generation default to Deep; Chat still permits an explicit
+  Fast scene choice when the learner prioritizes speed.
+- Corrected the AI settings copy so it describes the server-published model
+  catalog instead of claiming that every deployment defaults to Qwen.
+- Added `docs/MODEL_ROUTING.md` as the complete auditable routing matrix.
+
+Tests run:
+
+- `scripts.smoke_test` and `scripts.coach_contract_test` — pass.
+- Full integration, MemoryAgent, stealth/input, and Memory benchmark gates —
+  pass.
+- Dedup/delete, Plan lifecycle, input/output, diagnosis claim, and learning loop
+  gates — pass.
+- Frontend `pnpm exec tsc --noEmit` and `pnpm build` — pass.
+- Vercel Preview — pass; production Practice, Chat, and Vocabulary URLs return
+  HTTP 200.
+- Oracle Docker health, public health, and public model catalog — pass.
+- Production runtime selection confirmed
+  `practiceGeneration=deepseek-v4-pro` and
+  `practiceSubmitGrade=deepseek-v4-flash`.
+
+Known issue: a BYOK configuration without a separate Fast model must reuse its
+primary model for Fast tasks; the server-managed production pair has a distinct
+Flash model and is unaffected.
+
+Next step: Monitor Practice grading latency and disagreement rates; only add a
+Deep fallback for genuinely ambiguous open-ended answers if production evidence
+shows it is necessary.
+
 ## 2026-07-21 — Vocabulary learn-one-word flow
 
 Date: 2026-07-21 PDT
