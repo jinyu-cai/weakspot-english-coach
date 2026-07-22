@@ -242,20 +242,14 @@ export default function CoachPage() {
   const optimisticMessageCounterRef = useRef(0)
   const attemptCompletedRef = useRef(false)
   const timeUpHandledRef = useRef(false)
-  const answerRef = useRef(answer)
   const chatMessagesRef = useRef(chatMessages)
-  const chatSessionRef = useRef(chatSession)
-  const missionRef = useRef(mission)
   const screenRef = useRef(screen)
 
   useEffect(() => {
-    answerRef.current = answer
     chatMessagesRef.current = chatMessages
-    chatSessionRef.current = chatSession
-    missionRef.current = mission
     screenRef.current = screen
     attemptCompletedRef.current = attemptCompleted
-  }, [answer, attemptCompleted, chatMessages, chatSession, mission, screen])
+  }, [attemptCompleted, chatMessages, screen])
 
   const visibleHints = useMemo(
     () => mission?.hints.slice(0, hintLevel) ?? [],
@@ -562,29 +556,11 @@ export default function CoachPage() {
       if (timeUpHandledRef.current || attemptCompletedRef.current) return
       if (screenRef.current !== "active") return
       timeUpHandledRef.current = true
-      stopDictation(true)
-      stopPlayback()
       clearWorkTimer()
       setTimeUp(true)
       toast.message(t.coach.mission.timeUp)
-
-      const currentMission = missionRef.current
-      const text = answerRef.current.trim()
-      const messages = chatMessagesRef.current
-      const session = chatSessionRef.current
-      const userTurns = messages.filter((message) => message.role === "user").length
-
-      // Prefer auto-finishing into feedback when there is enough evidence.
-      if (currentMission?.type === "guided_scene" && session && userTurns > 0) {
-        void finishRoleplay(session)
-        return
-      }
-      if (text.length >= 20) {
-        void submitFreeResponse()
-        return
-      }
-      // Short draft: keep content on screen and let the learner submit manually.
-      // Do not return to setup or wipe the attempt.
+      // This is a soft time target. Keep the learner's draft, conversation,
+      // dictation, and audio state intact; only the learner may end the attempt.
     }
   })
 
@@ -1199,17 +1175,30 @@ export default function CoachPage() {
         <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm">
           <p className="font-medium text-foreground">{t.coach.mission.timeUp}</p>
           <p className="mt-1 text-muted-foreground">{t.coach.mission.timeUpHint}</p>
-          {mission.type !== "guided_scene" && answer.trim().length > 0 ? (
-            <Button
-              className="mt-3"
-              size="sm"
-              onClick={() => void submitFreeResponse({ allowShort: true })}
-              disabled={analyzing || isDictating || isSpeaking}
-            >
-              {analyzing ? <Spinner className="size-4" /> : null}
-              {t.coach.mission.timeUpSubmit}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => setTimeUp(false)}>
+              {t.coach.mission.timeUpContinue}
             </Button>
-          ) : null}
+            {mission.type === "guided_scene" && chatSession && userTurns > 0 ? (
+              <Button
+                size="sm"
+                onClick={() => void finishRoleplay()}
+                disabled={sending || analyzing || isDictating || isSpeaking}
+              >
+                {analyzing ? <Spinner className="size-4" /> : <CheckCircle2 className="size-4" />}
+                {t.coach.mission.timeUpSubmit}
+              </Button>
+            ) : mission.type !== "guided_scene" && answer.trim().length > 0 ? (
+              <Button
+                size="sm"
+                onClick={() => void submitFreeResponse({ allowShort: true })}
+                disabled={analyzing || isDictating || isSpeaking}
+              >
+                {analyzing ? <Spinner className="size-4" /> : <CheckCircle2 className="size-4" />}
+                {t.coach.mission.timeUpSubmit}
+              </Button>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
