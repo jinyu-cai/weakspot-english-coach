@@ -53,6 +53,10 @@ CoachSkillCode = Literal[
 CoachCriterion = Annotated[str, Field(min_length=1, max_length=300)]
 CoachHint = Annotated[str, Field(min_length=1, max_length=500)]
 CoachPlannerEvidence = Annotated[str, Field(min_length=1, max_length=300)]
+CoachVocabularyWord = Annotated[
+    str,
+    Field(min_length=1, max_length=80, pattern=r"^[A-Za-z][A-Za-z'-]*$"),
+]
 
 
 class CoachMissionRequest(BaseModel):
@@ -64,7 +68,22 @@ class CoachMissionRequest(BaseModel):
     generationMode: CoachGenerationMode = "fast"
     runtimeMode: CoachMissionRuntime = "adaptive_planner"
     preferredType: Optional[CoachMissionType] = None
+    excludedVocabulary: list[CoachVocabularyWord] = Field(default_factory=list, max_length=30)
     outputLanguage: OutputLanguage = "en"
+
+    @field_validator("excludedVocabulary", mode="before")
+    @classmethod
+    def normalize_excluded_vocabulary(cls, value: object) -> object:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            return value
+        normalized = [
+            word.strip().lower()
+            for word in value
+            if isinstance(word, str) and word.strip()
+        ]
+        return list(dict.fromkeys(normalized))
 
 
 class CoachSpeechRequest(BaseModel):
@@ -140,6 +159,15 @@ class CoachDecision(BaseModel):
 
 
 class CoachVocabularyTask(BaseModel):
+    targetWord: CoachVocabularyWord
+    wordForms: list[CoachVocabularyWord] = Field(min_length=1, max_length=6)
+    partOfSpeech: str = Field(min_length=1, max_length=80)
+    meaning: str = Field(min_length=1, max_length=600)
+    recognitionTip: str = Field(min_length=1, max_length=600)
+    usageNote: str = Field(min_length=1, max_length=700)
+    collocations: list[CoachCriterion] = Field(min_length=2, max_length=5)
+    exampleSentences: list[CoachHint] = Field(min_length=2, max_length=4)
+    commonMistake: str = Field(min_length=1, max_length=700)
     situation: str = Field(min_length=1, max_length=900)
     communicativeGoal: str = Field(min_length=1, max_length=600)
     audience: str = Field(min_length=1, max_length=300)

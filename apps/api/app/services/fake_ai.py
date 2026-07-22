@@ -424,7 +424,7 @@ def _fake_vocabulary_in_action_content() -> VocabularyInActionMissionAI:
         eyebrow="Vocabulary in action",
         briefing="Use your own words to explain a small delay without sounding vague or defensive.",
         targetSkills=["vocab.word_choice", "style.register", "clarity.expression"],
-        taskPrompt="Write a concise update to the colleague waiting for your work.",
+        taskPrompt="Write a concise update to the colleague waiting for your work and use 'accountable' naturally.",
         successCriteria=[
             "Name the cause precisely",
             "Distinguish a delay from a cancellation",
@@ -436,6 +436,18 @@ def _fake_vocabulary_in_action_content() -> VocabularyInActionMissionAI:
             "Sentence starter: The handoff has been delayed because...",
         ],
         vocabulary=CoachVocabularyTask(
+            targetWord="accountable",
+            wordForms=["accountable"],
+            partOfSpeech="adjective",
+            meaning="Willing to take responsibility for what you do and explain the result.",
+            recognitionTip="When someone is accountable, they do not hide from the result; they own it and explain what happens next.",
+            usageNote="Often used with 'for' to name the result or responsibility: accountable for the delay.",
+            collocations=["be accountable for", "hold someone accountable", "fully accountable"],
+            exampleSentences=[
+                "I am accountable for delivering the revised draft by Friday.",
+                "A good project lead keeps the team informed and remains accountable for the outcome.",
+            ],
+            commonMistake="Do not use accountable to mean only 'reliable.' It specifically includes responsibility for actions or results.",
             situation="A dependency arrived late, so your work will be ready two hours after the original handoff time.",
             communicativeGoal="Explain the delay and set an accurate expectation",
             audience="A colleague waiting to continue the project",
