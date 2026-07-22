@@ -39,6 +39,7 @@ import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
+import { AsyncErrorState, useLoadingTimeout } from "@/components/async-state"
 
 
 const KIND_ICONS = {
@@ -61,9 +62,9 @@ const KIND_STYLES = {
 export default function MemoryPage() {
   const { language, t } = useLanguage()
   const locale = language === "zh-CN" ? "zh-CN" : "en-US"
-  const { data, isLoading } = useSWR("memory:all", () => getMemories("all"))
-  const { data: traces = [] } = useSWR("memory:traces", getMemoryTraces)
-  const { data: decision } = useSWR("memory:decision", getNextActionDecision)
+  const { data, isLoading, error, mutate: retryMemories } = useSWR("memory:all", () => getMemories("all"), { keepPreviousData: true })
+  const { data: traces = [], error: tracesError, mutate: retryTraces } = useSWR("memory:traces", getMemoryTraces, { keepPreviousData: true })
+  const { data: decision, error: decisionError, mutate: retryDecision } = useSWR("memory:decision", getNextActionDecision, { keepPreviousData: true })
   const memories = useMemo(() => data?.memories ?? [], [data?.memories])
   const active = useMemo(
     () => memories.filter((memory) => memory.status === "active"),
@@ -88,6 +89,7 @@ export default function MemoryPage() {
   const [query, setQuery] = useState("")
   const [retrieving, setRetrieving] = useState(false)
   const [preview, setPreview] = useState<MemoryPack | null>(null)
+  const timedOut = useLoadingTimeout(isLoading && !data)
 
   const visible = useMemo(() => {
     if (filter === "active") return active
@@ -183,6 +185,9 @@ export default function MemoryPage() {
         </div>
       </header>
 
+      {error && data ? <AsyncErrorState feature="memory" error={error} onRetry={retryMemories} compact /> : null}
+      {tracesError ? <AsyncErrorState feature="memory-traces" error={tracesError} onRetry={retryTraces} compact /> : null}
+
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <SummaryCard label={t.memory.active} value={active.length} icon={BrainCircuit} />
         <SummaryCard label={t.memory.resolved} value={resolved.length} icon={CheckCircle2} />
@@ -235,7 +240,7 @@ export default function MemoryPage() {
         <Card className="bg-primary/5">
           <CardHeader>
             <CardTitle>{t.memory.nextAction}</CardTitle>
-            <CardDescription>{decision?.reason ?? t.common.loading}</CardDescription>
+            <CardDescription>{decision?.reason ?? (decisionError ? t.memory.failed : t.common.loading)}</CardDescription>
           </CardHeader>
           {decision && (
             <CardContent className="flex flex-col gap-3">
@@ -249,6 +254,11 @@ export default function MemoryPage() {
               </Button>
             </CardContent>
           )}
+          {!decision && decisionError ? (
+            <CardContent>
+              <AsyncErrorState feature="memory-decision" error={decisionError} onRetry={retryDecision} compact />
+            </CardContent>
+          ) : null}
         </Card>
       </section>
 
@@ -269,7 +279,9 @@ export default function MemoryPage() {
           </div>
         </div>
 
-        {isLoading ? (
+        {(timedOut || error) && !data ? (
+          <AsyncErrorState feature="memory" error={error} timedOut={timedOut} onRetry={retryMemories} />
+        ) : isLoading && !data ? (
           <div className="grid gap-4 md:grid-cols-2">
             <Skeleton className="h-52 rounded-xl" />
             <Skeleton className="h-52 rounded-xl" />

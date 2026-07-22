@@ -55,9 +55,9 @@ export const NAV_ITEMS: NavItem[] = [
 // clear path through the product. The order inside each group is intentional:
 // the most useful next action comes first.
 export const NAV_GROUPS: NavGroup[] = [
-  { key: "start", items: ["mission", "diagnose", "chat", "vocabulary", "practice"] },
-  { key: "learn", items: ["input", "inputLab2", "plan", "import"] },
-  { key: "progress", items: ["dashboard", "stats"] },
+  { key: "start", items: ["mission", "diagnose", "chat", "practice", "dashboard"] },
+  { key: "learn", items: ["vocabulary", "input", "inputLab2", "plan", "import"] },
+  { key: "progress", items: ["stats"] },
   { key: "library", items: ["notebook", "history"] },
   { key: "coach", items: ["memory"] },
   { key: "admin", items: ["admin"] },

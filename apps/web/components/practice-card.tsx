@@ -14,6 +14,7 @@ import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
 import { CheckCircle2, XCircle, Lightbulb } from "lucide-react"
 import { useLanguage } from "@/components/language-provider"
+import type { NextExerciseStatus } from "@/lib/use-next-exercise"
 
 type Props = {
   exercise: PracticeExercise
@@ -22,11 +23,25 @@ type Props = {
   onGraded: (grade: PracticeGrade) => void
   onNext: () => void | Promise<void>
   isLast: boolean
+  answer: string
+  onAnswerChange: (answer: string) => void
+  initialGrade?: PracticeGrade | null
+  nextStatus?: NextExerciseStatus
 }
 
-export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast }: Props) {
-  const [answer, setAnswer] = useState("")
-  const [grade, setGrade] = useState<PracticeGrade | null>(null)
+export function PracticeCard({
+  exercise,
+  index,
+  total,
+  onGraded,
+  onNext,
+  isLast,
+  answer,
+  onAnswerChange,
+  initialGrade = null,
+  nextStatus = "idle",
+}: Props) {
+  const [grade, setGrade] = useState<PracticeGrade | null>(initialGrade)
   const [submitting, setSubmitting] = useState(false)
   const [advancing, setAdvancing] = useState(false)
   const clientAttemptIdRef = useRef<string | null>(null)
@@ -86,7 +101,7 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
         <Textarea
           value={answer}
           onChange={(e) => {
-            setAnswer(e.target.value)
+            onAnswerChange(e.target.value)
             clientAttemptIdRef.current = null
           }}
           disabled={!!grade || submitting}
@@ -118,9 +133,15 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
         ) : null}
       </CardContent>
 
-      <CardFooter className="justify-end gap-2">
+      <CardFooter className="flex min-h-14 flex-wrap items-center gap-2">
+        {grade && !isLast && nextStatus !== "idle" ? (
+          <span className="flex items-center gap-2 text-xs text-muted-foreground" role="status" aria-live="polite">
+            {nextStatus === "preparing" ? <Spinner className="size-3.5" /> : <CheckCircle2 className="size-3.5 text-success" />}
+            {nextStatus === "preparing" ? t.common.nextPreparing : t.common.nextReady}
+          </span>
+        ) : null}
         {!grade ? (
-          <Button onClick={handleSubmit} disabled={!canSubmit || submitting}>
+          <Button className="ml-auto" onClick={handleSubmit} disabled={!canSubmit || submitting}>
             {submitting ? (
               <>
                 <Spinner data-icon="inline-start" />
@@ -131,7 +152,7 @@ export function PracticeCard({ exercise, index, total, onGraded, onNext, isLast 
             )}
           </Button>
         ) : (
-          <Button onClick={handleNext} disabled={advancing}>
+          <Button className="ml-auto" onClick={handleNext} disabled={advancing}>
             {advancing ? <Spinner data-icon="inline-start" /> : null}
             {isLast ? t.common.finishSession : t.common.nextQuestion}
           </Button>

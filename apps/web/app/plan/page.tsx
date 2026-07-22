@@ -13,9 +13,10 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { EmptyState } from "@/components/empty-state"
 import { LearningPlanCard } from "@/components/learning-plan-card"
 import { useLanguage } from "@/components/language-provider"
+import { AsyncErrorState, useLoadingTimeout } from "@/components/async-state"
 
 export default function PlanPage() {
-  const { data, isLoading, mutate } = useSWR("plan", () => getPlan())
+  const { data, isLoading, error, mutate } = useSWR("plan", () => getPlan(), { keepPreviousData: true })
   const [plan, setPlan] = useState<LearningPlan | null>(null)
   const [generating, setGenerating] = useState(false)
   const [errorScope, setErrorScope] = useState<PlanErrorScope>("weekly")
@@ -23,6 +24,7 @@ export default function PlanPage() {
   const { t } = useLanguage()
 
   const activePlan = plan ?? data?.plan ?? null
+  const timedOut = useLoadingTimeout(isLoading && !activePlan)
 
   async function handleGenerate() {
     if (generateInFlightRef.current) return
@@ -85,7 +87,13 @@ export default function PlanPage() {
         </div>
       </header>
 
-      {isLoading ? (
+      {error && activePlan ? (
+        <AsyncErrorState feature="plan" error={error} onRetry={() => mutate()} compact />
+      ) : null}
+
+      {(timedOut || error) && !activePlan ? (
+        <AsyncErrorState feature="plan" error={error} timedOut={timedOut} onRetry={() => mutate()} />
+      ) : isLoading && !activePlan ? (
         <div className="flex flex-col gap-4">
           <Skeleton className="h-40 w-full rounded-xl" />
           <Skeleton className="h-40 w-full rounded-xl" />

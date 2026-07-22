@@ -14,6 +14,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } f
 import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useLanguage } from "@/components/language-provider"
+import { AsyncErrorState, useLoadingTimeout } from "@/components/async-state"
 
 const dayFormatter = new Intl.DateTimeFormat("en-US", { weekday: "short" })
 
@@ -34,8 +35,9 @@ function toPercent(progress: number, target: number) {
 
 export default function DailyWinsPage() {
   const timezone = getBrowserTimezone()
-  const { data, isLoading, error } = useSWR(["daily-stats", timezone], () => getDailyStats(DEMO_USER_ID, timezone, 7))
+  const { data, isLoading, error, mutate } = useSWR(["daily-stats", timezone], () => getDailyStats(DEMO_USER_ID, timezone, 7), { keepPreviousData: true })
   const { t } = useLanguage()
+  const timedOut = useLoadingTimeout(isLoading && !data)
   const chartConfig = {
     checkins: {
       label: t.stats.checkins,
@@ -76,16 +78,11 @@ export default function DailyWinsPage() {
         </div>
       </section>
 
-      {error ? (
-        <Card className="border-danger/30">
-          <CardHeader>
-            <CardTitle>{t.stats.errorTitle}</CardTitle>
-            <CardDescription>{error instanceof Error ? error.message : t.stats.errorDescription}</CardDescription>
-          </CardHeader>
-        </Card>
-      ) : null}
+      {error && data ? <AsyncErrorState feature="daily-wins" error={error} onRetry={mutate} compact /> : null}
 
-      {isLoading || !data ? (
+      {(timedOut || error) && !data ? (
+        <AsyncErrorState feature="daily-wins" error={error} timedOut={timedOut} onRetry={mutate} />
+      ) : isLoading || !data ? (
         <LoadingStats />
       ) : (
         <>

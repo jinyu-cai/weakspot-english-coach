@@ -29,6 +29,9 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { EmptyState } from "@/components/empty-state"
 import { ScoreRing } from "@/components/score-ring"
 import { useLanguage } from "@/components/language-provider"
+import { AsyncErrorState, useLoadingTimeout } from "@/components/async-state"
+import { finishTaskResume, loadTaskResume, startTaskResume, updateTaskResume } from "@/lib/task-resume"
+import { useNextExercise, type NextExerciseStatus } from "@/lib/use-next-exercise"
 
 const DEFAULT_SKILL = "grammar.verb_tense"
 
@@ -36,6 +39,14 @@ type RunnerSession = {
   task: LearningPlanTask
   day: LearningPlanDay
   exercises: PlanExercise[]
+}
+
+type PlanPracticeSnapshot = {
+  session: RunnerSession
+  current: number
+  grades: PracticeGrade[]
+  answers: Record<number, string>
+  sessionId: string | null
 }
 
 function findPlanTask(plan: { days: LearningPlanDay[] } | null, taskId: string | null) {
@@ -59,6 +70,10 @@ function RunnerCard({
   onRegenerate,
   regenerating,
   isLast,
+  answer,
+  onAnswerChange,
+  initialGrade,
+  nextStatus,
 }: {
   exercise: PlanExercise
   skillCode: string
@@ -70,9 +85,12 @@ function RunnerCard({
   onRegenerate: () => void
   regenerating: boolean
   isLast: boolean
+  answer: string
+  onAnswerChange: (answer: string) => void
+  initialGrade?: PracticeGrade | null
+  nextStatus?: NextExerciseStatus
 }) {
-  const [answer, setAnswer] = useState("")
-  const [grade, setGrade] = useState<PracticeGrade | null>(null)
+  const [grade, setGrade] = useState<PracticeGrade | null>(initialGrade ?? null)
   const [submitting, setSubmitting] = useState(false)
   const [advancing, setAdvancing] = useState(false)
   const clientAttemptIdRef = useRef<string | null>(null)
@@ -144,7 +162,7 @@ function RunnerCard({
         <Textarea
           value={answer}
           onChange={(e) => {
-            setAnswer(e.target.value)
+            onAnswerChange(e.target.value)
             clientAttemptIdRef.current = null
           }}
           disabled={!!grade || submitting}
@@ -181,9 +199,15 @@ function RunnerCard({
         ) : null}
       </CardContent>
 
-      <CardFooter className="flex flex-wrap justify-end gap-2">
+      <CardFooter className="flex min-h-14 flex-wrap items-center gap-2">
+        {grade && !isLast && nextStatus && nextStatus !== "idle" ? (
+          <span className="flex items-center gap-2 text-xs text-muted-foreground" role="status" aria-live="polite">
+            {nextStatus === "preparing" ? <Spinner className="size-3.5" /> : <CheckCircle2 className="size-3.5 text-success" />}
+            {nextStatus === "preparing" ? t.common.nextPreparing : t.common.nextReady}
+          </span>
+        ) : null}
         {!grade && (
-          <Button variant="outline" onClick={onRegenerate} disabled={submitting || regenerating}>
+          <Button className="ml-auto" variant="outline" onClick={onRegenerate} disabled={submitting || regenerating}>
             {regenerating ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
             {t.plan.newSameType}
           </Button>
@@ -200,7 +224,7 @@ function RunnerCard({
             )}
           </Button>
         ) : (
-          <Button onClick={handleNext} disabled={advancing}>
+          <Button className="ml-auto" onClick={handleNext} disabled={advancing}>
             {advancing ? <Spinner data-icon="inline-start" /> : null}
             {isLast ? t.common.finishSession : t.common.nextQuestion}
           </Button>
@@ -213,7 +237,7 @@ function RunnerCard({
 function PlanPracticeFlow() {
   const searchParams = useSearchParams()
   const taskId = searchParams.get("task")
-  const { data, isLoading } = useSWR("plan", () => getPlan())
+  const { data, isLoading, error, mutate } = useSWR("plan", () => getPlan(), { keepPreviousData: true })
   const plan = data?.plan ?? null
 
   const located = findPlanTask(plan, taskId)
@@ -221,13 +245,21 @@ function PlanPracticeFlow() {
   const [session, setSession] = useState<RunnerSession | null>(null)
   const [current, setCurrent] = useState(0)
   const [grades, setGrades] = useState<PracticeGrade[]>([])
+  const [answers, setAnswers] = useState<Record<number, string>>({})
   const [phase, setPhase] = useState<"active" | "summary">("active")
   const [regenerating, setRegenerating] = useState(false)
   const [generatingBatch, setGeneratingBatch] = useState(false)
   const { language, t } = useLanguage()
+  const timedOut = useLoadingTimeout(isLoading && !data)
 
   const seededRef = useRef<string | null>(null)
   const sessionIdRef = useRef<string | null>(null)
+  const {
+    status: nextStatus,
+    prepare: prepareNext,
+    take: takeNext,
+    reset: resetNext,
+  } = useNextExercise<PlanExercise>()
 
   function mapGeneratedExercise(fresh: PracticeExercise): PlanExercise {
     return {
@@ -243,6 +275,7 @@ function PlanPracticeFlow() {
   async function seedJustInTimeTask(nextLocated: { day: LearningPlanDay; task: LearningPlanTask }) {
     const sessionId = crypto.randomUUID()
     sessionIdRef.current = sessionId
+    resetNext()
     setGeneratingBatch(true)
     try {
       await updatePlanTask(nextLocated.task.id, "started")
@@ -257,18 +290,54 @@ function PlanPracticeFlow() {
         sessionSlot: 0,
         sessionSize,
       })
-      setSession({ task: nextLocated.task, day: nextLocated.day, exercises: [mapGeneratedExercise(fresh)] })
+      const nextSession = { task: nextLocated.task, day: nextLocated.day, exercises: [mapGeneratedExercise(fresh)] }
+      setSession(nextSession)
+      startTaskResume({
+        feature: "practice",
+        href: `/plan/practice?task=${encodeURIComponent(nextLocated.task.id)}`,
+        taskId: `plan:${nextLocated.task.id}`,
+        title: nextLocated.task.titleZh,
+        step: "question-1",
+        draft: { session: nextSession, current: 0, grades: [], answers: {}, sessionId } satisfies PlanPracticeSnapshot,
+      })
     } catch {
-      setSession({
+      const nextSession = {
         task: nextLocated.task,
         day: nextLocated.day,
         exercises: nextLocated.task.exercises ?? [],
+      }
+      setSession(nextSession)
+      startTaskResume({
+        feature: "practice",
+        href: `/plan/practice?task=${encodeURIComponent(nextLocated.task.id)}`,
+        taskId: `plan:${nextLocated.task.id}`,
+        title: nextLocated.task.titleZh,
+        step: "question-1",
+        draft: { session: nextSession, current: 0, grades: [], answers: {}, sessionId } satisfies PlanPracticeSnapshot,
       })
       toast.error(t.plan.freshFailed)
     } finally {
       setGeneratingBatch(false)
     }
   }
+
+  useEffect(() => {
+    if (!taskId) return
+    const resume = loadTaskResume()
+    if (resume?.feature !== "practice" || resume.taskId !== `plan:${taskId}` || !resume.draft || typeof resume.draft !== "object") return
+    const restored = resume.draft as Partial<PlanPracticeSnapshot>
+    if (!restored.session) return
+    seededRef.current = taskId
+    const timer = window.setTimeout(() => {
+      setSession(restored.session ?? null)
+      setCurrent(restored.current ?? 0)
+      setGrades(restored.grades ?? [])
+      setAnswers(restored.answers ?? {})
+      sessionIdRef.current = restored.sessionId ?? null
+      setPhase("active")
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [taskId])
 
   useEffect(() => {
     if (!plan || !taskId || seededRef.current === taskId) return
@@ -279,11 +348,47 @@ function PlanPracticeFlow() {
     setSession({ task: nextLocated.task, day: nextLocated.day, exercises: [] })
     setCurrent(0)
     setGrades([])
+    setAnswers({})
     setPhase("active")
     void seedJustInTimeTask(nextLocated)
   // seedJustInTimeTask intentionally runs once per task id.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plan, taskId])
+
+  useEffect(() => {
+    if (!session || !taskId || phase !== "active") return
+    const timer = window.setTimeout(() => {
+      updateTaskResume(
+        {
+          step: `question-${current + 1}`,
+          draft: { session, current, grades, answers, sessionId: sessionIdRef.current } satisfies PlanPracticeSnapshot,
+        },
+        { feature: "practice", taskId: `plan:${taskId}` },
+      )
+    }, 180)
+    return () => window.clearTimeout(timer)
+  }, [answers, current, grades, phase, session, taskId])
+
+  useEffect(() => {
+    if (!session || phase !== "active" || !grades[current]) return
+    const total = session.task.exercises.length || 3
+    if (current + 1 >= total) return
+    const nextIndex = current + 1
+    if (session.exercises[nextIndex]) return
+    const skillCode = session.day.targetSkillCodes?.[0] ?? DEFAULT_SKILL
+    prepareNext(nextIndex, async () => {
+      const fresh = await generatePractice(DEMO_USER_ID, skillCode, session.task.practiceType, {
+        sessionId: sessionIdRef.current ?? crypto.randomUUID(),
+        sequenceIndex: nextIndex,
+        previousSkillCodes: session.exercises.map(() => skillCode),
+        previousPracticeTypes: session.exercises.map(() => session.task.practiceType),
+        parentRunId: session.task.activityRunId ?? undefined,
+        sessionSlot: nextIndex,
+        sessionSize: total,
+      })
+      return mapGeneratedExercise(fresh)
+    })
+  }, [current, grades, phase, prepareNext, session])
 
   function handleGraded(grade: PracticeGrade) {
     setGrades((prev) => [...prev, grade])
@@ -298,19 +403,28 @@ function PlanPracticeFlow() {
         : undefined
       await updatePlanTask(session.task.id, "completed", average)
       setPhase("summary")
+      finishTaskResume("practice", "completed")
+      return
+    }
+    const nextIndex = current + 1
+    if (session.exercises[nextIndex]) {
+      setCurrent(nextIndex)
       return
     }
     const skillCode = session.day.targetSkillCodes?.[0] ?? DEFAULT_SKILL
-    const next = await generatePractice(DEMO_USER_ID, skillCode, session.task.practiceType, {
-      sessionId: sessionIdRef.current ?? crypto.randomUUID(),
-      sequenceIndex: current + 1,
-      previousSkillCodes: session.exercises.map((item) => skillCode),
-      previousPracticeTypes: session.exercises.map(() => session.task.practiceType),
-      parentRunId: session.task.activityRunId ?? undefined,
-      sessionSlot: current + 1,
-      sessionSize: total,
+    const next = await takeNext(nextIndex, async () => {
+      const fresh = await generatePractice(DEMO_USER_ID, skillCode, session.task.practiceType, {
+        sessionId: sessionIdRef.current ?? crypto.randomUUID(),
+        sequenceIndex: nextIndex,
+        previousSkillCodes: session.exercises.map(() => skillCode),
+        previousPracticeTypes: session.exercises.map(() => session.task.practiceType),
+        parentRunId: session.task.activityRunId ?? undefined,
+        sessionSlot: nextIndex,
+        sessionSize: total,
+      })
+      return mapGeneratedExercise(fresh)
     })
-    setSession((value) => value ? { ...value, exercises: [...value.exercises, mapGeneratedExercise(next)] } : value)
+    setSession((value) => value ? { ...value, exercises: [...value.exercises, next] } : value)
     setCurrent((value) => value + 1)
   }
 
@@ -332,6 +446,7 @@ function PlanPracticeFlow() {
       setSession((prev) =>
         prev ? { ...prev, exercises: prev.exercises.map((ex, i) => (i === current ? mapped : ex)) } : prev,
       )
+      setAnswers((previous) => ({ ...previous, [current]: "" }))
       toast.success(t.plan.freshReady, { description: t.plan.freshDescription })
     } catch {
       toast.error(t.plan.freshFailed)
@@ -348,6 +463,7 @@ function PlanPracticeFlow() {
     try {
       const sessionId = crypto.randomUUID()
       sessionIdRef.current = sessionId
+      resetNext()
       const fresh = await generatePractice(DEMO_USER_ID, skillCode, session.task.practiceType, {
         sessionId,
         sequenceIndex: 0,
@@ -360,7 +476,22 @@ function PlanPracticeFlow() {
       setSession((prev) => (prev ? { ...prev, exercises: [mapGeneratedExercise(fresh)] } : prev))
       setCurrent(0)
       setGrades([])
+      setAnswers({})
       setPhase("active")
+      startTaskResume({
+        feature: "practice",
+        href: `/plan/practice?task=${encodeURIComponent(session.task.id)}`,
+        taskId: `plan:${session.task.id}`,
+        title: session.task.titleZh,
+        step: "question-1",
+        draft: {
+          session: { ...session, exercises: [mapGeneratedExercise(fresh)] },
+          current: 0,
+          grades: [],
+          answers: {},
+          sessionId,
+        } satisfies PlanPracticeSnapshot,
+      })
       toast.success("New questions ready", {
         description: `1 ${practiceTypeLabel(session.task.practiceType, language)} ${t.plan.sameType}`,
       })
@@ -400,6 +531,13 @@ function PlanPracticeFlow() {
   )
 
   if (!session) {
+    if ((timedOut || error) && !data) {
+      return (
+        <div className="mx-auto w-full max-w-2xl">
+          <AsyncErrorState feature="plan-practice" error={error} timedOut={timedOut} onRetry={mutate} />
+        </div>
+      )
+    }
     if (isLoading || located) {
       return (
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
@@ -470,7 +608,7 @@ function PlanPracticeFlow() {
 
   const exercise = sourceExercises[Math.min(current, sourceExercises.length - 1)]
   const expectedTotal = session.task.exercises.length || 3
-  const progress = (current / expectedTotal) * 100
+  const progress = (Math.min(grades.length, expectedTotal) / expectedTotal) * 100
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
@@ -495,6 +633,10 @@ function PlanPracticeFlow() {
         onRegenerate={handleRegenerate}
         regenerating={regenerating}
         isLast={current + 1 >= expectedTotal}
+        answer={answers[current] ?? ""}
+        onAnswerChange={(answer) => setAnswers((previous) => ({ ...previous, [current]: answer }))}
+        initialGrade={grades[current] ?? null}
+        nextStatus={nextStatus}
       />
     </div>
   )

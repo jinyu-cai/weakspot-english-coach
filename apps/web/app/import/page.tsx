@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { AlertTriangle, FileArchive, FileJson, Inbox, ListChecks, Loader2, MessagesSquare, Sparkles, Upload } from "lucide-react"
 import { toast } from "sonner"
 import { analyzeChatImport } from "@/lib/api-client"
@@ -27,10 +27,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { useLanguage } from "@/components/language-provider"
+import { AsyncErrorState, useLoadingTimeout } from "@/components/async-state"
+import { finishTaskResume, loadTaskResume, startTaskResume, updateTaskResume } from "@/lib/task-resume"
 
 const CHAT_IMPORT_BATCH_SIZE = 20
 const CEFR_LEVELS: CEFRLevel[] = ["A1", "A2", "B1", "B2", "C1", "C2"]
 type PartialFailure = { completed: number; total: number; message: string }
+type ImportDraft = {
+  sourceName: string
+  allConversations: ChatImportConversation[]
+  selectedCount: number
+  analysisMode: DiagnosisMode
+  pastedText: string
+}
 
 const severityVariant: Record<Severity, "secondary" | "destructive" | "outline"> = {
   low: "outline",
@@ -43,13 +52,50 @@ export default function ImportPage() {
   const [sourceName, setSourceName] = useState<string>("")
   const [allConversations, setAllConversations] = useState<ChatImportConversation[]>([])
   const [selectedCount, setSelectedCount] = useState(8)
-  const [analysisMode, setAnalysisMode] = useState<DiagnosisMode>("fast")
+  const [analysisMode, setAnalysisMode] = useState<DiagnosisMode>("deep")
   const [pastedText, setPastedText] = useState("")
   const [loading, setLoading] = useState(false)
+  const [actionError, setActionError] = useState<unknown>(null)
   const [analysisProgress, setAnalysisProgress] = useState<{ completed: number; total: number } | null>(null)
   const [result, setResult] = useState<ChatImportAnalyzeResponse | null>(null)
   const [partialFailure, setPartialFailure] = useState<PartialFailure | null>(null)
   const { t } = useLanguage()
+  const timedOut = useLoadingTimeout(loading)
+
+  useEffect(() => {
+    const resume = loadTaskResume()
+    if (resume?.feature !== "import" || !resume.draft || typeof resume.draft !== "object") return
+    const restored = resume.draft as ImportDraft
+    const timer = window.setTimeout(() => {
+      setSourceName(restored.sourceName)
+      setAllConversations(restored.allConversations)
+      setSelectedCount(restored.selectedCount)
+      setAnalysisMode(restored.analysisMode)
+      setPastedText(restored.pastedText)
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  useEffect(() => {
+    if (result || (!pastedText.trim() && allConversations.length === 0)) return
+    const timer = window.setTimeout(() => {
+      const draft: ImportDraft = { sourceName, allConversations, selectedCount, analysisMode, pastedText }
+      const current = loadTaskResume()
+      if (current?.feature === "import") {
+        updateTaskResume({ step: loading ? "analyzing" : "source", draft }, { feature: "import", taskId: current.taskId })
+      } else {
+        startTaskResume({
+          feature: "import",
+          href: "/import",
+          taskId: `import-${Date.now()}`,
+          title: sourceName || "Chat history import",
+          step: loading ? "analyzing" : "source",
+          draft,
+        })
+      }
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [allConversations, analysisMode, loading, pastedText, result, selectedCount, sourceName])
 
   const requestedConversationCount = allConversations.length
     ? Math.min(selectedCount, allConversations.length)
@@ -111,9 +157,10 @@ export default function ImportPage() {
   async function handleAnalyze() {
     if (!selectedConversations.length) {
       toast.error(t.import.noConversations)
-      return
+      return false
     }
     setLoading(true)
+    setActionError(null)
     setResult(null)
     setPartialFailure(null)
     setAnalysisProgress(null)
@@ -140,20 +187,24 @@ export default function ImportPage() {
           toast.warning(t.import.partialComplete, {
             description: `${responses.length}/${batches.length} ${t.import.batchesCompleted}. ${t.import.partialSaved}`,
           })
-          return
+          return false
         }
       }
 
       const response = mergeChatImportResponses(responses)
       setResult(response)
       setPartialFailure(null)
+      finishTaskResume("import", "completed")
       toast.success(t.import.analysisComplete, {
         description: `${response.updatedSkills.length} ${t.import.updatedSkills}`,
       })
+      return true
     } catch (error) {
+      setActionError(error)
       toast.error(t.import.analysisFailed, {
         description: error instanceof Error ? error.message : t.import.tryShortly,
       })
+      return false
     } finally {
       setLoading(false)
       setAnalysisProgress(null)
@@ -311,6 +362,11 @@ export default function ImportPage() {
                   ? `${t.import.analyzingBatch} ${Math.min(analysisProgress.completed + 1, analysisProgress.total)}/${analysisProgress.total}`
                   : t.import.analyze}
               </Button>
+              {loading && timedOut ? (
+                <AsyncErrorState feature="import" timedOut onRetry={handleAnalyze} />
+              ) : actionError ? (
+                <AsyncErrorState feature="import" error={actionError} onRetry={handleAnalyze} />
+              ) : null}
             </CardContent>
           </Card>
         </div>

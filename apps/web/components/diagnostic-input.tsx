@@ -74,7 +74,7 @@ export function DiagnosticInput({
                 type="button"
                 disabled={loading}
                 onClick={() => onChange(EXAMPLE_TEXTS[index] ?? EXAMPLE_TEXTS[0])}
-                className="rounded-full border border-border bg-secondary/65 px-3 py-1.5 text-xs font-medium text-secondary-foreground transition hover:border-primary/35 hover:bg-primary/10 disabled:pointer-events-none disabled:opacity-50"
+                className="min-h-11 rounded-full border border-border bg-secondary/65 px-3 py-2 text-xs font-medium text-secondary-foreground transition hover:border-primary/35 hover:bg-primary/10 disabled:pointer-events-none disabled:opacity-50"
               >
                 {label}
               </button>
@@ -106,7 +106,7 @@ export function DiagnosticInput({
               aria-checked={diagnosisMode === "fast"}
               disabled={loading}
               onClick={() => onDiagnosisModeChange("fast")}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition data-[active=true]:bg-primary data-[active=true]:text-primary-foreground disabled:pointer-events-none disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition data-[active=true]:bg-primary data-[active=true]:text-primary-foreground disabled:pointer-events-none disabled:opacity-50"
               data-active={diagnosisMode === "fast"}
             >
               <Zap className="size-4" />
@@ -118,7 +118,7 @@ export function DiagnosticInput({
               aria-checked={diagnosisMode === "deep"}
               disabled={loading}
               onClick={() => onDiagnosisModeChange("deep")}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition data-[active=true]:bg-primary data-[active=true]:text-primary-foreground disabled:pointer-events-none disabled:opacity-50"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition data-[active=true]:bg-primary data-[active=true]:text-primary-foreground disabled:pointer-events-none disabled:opacity-50"
               data-active={diagnosisMode === "deep"}
             >
               <Microscope className="size-4" />

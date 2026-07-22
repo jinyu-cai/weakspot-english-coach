@@ -12,6 +12,7 @@ import { NavSidebar } from "@/components/nav-sidebar"
 import { AppPreferences } from "@/components/app-preferences"
 import { useLanguage } from "@/components/language-provider"
 import { NAV_ITEMS } from "@/lib/nav"
+import { updateTaskResume, useTaskResume } from "@/lib/task-resume"
 import {
   isVoiceNavigationLocked,
   VOICE_NAVIGATION_LOCK_EVENT,
@@ -73,12 +74,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
   const { t } = useLanguage()
+  const resume = useTaskResume()
+  const resumeFeature = resume?.feature
+  const resumeHref = resume?.href
+  const resumeTaskId = resume?.taskId
+  const resumeScrollY = resume?.scrollY ?? 0
   const activeNavItem = [...NAV_ITEMS]
     .sort((a, b) => b.href.length - a.href.length)
     .find((item) => item.href === "/" ? pathname === "/" : pathname.startsWith(item.href))
   const voiceHistoryGuardRef = useRef<VoiceHistoryGuard | null>(null)
   const historyTrackerRef = useRef({ initialized: false, position: 0 })
   const restoringHistoryRef = useRef(false)
+  const lastResumePathRef = useRef<string | null>(null)
 
   // Tag each in-app history entry with a relative position. replaceState keeps
   // the browser's Back/Forward stack intact; the URL guards against Next.js
@@ -104,6 +111,40 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
     historyTrackerRef.current = { initialized: true, position }
   }, [pathname])
+
+  // Keep the return position with the active learning task. This deliberately
+  // stores only position metadata here; task pages own their drafts and steps.
+  useEffect(() => {
+    if (!resumeFeature || !resumeHref || !resumeTaskId || resumeHref.split("?")[0] !== pathname) return
+    let timer: number | null = null
+    const savePosition = () => {
+      if (timer !== null) window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        updateTaskResume(
+          { scrollY: Math.max(0, Math.round(window.scrollY)) },
+          { feature: resumeFeature, taskId: resumeTaskId },
+        )
+      }, 180)
+    }
+    window.addEventListener("scroll", savePosition, { passive: true })
+    return () => {
+      window.removeEventListener("scroll", savePosition)
+      if (timer !== null) window.clearTimeout(timer)
+    }
+  }, [pathname, resumeFeature, resumeHref, resumeTaskId])
+
+  useEffect(() => {
+    const resumePath = resumeHref?.split("?")[0]
+    if (!resumeTaskId || resumePath !== pathname || resumeScrollY <= 0) {
+      lastResumePathRef.current = pathname
+      return
+    }
+    const cameFromAnotherPage = lastResumePathRef.current !== pathname
+    lastResumePathRef.current = pathname
+    if (!cameFromAnotherPage) return
+    const frame = window.requestAnimationFrame(() => window.scrollTo({ top: resumeScrollY }))
+    return () => window.cancelAnimationFrame(frame)
+  }, [pathname, resumeHref, resumeScrollY, resumeTaskId])
 
   useEffect(() => {
     const warn = () => toast.error(t.chat.voicePanel.finishBeforeLeaving)
