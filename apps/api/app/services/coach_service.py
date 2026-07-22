@@ -29,6 +29,7 @@ from app.models.coach import (
     VocabularyInActionMissionAIResult,
 )
 from app.services.ai_client import LLMProviderConfig, parse_with_model
+from app.services.model_routing import reasoning_effort_for_tier, select_text_model
 from app.services.openai_mission_service import parse_gpt56_mission
 from app.services.output_language import language_instruction
 
@@ -176,22 +177,16 @@ Requirements:
 
 
 def _selected_fast_model(provider: LLMProviderConfig | None) -> str:
-    if provider is not None:
-        return provider.fast_model or provider.model
-    return settings.default_llm_fast_model or settings.default_llm_model
+    return select_text_model("fast", provider)
 
 
 def selected_coach_model(
     req: CoachMissionRequest,
     provider: LLMProviderConfig | None,
 ) -> str:
-    """Use the requested server/BYOK slot; Fast remains the compatibility default."""
+    """Use the requested server/BYOK slot; mission requests default to Deep."""
 
-    if req.generationMode == "deep":
-        if provider is not None:
-            return provider.model
-        return settings.default_llm_model
-    return _selected_fast_model(provider)
+    return select_text_model(req.generationMode, provider)
 
 
 def uses_adaptive_mission_planner(req: CoachMissionRequest) -> bool:
@@ -392,6 +387,7 @@ Allowed first-party picture assets (use only for picture_story):
             model=selected_coach_model(req, llm_provider),
             provider=llm_provider,
             trace_id=trace_id,
+            reasoning_effort=reasoning_effort_for_tier(req.generationMode),
         )
     mission_content = cast(BaseModel, result.mission)
     return _public_response(
@@ -453,5 +449,6 @@ ownerTranscriptJson = {json.dumps(source_script, ensure_ascii=False)}
         model=_selected_fast_model(llm_provider),
         provider=llm_provider,
         trace_id=trace_id,
+        reasoning_effort=reasoning_effort_for_tier("fast"),
     )
     return _public_response(result.mission, req, listening_script=source_script)

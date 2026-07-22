@@ -1,11 +1,11 @@
 import json
 from typing import Literal
 
-from app.config import settings
 from app.models.common import OutputLanguage
 from app.models.diagnostic import DiagnoseLearningContext, DiagnosticAIResult
 from app.services.ai_client import LLMProviderConfig, parse_with_model
 from app.services.memory_service import MEMORY_EXTRACTION_INSTRUCTION
+from app.services.model_routing import reasoning_effort_for_tier, select_text_model
 from app.services.output_language import language_instruction
 
 DiagnosisMode = Literal["fast", "deep"]
@@ -72,14 +72,7 @@ Deep diagnosis mode — be thorough and detailed:
 
 
 def select_diagnose_model(diagnosis_mode: DiagnosisMode, llm_provider: LLMProviderConfig | None = None) -> str:
-    if diagnosis_mode == "fast":
-        if llm_provider is not None:
-            return llm_provider.fast_model or llm_provider.model
-        return settings.default_llm_fast_model or settings.default_llm_model
-
-    if llm_provider is not None:
-        return llm_provider.model
-    return settings.default_llm_model
+    return select_text_model(diagnosis_mode, llm_provider)
 
 
 def build_diagnose_user_prompt(
@@ -159,4 +152,5 @@ def diagnose_english_text(
         model=selected_model,
         provider=llm_provider,
         trace_id=trace_id,
+        reasoning_effort=reasoning_effort_for_tier(diagnosis_mode),
     )

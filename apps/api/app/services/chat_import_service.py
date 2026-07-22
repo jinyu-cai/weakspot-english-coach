@@ -1,11 +1,11 @@
 from typing import Literal
 
-from app.config import settings
 from app.models.common import OutputLanguage
 from app.models.chat_import import ChatImportAIResult, ImportedChatConversation
 from app.services.ai_client import LLMProviderConfig, parse_with_model
-from app.services.output_language import language_instruction
 from app.services.memory_service import MEMORY_EXTRACTION_INSTRUCTION
+from app.services.model_routing import reasoning_effort_for_tier, select_text_model
+from app.services.output_language import language_instruction
 
 AnalysisMode = Literal["fast", "deep"]
 
@@ -95,14 +95,7 @@ def build_chat_transcript(
 
 
 def select_chat_import_model(analysis_mode: AnalysisMode, llm_provider: LLMProviderConfig | None = None) -> str:
-    if analysis_mode == "fast":
-        if llm_provider is not None:
-            return llm_provider.fast_model or llm_provider.model
-        return settings.default_llm_fast_model or settings.default_llm_model
-
-    if llm_provider is not None:
-        return llm_provider.model
-    return settings.default_llm_model
+    return select_text_model(analysis_mode, llm_provider)
 
 
 def analyze_imported_chat(
@@ -147,4 +140,5 @@ def analyze_imported_chat(
         model=selected_model,
         provider=llm_provider,
         trace_id=trace_id,
+        reasoning_effort=reasoning_effort_for_tier(analysis_mode),
     )

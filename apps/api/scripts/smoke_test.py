@@ -126,7 +126,7 @@ def main() -> None:
     print("Diagnose word-count validation OK (minimum 5 meaningful words).")
 
     from app.config import Settings
-    from app.services.ai_client import _provider_connection, _uses_model_studio_qwen
+    from app.services.ai_client import LLMProviderConfig, _provider_connection, _uses_model_studio_qwen
     from app.services.model_catalog import catalog_payload, server_model_by_id, server_model_pair
 
     qwen_settings = Settings(
@@ -172,6 +172,84 @@ def main() -> None:
     assert embedding_only_settings.embedding_api_key == "test-embedding-key"
     assert embedding_only_settings.embedding_base_url == "https://embedding.example/v1"
     print("Qwen Model Studio defaults + safe model catalog + JSON routing OK.")
+
+    # Model routing is part of the product contract: bounded, interactive work
+    # uses Fast without high reasoning, while generative or durable learning
+    # analysis uses Deep.
+    from app.models.coach import CoachMissionRequest
+    from app.services.chat_import_service import select_chat_import_model
+    from app.services.coach_service import selected_coach_model
+    from app.services.diagnose_service import select_diagnose_model
+    from app.services.input_learning_service import select_input_learning_model
+    from app.services.model_routing import reasoning_effort_for_tier
+    from app.services.plan_service import select_plan_generation_model
+    from app.services.practice_service import (
+        generate_practice_exercise,
+        grade_practice,
+        select_practice_generation_model,
+        select_practice_grading_model,
+    )
+    from app.services.session_analysis_service import select_session_analysis_model
+    from app.services import practice_service
+    from app.services.fake_ai import fake_for
+
+    routing_provider = LLMProviderConfig(
+        api_key="deep-key",
+        base_url="https://deep.example/v1",
+        model="deep-model",
+        fast_model="fast-model",
+        fast_api_key="fast-key",
+        fast_base_url="https://fast.example/v1",
+    )
+    assert select_practice_generation_model(routing_provider) == "deep-model"
+    assert select_practice_grading_model(routing_provider) == "fast-model"
+    assert select_plan_generation_model(routing_provider) == "deep-model"
+    assert select_session_analysis_model(routing_provider) == "deep-model"
+    assert select_input_learning_model(routing_provider) == "deep-model"
+    assert select_diagnose_model("fast", routing_provider) == "fast-model"
+    assert select_diagnose_model("deep", routing_provider) == "deep-model"
+    assert select_chat_import_model("fast", routing_provider) == "fast-model"
+    assert select_chat_import_model("deep", routing_provider) == "deep-model"
+    assert CoachMissionRequest().generationMode == "deep"
+    assert selected_coach_model(CoachMissionRequest(), routing_provider) == "deep-model"
+    assert selected_coach_model(
+        CoachMissionRequest(generationMode="fast"), routing_provider
+    ) == "fast-model"
+    assert reasoning_effort_for_tier("fast") is None
+    assert reasoning_effort_for_tier("deep") == "high"
+
+    practice_calls = []
+    original_practice_parse = practice_service.parse_with_model
+
+    def capture_practice_call(**kwargs):
+        practice_calls.append(kwargs)
+        return fake_for(kwargs["response_model"])
+
+    practice_service.parse_with_model = capture_practice_call
+    try:
+        generate_practice_exercise(
+            "grammar.verb_tense",
+            "Verb tense",
+            "B1",
+            [],
+            llm_provider=routing_provider,
+        )
+        grade_practice(
+            "Correct: Yesterday I go home.",
+            "Yesterday I went home.",
+            "Yesterday I went home.",
+            "grammar.verb_tense",
+            llm_provider=routing_provider,
+        )
+    finally:
+        practice_service.parse_with_model = original_practice_parse
+
+    assert practice_calls[0]["model"] == "deep-model"
+    assert practice_calls[0]["reasoning_effort"] == "high"
+    assert practice_calls[1]["model"] == "fast-model"
+    assert practice_calls[1]["reasoning_effort"] is None
+    assert practice_calls[1]["max_tokens"] == 2_048
+    print("Task-aware Deep/Fast routing + Practice grading latency policy OK.")
 
     from app.core.mastery import update_skill_from_error
     from app.db.serialization import clean, to_dynamo

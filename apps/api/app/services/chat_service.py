@@ -3,8 +3,9 @@ from typing import List, Optional
 
 from app.config import settings
 from app.models.chat import ChatPredictionAI, ChatReplyAI
-from app.services.ai_client import LLMProviderConfig, parse_with_model
+from app.services.ai_client import HIGH_REASONING_EFFORT, LLMProviderConfig, parse_with_model
 from app.services.memory_service import MEMORY_EXTRACTION_INSTRUCTION
+from app.services.model_routing import reasoning_effort_for_tier, select_text_model
 
 CHAT_SYSTEM_PROMPT = """\
 You are a friendly, patient English conversation partner for Chinese-speaking learners.
@@ -104,6 +105,7 @@ def chat_reply(
     trace_id: Optional[str] = None,
     memory_context: Optional[str] = None,
     hidden_practice_instruction: Optional[str] = None,
+    reasoning_effort: Optional[str] = HIGH_REASONING_EFFORT,
 ) -> ChatReplyAI:
     messages = build_chat_messages(
         history,
@@ -119,6 +121,7 @@ def chat_reply(
         model=model,
         provider=llm_provider,
         trace_id=trace_id,
+        reasoning_effort=reasoning_effort,
     )
 
 
@@ -161,17 +164,12 @@ def predict_completion(
 ) -> ChatPredictionAI:
     messages = build_predict_messages(history, partial_text, topic)
 
-    fast_model = None
-    if llm_provider and llm_provider.fast_model:
-        fast_model = llm_provider.fast_model
-    elif not llm_provider:
-        fast_model = settings.default_llm_fast_model
-
     return parse_with_model(
         messages=messages,
         response_model=ChatPredictionAI,
         max_tokens=max_tokens,
-        model=fast_model,
+        model=select_text_model("fast", llm_provider),
         provider=llm_provider,
         trace_id=trace_id,
+        reasoning_effort=reasoning_effort_for_tier("fast"),
     )

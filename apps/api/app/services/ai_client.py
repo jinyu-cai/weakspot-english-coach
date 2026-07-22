@@ -103,6 +103,7 @@ def parse_with_model(
     model: Optional[str] = None,
     provider: Optional[LLMProviderConfig] = None,
     trace_id: Optional[str] = None,
+    reasoning_effort: Optional[str] = HIGH_REASONING_EFFORT,
 ) -> T:
     # Local testing: return canned results without calling an external model.
     if settings.use_fake_ai:
@@ -139,11 +140,11 @@ def parse_with_model(
         response_model.__name__,
         len(schema.encode("utf-8")),
         max_tokens if max_tokens is not None else "unlimited",
-        HIGH_REASONING_EFFORT,
+        reasoning_effort or "disabled",
         uses_model_studio_qwen,
     )
 
-    use_reasoning_effort = not uses_model_studio_qwen
+    use_reasoning_effort = bool(reasoning_effort) and not uses_model_studio_qwen
     for attempt in range(1, 3):  # one retry
         attempt_started = time.perf_counter()
         try:
@@ -160,7 +161,7 @@ def parse_with_model(
                 create_kwargs["extra_body"] = {"enable_thinking": False}
             while True:
                 if use_reasoning_effort:
-                    create_kwargs["reasoning_effort"] = HIGH_REASONING_EFFORT
+                    create_kwargs["reasoning_effort"] = reasoning_effort
                 else:
                     create_kwargs.pop("reasoning_effort", None)
                 try:

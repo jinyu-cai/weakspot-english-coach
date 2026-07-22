@@ -65,7 +65,7 @@ class CoachMissionRequest(BaseModel):
     durationMinutes: CoachDurationMinutes = 10
     modality: CoachModality = "text"
     energy: CoachEnergy = "normal"
-    generationMode: CoachGenerationMode = "fast"
+    generationMode: CoachGenerationMode = "deep"
     runtimeMode: CoachMissionRuntime = "adaptive_planner"
     preferredType: Optional[CoachMissionType] = None
     excludedVocabulary: list[CoachVocabularyWord] = Field(default_factory=list, max_length=30)

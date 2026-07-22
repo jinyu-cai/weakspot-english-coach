@@ -1,9 +1,9 @@
 from typing import Optional
 
-from app.config import settings
 from app.models.common import OutputLanguage
 from app.models.plan import LearningPlanAIResult
 from app.services.ai_client import LLMProviderConfig, parse_with_model
+from app.services.model_routing import reasoning_effort_for_tier, select_text_model
 from app.services.output_language import language_instruction
 
 
@@ -39,6 +39,14 @@ Requirements:
 """.strip()
 
 
+def select_plan_generation_model(
+    llm_provider: LLMProviderConfig | None = None,
+) -> str:
+    """A seven-day, 42-exercise plan favors consistency and generation quality."""
+
+    return select_text_model("deep", llm_provider)
+
+
 def generate_learning_plan(
     profile: dict,
     skills: list,
@@ -56,11 +64,6 @@ def generate_learning_plan(
     )
     if memory_context:
         user_prompt += f"\n\n{memory_context}\nUse these memories to honor goals, preferences, and proven learning strategies."
-    selected_fast_model = (
-        (llm_provider.fast_model or llm_provider.model)
-        if llm_provider
-        else (settings.default_llm_fast_model or settings.default_llm_model)
-    )
     effective_max_tokens = min(
         max_output_tokens or PLAN_GENERATION_MAX_TOKENS,
         PLAN_GENERATION_MAX_TOKENS,
@@ -72,7 +75,8 @@ def generate_learning_plan(
         ],
         response_model=LearningPlanAIResult,
         max_tokens=effective_max_tokens,
-        model=selected_fast_model,
+        model=select_plan_generation_model(llm_provider),
         provider=llm_provider,
         trace_id=trace_id,
+        reasoning_effort=reasoning_effort_for_tier("deep"),
     )

@@ -154,14 +154,15 @@ attempt or apply mastery changes twice.
 
 The header AI settings button loads the backend's safe server-model catalog.
 Users independently select a Deep model and a Fast model from the providers
-configured by the backend without receiving an API key. The default pair is
-Qwen 3.7 Max for deep work and Qwen 3.7 Plus for fast work. Either slot can be
-switched to its DeepSeek equivalent, so Qwen/DeepSeek mixed pairs are supported.
+configured by the backend without receiving an API key. The adaptive default
+pair is published by the backend, so deployments may use DeepSeek, Qwen, or
+another configured provider. Mixed-provider pairs are supported when the
+server catalog exposes both providers.
 Loading failures are shown with a retry action. The same pair applies to text
 AI features; the chat page also exposes both selectors before a new
 conversation starts. The dynamic “new AI situation” card has its own Fast/Deep
-generation choice: Fast remains the quick default, while Deep uses the selected
-Deep slot for that new scene scaffold.
+generation choice: Deep is the quality-first default for a coherent scene,
+while Fast remains available when the learner explicitly prioritizes speed.
 
 The optional custom-provider form is BYOK and is stored only in that browser's
 local storage. It overrides the server-model choice until cleared.
