@@ -22,12 +22,19 @@ Next step:
 
 Date: 2026-07-21 PDT
 
-Branch: `feat/vocabulary-learning-flow`
+Branch: `feat/vocabulary-learning-flow` → `main`
 
-GitHub status: Local implementation and validation complete; PR pending.
+GitHub status: PR #75 merged into `main` at
+`059de3e262b2428061fc5d7657565838db62654e`. Vercel Preview and Production
+both completed successfully.
 
-Deploy status: Not deployed yet. This release requires the merged backend on
-the normal Oracle production origin and the matching frontend through Vercel.
+Deploy status: **frontend and backend LIVE**. Vercel Production deployment
+`9qBS95GKorfKZzXfY9ZMhMst6Fu5` published the merged frontend at
+`https://englearning.jinxxx.de`. The exact merged `apps/api` archive with
+SHA-256 `7b7ff2a3a5d84f49c4d88e900ed8438e3db5c9e3a822a336682ba97569333f9a`
+was deployed to `oracle-us-sj`; the existing production `.env` hash matched
+before and after deployment. The prior backend directory is preserved at
+`/home/ubuntu/weakspot-backend.rollback-059de3e-20260722T010536Z`.
 
 Summary:
 
@@ -66,13 +73,19 @@ Tests run:
 - Python compileall and `git diff --check` — pass
 - Local browser QA — all three lesson stages, target-word submit gate, and
   zero console errors passed
+- PR #75 Vercel Preview and merge-commit Vercel Production — pass
+- Oracle Docker rebuild, DynamoDB table/TTL setup, and local health — pass
+- Public API health and production-origin CORS preflight — HTTP 200
+- Public OpenAPI — `excludedVocabulary` plus all 14 target-word teaching fields
+  present and required
+- Production `/vocabulary` browser QA — new learn-one-word entry visible and
+  zero console errors
 
 Known issues: The known-word exclusion list is intentionally browser-local and
 does not synchronize across devices.
 
-Next step: Open and merge the PR, deploy the merged API release to Oracle, let
-Vercel publish `main`, then verify public API health and the live Vocabulary
-flow.
+Next step: Monitor normal production use. Keep Cloudflare on Oracle; Alibaba
+remains unchanged outside its separate planned demo release window.
 
 ## 2026-07-20 — OpenAI Build Week GPT-5.6 Adaptive Mission Planner
 
