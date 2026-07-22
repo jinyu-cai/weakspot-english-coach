@@ -52,6 +52,7 @@ from app.services.memory_service import (
 )
 from app.services.memory_write_service import current_memory_write_claim
 from app.services.learning_service import create_activity_run, record_evidence, update_activity_run
+from app.services.model_routing import reasoning_effort_for_tier, select_text_model
 from app.services.output_language import language_instruction
 
 
@@ -122,9 +123,7 @@ _MISSION_TARGETS = [
 
 
 def select_input_learning_model(llm_provider: Optional[LLMProviderConfig]) -> str:
-    if llm_provider is not None:
-        return llm_provider.model
-    return settings.default_llm_model
+    return select_text_model("deep", llm_provider)
 
 
 def _source_material(req: AnalyzeInputLearningRequest) -> str:
@@ -367,6 +366,7 @@ def _call_model(
         model=select_input_learning_model(llm_provider),
         provider=llm_provider,
         trace_id=trace_id,
+        reasoning_effort=reasoning_effort_for_tier("deep"),
     )
 
 

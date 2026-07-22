@@ -1,11 +1,11 @@
 import json
 from typing import List, Optional
 
-from app.config import settings
 from app.models.common import OutputLanguage
 from app.models.chat import SessionAnalysisAI
 from app.services.ai_client import LLMProviderConfig, parse_with_model
 from app.services.memory_service import MEMORY_EXTRACTION_INSTRUCTION
+from app.services.model_routing import reasoning_effort_for_tier, select_text_model
 from app.services.output_language import language_instruction
 
 
@@ -70,6 +70,14 @@ Return at most 8 `memoryCandidates`. Keep all learner-facing fields concise.
 
 Be encouraging but honest. Include both recurring patterns and isolated slips.
 """
+
+
+def select_session_analysis_model(
+    llm_provider: Optional[LLMProviderConfig] = None,
+) -> str:
+    """Session evidence mutates mastery and memory, so favor analysis quality."""
+
+    return select_text_model("deep", llm_provider)
 
 
 def analyze_session(
@@ -194,12 +202,6 @@ Mission target skills:
         )
     )
 
-    model = None
-    if llm_provider:
-        model = llm_provider.fast_model or llm_provider.model
-    elif settings.default_llm_fast_model:
-        model = settings.default_llm_fast_model
-
     effective_max_tokens = min(
         max_tokens or SESSION_ANALYSIS_MAX_TOKENS,
         SESSION_ANALYSIS_MAX_TOKENS,
@@ -217,9 +219,10 @@ Mission target skills:
         messages=request_messages,
         response_model=SessionAnalysisAI,
         max_tokens=effective_max_tokens,
-        model=model,
+        model=select_session_analysis_model(llm_provider),
         provider=llm_provider,
         trace_id=trace_id,
+        reasoning_effort=reasoning_effort_for_tier("deep"),
     )
     if not active_probes:
         result.stealthProbeAssessments = []

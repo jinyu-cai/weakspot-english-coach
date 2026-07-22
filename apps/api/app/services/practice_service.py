@@ -1,9 +1,11 @@
 from app.models.practice import PracticeExerciseAIResult, PracticeGradeAIResult
 from app.models.common import OutputLanguage
 from app.services.ai_client import LLMProviderConfig, parse_with_model
+from app.services.model_routing import reasoning_effort_for_tier, select_text_model
 from app.services.output_language import language_instruction
 
 PRACTICE_GENERATION_MAX_TOKENS = 4_096
+PRACTICE_GRADING_MAX_TOKENS = 2_048
 
 GENERATE_SYSTEM_PROMPT = """
 You are creating one targeted English exercise for a Chinese native speaker.
@@ -44,6 +46,22 @@ Requirements:
 """.strip()
 
 
+def select_practice_generation_model(
+    llm_provider: LLMProviderConfig | None = None,
+) -> str:
+    """Exercise creation is generative, so preserve the quality-oriented slot."""
+
+    return select_text_model("deep", llm_provider)
+
+
+def select_practice_grading_model(
+    llm_provider: LLMProviderConfig | None = None,
+) -> str:
+    """Structured answer checking is bounded and should return quickly."""
+
+    return select_text_model("fast", llm_provider)
+
+
 def generate_practice_exercise(
     skill_code: str,
     zh_label: str,
@@ -82,7 +100,9 @@ def generate_practice_exercise(
         ],
         response_model=PracticeExerciseAIResult,
         provider=llm_provider,
+        model=select_practice_generation_model(llm_provider),
         max_tokens=PRACTICE_GENERATION_MAX_TOKENS,
+        reasoning_effort=reasoning_effort_for_tier("deep"),
     )
 
 
@@ -107,4 +127,7 @@ def grade_practice(
         ],
         response_model=PracticeGradeAIResult,
         provider=llm_provider,
+        model=select_practice_grading_model(llm_provider),
+        max_tokens=PRACTICE_GRADING_MAX_TOKENS,
+        reasoning_effort=reasoning_effort_for_tier("fast"),
     )

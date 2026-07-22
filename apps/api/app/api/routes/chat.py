@@ -37,6 +37,7 @@ from app.models.learning import CreateActivityRunRequest, RecordEvidenceRequest,
 from app.services.ai_client import LLMProviderConfig
 from app.services.chat_service import chat_reply, predict_completion
 from app.services.model_catalog import server_model_by_id, server_model_for_name, server_model_pair
+from app.services.model_routing import reasoning_effort_for_tier
 from app.services.memory_service import (
     heuristic_memory_candidates,
     memory_candidates_from_errors,
@@ -595,6 +596,9 @@ def send_message(
             trace_id=request_id,
             memory_context=memory_pack.get("text"),
             hidden_practice_instruction=build_stealth_probe_instruction(candidate_stealth_probe),
+            reasoning_effort=reasoning_effort_for_tier(
+                "deep" if session.get("textModelMode") == "deep" else "fast"
+            ),
         )
 
         activated_stealth_probe = None

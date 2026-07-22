@@ -243,10 +243,12 @@ def main() -> int:
             plan_service_module.parse_with_model = original_plan_parse
             session_analysis_service_module.parse_with_model = original_analysis_parse
 
-        assert plan_call["model"] == "fast-model", plan_call
+        assert plan_call["model"] == "deep-model", plan_call
         assert plan_call["max_tokens"] == 12_000, plan_call
-        assert analysis_call["model"] == "fast-model", analysis_call
+        assert plan_call["reasoning_effort"] == "high", plan_call
+        assert analysis_call["model"] == "deep-model", analysis_call
         assert analysis_call["max_tokens"] == 12_000, analysis_call
+        assert analysis_call["reasoning_effort"] == "high", analysis_call
         oversized_analysis = SessionAnalysisAI(
             summaryZh="Bounded",
             strengthsZh=[f"Strength {index}" for index in range(10)],
@@ -254,7 +256,7 @@ def main() -> int:
         )
         assert len(oversized_analysis.strengthsZh) == 5, oversized_analysis
         assert len(oversized_analysis.recommendedNextActionsZh) == 5, oversized_analysis
-        print("   generation routing       -> Fast model + bounded output contracts")
+        print("   quality routing          -> Deep plan/analysis + bounded output contracts")
 
         r = client.get(f"/api/v1/plan/{user}")
         assert r.json()["plan"], "expected active plan"
@@ -348,13 +350,36 @@ def main() -> int:
         print("   oversized decision       -> compact DynamoDB exercise record")
 
         # 5. practice submit
-        r = client.post(
-            "/api/v1/practice/submit",
-            json={"userId": user, "exerciseId": ex["id"], "userAnswer": ex.get("answer") or "test"},
-        )
+        from app.services import practice_service as practice_service_module
+        from app.services.fake_ai import fake_for
+
+        practice_grade_call = {}
+        original_practice_parse = practice_service_module.parse_with_model
+
+        def capture_practice_grade_parse(**kwargs):
+            practice_grade_call.update(kwargs)
+            return fake_for(kwargs["response_model"])
+
+        practice_service_module.parse_with_model = capture_practice_grade_parse
+        try:
+            r = client.post(
+                "/api/v1/practice/submit",
+                json={
+                    "userId": user,
+                    "exerciseId": ex["id"],
+                    "userAnswer": ex.get("answer") or "test",
+                },
+            )
+        finally:
+            practice_service_module.parse_with_model = original_practice_parse
         assert r.status_code == 200, r.text
         g = r.json()
         assert "grade" in g and "updatedSkill" in g, g
+        assert (
+            practice_grade_call["model"] == settings.default_llm_fast_model
+        ), practice_grade_call
+        assert practice_grade_call["reasoning_effort"] is None, practice_grade_call
+        assert practice_grade_call["max_tokens"] == 2_048, practice_grade_call
         print(
             f"5. POST /practice/submit   -> score {g['grade']['score']}, "
             f"mastery {ex['targetSkillCode']} now {g['updatedSkill']['mastery']}"
