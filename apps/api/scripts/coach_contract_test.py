@@ -44,7 +44,12 @@ from app.services.coach_service import (
 from app.services import tts_service
 from app.services import openai_mission_service
 from app.services.fake_ai import fake_for
-from app.services.diagnose_service import build_diagnose_user_prompt
+from app.services.diagnose_service import (
+    DEEP_PROMPT_APPENDIX,
+    FAST_PROMPT_APPENDIX,
+    SYSTEM_PROMPT,
+    build_diagnose_user_prompt,
+)
 
 
 def main() -> None:
@@ -226,6 +231,14 @@ def main() -> None:
     assert "untrusted task context" in contextual_prompt
     assert hostile_context in contextual_prompt
     assert "only source for error spans" in contextual_prompt
+    assert "easy for most native English speakers" in SYSTEM_PROMPT
+    assert "not limited to minimal corrections" in SYSTEM_PROMPT
+    assert "freely replace phrases, reorganize ideas" in SYSTEM_PROMPT
+    assert "choose a conservative interpretation" in SYSTEM_PROMPT
+    assert "may substantially rephrase" in SYSTEM_PROMPT
+    assert "instead of mirroring it word for word" in SYSTEM_PROMPT
+    assert "do not default" in FAST_PROMPT_APPENDIX
+    assert "substantially restructure it" in DEEP_PROMPT_APPENDIX
     assert _language_text_hash("Same answer in a real task.", "en", "Context A") != (
         _language_text_hash("Same answer in a real task.", "en", "Context B")
     )
