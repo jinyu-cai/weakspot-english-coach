@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { CheckCircle2, AlertTriangle, FileText, ListChecks, CircleAlert } from "lucide-react"
+import { CheckCircle2, AlertTriangle, FileText, ListChecks, CircleAlert, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { DiagnosticResult } from "@/lib/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -25,6 +25,12 @@ export function DiagnosticReport({
 }) {
   const [showDiff, setShowDiff] = useState(true)
   const hasDiff = Boolean(originalText) && originalText !== result.correctedText
+  const naturalRewrite = result.naturalRewrite?.trim() ?? ""
+  const showNaturalRewrite = Boolean(
+    naturalRewrite
+      && naturalRewrite !== result.correctedText.trim()
+      && naturalRewrite !== originalText.trim(),
+  )
   const { language, t } = useLanguage()
   const win = useMemo(
     () => sessionWinFromDiagnose(result, t, language),
@@ -128,6 +134,25 @@ export function DiagnosticReport({
           )}
         </CardContent>
       </Card>
+
+      {showNaturalRewrite ? (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Sparkles className="size-5 text-primary" />
+              {t.diagnose.report.naturalExpression}
+            </CardTitle>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {t.diagnose.report.naturalExpressionDescription}
+            </p>
+          </CardHeader>
+          <CardContent>
+            <p className="rounded-xl bg-background/70 p-4 text-sm leading-relaxed text-foreground">
+              {naturalRewrite}
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Error cards */}
       <div className="flex flex-col gap-3">

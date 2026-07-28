@@ -235,6 +235,7 @@ export interface Submission {
   mode: "writing" | "chat" | "practice"
   originalText: string
   correctedText?: string | null
+  naturalRewrite?: string | null
   cefrEstimate?: CEFRLevel | null
   summaryZh?: string | null
   analysisContext?: string | null
@@ -248,6 +249,7 @@ export interface DiagnosticResult {
   strengthsZh: string[]
   weaknessesZh: string[]
   correctedText: string
+  naturalRewrite?: string | null
   errors: EnglishError[]
   skillUpdates: SkillUpdate[]
   recommendedNextActionsZh: string[]

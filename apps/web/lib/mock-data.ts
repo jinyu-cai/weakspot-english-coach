@@ -222,6 +222,11 @@ export const mockDiagnostic: DiagnosticResult = {
     "However, there are many problems we need to solve first. " +
     "My manager says that I should improve my communication skills and write clearer emails. " +
     "I will try my best to do a good job and achieve a good result.",
+  naturalRewrite:
+    "Yesterday, my manager and I met to discuss an exciting new project. " +
+    "Before we can get started, however, we still need to resolve several issues. " +
+    "My manager also encouraged me to communicate more effectively and write clearer emails, " +
+    "so I plan to focus on those skills and contribute as much as I can.",
   errors: mockErrors,
   skillUpdates: [
     {
@@ -260,6 +265,7 @@ export const mockSubmissions: Submission[] = [
     mode: "writing",
     originalText: SAMPLE_PARAGRAPH,
     correctedText: mockDiagnostic.correctedText,
+    naturalRewrite: mockDiagnostic.naturalRewrite,
     cefrEstimate: "B1",
     summaryZh: "Verb tense and subject-verb agreement were the main issues this time.",
     createdAt: "2026-06-17T14:22:00.000Z",

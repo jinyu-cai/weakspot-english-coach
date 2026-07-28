@@ -35,6 +35,7 @@ class Submission(BaseModel):
     mode: str
     originalText: str
     correctedText: Optional[str] = None
+    naturalRewrite: Optional[str] = None
     cefrEstimate: Optional[CEFRLevel] = None
     summaryZh: Optional[str] = None
     createdAt: str

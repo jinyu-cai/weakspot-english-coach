@@ -109,8 +109,23 @@ class DiagnosticAIResult(BaseModel):
     strengthsZh: List[str]
     weaknessesZh: List[str]
     correctedText: str
+    naturalRewrite: Optional[str] = Field(
+        default=None,
+        description=(
+            "A substantially freer full-text rewrite, or null when the original "
+            "or minimally corrected text is already natural and clear."
+        ),
+    )
     errors: List[DiagnosticErrorAI]
     recommendedNextActionsZh: List[str]
     learningNotes: List[LearningNoteAI] = []
     memoryCandidates: List[MemoryCandidate] = Field(default_factory=list)
     targetEvidence: List[TargetEvidenceAI] = Field(default_factory=list, max_length=4)
+
+    @field_validator("naturalRewrite")
+    @classmethod
+    def normalize_natural_rewrite(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None

@@ -231,14 +231,20 @@ def main() -> None:
     assert "untrusted task context" in contextual_prompt
     assert hostile_context in contextual_prompt
     assert "only source for error spans" in contextual_prompt
-    assert "easy for most native English speakers" in SYSTEM_PROMPT
-    assert "not limited to minimal corrections" in SYSTEM_PROMPT
-    assert "freely replace phrases, reorganize ideas" in SYSTEM_PROMPT
-    assert "choose a conservative interpretation" in SYSTEM_PROMPT
+    assert "faithful, minimally edited correction" in SYSTEM_PROMPT
+    assert "Return null when the original is already natural and clear" in SYSTEM_PROMPT
+    assert "Minor local edits" in SYSTEM_PROMPT
+    assert "meaningfully easier for most" in SYSTEM_PROMPT
+    assert "must not affect errors, weaknesses, CEFR" in SYSTEM_PROMPT
     assert "may substantially rephrase" in SYSTEM_PROMPT
     assert "instead of mirroring it word for word" in SYSTEM_PROMPT
-    assert "do not default" in FAST_PROMPT_APPENDIX
-    assert "substantially restructure it" in DEEP_PROMPT_APPENDIX
+    assert "return null unless" in FAST_PROMPT_APPENDIX
+    assert "optional stylistic differences" in DEEP_PROMPT_APPENDIX
+    plain_prompt = build_diagnose_user_prompt(
+        "Yesterday I go to work with my manager.",
+    )
+    assert "only source for error spans and weakness evidence" in plain_prompt
+    assert "introduced only in naturalRewrite" in plain_prompt
     assert _language_text_hash("Same answer in a real task.", "en", "Context A") != (
         _language_text_hash("Same answer in a real task.", "en", "Context B")
     )

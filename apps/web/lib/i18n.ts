@@ -145,7 +145,10 @@ export const copy = {
         weaknesses: "Weaknesses",
         correctedText: "Corrected text",
         diff: "Diff",
-        polished: "Polished",
+        polished: "Corrected",
+        naturalExpression: "Natural expression",
+        naturalExpressionDescription:
+          "A freer rewrite is shown only when substantial changes make the message clearer or more idiomatic.",
         errorBreakdown: "Error breakdown",
         issuesFound: "issues found",
         recommendedNextActions: "Recommended next actions",
@@ -1189,7 +1192,10 @@ export const copy = {
         weaknesses: "薄弱项",
         correctedText: "修正文本",
         diff: "对比",
-        polished: "润色版",
+        polished: "修正版",
+        naturalExpression: "自然表达",
+        naturalExpressionDescription:
+          "仅当大幅改写能明显提升清晰度或地道程度时，才会显示这一版本。",
         errorBreakdown: "错误拆解",
         issuesFound: "个问题",
         recommendedNextActions: "推荐下一步",

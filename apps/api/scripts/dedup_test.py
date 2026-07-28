@@ -65,6 +65,8 @@ def main() -> int:
         assert r.status_code == 200, r.text
         d1 = r.json()
         assert d1.get("duplicate") is False, "first submission must not be a duplicate"
+        assert d1["diagnostic"]["naturalRewrite"]
+        assert d1["submission"]["naturalRewrite"] == d1["diagnostic"]["naturalRewrite"]
         n1 = len(d1["diagnostic"]["errors"])
         note_count_1 = len(d1["notes"])
         assert note_count_1 > 0, "fake diagnosis should create Notebook notes"
@@ -79,6 +81,8 @@ def main() -> int:
         assert r.status_code == 200, r.text
         d2 = r.json()
         assert d2.get("duplicate") is True, "identical resubmission must be flagged duplicate"
+        assert d2["diagnostic"]["naturalRewrite"] == d1["diagnostic"]["naturalRewrite"]
+        assert d2["submission"]["naturalRewrite"] == d1["submission"]["naturalRewrite"]
         assert d2["updatedSkills"] == [], "duplicate must not update skills"
         assert d2["duplicateOf"] == sub1_id
         assert d2["profile"]["totalSubmissions"] == 1, "duplicate must not bump totalSubmissions"
