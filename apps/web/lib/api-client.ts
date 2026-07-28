@@ -333,6 +333,7 @@ export async function diagnose(
         mode: "writing",
         originalText: text,
         correctedText: mockDiagnostic.correctedText,
+        naturalRewrite: mockDiagnostic.naturalRewrite,
         cefrEstimate: mockDiagnostic.cefrEstimate,
         summaryZh: mockDiagnostic.summaryZh,
         createdAt: new Date().toISOString(),

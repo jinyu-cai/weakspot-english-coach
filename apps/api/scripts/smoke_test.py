@@ -87,6 +87,7 @@ def main() -> None:
         "strengthsZh": ["表达积极", "句子基本通顺"],
         "weaknessesZh": ["动词时态错误", "词汇重复"],
         "correctedText": "Yesterday I went to my university and met my friend.",
+        "naturalRewrite": "Yesterday, I met a friend at my university.",
         "errors": [
             {
                 "code": "grammar.verb_tense",
@@ -112,6 +113,11 @@ def main() -> None:
     }
     result = DiagnosticAIResult.model_validate(sample)
     assert result.errors[0].code == "grammar.verb_tense"
+    assert result.naturalRewrite == "Yesterday, I met a friend at my university."
+    assert "naturalRewrite" in DiagnosticAIResult.model_json_schema()["properties"]
+    assert DiagnosticAIResult.model_validate(
+        {**sample, "naturalRewrite": "   "}
+    ).naturalRewrite is None
     print("Sample DiagnosticAIResult validated OK.")
 
     # The writing UI and API both use a five-word minimum. This short valid

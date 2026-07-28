@@ -53,6 +53,10 @@ def _fake_diagnostic() -> DiagnosticAIResult:
         strengthsZh=["You express your ideas confidently", "Sentence structure is mostly complete"],
         weaknessesZh=["Simple past tense is error-prone", "Word choice is simple and repetitive"],
         correctedText="Yesterday I went to my university and met my friend. We talked about our project.",
+        naturalRewrite=(
+            "Yesterday, I met a friend at my university, and we spent some time "
+            "catching up and discussing our project."
+        ),
         errors=[
             DiagnosticErrorAI(
                 code="grammar.verb_tense",
