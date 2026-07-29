@@ -57,6 +57,7 @@ CoachVocabularyWord = Annotated[
     str,
     Field(min_length=1, max_length=80, pattern=r"^[A-Za-z][A-Za-z'-]*$"),
 ]
+COACH_SCENARIO_PROMPT_MAX_CHARACTERS = 4000
 
 
 class CoachMissionRequest(BaseModel):
@@ -132,10 +133,40 @@ class CoachScene(BaseModel):
     userRole: str = Field(min_length=1, max_length=300)
     aiRole: str = Field(min_length=1, max_length=300)
     goal: str = Field(min_length=1, max_length=500)
-    scenarioPrompt: str = Field(min_length=1, max_length=2400)
+    scenarioPrompt: str = Field(
+        min_length=1,
+        max_length=COACH_SCENARIO_PROMPT_MAX_CHARACTERS,
+    )
     starterMessage: str = Field(min_length=1, max_length=1000)
     scenarioFamily: CoachScenarioFamily
     scenarioKey: str = Field(min_length=1, max_length=160)
+
+    @field_validator("scenarioPrompt", mode="before")
+    @classmethod
+    def bound_scenario_prompt(cls, value: object) -> object:
+        """Keep model-authored scene direction compatible with Chat sessions."""
+
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip()
+        if len(normalized) <= COACH_SCENARIO_PROMPT_MAX_CHARACTERS:
+            return normalized
+
+        # Preserve both the role/setup at the beginning and the ending/rules at
+        # the tail. Those are more useful to the live roleplay than failing the
+        # entire mission and paying for another full model call.
+        separator = "\n\n"
+        tail_characters = 800
+        head_characters = (
+            COACH_SCENARIO_PROMPT_MAX_CHARACTERS
+            - tail_characters
+            - len(separator)
+        )
+        return (
+            normalized[:head_characters].rstrip()
+            + separator
+            + normalized[-tail_characters:].lstrip()
+        )
 
 
 class CoachPicture(BaseModel):
