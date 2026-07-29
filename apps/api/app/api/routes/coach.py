@@ -96,7 +96,9 @@ def create_coach_mission(
                 sourceId=mission.id,
                 title=mission.title,
                 taskType=mission.type,
-                goal=mission.taskPrompt,
+                # The complete learner-facing task remains in the mission
+                # response. ActivityRun.goal is bounded summary metadata.
+                goal=mission.taskPrompt[:800],
                 targetSkills=mission.targetSkills,
                 modality=effective_req.modality,
                 difficulty=effective_req.energy,

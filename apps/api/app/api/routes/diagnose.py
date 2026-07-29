@@ -14,6 +14,7 @@ from app.core.mastery import update_skill_from_error
 from app.core.taxonomy import ERROR_TAXONOMY
 from app.core.text_hash import normalized_text_hash
 from app.db.repositories import (
+    ItemTooLargeError,
     get_or_create_profile,
     get_activity_run,
     get_submission,
@@ -36,6 +37,7 @@ from app.models.learning import (
     CreateActivityRunRequest,
     RecordEvidenceRequest,
     UpdateActivityRunRequest,
+    saturate_activity_attempt_count,
 )
 from app.services.ai_client import LLMProviderConfig
 from app.services.diagnose_service import diagnose_english_text, select_diagnose_model
@@ -176,6 +178,21 @@ async def diagnose(
 
         try:
             result = future.result()
+        except ItemTooLargeError as e:
+            release_diagnosis_request(req.userId, text_hash, request_id)
+            logger.warning(
+                "diagnose[%s] payload_too_large total_ms=%d size_bytes=%d",
+                request_id,
+                _elapsed_ms(started),
+                e.size_bytes,
+            )
+            # Streaming headers have already been flushed, so communicate the
+            # storage-limit failure as a stable response-body contract.
+            result = {
+                "error": True,
+                "code": "payload_too_large",
+                "detail": "The diagnosis result is too large to store.",
+            }
         except ValueError as e:
             release_diagnosis_request(req.userId, text_hash, request_id)
             logger.exception(
@@ -512,7 +529,7 @@ def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mod
                     contextKey=req.learningContext.contextKey,
                     novelContext=req.learningContext.novelContext,
                     delayed=req.learningContext.delayed,
-                    evidenceQuote=str(payload.get("evidenceQuote") or ""),
+                    evidenceQuote=str(payload.get("evidenceQuote") or "")[:600],
                 ),
             ))
         activity_run = get_activity_run(
@@ -526,7 +543,9 @@ def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mod
                 status="completed",
                 hintLevel=req.learningContext.hintLevel,
                 playCount=req.learningContext.playCount,
-                attemptCount=int(activity_run.get("attemptCount", 0)) + 1,
+                attemptCount=saturate_activity_attempt_count(
+                    int(activity_run.get("attemptCount", 0)) + 1,
+                ),
             ),
         )
     else:
@@ -572,7 +591,7 @@ def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mod
                     evaluatorConfidence=confidence,
                     contextKey=f"diagnosis:{submission_id}",
                     novelContext=True,
-                    evidenceQuote=str(error.get("originalText") or ""),
+                    evidenceQuote=str(error.get("originalText") or "")[:600],
                 ),
             ))
         update_activity_run(

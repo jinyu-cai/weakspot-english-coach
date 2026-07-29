@@ -60,8 +60,10 @@ export default function InputLab2ExperimentalPage() {
       })
       setMission(result)
       setPlaysUsed(0)
-    } catch {
-      toast.error(t.inputLab2.failed)
+    } catch (error) {
+      toast.error(t.inputLab2.failed, {
+        description: error instanceof Error ? error.message : undefined,
+      })
     } finally {
       setCreating(false)
     }

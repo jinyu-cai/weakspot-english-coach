@@ -98,9 +98,17 @@ import { getOutputLanguage } from "./language"
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
 const USE_MOCK = !API_BASE_URL
 const DEFAULT_API_TIMEOUT_MS = 20_000
-// Deep mission planning commonly takes longer than an ordinary API request.
+// Non-streaming model work commonly takes longer than an ordinary API request.
 // Keep this below the backend proxy's 120-second read timeout.
-const COACH_MISSION_TIMEOUT_MS = 110_000
+const LLM_OPERATION_TIMEOUT_MS = 110_000
+export const LEARNER_RESPONSE_MAX_CHARACTERS = 12_000
+const DIAGNOSE_ANALYSIS_CONTEXT_MAX_CHARS = 2_400
+const INPUT_RESPONSE_MAX_CHARS = 8_000
+const CHAT_SELECTION_MAX_CHARS = 12_000
+const CHAT_IMPORT_SOURCE_MAX_CHARS = 180
+const REALTIME_TRANSCRIPT_REQUEST_MAX_MESSAGES = 8
+const REALTIME_TRANSCRIPT_REQUEST_MAX_BYTES = 800_000
+const REALTIME_TRANSCRIPT_MESSAGE_MAX_CHARS = 16_000
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const withOutputLanguage = <T extends Record<string, unknown>>(body: T) => ({
@@ -108,27 +116,89 @@ const withOutputLanguage = <T extends Record<string, unknown>>(body: T) => ({
   outputLanguage: getOutputLanguage(),
 })
 
+function unicodeCharacters(value: string): string[] {
+  return Array.from(value)
+}
+
+export function boundTextPreservingHeadTail(value: string, maxCharacters: number): string {
+  const characters = unicodeCharacters(value)
+  if (characters.length <= maxCharacters) return value
+  if (maxCharacters <= 0) return ""
+  if (maxCharacters === 1) return characters[0]
+
+  const separator = "\n…\n"
+  const separatorCharacters = unicodeCharacters(separator)
+  if (maxCharacters <= separatorCharacters.length + 1) {
+    return characters.slice(0, maxCharacters).join("")
+  }
+  const available = maxCharacters - separatorCharacters.length
+  const headLength = Math.ceil(available * 0.6)
+  const tailLength = available - headLength
+  return [
+    ...characters.slice(0, headLength),
+    ...separatorCharacters,
+    ...characters.slice(characters.length - tailLength),
+  ].join("")
+}
+
+function boundTextPrefix(value: string, maxCharacters: number): string {
+  return unicodeCharacters(value).slice(0, maxCharacters).join("")
+}
+
+export function learnerResponseCharacterCount(value: string): number {
+  return unicodeCharacters(value).length
+}
+
+export function boundLearnerResponseText(value: string): string {
+  return boundTextPrefix(value, LEARNER_RESPONSE_MAX_CHARACTERS)
+}
+
+function requireLearnerResponseWithinLimit(value: string): string {
+  if (learnerResponseCharacterCount(value) > LEARNER_RESPONSE_MAX_CHARACTERS) {
+    throw new Error(
+      `Your response is longer than ${LEARNER_RESPONSE_MAX_CHARACTERS.toLocaleString()} characters.`,
+    )
+  }
+  return value
+}
+
+export function boundedImportSourceName(sourceName?: string, suffix = ""): string | undefined {
+  const normalized = sourceName?.trim()
+  if (!normalized && !suffix) return undefined
+  const boundedSuffix = boundTextPrefix(suffix, CHAT_IMPORT_SOURCE_MAX_CHARS)
+  const suffixCharacters = unicodeCharacters(boundedSuffix)
+  const available = Math.max(0, CHAT_IMPORT_SOURCE_MAX_CHARS - suffixCharacters.length)
+  const boundedBase = normalized ? boundTextPreservingHeadTail(normalized, available) : ""
+  return `${boundedBase}${boundedSuffix}`
+}
+
+function errorWithTrace(message: string, res: Response): string {
+  const traceId = res.headers.get("x-request-id")
+  if (!traceId || message.includes(traceId)) return message
+  return `${message} [request ${traceId}]`
+}
+
 async function getErrorMessage(res: Response, path: string) {
   try {
     const payload = await res.json()
     const detail = payload?.detail
     if (Array.isArray(detail)) {
-      return detail
+      return errorWithTrace(detail
         .map((item) => {
           const location = Array.isArray(item.loc) ? item.loc.join(".") : undefined
           return [location, item.msg].filter(Boolean).join(": ")
         })
-        .join("; ")
+        .join("; "), res)
     }
     if (detail && typeof detail === "object" && !Array.isArray(detail) && typeof detail.message === "string") {
-      return detail.message
+      return errorWithTrace(detail.message, res)
     }
-    if (typeof detail === "string") return detail
-    if (payload?.message) return String(payload.message)
+    if (typeof detail === "string") return errorWithTrace(detail, res)
+    if (payload?.message) return errorWithTrace(String(payload.message), res)
   } catch {
     // Fall through to the status-based message.
   }
-  return `Request failed (${res.status}): ${path}`
+  return errorWithTrace(`Request failed (${res.status}): ${path}`, res)
 }
 
 async function apiFetch<T>(
@@ -332,6 +402,7 @@ export async function diagnose(
   analysisContext?: string,
   learningContext?: DiagnoseLearningContext,
 ): Promise<DiagnoseResponse> {
+  const validatedText = requireLearnerResponseWithinLimit(text)
   if (USE_MOCK) {
     await delay(diagnosisMode === "fast" ? 700 : 1400)
     return {
@@ -339,7 +410,7 @@ export async function diagnose(
         id: `sub-${Date.now()}`,
         userId,
         mode: "writing",
-        originalText: text,
+        originalText: validatedText,
         correctedText: mockDiagnostic.correctedText,
         naturalRewrite: mockDiagnostic.naturalRewrite,
         cefrEstimate: mockDiagnostic.cefrEstimate,
@@ -355,9 +426,11 @@ export async function diagnose(
     method: "POST",
     body: JSON.stringify(withOutputLanguage({
       userId,
-      text,
+      text: validatedText,
       diagnosisMode,
-      ...(analysisContext ? { analysisContext } : {}),
+      ...(analysisContext
+        ? { analysisContext: boundTextPreservingHeadTail(analysisContext, DIAGNOSE_ANALYSIS_CONTEXT_MAX_CHARS) }
+        : {}),
       ...(learningContext ? { learningContext } : {}),
     })),
   })
@@ -368,6 +441,7 @@ export async function analyzeChatImport(
   conversations: ChatImportConversation[],
   sourceName?: string,
   analysisMode: DiagnosisMode = "fast",
+  sourceSuffix = "",
 ): Promise<ChatImportAnalyzeResponse> {
   if (USE_MOCK) {
     await delay(900)
@@ -449,8 +523,13 @@ export async function analyzeChatImport(
   }
   return apiFetch<ChatImportAnalyzeResponse>("/chat-import/analyze", {
     method: "POST",
-    body: JSON.stringify(withOutputLanguage({ userId, sourceName, analysisMode, conversations })),
-  })
+    body: JSON.stringify(withOutputLanguage({
+      userId,
+      sourceName: boundedImportSourceName(sourceName, sourceSuffix),
+      analysisMode,
+      conversations,
+    })),
+  }, LLM_OPERATION_TIMEOUT_MS)
 }
 
 export async function getProfile(userId: string = DEMO_USER_ID): Promise<ProfileResponse> {
@@ -704,7 +783,7 @@ export async function generatePlan(
   const { plan } = await apiFetch<{ plan: LearningPlan }>("/plan", {
     method: "POST",
     body: JSON.stringify(withOutputLanguage({ userId, errorScope })),
-  })
+  }, LLM_OPERATION_TIMEOUT_MS)
   return plan
 }
 
@@ -747,7 +826,7 @@ export async function generatePractice(
   const { exercise } = await apiFetch<PracticeGenerateResponse>("/practice/generate", {
     method: "POST",
     body: JSON.stringify(withOutputLanguage({ userId, targetSkillCode, practiceType, ...session })),
-  })
+  }, LLM_OPERATION_TIMEOUT_MS)
   return exercise
 }
 
@@ -791,7 +870,7 @@ export async function gradePracticeAdhoc(
   const { grade } = await apiFetch<{ grade: PracticeGrade }>("/practice/grade", {
     method: "POST",
     body: JSON.stringify(withOutputLanguage({ userId, ...params })),
-  })
+  }, LLM_OPERATION_TIMEOUT_MS)
   return grade
 }
 
@@ -809,7 +888,7 @@ export async function submitPractice(
   const { grade } = await apiFetch<PracticeSubmitResponse>("/practice/submit", {
     method: "POST",
     body: JSON.stringify(withOutputLanguage({ userId, exerciseId, userAnswer, clientAttemptId })),
-  })
+  }, LLM_OPERATION_TIMEOUT_MS)
   return grade
 }
 
@@ -881,7 +960,9 @@ export async function saveChatSelectionToNote(input: {
       sessionId: input.sessionId,
       messageId: input.messageId,
       messageCreatedAt: input.messageCreatedAt,
-      selectedText: input.selectedText,
+      // Keep this a contiguous prefix so the server can still verify that the
+      // selection belongs to the original message.
+      selectedText: boundTextPrefix(input.selectedText.trim(), CHAT_SELECTION_MAX_CHARS),
     }),
   })
   return note
@@ -1064,7 +1145,7 @@ export async function analyzeInputLearning(
   const payload = await apiFetch<InputLearningAnalyzeResponse>("/input-learning/analyze", {
     method: "POST",
     body: JSON.stringify({ ...input, outputLanguage: getOutputLanguage() }),
-  })
+  }, LLM_OPERATION_TIMEOUT_MS)
   return payload.source
 }
 
@@ -1129,7 +1210,10 @@ export async function submitInputLearningAttempt(
   }
   const { attempt } = await apiFetch<{ attempt: InputLearningAttempt }>(`/input-learning/${sourceId}/attempts`, {
     method: "POST",
-    body: JSON.stringify(input),
+    body: JSON.stringify({
+      ...input,
+      responseText: boundTextPreservingHeadTail(input.responseText.trim(), INPUT_RESPONSE_MAX_CHARS),
+    }),
   })
   return attempt
 }
@@ -1277,7 +1361,7 @@ export async function generateCoachMission(input: CoachMissionRequest): Promise<
   const payload = await apiFetch<{ mission: CoachMission }>("/coach/missions", {
     method: "POST",
     body: JSON.stringify(withOutputLanguage({ ...input })),
-  }, COACH_MISSION_TIMEOUT_MS)
+  }, LLM_OPERATION_TIMEOUT_MS)
   return payload.mission
 }
 
@@ -1368,7 +1452,7 @@ export async function generateInputLab2TranscriptMission(
   const payload = await apiFetch<{ mission: CoachMission }>("/coach/input-lab-2/transcript-missions", {
     method: "POST",
     body: JSON.stringify(withOutputLanguage({ ...input })),
-  })
+  }, LLM_OPERATION_TIMEOUT_MS)
   return payload.mission
 }
 
@@ -1390,19 +1474,34 @@ export async function synthesizeCoachSpeech(
 
 /* ---- Chat ---- */
 
-export async function createChatSession(
-  userId: string = DEMO_USER_ID,
-  topic?: string,
-  textModel?: TextChatModel,
-  scenarioPrompt?: string,
-  starterMessage?: string,
-  scenarioFamily?: string,
-  scenarioKey?: string,
-  textModelMode?: TextChatModelMode,
-  missionRunId?: string,
-  missionType?: string,
-  missionTargetSkills?: string[],
-): Promise<ChatSession> {
+export interface CreateChatSessionRequest {
+  userId?: string
+  topic?: string
+  textModel?: TextChatModel
+  scenarioPrompt?: string
+  starterMessage?: string
+  scenarioFamily?: string
+  scenarioKey?: string
+  textModelMode?: TextChatModelMode
+  missionRunId?: string
+  missionType?: string
+  missionTargetSkills?: string[]
+}
+
+export async function createChatSession(input: CreateChatSessionRequest = {}): Promise<ChatSession> {
+  const {
+    userId = DEMO_USER_ID,
+    topic,
+    textModel,
+    scenarioPrompt,
+    starterMessage,
+    scenarioFamily,
+    scenarioKey,
+    textModelMode,
+    missionRunId,
+    missionType,
+    missionTargetSkills,
+  } = input
   if (USE_MOCK) {
     await delay(300)
     return {
@@ -1488,11 +1587,21 @@ export async function getChatMessages(
   return apiFetch<ChatMessagesResponse>(`/chat/sessions/${sessionId}/messages`)
 }
 
-export async function sendChatMessage(
-  userId: string = DEMO_USER_ID,
-  sessionId: string,
-  text: string,
-): Promise<ChatSendResponse> {
+export interface SendChatMessageRequest {
+  userId?: string
+  sessionId: string
+  text: string
+  clientMessageId: string
+}
+
+export async function sendChatMessage(input: SendChatMessageRequest): Promise<ChatSendResponse> {
+  const {
+    userId = DEMO_USER_ID,
+    sessionId,
+    text: unvalidatedText,
+    clientMessageId,
+  } = input
+  const text = requireLearnerResponseWithinLimit(unvalidatedText)
   if (USE_MOCK) {
     await delay(1200)
     const now = new Date().toISOString()
@@ -1503,6 +1612,7 @@ export async function sendChatMessage(
         sessionId,
         role: "user",
         content: text,
+        clientMessageId,
         corrections: null,
         betterExpression: null,
         createdAt: now,
@@ -1531,8 +1641,25 @@ export async function sendChatMessage(
   }
   return apiFetch<ChatSendResponse>("/chat/send", {
     method: "POST",
-    body: JSON.stringify({ userId, sessionId, text }),
-  })
+    body: JSON.stringify({ userId, sessionId, text, clientMessageId }),
+  }, LLM_OPERATION_TIMEOUT_MS)
+}
+
+export async function predictChatCompletion(
+  sessionId: string,
+  unvalidatedPartialText: string,
+  userId: string = DEMO_USER_ID,
+): Promise<string[]> {
+  const partialText = requireLearnerResponseWithinLimit(unvalidatedPartialText)
+  if (USE_MOCK) {
+    await delay(500)
+    return ["Could you tell me more?", "What happened next?"]
+  }
+  const payload = await apiFetch<{ predictions: string[] }>("/chat/predict", {
+    method: "POST",
+    body: JSON.stringify({ userId, sessionId, partialText }),
+  }, LLM_OPERATION_TIMEOUT_MS)
+  return payload.predictions
 }
 
 /* ---- Session Analysis ---- */
@@ -1612,7 +1739,7 @@ export async function analyzeSession(
   return apiFetch<SessionAnalysisResponse>(`/chat/sessions/${sessionId}/analyze`, {
     method: "POST",
     body: JSON.stringify(withOutputLanguage({ hintLevel })),
-  })
+  }, LLM_OPERATION_TIMEOUT_MS)
 }
 
 /* ---- Voice / Realtime ---- */
@@ -1654,15 +1781,82 @@ export async function kickRealtimeSession(
   )
 }
 
+export interface VoiceTranscriptMessage {
+  role: "user" | "assistant"
+  content: string
+  clientMessageId?: string
+  createdAt?: string
+}
+
+function voiceTranscriptRequestBytes(
+  userId: string,
+  messages: VoiceTranscriptMessage[],
+): number {
+  return new TextEncoder().encode(JSON.stringify({ userId, messages })).byteLength
+}
+
+export function chunkVoiceTranscriptMessages(
+  userId: string,
+  messages: VoiceTranscriptMessage[],
+): VoiceTranscriptMessage[][] {
+  const batches: VoiceTranscriptMessage[][] = []
+  let batch: VoiceTranscriptMessage[] = []
+  for (const message of messages) {
+    const candidate = [...batch, message]
+    if (
+      batch.length
+      && (
+        candidate.length > REALTIME_TRANSCRIPT_REQUEST_MAX_MESSAGES
+        || voiceTranscriptRequestBytes(userId, candidate) > REALTIME_TRANSCRIPT_REQUEST_MAX_BYTES
+      )
+    ) {
+      batches.push(batch)
+      batch = [message]
+    } else {
+      batch = candidate
+    }
+    if (voiceTranscriptRequestBytes(userId, batch) > REALTIME_TRANSCRIPT_REQUEST_MAX_BYTES) {
+      throw new Error("One transcript message is too large to upload safely.")
+    }
+  }
+  if (batch.length) batches.push(batch)
+  return batches
+}
+
 export async function saveVoiceTranscript(
   userId: string = DEMO_USER_ID,
   sessionId: string,
-  messages: { role: "user" | "assistant"; content: string; clientMessageId?: string }[],
+  messages: VoiceTranscriptMessage[],
 ): Promise<{ saved: number; skippedDuplicates: number; sessionId: string }> {
-  return apiFetch<{ saved: number; skippedDuplicates: number; sessionId: string }>(`/chat/sessions/${sessionId}/transcript`, {
-    method: "POST",
-    body: JSON.stringify({ userId, messages }),
+  const boundedMessages = messages.flatMap((message) => {
+    const content = boundTextPreservingHeadTail(message.content.trim(), REALTIME_TRANSCRIPT_MESSAGE_MAX_CHARS)
+    if (!content) return []
+    return [{
+      ...message,
+      content,
+      ...(message.clientMessageId
+        ? { clientMessageId: boundTextPrefix(message.clientMessageId, 160) }
+        : {}),
+      ...(message.createdAt
+        ? { createdAt: boundTextPrefix(message.createdAt, 64) }
+        : {}),
+    }]
   })
+  let saved = 0
+  let skippedDuplicates = 0
+  const batches = chunkVoiceTranscriptMessages(userId, boundedMessages)
+  for (const batch of batches) {
+    const result = await apiFetch<{ saved: number; skippedDuplicates: number; sessionId: string }>(
+      `/chat/sessions/${sessionId}/transcript`,
+      {
+        method: "POST",
+        body: JSON.stringify({ userId, messages: batch }),
+      },
+    )
+    saved += result.saved
+    skippedDuplicates += result.skippedDuplicates
+  }
+  return { saved, skippedDuplicates, sessionId }
 }
 
 /* ---- Admin (owner-only) ---- */

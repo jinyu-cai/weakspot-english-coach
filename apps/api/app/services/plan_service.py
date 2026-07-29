@@ -22,6 +22,10 @@ Requirements:
 2. Return exactly 7 days. Each day MUST have exactly 2 tasks, each estimated at 15 minutes.
    Keep titles, goals, descriptions, and explanations concise.
 3. Each task must target one or more weak skill codes (use targetSkillCodes).
+   Use only: grammar.verb_tense, grammar.article, grammar.preposition,
+   grammar.subject_verb_agreement, vocab.word_choice, vocab.repetition,
+   sentence.structure, sentence.variety, discourse.coherence, style.register,
+   clarity.expression. Never invent, refine, or return another code.
 4. Each task's practiceType must be one of: fix_sentence, fill_blank, rewrite_sentence.
 5. Each task MUST include exactly 3 concrete exercises in the `exercises` array:
    - promptZh: a short instruction telling the student what to do.

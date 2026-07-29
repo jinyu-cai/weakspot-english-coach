@@ -39,9 +39,13 @@ import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 import {
   analyzeSession,
+  boundLearnerResponseText,
   createChatSession,
   diagnose,
   generateCoachMission,
+  getChatMessages,
+  learnerResponseCharacterCount,
+  LEARNER_RESPONSE_MAX_CHARACTERS,
   sendChatMessage,
   synthesizeCoachSpeech,
   updateActivityRun,
@@ -290,6 +294,11 @@ export default function CoachPage() {
   const ttsUnavailableRef = useRef(false)
   const playbackRequestRef = useRef(0)
   const optimisticMessageCounterRef = useRef(0)
+  const pendingRoleplaySendRef = useRef<{
+    sessionId: string
+    text: string
+    clientMessageId: string
+  } | null>(null)
   const attemptCompletedRef = useRef(false)
   const timeUpHandledRef = useRef(false)
   const chatMessagesRef = useRef(chatMessages)
@@ -305,7 +314,7 @@ export default function CoachPage() {
       setEnergy(restored.energy)
       setPreferredType(restored.preferredType)
       setMission(restored.mission)
-      setAnswer(restored.answer)
+      setAnswer(boundLearnerResponseText(restored.answer))
       setSubmittedAnswer(restored.submittedAnswer)
       setHintLevel(restored.hintLevel)
       setPlaysUsed(restored.playsUsed)
@@ -521,8 +530,10 @@ export default function CoachPage() {
           chatMessages: [],
         } satisfies CoachSnapshot,
       })
-    } catch {
-      toast.error(t.coach.errors.generate)
+    } catch (error) {
+      toast.error(t.coach.errors.generate, {
+        description: error instanceof Error ? error.message : undefined,
+      })
     } finally {
       setGenerating(false)
     }
@@ -533,8 +544,10 @@ export default function CoachPage() {
     if (mission.activityRunId) {
       try {
         await updateActivityRun(mission.activityRunId, { status: "started" })
-      } catch {
-        toast.error(t.coach.errors.analyze)
+      } catch (error) {
+        toast.error(t.coach.errors.analyze, {
+          description: error instanceof Error ? error.message : undefined,
+        })
         return
       }
     }
@@ -591,8 +604,10 @@ export default function CoachPage() {
       setDiagnostic(result)
       setScreen("feedback")
       finishTaskResume("coach", "completed")
-    } catch {
-      toast.error(t.coach.errors.analyze)
+    } catch (error) {
+      toast.error(t.coach.errors.analyze, {
+        description: error instanceof Error ? error.message : undefined,
+      })
       // Stay completed so the timer cannot reappear and wipe feedback later.
     } finally {
       setAnalyzing(false)
@@ -603,26 +618,31 @@ export default function CoachPage() {
     if (!mission?.scene || !answer.trim() || sending || isDictating || isSpeaking) return
     const text = answer.trim()
     setSending(true)
+    let attemptedSession = chatSession
     try {
-      let session = chatSession
+      let session = attemptedSession
       if (!session) {
-        const createdSession = await createChatSession(
-          DEMO_USER_ID,
-          mission.title,
-          undefined,
-          mission.scene.scenarioPrompt,
-          mission.scene.starterMessage,
-          mission.scene.scenarioFamily,
-          mission.scene.scenarioKey,
-          undefined,
-          mission.activityRunId ?? undefined,
-          mission.type,
-          mission.targetSkills,
-        )
+        const createdSession = await createChatSession({
+          userId: DEMO_USER_ID,
+          topic: mission.title,
+          scenarioPrompt: mission.scene.scenarioPrompt,
+          starterMessage: mission.scene.starterMessage,
+          scenarioFamily: mission.scene.scenarioFamily,
+          scenarioKey: mission.scene.scenarioKey,
+          missionRunId: mission.activityRunId ?? undefined,
+          missionType: mission.type,
+          missionTargetSkills: mission.targetSkills,
+        })
         session = createdSession
+        attemptedSession = createdSession
         setChatSession(createdSession)
         setChatMessages((current) => current.map((message) => ({ ...message, sessionId: createdSession.id })))
       }
+      const pending = pendingRoleplaySendRef.current
+      const clientMessageId = pending?.sessionId === session.id && pending.text === text
+        ? pending.clientMessageId
+        : crypto.randomUUID()
+      pendingRoleplaySendRef.current = { sessionId: session.id, text, clientMessageId }
       optimisticMessageCounterRef.current += 1
       const optimistic: ChatMessage = {
         id: `coach-temp-${optimisticMessageCounterRef.current}`,
@@ -630,21 +650,47 @@ export default function CoachPage() {
         sessionId: session.id,
         role: "user",
         content: text,
+        clientMessageId,
         createdAt: new Date().toISOString(),
       }
       setAnswer("")
       setChatMessages((current) => [...current, optimistic])
-      const response = await sendChatMessage(DEMO_USER_ID, session.id, text)
+      const response = await sendChatMessage({
+        userId: DEMO_USER_ID,
+        sessionId: session.id,
+        text,
+        clientMessageId,
+      })
+      pendingRoleplaySendRef.current = null
       setChatMessages((current) => [
         ...current.filter((message) => message.id !== optimistic.id),
         response.userMessage,
         response.assistantMessage,
       ])
       if (modality === "voice") void playRoleplaySpeech(response.assistantMessage.content)
-    } catch {
+    } catch (error) {
+      if (attemptedSession && pendingRoleplaySendRef.current) {
+        try {
+          const refreshed = await getChatMessages(attemptedSession.id, DEMO_USER_ID)
+          const pendingId = pendingRoleplaySendRef.current.clientMessageId
+          if (refreshed.messages.some((message) => message.clientMessageId === pendingId)) {
+            pendingRoleplaySendRef.current = null
+            setChatSession(refreshed.session)
+            setChatMessages((current) => [
+              ...current.filter((message) => message.id.startsWith("coach-opening-")),
+              ...refreshed.messages,
+            ])
+            return
+          }
+        } catch {
+          // A retry keeps the same clientMessageId and can safely reconcile later.
+        }
+      }
       setChatMessages((current) => current.filter((message) => !message.id.startsWith("coach-temp-")))
       setAnswer(text)
-      toast.error(t.coach.errors.send)
+      toast.error(t.coach.errors.send, {
+        description: error instanceof Error ? error.message : undefined,
+      })
     } finally {
       setSending(false)
     }
@@ -675,8 +721,10 @@ export default function CoachPage() {
         })
       }
       finishTaskResume("coach", "completed")
-    } catch {
-      toast.error(t.coach.errors.analyze)
+    } catch (error) {
+      toast.error(t.coach.errors.analyze, {
+        description: error instanceof Error ? error.message : undefined,
+      })
       // Keep the feedback screen so the learner can retry finish without losing the timer freeze.
       setScreen("chat_feedback")
     } finally {
@@ -724,8 +772,10 @@ export default function CoachPage() {
     const nextLevel = hintLevel + 1
     setHintLevel(nextLevel)
     if (mission.activityRunId) {
-      void updateActivityRun(mission.activityRunId, { hintLevel: nextLevel }).catch(() => {
-        toast.error(t.coach.errors.analyze)
+      void updateActivityRun(mission.activityRunId, { hintLevel: nextLevel }).catch((error) => {
+        toast.error(t.coach.errors.analyze, {
+          description: error instanceof Error ? error.message : undefined,
+        })
       })
     }
   }
@@ -754,8 +804,10 @@ export default function CoachPage() {
     const nextPlayCount = playsUsed + 1
     setPlaysUsed(nextPlayCount)
     if (mission.activityRunId) {
-      void updateActivityRun(mission.activityRunId, { playCount: nextPlayCount }).catch(() => {
-        toast.error(t.coach.errors.analyze)
+      void updateActivityRun(mission.activityRunId, { playCount: nextPlayCount }).catch((error) => {
+        toast.error(t.coach.errors.analyze, {
+          description: error instanceof Error ? error.message : undefined,
+        })
       })
     }
     try {
@@ -857,7 +909,7 @@ export default function CoachPage() {
         combined += `${event.results[index][0].transcript.trim()} `
       }
       const prefix = dictationBaseRef.current ? `${dictationBaseRef.current} ` : ""
-      setAnswer(`${prefix}${combined.trim()}`.trim())
+      setAnswer(boundLearnerResponseText(`${prefix}${combined.trim()}`.trim()))
     }
     recognition.onend = () => {
       if (recognitionRef.current === recognition) recognitionRef.current = null
@@ -888,8 +940,10 @@ export default function CoachPage() {
         void updateActivityRun(mission.activityRunId, {
           status: screen === "feedback" ? "completed" : undefined,
           completedCriteria: [...next].sort((left, right) => left - right),
-        }).catch(() => {
-          toast.error(t.coach.errors.analyze)
+        }).catch((error) => {
+          toast.error(t.coach.errors.analyze, {
+            description: error instanceof Error ? error.message : undefined,
+          })
         })
       }
       return next
@@ -1410,11 +1464,18 @@ export default function CoachPage() {
           ) : null}
 
           <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
-            <label htmlFor="coach-answer" className="text-sm font-semibold">{t.coach.mission.responseLabel}</label>
+            <div className="flex items-center justify-between gap-3">
+              <label htmlFor="coach-answer" className="text-sm font-semibold">{t.coach.mission.responseLabel}</label>
+              <span className="text-xs tabular-nums text-muted-foreground" aria-live="polite">
+                {learnerResponseCharacterCount(answer).toLocaleString("en-US")}
+                /{LEARNER_RESPONSE_MAX_CHARACTERS.toLocaleString("en-US")}
+              </span>
+            </div>
             <Textarea
               id="coach-answer"
               value={answer}
-              onChange={(event) => setAnswer(event.target.value)}
+              maxLength={LEARNER_RESPONSE_MAX_CHARACTERS * 2}
+              onChange={(event) => setAnswer(boundLearnerResponseText(event.target.value))}
               placeholder={t.coach.mission.placeholder}
               aria-keyshortcuts="Control+Enter Meta+Enter"
               className="mt-2 min-h-32 resize-y"

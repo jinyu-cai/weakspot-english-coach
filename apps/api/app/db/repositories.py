@@ -32,11 +32,62 @@ from app.db.keys import (
 from app.db.serialization import clean, to_dynamo
 
 
+_DYNAMO_TYPE_SERIALIZER = TypeSerializer()
+DYNAMODB_SAFE_ITEM_BYTES = 400_000
+CHAT_TRANSCRIPT_MAX_MESSAGES = 490
+_TRANSCRIPT_STAGE_ITEM_TARGET_BYTES = 385_000
+_TRANSCRIPT_STAGE_TRANSACTION_TARGET_BYTES = 3_500_000
+_TRANSCRIPT_STAGE_TTL_SECONDS = 24 * 60 * 60
+
+
+class ItemTooLargeError(RuntimeError):
+    """An application item exceeded the conservative DynamoDB storage budget."""
+
+    def __init__(self, entity_type: str, size_bytes: int):
+        self.entity_type = entity_type
+        self.size_bytes = size_bytes
+        super().__init__(
+            f"{entity_type} requires {size_bytes} bytes; "
+            f"the safe DynamoDB item limit is {DYNAMODB_SAFE_ITEM_BYTES} bytes."
+        )
+
+
+class TranscriptCapacityError(RuntimeError):
+    """A transcript cannot fit in the bounded atomic storage protocol."""
+
+
+class PlanProgressConflictError(RuntimeError):
+    """The active Plan or its ActivityRun changed during a progress update."""
+
+
+def _serialized_dynamo_item_size(item: dict) -> int:
+    """Conservative UTF-8 size of the low-level DynamoDB AttributeValue map."""
+    wire_item = {
+        key: _DYNAMO_TYPE_SERIALIZER.serialize(value)
+        for key, value in to_dynamo(item).items()
+    }
+    return len(
+        json.dumps(wire_item, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    )
+
+
+def ensure_dynamodb_item_fits(item: dict, *, entity_type: Optional[str] = None) -> int:
+    """Fail before boto turns an oversized application item into a raw 500."""
+    size = _serialized_dynamo_item_size(item)
+    if size >= DYNAMODB_SAFE_ITEM_BYTES:
+        raise ItemTooLargeError(
+            entity_type or str(item.get("entityType") or "DynamoDB item"),
+            size,
+        )
+    return size
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _put(item: dict) -> None:
+    ensure_dynamodb_item_fits(item)
     table.put_item(Item=to_dynamo(item))
 
 
@@ -129,6 +180,7 @@ def save_activity_run(
         "SK": activity_run_sk(run["id"]),
         "entityType": "ACTIVITY_RUN",
     }
+    ensure_dynamodb_item_fits(item)
     kwargs = {"Item": to_dynamo(item)}
     if create_only:
         kwargs["ConditionExpression"] = "attribute_not_exists(PK)"
@@ -140,12 +192,14 @@ def save_activity_run(
         })
     table.put_item(**kwargs)
     if run.get("status") == "completed" and run.get("completedAt"):
-        table.put_item(Item=to_dynamo({
+        timeline_item = {
             **run,
             "PK": user_pk(run["userId"]),
             "SK": activity_completion_time_sk(str(run["completedAt"]), run["id"]),
             "entityType": "ACTIVITY_RUN_TIMELINE",
-        }))
+        }
+        ensure_dynamodb_item_fits(timeline_item)
+        table.put_item(Item=to_dynamo(timeline_item))
 
 
 def get_activity_run(user_id: str, run_id: str) -> Optional[dict]:
@@ -1341,6 +1395,7 @@ def save_active_plan(plan: dict, *, expected_version: Optional[int] = None) -> N
         "SK": active_plan_sk(),
         "entityType": "PLAN",
     }
+    ensure_dynamodb_item_fits(item)
     kwargs = {"Item": to_dynamo(item)}
     if expected_version is not None:
         kwargs.update({
@@ -1349,6 +1404,129 @@ def save_active_plan(plan: dict, *, expected_version: Optional[int] = None) -> N
             "ExpressionAttributeValues": to_dynamo({":expected": expected_version}),
         })
     table.put_item(**kwargs)
+
+
+def save_plan_with_activity_run(
+    plan: dict,
+    run: dict,
+    *,
+    expected_plan_version: Optional[int],
+    expected_run_version: Optional[int] = None,
+    create_run: bool = False,
+    closed_run: Optional[dict] = None,
+    expected_closed_run_version: Optional[int] = None,
+) -> None:
+    """Atomically persist Plan progress and its corresponding ActivityRun.
+
+    ``None`` expected versions mean the existing legacy item had no version
+    attribute. A replacement run uses ``create_run=True`` and therefore cannot
+    overwrite an unexpectedly colliding run ID.
+    """
+    plan_item = {
+        **plan,
+        "PK": user_pk(plan["userId"]),
+        "SK": active_plan_sk(),
+        "entityType": "PLAN",
+    }
+    run_item = {
+        **run,
+        "PK": user_pk(run["userId"]),
+        "SK": activity_run_sk(run["id"]),
+        "entityType": "ACTIVITY_RUN",
+    }
+    ensure_dynamodb_item_fits(plan_item)
+    ensure_dynamodb_item_fits(run_item)
+
+    if expected_plan_version is None:
+        plan_condition = "attribute_exists(PK) AND attribute_not_exists(#version)"
+        plan_values = None
+    else:
+        plan_condition = "#version = :expected"
+        plan_values = to_dynamo({":expected": expected_plan_version})
+    plan_put = {
+        "TableName": table.name,
+        "Item": to_dynamo(plan_item),
+        "ConditionExpression": plan_condition,
+        "ExpressionAttributeNames": {"#version": "version"},
+    }
+    if plan_values is not None:
+        plan_put["ExpressionAttributeValues"] = plan_values
+
+    if create_run:
+        run_condition = "attribute_not_exists(PK) AND attribute_not_exists(SK)"
+        run_names = None
+        run_values = None
+    elif expected_run_version is None:
+        run_condition = "attribute_exists(PK) AND attribute_not_exists(#version)"
+        run_names = {"#version": "version"}
+        run_values = None
+    else:
+        run_condition = "#version = :expected"
+        run_names = {"#version": "version"}
+        run_values = to_dynamo({":expected": expected_run_version})
+    run_put = {
+        "TableName": table.name,
+        "Item": to_dynamo(run_item),
+        "ConditionExpression": run_condition,
+    }
+    if run_names is not None:
+        run_put["ExpressionAttributeNames"] = run_names
+    if run_values is not None:
+        run_put["ExpressionAttributeValues"] = run_values
+
+    transaction = [{"Put": plan_put}, {"Put": run_put}]
+    if closed_run is not None:
+        closed_run_item = {
+            **closed_run,
+            "PK": user_pk(closed_run["userId"]),
+            "SK": activity_run_sk(closed_run["id"]),
+            "entityType": "ACTIVITY_RUN",
+        }
+        ensure_dynamodb_item_fits(closed_run_item)
+        if expected_closed_run_version is None:
+            closed_condition = "attribute_exists(PK) AND attribute_not_exists(#version)"
+            closed_values = None
+        else:
+            closed_condition = "#version = :expected"
+            closed_values = to_dynamo({":expected": expected_closed_run_version})
+        closed_put = {
+            "TableName": table.name,
+            "Item": to_dynamo(closed_run_item),
+            "ConditionExpression": closed_condition,
+            "ExpressionAttributeNames": {"#version": "version"},
+        }
+        if closed_values is not None:
+            closed_put["ExpressionAttributeValues"] = closed_values
+        transaction.append({"Put": closed_put})
+
+    if run.get("status") == "completed" and run.get("completedAt"):
+        timeline_item = {
+            **run,
+            "PK": user_pk(run["userId"]),
+            "SK": activity_completion_time_sk(str(run["completedAt"]), run["id"]),
+            "entityType": "ACTIVITY_RUN_TIMELINE",
+        }
+        ensure_dynamodb_item_fits(timeline_item)
+        transaction.append({
+            "Put": {
+                "TableName": table.name,
+                "Item": to_dynamo(timeline_item),
+            }
+        })
+
+    try:
+        table.meta.client.transact_write_items(TransactItems=transaction)
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") in {
+            "ConditionalCheckFailedException",
+            "TransactionCanceledException",
+            "TransactionConflictException",
+            "TransactionInProgressException",
+        }:
+            raise PlanProgressConflictError(
+                "The active Plan or ActivityRun changed; reload and try again."
+            ) from exc
+        raise
 
 
 def get_active_plan(user_id: str) -> Optional[dict]:
@@ -1830,23 +2008,6 @@ def _chat_transcript_stage_sk(session_id: str, batch_id: str, chunk_index: int) 
     return f"CHATSTAGE#{session_id}#{batch_id}#{chunk_index:04d}"
 
 
-_DYNAMO_TYPE_SERIALIZER = TypeSerializer()
-_TRANSCRIPT_STAGE_ITEM_TARGET_BYTES = 385_000
-_TRANSCRIPT_STAGE_TRANSACTION_TARGET_BYTES = 3_500_000
-_TRANSCRIPT_STAGE_TTL_SECONDS = 24 * 60 * 60
-
-
-def _serialized_dynamo_item_size(item: dict) -> int:
-    """Conservative UTF-8 size of the low-level DynamoDB AttributeValue map."""
-    wire_item = {
-        key: _DYNAMO_TYPE_SERIALIZER.serialize(value)
-        for key, value in to_dynamo(item).items()
-    }
-    return len(
-        json.dumps(wire_item, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    )
-
-
 def _build_chat_transcript_stage_items(
     user_id: str,
     session_id: str,
@@ -1854,6 +2015,10 @@ def _build_chat_transcript_stage_items(
     messages: list[dict],
 ) -> list[dict]:
     """Pack messages into sub-400KB items using serialized UTF-8 bytes."""
+    if len(messages) > CHAT_TRANSCRIPT_MAX_MESSAGES:
+        raise TranscriptCapacityError(
+            f"A transcript upload accepts at most {CHAT_TRANSCRIPT_MAX_MESSAGES} messages."
+        )
     message_sizes = [
         len(
             json.dumps(
@@ -1900,10 +2065,14 @@ def _build_chat_transcript_stage_items(
     ]
     for item in items:
         size = _serialized_dynamo_item_size(item)
-        if size >= 400_000:
-            raise ValueError(f"Transcript stage item exceeds the safe DynamoDB item budget: {size} bytes.")
+        if size >= DYNAMODB_SAFE_ITEM_BYTES:
+            raise TranscriptCapacityError(
+                f"Transcript stage item exceeds the safe DynamoDB item budget: {size} bytes."
+            )
     if len(items) > 98:
-        raise ValueError("Transcript batch requires too many atomic commit actions.")
+        raise TranscriptCapacityError(
+            "Transcript batch requires too many atomic commit actions."
+        )
     return items
 
 
@@ -2048,12 +2217,14 @@ def finalize_chat_session_turn(
     updated_at = now_iso()
 
     def message_item(message: dict) -> dict:
-        return to_dynamo({
+        item = {
             **message,
             "PK": user_pk(user_id),
             "SK": chat_message_sk(message["createdAt"], message["id"], session_id),
             "entityType": "CHAT_MESSAGE",
-        })
+        }
+        ensure_dynamodb_item_fits(item)
+        return to_dynamo(item)
 
     session_values = {
         ":summary": summary,

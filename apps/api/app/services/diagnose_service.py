@@ -21,7 +21,7 @@ Important requirements:
 2. Do not be overly harsh; be encouraging but honest.
 3. Find every learner error you can identify. Include recurring patterns and
    isolated issues; do not cap the number of errors.
-4. Classify each error using one of these category codes when possible:
+4. Classify every error using exactly one of these category codes:
    - grammar.verb_tense
    - grammar.article
    - grammar.preposition
@@ -34,6 +34,7 @@ Important requirements:
    - style.register
    - clarity.expression
    Put the chosen code in the `code` field, and a short human label in `category`.
+   Never invent, refine, or return any other code.
 5. For each error provide: the original text span, a corrected version, an English
    explanation, one micro lesson, and one practice goal.
 6. The top-level `correctedText` is a faithful, minimally edited correction.

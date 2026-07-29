@@ -11,6 +11,8 @@ from app.core.taxonomy import ERROR_TAXONOMY
 DiagnosisMode = Literal["fast", "deep"]
 NoteType = Literal["expression", "vocabulary", "grammar"]
 MIN_DIAGNOSE_WORDS = 5
+DIAGNOSE_TEXT_MAX_CHARACTERS = 12_000
+EVIDENCE_QUOTE_MAX_CHARACTERS = 600
 
 
 def _word_count(value: str) -> int:
@@ -23,7 +25,7 @@ def _word_count(value: str) -> int:
 
 class DiagnoseRequest(BaseModel):
     userId: str
-    text: str = Field(min_length=1)
+    text: str = Field(min_length=1, max_length=DIAGNOSE_TEXT_MAX_CHARACTERS)
     diagnosisMode: DiagnosisMode = "fast"
     outputLanguage: OutputLanguage = "en"
     analysisContext: Optional[str] = Field(default=None, max_length=2400)
@@ -47,6 +49,13 @@ class DiagnosticErrorAI(BaseModel):
     microLessonZh: str
     practiceGoal: str
 
+    @field_validator("code")
+    @classmethod
+    def validate_error_code(cls, value: str) -> str:
+        if value not in ERROR_TAXONOMY:
+            raise ValueError(f"Unsupported diagnostic error code: {value}")
+        return value
+
 
 class SkillUpdateAI(BaseModel):
     skillCode: str
@@ -54,6 +63,13 @@ class SkillUpdateAI(BaseModel):
     zhLabel: str
     masteryDelta: float
     evidenceZh: str
+
+    @field_validator("skillCode")
+    @classmethod
+    def validate_skill_code(cls, value: str) -> str:
+        if value not in ERROR_TAXONOMY:
+            raise ValueError(f"Unsupported skill update code: {value}")
+        return value
 
 
 class LearningNoteAI(BaseModel):
@@ -91,7 +107,7 @@ class TargetEvidenceAI(BaseModel):
     skillCode: str
     opportunityPresent: bool
     outcome: Literal["success", "failure", "avoided", "no_opportunity"]
-    evidenceQuote: str = ""
+    evidenceQuote: str = Field(default="", max_length=EVIDENCE_QUOTE_MAX_CHARACTERS)
     confidence: float = Field(default=0.0, ge=0, le=1)
 
     @field_validator("skillCode")
@@ -100,6 +116,11 @@ class TargetEvidenceAI(BaseModel):
         if value not in ERROR_TAXONOMY:
             raise ValueError(f"Unsupported target skill: {value}")
         return value
+
+    @field_validator("evidenceQuote", mode="before")
+    @classmethod
+    def bound_evidence_quote(cls, value):
+        return value[:EVIDENCE_QUOTE_MAX_CHARACTERS] if isinstance(value, str) else value
 
 
 class DiagnosticAIResult(BaseModel):

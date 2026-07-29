@@ -29,6 +29,13 @@ EvidenceOutcome = Literal[
     "no_opportunity",
 ]
 CoverageStatus = Literal["unassessed", "exploring", "enough_evidence"]
+EVIDENCE_QUOTE_MAX_CHARACTERS = 600
+
+
+def saturate_activity_attempt_count(value: int) -> int:
+    """Fit an observed count into ActivityRun's persisted counter contract."""
+
+    return min(100, max(0, int(value)))
 
 
 class CreateActivityRunRequest(BaseModel):
@@ -88,7 +95,17 @@ class RecordEvidenceRequest(BaseModel):
     contextKey: Optional[str] = Field(default=None, max_length=240)
     novelContext: bool = False
     delayed: bool = False
-    evidenceQuote: str = Field(default="", max_length=600)
+    evidenceQuote: str = Field(
+        default="",
+        max_length=EVIDENCE_QUOTE_MAX_CHARACTERS,
+    )
+
+    @field_validator("evidenceQuote", mode="before")
+    @classmethod
+    def bound_evidence_quote(cls, value):
+        """Evidence is compact metadata; preserve the full source elsewhere."""
+
+        return value[:EVIDENCE_QUOTE_MAX_CHARACTERS] if isinstance(value, str) else value
 
     @field_validator("skillCode")
     @classmethod

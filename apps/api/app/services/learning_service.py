@@ -58,9 +58,14 @@ def _run_id(now: datetime) -> str:
     return f"run_{stamp}_{uuid4().hex[:10]}"
 
 
-def create_activity_run(user_id: str, request: CreateActivityRunRequest) -> dict:
+def build_activity_run(user_id: str, request: CreateActivityRunRequest) -> dict:
+    """Build a new ActivityRun without persisting it.
+
+    Callers that must commit the run with another aggregate can use this
+    builder and a repository transaction instead of creating an orphan first.
+    """
     now = _utc_now()
-    run = {
+    return {
         "id": _run_id(now),
         "userId": user_id,
         "activityType": request.activityType,
@@ -87,8 +92,43 @@ def create_activity_run(user_id: str, request: CreateActivityRunRequest) -> dict
         "updatedAt": _iso(now),
         "version": 1,
     }
+
+
+def create_activity_run(user_id: str, request: CreateActivityRunRequest) -> dict:
+    run = build_activity_run(user_id, request)
     save_activity_run(run, create_only=True)
     return run
+
+
+def prepare_activity_run_update(
+    run: dict,
+    request: UpdateActivityRunRequest,
+) -> dict:
+    """Validate and apply an ActivityRun update without persisting it."""
+    updates = request.model_dump(exclude_none=True)
+    if not updates:
+        return dict(run)
+
+    current_status = str(run.get("status") or "assigned")
+    requested_status = str(updates.get("status") or current_status)
+    if requested_status not in RUN_TRANSITIONS.get(current_status, {current_status}):
+        raise ValueError(
+            f"Activity run cannot move from {current_status} to {requested_status}."
+        )
+
+    now = now_iso()
+    updated = {**run, **updates, "updatedAt": now}
+    if requested_status == "started" and not updated.get("startedAt"):
+        updated["startedAt"] = now
+    if requested_status == "completed" and not updated.get("completedAt"):
+        updated["completedAt"] = now
+    if requested_status == "abandoned" and not updated.get("abandonedAt"):
+        updated["abandonedAt"] = now
+    if requested_status == "skipped" and not updated.get("skippedAt"):
+        updated["skippedAt"] = now
+    prior_version = int(run.get("version", 1))
+    updated["version"] = prior_version + 1
+    return updated
 
 
 def update_activity_run(
@@ -107,25 +147,8 @@ def update_activity_run(
         run = get_activity_run(user_id, run_id)
         if not run:
             raise LookupError("Activity run not found.")
-        current_status = str(run.get("status") or "assigned")
-        requested_status = str(updates.get("status") or current_status)
-        if requested_status not in RUN_TRANSITIONS.get(current_status, {current_status}):
-            raise ValueError(
-                f"Activity run cannot move from {current_status} to {requested_status}."
-            )
-
-        now = now_iso()
-        updated = {**run, **updates, "updatedAt": now}
-        if requested_status == "started" and not updated.get("startedAt"):
-            updated["startedAt"] = now
-        if requested_status == "completed" and not updated.get("completedAt"):
-            updated["completedAt"] = now
-        if requested_status == "abandoned" and not updated.get("abandonedAt"):
-            updated["abandonedAt"] = now
-        if requested_status == "skipped" and not updated.get("skippedAt"):
-            updated["skippedAt"] = now
         prior_version = int(run.get("version", 1))
-        updated["version"] = prior_version + 1
+        updated = prepare_activity_run_update(run, request)
         try:
             save_activity_run(updated, expected_version=prior_version)
             return updated

@@ -8,9 +8,27 @@ export const PRACTICE_TYPE_META: Record<PracticeType, { label: string; zhLabel: 
   rewrite_sentence: { label: "Rewrite", zhLabel: "Rewrite" },
 }
 
-// Keyed by the backend taxonomy codes (app/core/taxonomy.py). These values are
-// also used as `targetSkillCode` when generating practice, so they MUST match
-// the codes the backend emits.
+export const CANONICAL_SKILL_CODES = [
+  "grammar.verb_tense",
+  "grammar.article",
+  "grammar.preposition",
+  "grammar.subject_verb_agreement",
+  "vocab.word_choice",
+  "vocab.repetition",
+  "sentence.structure",
+  "sentence.variety",
+  "discourse.coherence",
+  "style.register",
+  "clarity.expression",
+] as const
+
+export function isCanonicalSkillCode(code: string): boolean {
+  return (CANONICAL_SKILL_CODES as readonly string[]).includes(code)
+}
+
+// Canonical backend taxonomy labels come first. The extra grammar labels are
+// display-only compatibility for old history rows; adaptive Practice filters
+// those legacy codes before selecting a new target.
 export const SKILL_LABELS: Record<string, string> = {
   "grammar.verb_tense": "Verb tense",
   "grammar.article": "Articles",

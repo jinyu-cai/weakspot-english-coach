@@ -2,6 +2,7 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.taxonomy import ERROR_TAXONOMY
 from app.models.common import OutputLanguage, PracticeType
 
 ErrorScope = Literal["weekly", "all"]
@@ -56,6 +57,14 @@ class LearningPlanDayAI(BaseModel):
     @classmethod
     def cap_target_skills(cls, value):
         return value[:4] if isinstance(value, list) else value
+
+    @field_validator("targetSkillCodes")
+    @classmethod
+    def validate_target_skills(cls, value: List[str]) -> List[str]:
+        invalid = [code for code in value if code not in ERROR_TAXONOMY]
+        if invalid:
+            raise ValueError(f"Unsupported target skill code(s): {', '.join(invalid)}")
+        return list(dict.fromkeys(value))
 
     @field_validator("tasks", mode="before")
     @classmethod

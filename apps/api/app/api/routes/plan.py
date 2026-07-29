@@ -3,17 +3,21 @@ import time
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
-from botocore.exceptions import ClientError
 
 from app.api.deps import Identity, get_llm_provider, rate_limited, resolve_identity
+from app.core.taxonomy import ERROR_TAXONOMY
 from app.db.repositories import (
+    ItemTooLargeError,
+    PlanProgressConflictError,
     get_active_plan,
+    get_activity_run,
     get_or_create_profile,
     list_recent_errors,
     list_skills,
     list_weekly_errors,
     now_iso,
     save_active_plan,
+    save_plan_with_activity_run,
 )
 from app.models.plan import GeneratePlanRequest
 from app.models.plan import UpdatePlanTaskRequest
@@ -21,7 +25,11 @@ from app.models.learning import CreateActivityRunRequest, UpdateActivityRunReque
 from app.services.ai_client import LLMProviderConfig
 from app.services.plan_service import generate_learning_plan
 from app.services.memory_service import retrieve_memory_pack
-from app.services.learning_service import create_activity_run, update_activity_run
+from app.services.learning_service import (
+    build_activity_run,
+    create_activity_run,
+    prepare_activity_run_update,
+)
 
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
@@ -82,7 +90,11 @@ def create_plan(
         now = now_iso()
         profile = get_or_create_profile(req.userId)
         skills = sorted(
-            list_skills(req.userId),
+            (
+                skill
+                for skill in list_skills(req.userId)
+                if str(skill.get("skillCode") or "") in ERROR_TAXONOMY
+            ),
             key=lambda skill: float(skill.get("mastery", 50)),
         )[:20]
         if req.errorScope == "weekly":
@@ -94,6 +106,9 @@ def create_plan(
         # Memory Pack instead of dumping an ever-growing learner history.
         bounded_errors = []
         for error in recent_errors[:40]:
+            error_code = str(error.get("code") or "")
+            if error_code and error_code not in ERROR_TAXONOMY:
+                continue
             compact = {
                 key: error.get(key)
                 for key in (
@@ -262,54 +277,124 @@ def update_plan_task(
     if not selected:
         raise HTTPException(status_code=404, detail="Plan task not found")
 
-    now = now_iso()
-    prior_status = str(selected.get("status") or ("completed" if selected.get("completed") else "assigned"))
-    if prior_status == "completed" and req.status in {"assigned", "started"}:
-        replacement_run = create_activity_run(
-            identity.user_id,
-            CreateActivityRunRequest(
-                activityType="plan",
-                sourceId=task_id,
-                title=str(selected.get("titleZh") or "Plan task")[:240],
-                taskType=str(selected.get("practiceType") or "practice"),
-                goal=str((selected_day or {}).get("goalZh") or "Repeat this plan task."),
-                targetSkills=list((selected_day or {}).get("targetSkillCodes") or []),
-                modality="exercise",
-                difficulty=f"day_{(selected_day or {}).get('day', 1)}",
-                estimatedMinutes=int(selected.get("estimatedMinutes") or 15),
-            ),
-        )
-        selected["activityRunId"] = replacement_run["id"]
+    current_run_id = str(selected.get("activityRunId") or "")
+    current_run = (
+        get_activity_run(identity.user_id, current_run_id)
+        if current_run_id
+        else None
+    )
+    replacement = current_run is None
+    closed_run = None
+    expected_closed_run_version = None
+    expected_run_version = (
+        current_run.get("version")
+        if current_run is not None and "version" in current_run
+        else None
+    )
+    run_request = UpdateActivityRunRequest(status=req.status)
+
+    if current_run is not None:
+        try:
+            updated_run = prepare_activity_run_update(current_run, run_request)
+        except ValueError as exc:
+            # A backward reset or terminal reopen is a new learning attempt,
+            # not a mutation of immutable historical completion evidence.
+            if req.status not in {"assigned", "started"}:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "invalid_plan_task_transition",
+                        "message": str(exc),
+                    },
+                ) from exc
+            replacement = True
+            if str(current_run.get("status") or "assigned") == "started":
+                expected_closed_run_version = (
+                    current_run.get("version")
+                    if "version" in current_run
+                    else None
+                )
+                closed_run = prepare_activity_run_update(
+                    current_run,
+                    UpdateActivityRunRequest(
+                        status="abandoned",
+                        abandonReason="Plan task reset for a new attempt.",
+                    ),
+                )
+
+    if replacement:
+        try:
+            updated_run = build_activity_run(
+                identity.user_id,
+                CreateActivityRunRequest(
+                    activityType="plan",
+                    sourceId=task_id,
+                    title=str(selected.get("titleZh") or "Plan task")[:240],
+                    taskType=str(selected.get("practiceType") or "practice"),
+                    goal=str((selected_day or {}).get("goalZh") or "Repeat this plan task."),
+                    targetSkills=[
+                        code
+                        for code in (selected_day or {}).get("targetSkillCodes") or []
+                        if code in ERROR_TAXONOMY
+                    ],
+                    modality="exercise",
+                    difficulty=f"day_{(selected_day or {}).get('day', 1)}",
+                    estimatedMinutes=int(selected.get("estimatedMinutes") or 15),
+                ),
+            )
+            if req.status != "assigned":
+                updated_run = prepare_activity_run_update(updated_run, run_request)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "invalid_plan_activity",
+                    "message": "This Plan task cannot create a valid learning activity.",
+                },
+            ) from exc
+        selected["activityRunId"] = updated_run["id"]
+        selected["startedAt"] = None
         selected["completedAt"] = None
         selected["score"] = None
+
+    now = now_iso()
     selected["status"] = req.status
     selected["completed"] = req.status == "completed"
     if req.status == "started" and not selected.get("startedAt"):
-        selected["startedAt"] = now
+        selected["startedAt"] = updated_run.get("startedAt") or now
     if req.status == "completed":
-        selected["completedAt"] = now
+        selected["completedAt"] = updated_run.get("completedAt") or now
+    elif req.status in {"assigned", "started", "skipped"}:
+        selected["completedAt"] = None
     if req.score is not None:
         selected["score"] = req.score
     plan["updatedAt"] = now
-    had_version = "version" in plan
-    prior_version = int(plan.get("version", 1))
-    plan["version"] = prior_version + 1
+    expected_plan_version = plan.get("version") if "version" in plan else None
+    plan["version"] = int(plan.get("version", 1)) + 1
     try:
-        save_active_plan(plan, expected_version=prior_version if had_version else None)
-    except ClientError as exc:
-        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
-            raise HTTPException(
-                status_code=409,
-                detail={"code": "plan_changed", "message": "The plan changed; reload and try again."},
-            ) from exc
-        raise
-
-    run_id = selected.get("activityRunId")
-    if run_id:
-        run_status = "skipped" if req.status == "skipped" else req.status
-        update_activity_run(
-            identity.user_id,
-            run_id,
-            UpdateActivityRunRequest(status=run_status),
+        save_plan_with_activity_run(
+            plan,
+            updated_run,
+            expected_plan_version=expected_plan_version,
+            expected_run_version=expected_run_version,
+            create_run=replacement,
+            closed_run=closed_run,
+            expected_closed_run_version=expected_closed_run_version,
         )
+    except PlanProgressConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "plan_changed",
+                "message": "The Plan or task activity changed; reload and try again.",
+            },
+        ) from exc
+    except ItemTooLargeError as exc:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "code": "plan_storage_limit",
+                "message": "This Plan is too large to update safely.",
+            },
+        ) from exc
     return {"plan": _decorate_plan(plan), "task": selected}

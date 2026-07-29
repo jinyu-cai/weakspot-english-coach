@@ -116,7 +116,9 @@ export default function InputLearningPage() {
     selectedSourceId ? ["input-learning:source", selectedSourceId] : null,
     ([, id]) => getInputLearningSource(id),
     {
-      onError: () => toast.error(t.inputLearning.loadFailed),
+      onError: (error) => toast.error(t.inputLearning.loadFailed, {
+        description: error instanceof Error ? error.message : undefined,
+      }),
     },
   )
 
@@ -811,6 +813,7 @@ function InputOutputPractice({
 
       <Textarea
         value={responseText}
+        maxLength={8000}
         onChange={(event) => {
           setResponseText(event.target.value)
           setResult(null)

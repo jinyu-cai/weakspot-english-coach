@@ -11,6 +11,8 @@ from app.core.taxonomy import ERROR_TAXONOMY
 
 RealtimeVoiceModel = Literal["gpt-realtime-mini-2025-12-15", "gpt-realtime-2"]
 TextChatModelMode = Literal["fast", "deep"]
+CHAT_MESSAGE_MAX_CHARACTERS = 12_000
+EVIDENCE_QUOTE_MAX_CHARACTERS = 600
 
 
 class ChatCreateSessionRequest(BaseModel):
@@ -40,13 +42,22 @@ class ChatCreateSessionRequest(BaseModel):
 class ChatSendRequest(BaseModel):
     userId: str
     sessionId: str
-    text: str = Field(min_length=1)
+    text: str = Field(min_length=1, max_length=CHAT_MESSAGE_MAX_CHARACTERS)
+    clientMessageId: Optional[str] = Field(
+        default=None,
+        min_length=8,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )
 
 
 class ChatPredictRequest(BaseModel):
     userId: str
     sessionId: str
-    partialText: str = Field(min_length=1)
+    partialText: str = Field(
+        min_length=1,
+        max_length=CHAT_MESSAGE_MAX_CHARACTERS,
+    )
 
 
 class AnalyzeSessionRequest(BaseModel):
@@ -97,6 +108,14 @@ class SessionCorrectionAI(BaseModel):
     microLessonZh: str
     practiceGoal: str
 
+    @field_validator("code")
+    @classmethod
+    def validate_error_code(cls, value: str) -> str:
+        if value not in ERROR_TAXONOMY:
+            raise ValueError(f"Unsupported session correction code: {value}")
+        return value
+
+
 class SessionNaturalExpressionAI(BaseModel):
     original: str
     natural: str
@@ -113,9 +132,21 @@ class SessionWeaknessAI(BaseModel):
     code: str
     category: str
     severity: str
-    evidenceQuote: str
+    evidenceQuote: str = Field(max_length=EVIDENCE_QUOTE_MAX_CHARACTERS)
     explanationZh: str
     practiceGoal: str
+
+    @field_validator("code")
+    @classmethod
+    def validate_error_code(cls, value: str) -> str:
+        if value not in ERROR_TAXONOMY:
+            raise ValueError(f"Unsupported session weakness code: {value}")
+        return value
+
+    @field_validator("evidenceQuote", mode="before")
+    @classmethod
+    def bound_evidence_quote(cls, value):
+        return value[:EVIDENCE_QUOTE_MAX_CHARACTERS] if isinstance(value, str) else value
 
 
 class StealthProbeAssessmentAI(BaseModel):
@@ -130,10 +161,15 @@ class StealthProbeAssessmentAI(BaseModel):
         "avoided",
         "no_opportunity",
     ]
-    evidenceQuote: str = ""
+    evidenceQuote: str = Field(default="", max_length=EVIDENCE_QUOTE_MAX_CHARACTERS)
     rationale: str = ""
     confidence: float = Field(default=0.0, ge=0, le=1)
     hintLevel: int = Field(default=0, ge=0, le=4)
+
+    @field_validator("evidenceQuote", mode="before")
+    @classmethod
+    def bound_evidence_quote(cls, value):
+        return value[:EVIDENCE_QUOTE_MAX_CHARACTERS] if isinstance(value, str) else value
 
 
 class SessionAnalysisAI(BaseModel):

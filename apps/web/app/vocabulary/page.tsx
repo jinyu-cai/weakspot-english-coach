@@ -24,7 +24,15 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
-import { diagnose, generateCoachMission, getHistory, updateActivityRun } from "@/lib/api-client"
+import {
+  boundLearnerResponseText,
+  diagnose,
+  generateCoachMission,
+  getHistory,
+  learnerResponseCharacterCount,
+  LEARNER_RESPONSE_MAX_CHARACTERS,
+  updateActivityRun,
+} from "@/lib/api-client"
 import { DEMO_USER_ID } from "@/lib/mock-data"
 import type { CoachMission, DiagnoseResponse } from "@/lib/types"
 
@@ -141,8 +149,10 @@ export default function VocabularyPage() {
         }).catch(() => undefined)
       }
       await requestWord(knownWords)
-    } catch {
-      toast.error(t.vocabulary.generateFailed)
+    } catch (error) {
+      toast.error(t.vocabulary.generateFailed, {
+        description: error instanceof Error ? error.message : undefined,
+      })
     } finally {
       setCreating(false)
     }
@@ -164,8 +174,10 @@ export default function VocabularyPage() {
       }
       await requestWord(nextKnownWords)
       toast.success(t.vocabulary.knownSkipped)
-    } catch {
-      toast.error(t.vocabulary.generateFailed)
+    } catch (error) {
+      toast.error(t.vocabulary.generateFailed, {
+        description: error instanceof Error ? error.message : undefined,
+      })
     } finally {
       setSkipping(false)
     }
@@ -217,8 +229,10 @@ export default function VocabularyPage() {
       setSubmittedAnswer(text)
       setDiagnostic(result)
       await refreshEvidenceCount()
-    } catch {
-      toast.error(t.vocabulary.analyzeFailed)
+    } catch (error) {
+      toast.error(t.vocabulary.analyzeFailed, {
+        description: error instanceof Error ? error.message : undefined,
+      })
     } finally {
       setAnalyzing(false)
     }
@@ -411,11 +425,16 @@ export default function VocabularyPage() {
                 <CardContent>
                   <Textarea
                     value={answer}
-                    onChange={(event) => setAnswer(event.target.value)}
+                    maxLength={LEARNER_RESPONSE_MAX_CHARACTERS * 2}
+                    onChange={(event) => setAnswer(boundLearnerResponseText(event.target.value))}
                     placeholder={t.vocabulary.placeholder}
                     className="min-h-36 resize-y"
                     disabled={analyzing || Boolean(diagnostic)}
                   />
+                  <div className="mt-1 text-right text-xs tabular-nums text-muted-foreground" aria-live="polite">
+                    {learnerResponseCharacterCount(answer).toLocaleString("en-US")}
+                    /{LEARNER_RESPONSE_MAX_CHARACTERS.toLocaleString("en-US")}
+                  </div>
                   <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
                     <Button
                       variant="outline"

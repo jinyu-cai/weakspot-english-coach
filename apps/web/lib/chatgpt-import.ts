@@ -1,6 +1,9 @@
 import JSZip from "jszip"
 import type { ChatImportConversation, ChatImportMessage } from "./types"
 
+const CHAT_IMPORT_BATCH_MAX_BYTES = 200_000
+const CHAT_IMPORT_BATCH_MAX_CONVERSATIONS = 20
+
 type RawExportMessage = {
   id?: string
   author?: { role?: string }
@@ -193,4 +196,100 @@ export function selectImportConversations(conversations: ChatImportConversation[
       ...conversation,
       messages: conversation.messages.slice(-80),
     }))
+}
+
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength
+}
+
+function splitTextByUtf8Bytes(value: string, maxBytes: number): string[] {
+  if (utf8Bytes(value) <= maxBytes) return [value]
+  const chunks: string[] = []
+  let current = ""
+  let currentBytes = 0
+  for (const character of value) {
+    const characterBytes = utf8Bytes(character)
+    if (current && currentBytes + characterBytes > maxBytes) {
+      chunks.push(current)
+      current = ""
+      currentBytes = 0
+    }
+    current += character
+    currentBytes += characterBytes
+  }
+  if (current) chunks.push(current)
+  return chunks
+}
+
+function conversationPayloadBytes(conversations: ChatImportConversation[]): number {
+  return utf8Bytes(JSON.stringify({ conversations }))
+}
+
+function conversationSegments(
+  conversation: ChatImportConversation,
+  maxBytes: number,
+): ChatImportConversation[] {
+  // Reserve enough room for JSON keys, conversation metadata, and the rest of
+  // the request envelope before splitting a single unusually large message.
+  const maxMessageBytes = Math.max(1_024, maxBytes - 4_096)
+  const messages = conversation.messages.flatMap((message) =>
+    splitTextByUtf8Bytes(message.text, maxMessageBytes).map((text) => ({ ...message, text })),
+  )
+  const base = {
+    ...conversation,
+    id: conversation.id?.slice(0, 240) ?? null,
+    title: conversation.title?.slice(0, 500) ?? null,
+  }
+  const segments: ChatImportConversation[] = []
+  let segmentMessages: ChatImportMessage[] = []
+
+  for (const message of messages) {
+    const candidate = { ...base, messages: [...segmentMessages, message] }
+    if (segmentMessages.length && conversationPayloadBytes([candidate]) > maxBytes - 512) {
+      segments.push({ ...base, messages: segmentMessages })
+      segmentMessages = [message]
+    } else {
+      segmentMessages.push(message)
+    }
+  }
+  if (segmentMessages.length) segments.push({ ...base, messages: segmentMessages })
+  return segments.map((segment, index) => segments.length > 1
+    ? {
+        ...segment,
+        id: segment.id ? `${segment.id}:part-${index + 1}` : `part-${index + 1}`,
+        title: segment.title ? `${segment.title} (part ${index + 1}/${segments.length})` : segment.title,
+      }
+    : segment)
+}
+
+/**
+ * Keep each request comfortably below common ingress limits using serialized
+ * UTF-8 bytes, not JavaScript character count. Oversized conversations are
+ * split only at message boundaries (or within one exceptional message).
+ */
+export function chunkChatImportConversations(
+  conversations: ChatImportConversation[],
+  maxBytes = CHAT_IMPORT_BATCH_MAX_BYTES,
+): ChatImportConversation[][] {
+  const segments = conversations.flatMap((conversation) => conversationSegments(conversation, maxBytes))
+  const batches: ChatImportConversation[][] = []
+  let batch: ChatImportConversation[] = []
+
+  for (const segment of segments) {
+    const candidate = [...batch, segment]
+    if (
+      batch.length
+      && (
+        candidate.length > CHAT_IMPORT_BATCH_MAX_CONVERSATIONS
+        || conversationPayloadBytes(candidate) > maxBytes
+      )
+    ) {
+      batches.push(batch)
+      batch = [segment]
+    } else {
+      batch = candidate
+    }
+  }
+  if (batch.length) batches.push(batch)
+  return batches
 }

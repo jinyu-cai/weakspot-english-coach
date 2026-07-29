@@ -12,6 +12,7 @@ from app.api.deps import Identity, rate_limited, resolve_identity
 from app.config import settings
 from app.models.common import OutputLanguage
 from app.db.repositories import (
+    TranscriptCapacityError,
     claim_chat_session_turn,
     finalize_chat_session_transcript_batch,
     get_chat_session,
@@ -38,12 +39,13 @@ from app.services.stealth_practice_service import (
 
 router = APIRouter(prefix="/chat")
 logger = logging.getLogger("uvicorn.error")
+TRANSCRIPT_REQUEST_MAX_MESSAGES = 8
 
 
 class RealtimeSessionRequest(BaseModel):
-    userId: str
-    topic: Optional[str] = None
-    model: Optional[str] = None
+    userId: str = Field(max_length=200)
+    topic: Optional[str] = Field(default=None, max_length=300)
+    model: Optional[str] = Field(default=None, max_length=200)
     outputLanguage: OutputLanguage = "en"
 
 
@@ -51,12 +53,18 @@ class TranscriptMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1, max_length=16000)
     clientMessageId: Optional[str] = Field(default=None, min_length=1, max_length=160)
-    createdAt: Optional[str] = None
+    createdAt: Optional[str] = Field(default=None, max_length=64)
 
 
 class SaveTranscriptRequest(BaseModel):
-    userId: str
-    messages: List[TranscriptMessage] = Field(min_length=1, max_length=500)
+    userId: str = Field(max_length=200)
+    messages: List[TranscriptMessage] = Field(
+        min_length=1,
+        # Eight worst-case JSON-escaped 16k messages remain comfortably below
+        # the production proxy's 1 MiB request-body ceiling. The repository's
+        # larger 490-message capacity still protects internal/staged writes.
+        max_length=TRANSCRIPT_REQUEST_MAX_MESSAGES,
+    )
 
 
 class RealtimeSidebandAttachRequest(BaseModel):
@@ -532,6 +540,19 @@ def save_transcript(
         }
     except HTTPException:
         raise
+    except TranscriptCapacityError as exc:
+        logger.info(
+            "realtime transcript rejected session=%s reason=%s",
+            session_id,
+            exc,
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "transcript_capacity_exceeded",
+                "message": str(exc),
+            },
+        ) from exc
     except Exception as exc:
         logger.exception("realtime transcript save_error session=%s", session_id)
         raise HTTPException(

@@ -8,6 +8,7 @@ import math
 from typing import Optional
 
 from app.core.mastery import DEFAULT_MASTERY
+from app.core.taxonomy import ERROR_TAXONOMY
 from app.db.repositories import (
     list_recent_errors,
     list_recent_practice_attempts,
@@ -31,16 +32,30 @@ def _skill_scores(user_id: str) -> list[dict]:
     skills = list_skills(user_id)
     errors = list_recent_errors(user_id, limit=100)
     attempts = list_recent_practice_attempts(user_id, limit=100)
-    error_counts = Counter(str(error.get("code") or "") for error in errors)
+    error_counts = Counter(
+        code
+        for error in errors
+        if (code := str(error.get("code") or "")) in ERROR_TAXONOMY
+    )
     attempts_by_skill: dict[str, list[dict]] = defaultdict(list)
     for attempt in attempts:
-        attempts_by_skill[str(attempt.get("targetSkillCode") or "")].append(attempt)
+        code = str(attempt.get("targetSkillCode") or "")
+        if code in ERROR_TAXONOMY:
+            attempts_by_skill[code].append(attempt)
 
-    known_codes = {str(skill.get("skillCode")) for skill in skills if skill.get("skillCode")}
+    known_codes = {
+        code
+        for skill in skills
+        if (code := str(skill.get("skillCode") or "")) in ERROR_TAXONOMY
+    }
     known_codes.update(code for code in error_counts if code)
     if not known_codes:
         known_codes.add(DEFAULT_SKILL)
-    skill_by_code = {str(skill.get("skillCode")): skill for skill in skills}
+    skill_by_code = {
+        code: skill
+        for skill in skills
+        if (code := str(skill.get("skillCode") or "")) in ERROR_TAXONOMY
+    }
 
     scored: list[dict] = []
     for code in known_codes:

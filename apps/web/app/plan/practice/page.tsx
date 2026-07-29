@@ -8,7 +8,11 @@ import { toast } from "sonner"
 import { ArrowLeft, CheckCircle2, Dumbbell, Lightbulb, RefreshCw, Trophy, XCircle } from "lucide-react"
 import { generatePractice, getPlan, gradePracticeAdhoc, updatePlanTask } from "@/lib/api-client"
 import { DEMO_USER_ID } from "@/lib/mock-data"
-import { practiceTypeLabel, skillLabel as localizedSkillLabel } from "@/lib/practice"
+import {
+  isCanonicalSkillCode,
+  practiceTypeLabel,
+  skillLabel as localizedSkillLabel,
+} from "@/lib/practice"
 import type {
   LearningPlanDay,
   LearningPlanTask,
@@ -34,6 +38,11 @@ import { finishTaskResume, loadTaskResume, startTaskResume, updateTaskResume } f
 import { useNextExercise, type NextExerciseStatus } from "@/lib/use-next-exercise"
 
 const DEFAULT_SKILL = "grammar.verb_tense"
+
+function planSkillCode(day: LearningPlanDay): string {
+  const skillCode = day.targetSkillCodes?.[0]
+  return skillCode && isCanonicalSkillCode(skillCode) ? skillCode : DEFAULT_SKILL
+}
 
 type RunnerSession = {
   task: LearningPlanTask
@@ -118,8 +127,10 @@ function RunnerCard({
       })
       setGrade(result)
       onGraded(result)
-    } catch {
-      toast.error(t.plan.gradeFailed)
+    } catch (error) {
+      toast.error(t.plan.gradeFailed, {
+        description: error instanceof Error ? error.message : undefined,
+      })
     } finally {
       setSubmitting(false)
     }
@@ -132,8 +143,10 @@ function RunnerCard({
     setAdvancing(true)
     try {
       await onNext()
-    } catch {
-      toast.error(t.plan.freshFailed)
+    } catch (error) {
+      toast.error(t.plan.freshFailed, {
+        description: error instanceof Error ? error.message : undefined,
+      })
     } finally {
       setAdvancing(false)
     }
@@ -279,7 +292,7 @@ function PlanPracticeFlow() {
     setGeneratingBatch(true)
     try {
       await updatePlanTask(nextLocated.task.id, "started")
-      const skillCode = nextLocated.day.targetSkillCodes?.[0] ?? DEFAULT_SKILL
+      const skillCode = planSkillCode(nextLocated.day)
       const sessionSize = nextLocated.task.exercises.length || 3
       const fresh = await generatePractice(DEMO_USER_ID, skillCode, nextLocated.task.practiceType, {
         sessionId,
@@ -300,7 +313,7 @@ function PlanPracticeFlow() {
         step: "question-1",
         draft: { session: nextSession, current: 0, grades: [], answers: {}, sessionId } satisfies PlanPracticeSnapshot,
       })
-    } catch {
+    } catch (error) {
       const nextSession = {
         task: nextLocated.task,
         day: nextLocated.day,
@@ -315,7 +328,9 @@ function PlanPracticeFlow() {
         step: "question-1",
         draft: { session: nextSession, current: 0, grades: [], answers: {}, sessionId } satisfies PlanPracticeSnapshot,
       })
-      toast.error(t.plan.freshFailed)
+      toast.error(t.plan.freshFailed, {
+        description: error instanceof Error ? error.message : undefined,
+      })
     } finally {
       setGeneratingBatch(false)
     }
@@ -375,7 +390,7 @@ function PlanPracticeFlow() {
     if (current + 1 >= total) return
     const nextIndex = current + 1
     if (session.exercises[nextIndex]) return
-    const skillCode = session.day.targetSkillCodes?.[0] ?? DEFAULT_SKILL
+    const skillCode = planSkillCode(session.day)
     prepareNext(nextIndex, async () => {
       const fresh = await generatePractice(DEMO_USER_ID, skillCode, session.task.practiceType, {
         sessionId: sessionIdRef.current ?? crypto.randomUUID(),
@@ -411,7 +426,7 @@ function PlanPracticeFlow() {
       setCurrent(nextIndex)
       return
     }
-    const skillCode = session.day.targetSkillCodes?.[0] ?? DEFAULT_SKILL
+    const skillCode = planSkillCode(session.day)
     const next = await takeNext(nextIndex, async () => {
       const fresh = await generatePractice(DEMO_USER_ID, skillCode, session.task.practiceType, {
         sessionId: sessionIdRef.current ?? crypto.randomUUID(),
@@ -430,7 +445,7 @@ function PlanPracticeFlow() {
 
   async function handleRegenerate() {
     if (!session) return
-    const skillCode = session.day.targetSkillCodes?.[0] ?? DEFAULT_SKILL
+    const skillCode = planSkillCode(session.day)
     setRegenerating(true)
     try {
       const fresh = await generatePractice(DEMO_USER_ID, skillCode, session.task.practiceType, {
@@ -448,8 +463,10 @@ function PlanPracticeFlow() {
       )
       setAnswers((previous) => ({ ...previous, [current]: "" }))
       toast.success(t.plan.freshReady, { description: t.plan.freshDescription })
-    } catch {
-      toast.error(t.plan.freshFailed)
+    } catch (error) {
+      toast.error(t.plan.freshFailed, {
+        description: error instanceof Error ? error.message : undefined,
+      })
     } finally {
       setRegenerating(false)
     }
@@ -458,7 +475,7 @@ function PlanPracticeFlow() {
   // Start a new adaptive set; later questions are generated after each grade.
   async function generateNewSet() {
     if (!session) return
-    const skillCode = session.day.targetSkillCodes?.[0] ?? DEFAULT_SKILL
+    const skillCode = planSkillCode(session.day)
     setGeneratingBatch(true)
     try {
       const sessionId = crypto.randomUUID()
@@ -495,8 +512,10 @@ function PlanPracticeFlow() {
       toast.success("New questions ready", {
         description: `1 ${practiceTypeLabel(session.task.practiceType, language)} ${t.plan.sameType}`,
       })
-    } catch {
-      toast.error(t.plan.newFailed)
+    } catch (error) {
+      toast.error(t.plan.newFailed, {
+        description: error instanceof Error ? error.message : undefined,
+      })
     } finally {
       setGeneratingBatch(false)
     }
@@ -549,7 +568,7 @@ function PlanPracticeFlow() {
     return notFound
   }
 
-  const skillCode = session.day.targetSkillCodes?.[0] ?? DEFAULT_SKILL
+  const skillCode = planSkillCode(session.day)
   const practiceType: PracticeType = session.task.practiceType
   const sourceExercises = session.exercises
 
