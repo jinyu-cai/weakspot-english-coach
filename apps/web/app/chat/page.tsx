@@ -339,6 +339,9 @@ export default function ChatPage() {
         mission.scene.scenarioFamily,
         mission.scene.scenarioKey,
         textChatModelMode,
+        mission.activityRunId ?? undefined,
+        mission.type,
+        mission.targetSkills,
       )
       setSessions((prev) => [session, ...prev])
       activeSessionIdRef.current = session.id
