@@ -391,7 +391,11 @@ def create_session(
                 sourceId=session_id,
                 title=req.topic or "English conversation",
                 taskType="open_conversation",
-                goal=req.scenarioPrompt or req.topic or "Practice meaningful English conversation.",
+                # scenarioPrompt is an internal facilitator brief and can be
+                # thousands of characters. ActivityRun.goal is concise,
+                # learner-facing metadata; the complete prompt remains stored
+                # separately on the Chat session below.
+                goal=req.topic or "Practice meaningful English conversation.",
                 targetSkills=[],
                 modality="text_chat",
                 difficulty="adaptive",

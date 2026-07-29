@@ -71,6 +71,7 @@ def main() -> int:
         from app.config import settings
         from app.db import repositories as repository_module
         from app.db.repositories import (
+            get_activity_run,
             get_exercise,
             list_chat_messages,
             save_error,
@@ -650,6 +651,29 @@ def main() -> int:
             default_model_session = r.json()["session"]
             assert default_model_session["textModel"] == "qwen3.7-plus", default_model_session
             assert default_model_session["textModelMode"] == "fast", default_model_session
+
+            long_scenario_prompt = (
+                "Internal facilitator direction with progressive scene beats. " * 100
+            )[:4000]
+            r = client.post(
+                "/api/v1/chat/sessions",
+                json={
+                    "userId": user,
+                    "topic": "Generated long-form scene",
+                    "scenarioPrompt": long_scenario_prompt,
+                    "starterMessage": "Let us work through this situation.",
+                },
+            )
+            assert r.status_code == 200, r.text
+            generated_scene_session = r.json()["session"]
+            assert generated_scene_session["scenarioPrompt"] == long_scenario_prompt
+            generated_scene_run = get_activity_run(
+                generated_scene_session["userId"],
+                generated_scene_session["learningRunId"],
+            )
+            assert generated_scene_run is not None
+            assert generated_scene_run["goal"] == "Generated long-form scene"
+
             r = client.post(
                 "/api/v1/chat/send",
                 json={"userId": user, "sessionId": default_model_session["id"], "text": "Hello from Plus."},
