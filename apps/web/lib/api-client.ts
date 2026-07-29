@@ -97,6 +97,10 @@ import { getOutputLanguage } from "./language"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
 const USE_MOCK = !API_BASE_URL
+const DEFAULT_API_TIMEOUT_MS = 20_000
+// Deep mission planning commonly takes longer than an ordinary API request.
+// Keep this below the backend proxy's 120-second read timeout.
+const COACH_MISSION_TIMEOUT_MS = 110_000
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const withOutputLanguage = <T extends Record<string, unknown>>(body: T) => ({
@@ -127,9 +131,13 @@ async function getErrorMessage(res: Response, path: string) {
   return `Request failed (${res.status}): ${path}`
 }
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+async function apiFetch<T>(
+  path: string,
+  init?: RequestInit,
+  timeoutMs = DEFAULT_API_TIMEOUT_MS,
+): Promise<T> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 20_000)
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
   const abortFromCaller = () => controller.abort()
   init?.signal?.addEventListener("abort", abortFromCaller, { once: true })
   let res: Response
@@ -1269,7 +1277,7 @@ export async function generateCoachMission(input: CoachMissionRequest): Promise<
   const payload = await apiFetch<{ mission: CoachMission }>("/coach/missions", {
     method: "POST",
     body: JSON.stringify(withOutputLanguage({ ...input })),
-  })
+  }, COACH_MISSION_TIMEOUT_MS)
   return payload.mission
 }
 

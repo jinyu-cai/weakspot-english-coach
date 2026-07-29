@@ -358,8 +358,10 @@ export default function ChatPage() {
         step: "conversation",
         draft: "",
       })
-    } catch {
-      toast.error(t.chat.dynamicCreateFailed)
+    } catch (error) {
+      toast.error(t.chat.dynamicCreateFailed, {
+        description: error instanceof Error ? error.message : undefined,
+      })
     } finally {
       setCreatingSession(false)
     }
