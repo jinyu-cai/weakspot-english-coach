@@ -22,7 +22,7 @@ Analyze imported ChatGPT conversations as learning evidence. You must inspect BO
 
 Follow the language requirement provided below for learner-facing summaries, explanations, micro-lessons, and recommendations. Do not summarize private life details; focus only on English learning patterns.
 
-Use these codes when possible:
+Every weakness must use exactly one of these codes:
 - grammar.verb_tense
 - grammar.article
 - grammar.preposition
@@ -34,6 +34,7 @@ Use these codes when possible:
 - discourse.coherence
 - style.register
 - clarity.expression
+Never invent, refine, or return any other code.
 
 For each weakness:
 - evidenceType must be one of: user_error, expression_gap, assistant_correction, assistant_advice.

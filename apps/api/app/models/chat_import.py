@@ -1,7 +1,8 @@
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from app.core.taxonomy import ERROR_TAXONOMY
 from app.models.common import CEFRLevel, OutputLanguage, Severity
 from app.models.diagnostic import LearningNoteAI
 from app.models.memory import MemoryCandidate
@@ -42,6 +43,13 @@ class ChatWeaknessAI(BaseModel):
     microLessonZh: str
     practiceGoal: str
     confidence: float = Field(ge=0, le=1)
+
+    @field_validator("code")
+    @classmethod
+    def validate_error_code(cls, value: str) -> str:
+        if value not in ERROR_TAXONOMY:
+            raise ValueError(f"Unsupported imported-chat weakness code: {value}")
+        return value
 
 
 class ChatImportAIResult(BaseModel):

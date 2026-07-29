@@ -1,4 +1,5 @@
 from contextlib import ExitStack
+import hashlib
 import logging
 import time
 from uuid import uuid4
@@ -12,6 +13,7 @@ from app.core.pagination import decode_dynamo_cursor, encode_dynamo_cursor
 from app.core.taxonomy import ERROR_TAXONOMY
 from app.db.keys import user_pk
 from app.db.repositories import (
+    ItemTooLargeError,
     claim_chat_session_analysis,
     claim_chat_session_turn,
     finalize_chat_session_turn,
@@ -33,7 +35,12 @@ from app.models.chat import (
     ChatSendRequest,
     SessionAnalysisAI,
 )
-from app.models.learning import CreateActivityRunRequest, RecordEvidenceRequest, UpdateActivityRunRequest
+from app.models.learning import (
+    CreateActivityRunRequest,
+    RecordEvidenceRequest,
+    UpdateActivityRunRequest,
+    saturate_activity_attempt_count,
+)
 from app.services.ai_client import LLMProviderConfig
 from app.services.chat_service import chat_reply, predict_completion
 from app.services.model_catalog import server_model_by_id, server_model_for_name, server_model_pair
@@ -87,6 +94,78 @@ def _allowed_text_models() -> set[str]:
 
 def _elapsed_ms(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
+
+
+def _stable_chat_message_id(
+    user_id: str,
+    session_id: str,
+    client_message_id: str,
+    role: str,
+) -> str:
+    digest = hashlib.sha256(
+        f"{user_id}\0{session_id}\0{client_message_id}\0{role}".encode("utf-8")
+    ).hexdigest()[:20]
+    return f"cm_{digest}"
+
+
+def _completed_chat_turn(
+    messages: list[dict],
+    *,
+    client_message_id: str,
+    expected_text: str,
+) -> dict | None:
+    """Return an atomically completed client turn, rejecting key reuse."""
+
+    user_message = next(
+        (
+            message
+            for message in messages
+            if message.get("role") == "user"
+            and message.get("clientMessageId") == client_message_id
+        ),
+        None,
+    )
+    if user_message is None:
+        return None
+    if str(user_message.get("content") or "") != expected_text:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "client_message_conflict",
+                "message": "This clientMessageId was already used for different text.",
+            },
+        )
+    assistant_message = next(
+        (
+            message
+            for message in messages
+            if message.get("role") == "assistant"
+            and message.get("replyToClientMessageId") == client_message_id
+        ),
+        None,
+    )
+    if assistant_message is None:
+        # Text turns are committed as an atomic pair. Treat a legacy or
+        # externally corrupted half-turn as busy rather than generating a
+        # second assistant reply under the same idempotency key.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "turn_in_progress",
+                "message": "This message is still being processed. Try again shortly.",
+            },
+        )
+    return {
+        "userMessage": user_message,
+        "assistantMessage": assistant_message,
+        "memoriesSaved": [],
+        "memoryRecall": {
+            "traceId": None,
+            "memoryIds": [],
+            "estimatedTokens": 0,
+        },
+        "duplicate": True,
+    }
 
 
 def _unlimited_llm_output(identity: Identity) -> bool:
@@ -389,7 +468,9 @@ def create_session(
             CreateActivityRunRequest(
                 activityType="chat",
                 sourceId=session_id,
-                title=req.topic or "English conversation",
+                # The full topic remains on the Chat session and as the run
+                # goal; ActivityRun.title is intentionally compact metadata.
+                title=req.topic[:240] if req.topic else "English conversation",
                 taskType="open_conversation",
                 # scenarioPrompt is an internal facilitator brief and can be
                 # thousands of characters. ActivityRun.goal is concise,
@@ -426,7 +507,16 @@ def create_session(
         "createdAt": now,
         "updatedAt": now,
     }
-    save_chat_session(session)
+    try:
+        save_chat_session(session)
+    except ItemTooLargeError as exc:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "code": "payload_too_large",
+                "message": "The Chat session is too large to store.",
+            },
+        ) from exc
     return {"session": _public_session(session)}
 
 
@@ -485,6 +575,14 @@ def send_message(
     session = get_chat_session(req.userId, req.sessionId)
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found.")
+    if req.clientMessageId:
+        replay = _completed_chat_turn(
+            list_chat_messages(req.userId, req.sessionId, limit=None),
+            client_message_id=req.clientMessageId,
+            expected_text=req.text,
+        )
+        if replay is not None:
+            return replay
     _ensure_text_session_writable(session)
     effective_provider = _session_provider(session, llm_provider)
     text_model = _session_text_model(session, effective_provider)
@@ -518,6 +616,14 @@ def send_message(
         )
 
         history = list_chat_messages(req.userId, req.sessionId, limit=None)
+        if req.clientMessageId:
+            replay = _completed_chat_turn(
+                history,
+                client_message_id=req.clientMessageId,
+                expected_text=req.text,
+            )
+            if replay is not None:
+                return replay
         history_for_ai = _conversation_messages_for_ai(session, history)
         stealth_probes = _session_stealth_probes(session)
         stealth_probe_history = _session_stealth_probe_history(session)
@@ -578,7 +684,16 @@ def send_message(
             memory_pack = {"text": "", "items": [], "estimatedTokens": 0, "traceId": None}
 
         now = now_iso()
-        user_msg_id = f"cm_{uuid4().hex[:12]}"
+        user_msg_id = (
+            _stable_chat_message_id(
+                req.userId,
+                req.sessionId,
+                req.clientMessageId,
+                "user",
+            )
+            if req.clientMessageId
+            else f"cm_{uuid4().hex[:12]}"
+        )
         user_msg = {
             "id": user_msg_id,
             "userId": req.userId,
@@ -589,6 +704,8 @@ def send_message(
             "betterExpression": None,
             "createdAt": now,
         }
+        if req.clientMessageId:
+            user_msg["clientMessageId"] = req.clientMessageId
 
         ai_result = chat_reply(
             history=history_for_ai,
@@ -630,7 +747,16 @@ def send_message(
             stealth_probe_history = stealth_probe_history[-MAX_TEXT_STEALTH_PROBE_HISTORY:]
 
         assistant_now = now_iso()
-        assistant_msg_id = f"cm_{uuid4().hex[:12]}"
+        assistant_msg_id = (
+            _stable_chat_message_id(
+                req.userId,
+                req.sessionId,
+                req.clientMessageId,
+                "assistant",
+            )
+            if req.clientMessageId
+            else f"cm_{uuid4().hex[:12]}"
+        )
         assistant_msg = {
             "id": assistant_msg_id,
             "userId": req.userId,
@@ -641,6 +767,8 @@ def send_message(
             "betterExpression": ai_result.betterExpression.model_dump() if ai_result.betterExpression else None,
             "createdAt": assistant_now,
         }
+        if req.clientMessageId:
+            assistant_msg["replyToClientMessageId"] = req.clientMessageId
 
         msg_count = len(history) + 2
         summary_text = session.get("summary") or req.text[:80]
@@ -686,8 +814,23 @@ def send_message(
                 "memoryIds": [item.get("id") for item in memory_pack.get("items", [])],
                 "estimatedTokens": memory_pack.get("estimatedTokens", 0),
             },
+            "duplicate": False,
         }
 
+    except ItemTooLargeError as e:
+        logger.warning(
+            "chat[%s] payload_too_large total_ms=%d size_bytes=%d",
+            request_id,
+            _elapsed_ms(started),
+            e.size_bytes,
+        )
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "code": "payload_too_large",
+                "message": "This Chat turn is too large to store.",
+            },
+        ) from e
     except ValueError as e:
         logger.exception("chat[%s] ai_error total_ms=%d", request_id, _elapsed_ms(started))
         raise HTTPException(status_code=502, detail=f"AI error [{request_id}]: {e}") from e
@@ -836,7 +979,18 @@ def analyze_chat_session(
 
         active_stealth_probes = _session_stealth_probes(session)
         if session.get("analysisDraft"):
-            analysis = SessionAnalysisAI.model_validate(session["analysisDraft"])
+            # Drafts created before the canonical taxonomy contract may contain
+            # display-only legacy codes. Preserve the reusable analysis while
+            # excluding rows that can no longer be persisted as learning
+            # targets.
+            draft = dict(session["analysisDraft"])
+            for field in ("corrections", "weaknesses"):
+                draft[field] = [
+                    row
+                    for row in draft.get(field) or []
+                    if isinstance(row, dict) and row.get("code") in ERROR_TAXONOMY
+                ]
+            analysis = SessionAnalysisAI.model_validate(draft)
         else:
             analysis = analyze_session(
                 messages=messages_for_ai,
@@ -1066,7 +1220,7 @@ def analyze_chat_session(
                     contextKey=str(session.get("scenarioKey") or session_id),
                     novelContext=str(probe.get("progressionStage") or "") == "transfer",
                     delayed=str(probe.get("progressionStage") or "") in {"variation", "transfer"},
-                    evidenceQuote=str(assessment.get("evidenceQuote") or ""),
+                    evidenceQuote=str(assessment.get("evidenceQuote") or "")[:600],
                 ),
             ))
             stealth_learning_codes.add(skill_code)
@@ -1131,7 +1285,7 @@ def analyze_chat_session(
                         evaluatorConfidence=float(payload.get("confidence", 0.0)),
                         contextKey=str(session.get("scenarioKey") or session_id),
                         novelContext=True,
-                        evidenceQuote=str(payload.get("evidenceQuote") or ""),
+                        evidenceQuote=str(payload.get("evidenceQuote") or "")[:600],
                     ),
                 ))
         analysis_json["learningEvidence"] = unified_learning_evidence
@@ -1143,7 +1297,7 @@ def analyze_chat_session(
                 UpdateActivityRunRequest(
                     status="completed",
                     hintLevel=req.hintLevel,
-                    attemptCount=len(user_messages),
+                    attemptCount=saturate_activity_attempt_count(len(user_messages)),
                 ),
             )
         # Durable memory is part of analysis completion. A transient write
@@ -1211,6 +1365,20 @@ def analyze_chat_session(
             },
         }
 
+    except ItemTooLargeError as e:
+        logger.warning(
+            "analyze[%s] payload_too_large total_ms=%d size_bytes=%d",
+            request_id,
+            _elapsed_ms(started),
+            e.size_bytes,
+        )
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "code": "payload_too_large",
+                "message": "This Chat analysis is too large to store.",
+            },
+        ) from e
     except ValueError as e:
         logger.exception("analyze[%s] ai_error total_ms=%d", request_id, _elapsed_ms(started))
         raise HTTPException(status_code=502, detail=f"AI error [{request_id}]: {e}") from e

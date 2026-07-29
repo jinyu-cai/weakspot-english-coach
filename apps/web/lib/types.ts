@@ -876,6 +876,7 @@ export interface ChatMessage {
   sessionId: string
   role: "user" | "assistant"
   content: string
+  clientMessageId?: string | null
   corrections?: ChatCorrection[] | null
   betterExpression?: ChatBetterExpression | null
   createdAt: string

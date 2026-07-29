@@ -241,10 +241,13 @@ utterances. A text send owns a short-lived session turn claim; its user and
 assistant messages plus summary commit in one transaction. End-session analysis
 claims the session before reading its snapshot, so it cannot omit a reply that
 is still being generated or leave a lone user message after an AI failure.
-Realtime transcript uploads use the same turn claim. Large uploads are packed
-below DynamoDB item and 4 MB transaction budgets, staged with a 24-hour cleanup
-TTL, and made visible only when one final transaction removes those TTLs,
-publishes the commit marker, updates the session, and releases the claim.
+Realtime transcript uploads use the same turn claim. Public requests accept at
+most 8 messages so even worst-case JSON escaping stays below the production
+proxy's 1 MiB body limit; clients split longer transcripts into sequential
+sub-800 KB batches. Internally, uploads are packed below DynamoDB item and 4 MB
+transaction budgets, staged with a 24-hour cleanup TTL, and made visible only
+when one final transaction removes those TTLs, publishes the commit marker,
+updates the session, and releases the claim.
 
 Canonical Memory read-modify-write operations use a learner-scoped, re-entrant
 `MEMORY_WRITE` lease with stale-writer fencing. Independent sources therefore
@@ -425,12 +428,18 @@ MP3, and the frontend falls back to browser speech when it is unavailable.
 
 Text chat and prediction use the saved fast slot. End-of-session analysis uses
 the saved deep slot. Users can choose both before starting a new text chat.
+Individual text-chat messages are limited to 12,000 characters. Clients may
+send an optional `clientMessageId` (8–128 URL-safe identifier characters) to
+`POST /api/v1/chat/send`; retrying the same id and text returns the already
+completed user/assistant pair without generating or saving a duplicate turn.
 
 ## Diagnose request debugging
 
 `POST /api/v1/diagnose` accepts `diagnosisMode: "fast" | "deep"`. Fast mode uses
 `OPENAI_COMPAT_FAST_MODEL` / `LLM_MODEL_FAST` when the server default provider is
-used, and falls back to the deep model if no fast model is configured.
+used, and falls back to the deep model if no fast model is configured. Learner
+text is limited to 12,000 characters so the original plus generated feedback
+remain safely below the database item-size boundary.
 
 Contextual Coach tasks may also send optional `analysisContext` (maximum 2,400
 characters). It is serialized as untrusted task data in the user prompt and may

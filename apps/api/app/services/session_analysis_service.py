@@ -53,10 +53,11 @@ Your analysis must cover:
    Count repeated expression gaps — asking how to say things, or falling back on Chinese
    because the English is missing — as a `clarity.expression` weakness so they enter the
    learner's weakness profile.
-   Use the same standard skill codes for corrections and weaknesses where applicable:
+   Every correction and weakness must use exactly one of these standard skill codes:
    grammar.verb_tense, grammar.article, grammar.preposition, grammar.subject_verb_agreement,
    vocab.word_choice, vocab.repetition, sentence.structure, sentence.variety,
-   discourse.coherence, style.register, clarity.expression
+   discourse.coherence, style.register, clarity.expression. Never invent, refine,
+   or return any other code.
    For each: code, category label, severity (low/medium/high), evidence quote, explanation,
    and a practice goal.
 

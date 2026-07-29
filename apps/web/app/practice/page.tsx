@@ -5,7 +5,11 @@ import { useSearchParams } from "next/navigation"
 import { Dumbbell, ListTree, RotateCcw, Sparkles, Target, Trophy } from "lucide-react"
 import { generatePractice, getNextActionDecision } from "@/lib/api-client"
 import { DEMO_USER_ID } from "@/lib/mock-data"
-import { SKILL_LABELS, skillLabel as localizedSkillLabel } from "@/lib/practice"
+import {
+  CANONICAL_SKILL_CODES,
+  isCanonicalSkillCode,
+  skillLabel as localizedSkillLabel,
+} from "@/lib/practice"
 import type { PracticeExercise, PracticeGrade } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -47,10 +51,15 @@ function restoredPractice(): PracticeSnapshot | null {
   if (resume?.feature !== "practice" || !resume.draft || typeof resume.draft !== "object") return null
   const value = resume.draft as Partial<PracticeSnapshot>
   if (!Array.isArray(value.exercises) || !Array.isArray(value.grades)) return null
+  if (value.exercises.some((exercise) => !isCanonicalSkillCode(exercise.targetSkillCode))) {
+    return null
+  }
   return {
     phase: value.phase === "active" ? "active" : "setup",
     choice: value.choice === "custom" || value.choice === "mixed" ? value.choice : "recommended",
-    skill: typeof value.skill === "string" ? value.skill : "all",
+    skill: typeof value.skill === "string" && isCanonicalSkillCode(value.skill)
+      ? value.skill
+      : "all",
     exercises: value.exercises,
     current: typeof value.current === "number" ? value.current : 0,
     grades: value.grades,
@@ -60,15 +69,18 @@ function restoredPractice(): PracticeSnapshot | null {
 }
 
 const SKILL_GROUPS = [
-  { key: "grammar", codes: Object.keys(SKILL_LABELS).filter((code) => code.startsWith("grammar.")) },
-  { key: "vocabulary", codes: Object.keys(SKILL_LABELS).filter((code) => code.startsWith("vocab.")) },
-  { key: "expression", codes: Object.keys(SKILL_LABELS).filter((code) => code.startsWith("sentence.") || code.startsWith("style.") || code.startsWith("clarity.")) },
-  { key: "discourse", codes: Object.keys(SKILL_LABELS).filter((code) => code.startsWith("discourse.")) },
+  { key: "grammar", codes: CANONICAL_SKILL_CODES.filter((code) => code.startsWith("grammar.")) },
+  { key: "vocabulary", codes: CANONICAL_SKILL_CODES.filter((code) => code.startsWith("vocab.")) },
+  { key: "expression", codes: CANONICAL_SKILL_CODES.filter((code) => code.startsWith("sentence.") || code.startsWith("style.") || code.startsWith("clarity.")) },
+  { key: "discourse", codes: CANONICAL_SKILL_CODES.filter((code) => code.startsWith("discourse.")) },
 ] as const
 
 function PracticeFlow() {
   const searchParams = useSearchParams()
-  const querySkill = searchParams.get("skill")
+  const requestedSkill = searchParams.get("skill")
+  const querySkill = requestedSkill && isCanonicalSkillCode(requestedSkill)
+    ? requestedSkill
+    : null
   const [phase, setPhase] = useState<Phase>("setup")
   const [choice, setChoice] = useState<PracticeChoice>(querySkill ? "custom" : "recommended")
   const [skill, setSkill] = useState(querySkill ?? "all")
@@ -352,7 +364,6 @@ function PracticeFlow() {
                       className={cn("min-h-12 rounded-xl border px-3 py-2.5 text-left outline-none transition focus-visible:ring-3 focus-visible:ring-ring/40", skill === code ? "border-primary/45 bg-primary/10" : "border-border hover:border-primary/30")}
                     >
                       <span className="block text-sm font-medium">{localizedSkillLabel(code, language)}</span>
-                      {code === "grammar.sentence_structure" ? <span className="mt-0.5 block text-xs text-muted-foreground">{zh ? "从句、连接与语法组织" : "Clauses, connections, and grammatical organization"}</span> : null}
                       {code === "sentence.structure" ? <span className="mt-0.5 block text-xs text-muted-foreground">{zh ? "完整句、残句与连写句" : "Complete sentences, fragments, and run-ons"}</span> : null}
                     </button>
                   ))}

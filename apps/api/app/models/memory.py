@@ -36,7 +36,7 @@ class MemoryCandidate(BaseModel):
 class CreateMemoryRequest(BaseModel):
     userId: Optional[str] = None
     kind: MemoryKind
-    canonicalKey: Optional[str] = Field(default=None, max_length=160)
+    canonicalKey: Optional[str] = Field(default=None, min_length=3, max_length=160)
     content: str = Field(min_length=3, max_length=800)
     evidence: str = Field(default="", max_length=800)
     confidence: float = Field(default=1.0, ge=0, le=1)

@@ -17,17 +17,22 @@ import {
 } from "lucide-react"
 import {
   analyzeSession,
+  boundLearnerResponseText,
   createChatSession,
   getChatMessages,
   getChatSessions,
   generateCoachMission,
   saveChatSelectionToNote,
   sendChatMessage,
+  learnerResponseCharacterCount,
+  LEARNER_RESPONSE_MAX_CHARACTERS,
+  updateActivityRun,
 } from "@/lib/api-client"
 import { DEMO_USER_ID } from "@/lib/mock-data"
 import type {
   ChatMessage,
   ChatSession,
+  CoachMission,
   SessionAnalysis,
   StealthPracticeResult,
 } from "@/lib/types"
@@ -110,6 +115,11 @@ export default function ChatPage() {
   const activeSessionIdRef = useRef<string | null>(null)
   const analysisInFlightRef = useRef<Set<string>>(new Set())
   const resumeAttemptedRef = useRef(false)
+  const pendingSendRef = useRef<{
+    sessionId: string
+    text: string
+    clientMessageId: string
+  } | null>(null)
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -213,6 +223,59 @@ export default function ChatPage() {
     setStealthPractices([])
   }
 
+  async function abandonReplacedGeneratedRun(nextRunId?: string) {
+    const previous = activeSession
+    if (
+      !previous?.missionRunId
+      || previous.missionRunId === nextRunId
+      || previous.messageCount > 0
+      || messages.some((message) => message.sessionId === previous.id && message.role === "user")
+    ) {
+      return
+    }
+    await updateActivityRun(previous.missionRunId, {
+      status: "abandoned",
+      abandonReason: "Learner replaced the generated conversation before sending a message.",
+    }).catch(() => undefined)
+  }
+
+  async function reconcilePersistedAnalysis(sessionId: string, viewSessionId: string): Promise<boolean> {
+    const refreshed = await getChatMessages(sessionId, DEMO_USER_ID)
+    setSessions((current) => current.map((session) =>
+      session.id === refreshed.session.id ? refreshed.session : session,
+    ))
+    if (activeSessionIdRef.current === viewSessionId) {
+      setActiveSession(refreshed.session)
+      setMessages(withSessionStarter(refreshed.session, refreshed.messages))
+    }
+    if (!refreshed.session.analysis) return false
+
+    const practiceResults = refreshed.session.stealthPractices?.length
+      ? refreshed.session.stealthPractices
+      : refreshed.session.stealthPractice
+        ? [refreshed.session.stealthPractice]
+        : []
+    if (activeSessionIdRef.current === viewSessionId) {
+      setAnalysis(refreshed.session.analysis)
+      setStealthPractice(refreshed.session.stealthPractice ?? null)
+      setStealthPractices(practiceResults)
+      setViewState("summary")
+      finishTaskResume("chat", "completed")
+    }
+    return true
+  }
+
+  async function pollForPersistedAnalysis(sessionId: string, viewSessionId: string) {
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 5_000))
+      try {
+        if (await reconcilePersistedAnalysis(sessionId, viewSessionId)) return
+      } catch {
+        // A transient read failure should not discard analysis still running.
+      }
+    }
+  }
+
   async function triggerAnalysis(sessionId: string, viewSessionId = sessionId) {
     if (analysisInFlightRef.current.has(sessionId)) return
     analysisInFlightRef.current.add(sessionId)
@@ -258,9 +321,21 @@ export default function ChatPage() {
         setViewState("summary")
         finishTaskResume("chat", "completed")
       }
-    } catch {
-      toast.error(t.chat.analyzeFailed)
-      if (activeSessionIdRef.current === viewSessionId) setViewState("chat")
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ""
+      try {
+        if (await reconcilePersistedAnalysis(sessionId, viewSessionId)) return
+      } catch {
+        // The original error remains the most useful detail for the learner.
+      }
+      const mayStillBeRunning = /timed out|in.?progress|being analyzed|analysis claim|failed to fetch|\b(?:409|504|524)\b/i.test(message)
+      toast.error(t.chat.analyzeFailed, {
+        description: message || undefined,
+      })
+      if (activeSessionIdRef.current === viewSessionId) {
+        setViewState(mayStillBeRunning ? "analyzing" : "chat")
+      }
+      if (mayStillBeRunning) void pollForPersistedAnalysis(sessionId, viewSessionId)
     } finally {
       analysisInFlightRef.current.delete(sessionId)
       setAnalyzingSessionIds(new Set(analysisInFlightRef.current))
@@ -276,16 +351,12 @@ export default function ChatPage() {
     sessionSelectionRef.current += 1
     setCreatingSession(true)
     try {
-      const session = await createChatSession(
-        DEMO_USER_ID,
+      const session = await createChatSession({
+        userId: DEMO_USER_ID,
         topic,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        textChatModelMode,
-      )
+        textModelMode: textChatModelMode,
+      })
+      await abandonReplacedGeneratedRun()
       setSessions((prev) => [session, ...prev])
       activeSessionIdRef.current = session.id
       setActiveSession(session)
@@ -319,6 +390,8 @@ export default function ChatPage() {
     if (sending) return
     sessionSelectionRef.current += 1
     setCreatingSession(true)
+    let generatedRunId: string | undefined
+    let generatedMission: CoachMission | undefined
     try {
       const isLongForm = sceneGenerationMode === "deep"
       const mission = await generateCoachMission({
@@ -329,20 +402,23 @@ export default function ChatPage() {
         runtimeMode: "selected_provider",
         preferredType: "guided_scene",
       })
+      generatedMission = mission
+      generatedRunId = mission.activityRunId ?? undefined
       if (!mission.scene) throw new Error("Generated mission has no scene")
-      const session = await createChatSession(
-        DEMO_USER_ID,
-        mission.title,
-        undefined,
-        mission.scene.scenarioPrompt,
-        mission.scene.starterMessage,
-        mission.scene.scenarioFamily,
-        mission.scene.scenarioKey,
-        textChatModelMode,
-        mission.activityRunId ?? undefined,
-        mission.type,
-        mission.targetSkills,
-      )
+      const session = await createChatSession({
+        userId: DEMO_USER_ID,
+        topic: mission.title,
+        scenarioPrompt: mission.scene.scenarioPrompt,
+        starterMessage: mission.scene.starterMessage,
+        scenarioFamily: mission.scene.scenarioFamily,
+        scenarioKey: mission.scene.scenarioKey,
+        textModelMode: textChatModelMode,
+        missionRunId: generatedRunId,
+        missionType: mission.type,
+        missionTargetSkills: mission.targetSkills,
+      })
+      await abandonReplacedGeneratedRun(generatedRunId)
+      generatedRunId = undefined
       setSessions((prev) => [session, ...prev])
       activeSessionIdRef.current = session.id
       setActiveSession(session)
@@ -362,6 +438,44 @@ export default function ChatPage() {
         draft: "",
       })
     } catch (error) {
+      if (generatedRunId) {
+        const runId = generatedRunId
+        try {
+          const existing = (await getChatSessions(DEMO_USER_ID))
+            .find((session) => session.missionRunId === runId)
+          if (existing && generatedMission?.scene) {
+            generatedRunId = undefined
+            setSessions((current) => [
+              existing,
+              ...current.filter((session) => session.id !== existing.id),
+            ])
+            activeSessionIdRef.current = existing.id
+            setActiveSession(existing)
+            setMode("text")
+            setMessages(withSessionStarter(existing, []))
+            setInput("")
+            setViewState("chat")
+            setAnalysis(null)
+            setStealthPractice(null)
+            setStealthPractices([])
+            startTaskResume({
+              feature: "chat",
+              href: "/chat",
+              taskId: existing.id,
+              title: generatedMission.title,
+              step: "conversation",
+              draft: "",
+            })
+            return
+          }
+        } catch {
+          // No reconciled session was visible, so compensate the generated run.
+        }
+        await updateActivityRun(runId, {
+          status: "abandoned",
+          abandonReason: "The generated conversation could not be prepared.",
+        }).catch(() => undefined)
+      }
       toast.error(t.chat.dynamicCreateFailed, {
         description: error instanceof Error ? error.message : undefined,
       })
@@ -385,7 +499,11 @@ export default function ChatPage() {
     setMode(session.mode === "voice" ? "voice" : "text")
     setMessages([])
     const resume = loadTaskResume()
-    setInput(resume?.feature === "chat" && resume.taskId === session.id && typeof resume.draft === "string" ? resume.draft : "")
+    setInput(boundLearnerResponseText(
+      resume?.feature === "chat" && resume.taskId === session.id && typeof resume.draft === "string"
+        ? resume.draft
+        : "",
+    ))
     setViewState(session.analysis ? "summary" : analyzingSessionIds.has(session.id) ? "analyzing" : "chat")
     setAnalysis(session.analysis ?? null)
     setStealthPractice(session.stealthPractice ?? null)
@@ -445,32 +563,58 @@ export default function ChatPage() {
     const text = input.trim()
     setInput("")
     setSending(true)
+    const matchingPending = pendingSendRef.current
+    const clientMessageId = matchingPending?.sessionId === activeSession.id && matchingPending.text === text
+      ? matchingPending.clientMessageId
+      : crypto.randomUUID()
+    pendingSendRef.current = { sessionId: activeSession.id, text, clientMessageId }
 
     const optimisticUser: ChatMessage = {
-      id: `temp-${Date.now()}`,
+      id: `temp-${clientMessageId}`,
       userId: DEMO_USER_ID,
       sessionId: activeSession.id,
       role: "user",
       content: text,
+      clientMessageId,
       createdAt: new Date().toISOString(),
     }
     setMessages((prev) => [...prev, optimisticUser])
 
     try {
-      const { userMessage, assistantMessage } = await sendChatMessage(
-        DEMO_USER_ID,
-        activeSession.id,
+      const { userMessage, assistantMessage } = await sendChatMessage({
+        userId: DEMO_USER_ID,
+        sessionId: activeSession.id,
         text,
-      )
+        clientMessageId,
+      })
+      pendingSendRef.current = null
       setMessages((prev) => [
         ...prev.filter((m) => m.id !== optimisticUser.id),
         userMessage,
         assistantMessage,
       ])
-    } catch {
+    } catch (error) {
+      try {
+        const refreshed = await getChatMessages(activeSession.id, DEMO_USER_ID)
+        if (refreshed.messages.some((message) => message.clientMessageId === clientMessageId)) {
+          pendingSendRef.current = null
+          if (activeSessionIdRef.current === activeSession.id) {
+            setActiveSession(refreshed.session)
+            setSessions((current) => current.map((session) =>
+              session.id === refreshed.session.id ? refreshed.session : session,
+            ))
+            setMessages(withSessionStarter(refreshed.session, refreshed.messages))
+          }
+          return
+        }
+      } catch {
+        // Keep the stable clientMessageId so a manual retry remains idempotent.
+      }
       setMessages((prev) => prev.filter((m) => m.id !== optimisticUser.id))
       setInput(text)
-      toast.error(t.chat.sendFailed)
+      toast.error(t.chat.sendFailed, {
+        description: error instanceof Error ? error.message : undefined,
+      })
     } finally {
       setSending(false)
       textareaRef.current?.focus()
@@ -816,13 +960,18 @@ export default function ChatPage() {
             <div className="mb-2 flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
               <BookOpenCheck className="size-3.5 shrink-0" />
               <span>{t.chat.selectionHint}</span>
+              <span className="ml-auto tabular-nums" aria-live="polite">
+                {learnerResponseCharacterCount(input).toLocaleString("en-US")}
+                /{LEARNER_RESPONSE_MAX_CHARACTERS.toLocaleString("en-US")}
+              </span>
             </div>
             <div className="relative flex items-end gap-2">
               <div className="relative flex-1">
                 <textarea
                   ref={textareaRef}
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  maxLength={LEARNER_RESPONSE_MAX_CHARACTERS * 2}
+                  onChange={(e) => setInput(boundLearnerResponseText(e.target.value))}
                   onKeyDown={handleKeyDown}
                   placeholder={t.chat.placeholder}
                   aria-keyshortcuts="Control+Enter Meta+Enter"

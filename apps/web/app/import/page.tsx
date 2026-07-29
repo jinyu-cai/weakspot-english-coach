@@ -5,6 +5,7 @@ import { AlertTriangle, FileArchive, FileJson, Inbox, ListChecks, Loader2, Messa
 import { toast } from "sonner"
 import { analyzeChatImport } from "@/lib/api-client"
 import {
+  chunkChatImportConversations,
   parseChatGPTImportFile,
   parseTranscript,
   selectImportConversations,
@@ -30,7 +31,6 @@ import { useLanguage } from "@/components/language-provider"
 import { AsyncErrorState, useLoadingTimeout } from "@/components/async-state"
 import { finishTaskResume, loadTaskResume, startTaskResume, updateTaskResume } from "@/lib/task-resume"
 
-const CHAT_IMPORT_BATCH_SIZE = 20
 const CEFR_LEVELS: CEFRLevel[] = ["A1", "A2", "B1", "B2", "C1", "C2"]
 type PartialFailure = { completed: number; total: number; message: string }
 type ImportDraft = {
@@ -117,9 +117,11 @@ export default function ImportPage() {
     }
   }, [selectedConversations])
 
-  const batchCount = selectedConversations.length
-    ? Math.ceil(selectedConversations.length / CHAT_IMPORT_BATCH_SIZE)
-    : 0
+  const importBatches = useMemo(
+    () => chunkChatImportConversations(selectedConversations),
+    [selectedConversations],
+  )
+  const batchCount = importBatches.length
 
   function updateSelectedCount(value: number) {
     if (!allConversations.length || !Number.isFinite(value)) return
@@ -165,16 +167,21 @@ export default function ImportPage() {
     setPartialFailure(null)
     setAnalysisProgress(null)
     try {
-      const batches = chunkConversations(selectedConversations, CHAT_IMPORT_BATCH_SIZE)
+      const batches = importBatches
       const responses: ChatImportAnalyzeResponse[] = []
 
       for (let index = 0; index < batches.length; index += 1) {
         setAnalysisProgress({ completed: index, total: batches.length })
-        const batchSourceName = batches.length > 1
-          ? `${sourceName || "chat-import"} batch ${index + 1} of ${batches.length}`
-          : sourceName
+        const batchSourceName = batches.length > 1 ? sourceName || "chat-import" : sourceName
+        const batchSourceSuffix = batches.length > 1 ? ` batch ${index + 1} of ${batches.length}` : ""
         try {
-          const response = await analyzeChatImport(DEMO_USER_ID, batches[index], batchSourceName, analysisMode)
+          const response = await analyzeChatImport(
+            DEMO_USER_ID,
+            batches[index],
+            batchSourceName,
+            analysisMode,
+            batchSourceSuffix,
+          )
           responses.push(response)
           setAnalysisProgress({ completed: index + 1, total: batches.length })
         } catch (error) {
@@ -457,14 +464,6 @@ export default function ImportPage() {
       </div>
     </div>
   )
-}
-
-function chunkConversations(conversations: ChatImportConversation[], size: number) {
-  const chunks: ChatImportConversation[][] = []
-  for (let index = 0; index < conversations.length; index += size) {
-    chunks.push(conversations.slice(index, index + size))
-  }
-  return chunks
 }
 
 function mergeChatImportResponses(responses: ChatImportAnalyzeResponse[]): ChatImportAnalyzeResponse {

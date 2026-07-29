@@ -35,8 +35,10 @@ export default function PlanPage() {
       setPlan(newPlan)
       mutate({ plan: newPlan }, { revalidate: false })
       toast.success(t.plan.generated, { description: t.plan.generatedDescription })
-    } catch {
-      toast.error(t.plan.generateFailed)
+    } catch (error) {
+      toast.error(t.plan.generateFailed, {
+        description: error instanceof Error ? error.message : undefined,
+      })
     } finally {
       generateInFlightRef.current = false
       setGenerating(false)
@@ -59,10 +61,12 @@ export default function PlanPage() {
       const persisted = await updatePlanTask(taskId, completed ? "completed" : "assigned")
       setPlan(persisted)
       mutate({ plan: persisted }, { revalidate: false })
-    } catch {
+    } catch (error) {
       setPlan(previous)
       mutate({ plan: previous }, { revalidate: false })
-      toast.error(t.plan.updateFailed)
+      toast.error(t.plan.updateFailed, {
+        description: error instanceof Error ? error.message : undefined,
+      })
     }
   }
 

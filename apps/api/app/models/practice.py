@@ -1,7 +1,8 @@
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from app.core.taxonomy import ERROR_TAXONOMY
 from app.models.common import OutputLanguage, PracticeType
 
 
@@ -32,6 +33,23 @@ class GeneratePracticeRequest(BaseModel):
     sessionSlot: Optional[int] = Field(default=None, ge=0, le=20)
     sessionSize: Optional[int] = Field(default=None, ge=1, le=20)
 
+    @field_validator("targetSkillCode")
+    @classmethod
+    def validate_target_skill(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None and value not in ERROR_TAXONOMY:
+            raise ValueError(f"Unsupported target skill code: {value}")
+        return value
+
+    @field_validator("previousSkillCodes")
+    @classmethod
+    def validate_previous_skills(cls, value: list[str]) -> list[str]:
+        # These are diversity hints from resumable/older client sessions, not
+        # new learning targets. Ignore legacy codes while retaining canonical
+        # history so an old draft cannot break the next generated exercise.
+        return list(dict.fromkeys(
+            code for code in value if code in ERROR_TAXONOMY
+        ))
+
 
 class PracticeExerciseAIResult(BaseModel):
     type: PracticeType
@@ -40,6 +58,13 @@ class PracticeExerciseAIResult(BaseModel):
     question: str = Field(max_length=PRACTICE_QUESTION_MAX_CHARS)
     answer: str = Field(max_length=PRACTICE_ANSWER_MAX_CHARS)
     explanationZh: str = Field(max_length=PRACTICE_EXPLANATION_MAX_CHARS)
+
+    @field_validator("targetSkillCode")
+    @classmethod
+    def validate_target_skill(cls, value: str) -> str:
+        if value not in ERROR_TAXONOMY:
+            raise ValueError(f"Unsupported target skill code: {value}")
+        return value
 
 
 class SubmitPracticeRequest(BaseModel):
@@ -81,6 +106,13 @@ class GradePracticeRequest(BaseModel):
         max_length=128,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
     )
+
+    @field_validator("targetSkillCode")
+    @classmethod
+    def validate_target_skill(cls, value: str) -> str:
+        if value not in ERROR_TAXONOMY:
+            raise ValueError(f"Unsupported target skill code: {value}")
+        return value
 
 
 class PracticeGradeAIResult(BaseModel):
