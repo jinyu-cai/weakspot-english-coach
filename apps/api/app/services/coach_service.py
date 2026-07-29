@@ -145,6 +145,10 @@ Long-form guided_scene requirements:
   an opening state, 4-6 progressive beats, at least two mild complications,
   information the assistant reveals only after relevant learner questions, and
   a clear but non-forced ending condition.
+- Keep scenarioPrompt under 3,200 characters. Use terse numbered beats instead
+  of scripts, long sample dialogue, or repeated role descriptions. Keep the
+  entire JSON response compact enough to finish comfortably within the output
+  budget.
 - The assistant must reveal only one useful development at a time, ask natural
   follow-up questions, react to the learner's choices, and avoid dumping the
   full scenario plan into one message.

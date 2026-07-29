@@ -23,6 +23,8 @@ from app.config import settings
 from app.main import app
 from app.models.chat import ChatCreateSessionRequest
 from app.models.coach import (
+    COACH_SCENARIO_PROMPT_MAX_CHARACTERS,
+    CoachScene,
     CoachPlannerInsight,
     DecisionResponseMissionAIResult,
     GPT56DecisionResponseMissionAIResult,
@@ -201,9 +203,36 @@ def main() -> None:
     assert "12-20 learner/assistant turns" in long_scene_requirements
     assert "4-6 progressive beats" in long_scene_requirements
     assert "reveal only one useful development at a time" in long_scene_requirements
+    assert "under 3,200 characters" in long_scene_requirements
+    assert "entire JSON response compact" in long_scene_requirements
     assert guided_scene_design_requirements(
         long_scene_request.model_copy(update={"generationMode": "fast"})
     ) == ""
+
+    oversized_scene_prompt = (
+        "Keep this role and opening setup. "
+        + ("progressive beat with one reveal. " * 180)
+        + "Preserve this ending condition and stay in character."
+    )
+    bounded_scene = CoachScene(
+        setting="A practical long-form roleplay.",
+        userRole="The learner.",
+        aiRole="The conversation partner.",
+        goal="Reach a workable agreement.",
+        scenarioPrompt=oversized_scene_prompt,
+        starterMessage="How can we solve this together?",
+        scenarioFamily="workplace_alignment",
+        scenarioKey="workplace_alignment:bounded-contract",
+    )
+    assert len(bounded_scene.scenarioPrompt) <= COACH_SCENARIO_PROMPT_MAX_CHARACTERS
+    assert bounded_scene.scenarioPrompt.startswith("Keep this role and opening setup.")
+    assert bounded_scene.scenarioPrompt.endswith(
+        "Preserve this ending condition and stay in character."
+    )
+    assert (
+        CoachScene.model_json_schema()["properties"]["scenarioPrompt"]["maxLength"]
+        == COACH_SCENARIO_PROMPT_MAX_CHARACTERS
+    )
     settings.openai_build_week_enabled = True
     try:
         assert uses_adaptive_mission_planner(
