@@ -92,6 +92,7 @@ class RecordEvidenceRequest(BaseModel):
     taskType: str = Field(default="practice", min_length=1, max_length=100)
     taskDifficulty: float = Field(default=0.5, ge=0, le=1)
     evaluatorConfidence: float = Field(default=1.0, ge=0, le=1)
+    occurrenceCount: int = Field(default=1, ge=1, le=100)
     contextKey: Optional[str] = Field(default=None, max_length=240)
     novelContext: bool = False
     delayed: bool = False

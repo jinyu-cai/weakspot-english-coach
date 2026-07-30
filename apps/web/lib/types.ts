@@ -319,8 +319,25 @@ export interface LearningState {
   independentSuccessCount: number
   hintedSuccessCount: number
   failureCount: number
+  failureOccurrenceCount?: number
   avoidedCount: number
   noOpportunityCount: number
+  recentEvidence?: Array<{
+    outcome: "success" | "hinted_success" | "failure" | "avoided"
+    occurrenceCount?: number
+    weight: number
+    modality: string
+    taskType: string
+    contextKey?: string | null
+    at: string
+  }>
+  recentOpportunityCount?: number
+  recentFailureCount?: number
+  recentFailureOccurrenceCount?: number
+  recentErrorRate?: number | null
+  recentRiskRate?: number | null
+  recentIndependentSuccessRate?: number | null
+  recentDistinctDays?: number
   delayedIndependentTransferCount: number
   contexts: string[]
   taskTypes: string[]
@@ -352,6 +369,7 @@ export interface EvidenceEvent {
   taskDifficulty: number
   evaluatorConfidence: number
   evidenceWeight: number
+  occurrenceCount?: number
   contextKey?: string | null
   novelContext: boolean
   delayed: boolean

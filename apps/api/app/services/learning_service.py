@@ -32,6 +32,7 @@ from app.models.learning import (
 
 
 TERMINAL_RUN_STATUSES = {"completed", "abandoned", "skipped"}
+RECENT_EVIDENCE_WINDOW = 20
 RUN_TRANSITIONS = {
     "assigned": {"assigned", "started", "completed", "abandoned", "skipped"},
     "started": {"started", "completed", "abandoned", "skipped"},
@@ -185,8 +186,17 @@ def _initial_learning_state(user_id: str, skill_code: str, now: str) -> dict:
         "independentSuccessCount": 0,
         "hintedSuccessCount": 0,
         "failureCount": 0,
+        "failureOccurrenceCount": 0,
         "avoidedCount": 0,
         "noOpportunityCount": 0,
+        "recentEvidence": [],
+        "recentOpportunityCount": 0,
+        "recentFailureCount": 0,
+        "recentFailureOccurrenceCount": 0,
+        "recentErrorRate": None,
+        "recentRiskRate": None,
+        "recentIndependentSuccessRate": None,
+        "recentDistinctDays": 0,
         "delayedIndependentTransferCount": 0,
         "contexts": [],
         "taskTypes": [],
@@ -255,6 +265,66 @@ def _apply_evidence(state: dict, request: RecordEvidenceRequest, now: str) -> di
         }
         count_field = count_fields[outcome]
         updated[count_field] = int(updated.get(count_field, 0)) + 1
+        if outcome == "failure":
+            updated["failureOccurrenceCount"] = (
+                int(updated.get("failureOccurrenceCount", 0))
+                + request.occurrenceCount
+            )
+
+        recent_evidence = list(updated.get("recentEvidence") or [])
+        recent_evidence.append({
+            "outcome": outcome,
+            "occurrenceCount": request.occurrenceCount,
+            "weight": round(weight, 4),
+            "modality": request.modality,
+            "taskType": request.taskType,
+            "contextKey": request.contextKey,
+            "at": now,
+        })
+        recent_evidence = recent_evidence[-RECENT_EVIDENCE_WINDOW:]
+        recent_count = len(recent_evidence)
+        recent_failures = sum(
+            1 for item in recent_evidence if item.get("outcome") == "failure"
+        )
+        recent_failure_occurrences = sum(
+            int(item.get("occurrenceCount", 1) or 1)
+            for item in recent_evidence
+            if item.get("outcome") == "failure"
+        )
+        recent_successes = sum(
+            1 for item in recent_evidence if item.get("outcome") == "success"
+        )
+        risk_by_outcome = {
+            "success": 0.0,
+            "hinted_success": 0.25,
+            "avoided": 0.35,
+            "failure": 1.0,
+        }
+        weighted_risk = sum(
+            risk_by_outcome.get(str(item.get("outcome") or ""), 0.0)
+            * float(item.get("weight", 1.0) or 1.0)
+            for item in recent_evidence
+        )
+        total_weight = sum(
+            float(item.get("weight", 1.0) or 1.0)
+            for item in recent_evidence
+        )
+        updated.update({
+            "recentEvidence": recent_evidence,
+            "recentOpportunityCount": recent_count,
+            "recentFailureCount": recent_failures,
+            "recentFailureOccurrenceCount": recent_failure_occurrences,
+            "recentErrorRate": round(recent_failures / recent_count, 4),
+            "recentRiskRate": round(weighted_risk / total_weight, 4)
+            if total_weight
+            else None,
+            "recentIndependentSuccessRate": round(recent_successes / recent_count, 4),
+            "recentDistinctDays": len({
+                str(item.get("at") or "")[:10]
+                for item in recent_evidence
+                if item.get("at")
+            }),
+        })
     else:
         updated["noOpportunityCount"] = int(updated.get("noOpportunityCount", 0)) + 1
 
@@ -269,7 +339,11 @@ def _apply_evidence(state: dict, request: RecordEvidenceRequest, now: str) -> di
 
     if request.opportunityPresent:
         opportunity_count = int(updated["opportunityCount"])
-        enough_variety = len(updated["contexts"]) >= 2 or len(updated["taskTypes"]) >= 2
+        enough_variety = (
+            len(updated["contexts"]) >= 2
+            or len(updated["taskTypes"]) >= 2
+            or int(updated.get("recentDistinctDays", 0)) >= 2
+        )
         updated["coverageStatus"] = (
             "enough_evidence"
             if opportunity_count >= 5 and enough_variety
@@ -378,6 +452,7 @@ def record_evidence(user_id: str, request: RecordEvidenceRequest) -> dict:
             "taskDifficulty": request.taskDifficulty,
             "evaluatorConfidence": request.evaluatorConfidence,
             "evidenceWeight": round(_evidence_weight(request), 4),
+            "occurrenceCount": request.occurrenceCount,
             "contextKey": request.contextKey,
             "novelContext": request.novelContext,
             "delayed": request.delayed,
