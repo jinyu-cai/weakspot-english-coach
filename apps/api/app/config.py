@@ -49,12 +49,13 @@ class Settings(BaseSettings):
     openai_build_week_timeout_seconds: float = 180.0
     openai_realtime_model: str = "gpt-realtime-mini-2025-12-15"
     openai_realtime_models: str = "gpt-realtime-mini-2025-12-15,gpt-realtime-2"
-    # OpenAI Speech API. The same server-side key may be used for Realtime and
-    # TTS, but the browser never receives it. tts-1-hd is the supported
-    # quality-oriented default; deployments can change this without a rebuild.
-    openai_tts_base_url: str = "https://api.openai.com/v1"
-    openai_tts_model: str = "tts-1-hd"
-    openai_tts_voice: str = "nova"
+    # Coach listening uses Qwen's native non-realtime TTS API. A dedicated key
+    # is optional; deployments may reuse a text or embedding Model Studio key.
+    qwen_tts_api_key: str = ""
+    qwen_tts_base_url: str = "https://dashscope-intl.aliyuncs.com/api/v1"
+    qwen_tts_model: str = "qwen3-tts-flash"
+    qwen_tts_voice: str = "Cherry"
+    qwen_tts_language: str = "English"
 
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
@@ -127,6 +128,14 @@ class Settings(BaseSettings):
     @property
     def embedding_base_url(self) -> str:
         return self.qwen_embedding_base_url or self.qwen_model_studio_base_url
+
+    @property
+    def qwen_tts_effective_api_key(self) -> str:
+        return (
+            self.qwen_tts_api_key
+            or self.qwen_model_studio_api_key
+            or self.qwen_embedding_api_key
+        )
 
     @property
     def default_llm_api_key(self) -> str:
