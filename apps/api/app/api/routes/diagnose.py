@@ -90,6 +90,109 @@ def _language_text_hash(
     return f"{output_language}:{normalized_text_hash(text)}{context_hash}{learning_hash}"
 
 
+def _grounded_quote(student_text: str, quote: str) -> bool:
+    normalized_text = " ".join(student_text.casefold().split())
+    normalized_quote = " ".join((quote or "").casefold().split())
+    return bool(normalized_quote and normalized_quote in normalized_text)
+
+
+def _grounded_error_occurrence_count(
+    student_text: str,
+    saved_errors: list[dict],
+    skill_code: str,
+) -> int:
+    return sum(
+        1
+        for error in saved_errors
+        if error.get("code") == skill_code
+        and _grounded_quote(student_text, str(error.get("originalText") or ""))
+    )
+
+
+def _grounded_memory_candidate(student_text: str, candidate) -> bool:
+    if candidate.kind != "weakness":
+        return True
+    quote = str(candidate.evidence or "")
+    for separator in ("→", "->"):
+        if separator in quote:
+            quote = quote.split(separator, 1)[0].strip()
+            break
+    return _grounded_quote(student_text, quote)
+
+
+def _plain_diagnosis_evidence(
+    student_text: str,
+    diagnostic: DiagnosticAIResult,
+    saved_errors: list[dict],
+) -> list[dict]:
+    """Build one conservative evidence item per observable skill.
+
+    Grounded errors are failures. Positive evidence is accepted only when the
+    model explicitly marked a success and supplied an exact learner quote.
+    Absence of an error never becomes success.
+    """
+    severity_rank = {"low": 1, "medium": 2, "high": 3}
+    confidence_by_severity = {"low": 0.7, "medium": 0.82, "high": 0.92}
+    errors_by_code: dict[str, dict] = {}
+    occurrence_count_by_code: dict[str, int] = {}
+    for error in saved_errors:
+        code = str(error.get("code") or "")
+        quote = str(error.get("originalText") or "")
+        if code not in ERROR_TAXONOMY or not _grounded_quote(student_text, quote):
+            continue
+        occurrence_count_by_code[code] = occurrence_count_by_code.get(code, 0) + 1
+        current = errors_by_code.get(code)
+        if current is None or severity_rank.get(
+            str(error.get("severity") or ""), 0
+        ) > severity_rank.get(str(current.get("severity") or ""), 0):
+            errors_by_code[code] = error
+
+    evidence: list[dict] = []
+    for code, error in errors_by_code.items():
+        severity = str(error.get("severity") or "")
+        evidence.append({
+            "skillCode": code,
+            "outcome": "failure",
+            "opportunityPresent": True,
+            "confidence": confidence_by_severity.get(severity, 0.75),
+            "occurrenceCount": occurrence_count_by_code[code],
+            "evidenceQuote": str(error.get("originalText") or ""),
+        })
+
+    observed_codes = set(errors_by_code)
+    for item in diagnostic.targetEvidence:
+        code = item.skillCode
+        if (
+            code in observed_codes
+            or item.outcome != "success"
+            or not item.opportunityPresent
+            or item.confidence < 0.55
+            or not _grounded_quote(student_text, item.evidenceQuote)
+        ):
+            continue
+        evidence.append({
+            "skillCode": code,
+            "outcome": "success",
+            "opportunityPresent": True,
+            "confidence": float(item.confidence),
+            "occurrenceCount": 1,
+            "evidenceQuote": item.evidenceQuote,
+        })
+        observed_codes.add(code)
+    return evidence
+
+
+def _diagnosis_task_difficulty(cefr: str) -> float:
+    return {
+        "A1": 0.2,
+        "A2": 0.35,
+        "B1": 0.5,
+        "B2": 0.65,
+        "C1": 0.82,
+        "C2": 0.95,
+    }.get(cefr, 0.5)
+
+
 @router.post("/diagnose")
 async def diagnose(
     req: DiagnoseRequest,
@@ -391,6 +494,14 @@ def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mod
     saved_errors = []
 
     for error_index, err in enumerate(diagnostic.errors):
+        if not _grounded_quote(req.text, err.originalText):
+            logger.warning(
+                "diagnose[%s] dropped_ungrounded_error code=%s index=%d",
+                request_id,
+                err.code,
+                error_index,
+            )
+            continue
         error_id = "err_" + hashlib.sha256(
             f"{submission_id}:error:{error_index}".encode("utf-8")
         ).hexdigest()[:20]
@@ -462,7 +573,11 @@ def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mod
 
     try:
         memory_candidates = [
-            *diagnostic.memoryCandidates,
+            *[
+                candidate
+                for candidate in diagnostic.memoryCandidates
+                if _grounded_memory_candidate(req.text, candidate)
+            ],
             *heuristic_memory_candidates(req.text),
             *memory_candidates_from_errors(saved_errors),
         ]
@@ -486,6 +601,10 @@ def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mod
         errors_by_code = {
             error["code"]: error for error in saved_errors
             if error.get("code") in req.learningContext.targetSkills
+            and _grounded_quote(
+                req.text,
+                str(error.get("originalText") or ""),
+            )
         }
         normalized_text = " ".join(req.text.casefold().split())
         for skill_code in req.learningContext.targetSkills:
@@ -526,6 +645,15 @@ def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mod
                     taskType=req.learningContext.missionType,
                     taskDifficulty=req.learningContext.taskDifficulty,
                     evaluatorConfidence=float(payload.get("confidence", 0.0)),
+                    occurrenceCount=(
+                        _grounded_error_occurrence_count(
+                            req.text,
+                            saved_errors,
+                            skill_code,
+                        )
+                        if payload["outcome"] == "failure"
+                        else 1
+                    ),
                     contextKey=req.learningContext.contextKey,
                     novelContext=req.learningContext.novelContext,
                     delayed=req.learningContext.delayed,
@@ -549,9 +677,12 @@ def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mod
             ),
         )
     else:
-        diagnostic_targets = list(dict.fromkeys(
-            error["code"] for error in saved_errors if error.get("code") in ERROR_TAXONOMY
-        ))
+        plain_evidence = _plain_diagnosis_evidence(
+            req.text,
+            diagnostic,
+            saved_errors,
+        )
+        diagnostic_targets = [item["skillCode"] for item in plain_evidence]
         run = create_activity_run(
             req.userId,
             CreateActivityRunRequest(
@@ -569,12 +700,13 @@ def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mod
             run["id"],
             UpdateActivityRunRequest(status="started"),
         )
-        for skill_code in diagnostic_targets:
-            error = next(item for item in saved_errors if item["code"] == skill_code)
-            confidence = {"low": 0.7, "medium": 0.82, "high": 0.92}.get(
-                str(error.get("severity") or ""),
-                0.75,
-            )
+        context_key = (
+            f"writing:{normalized_text_hash(req.analysisContext)[:20]}"
+            if req.analysisContext
+            else "writing:freeform"
+        )
+        for item in plain_evidence:
+            skill_code = item["skillCode"]
             learning_evidence.append(record_evidence(
                 req.userId,
                 RecordEvidenceRequest(
@@ -582,16 +714,19 @@ def _llm_and_persist(req, profile, text_hash, request_id, started, diagnosis_mod
                     runId=run["id"],
                     sourceId=submission_id,
                     skillCode=skill_code,
-                    outcome="failure",
-                    opportunityPresent=True,
+                    outcome=item["outcome"],
+                    opportunityPresent=bool(item["opportunityPresent"]),
                     supportLevel=0,
                     modality="writing",
                     taskType="writing_diagnosis",
-                    taskDifficulty=0.55,
-                    evaluatorConfidence=confidence,
-                    contextKey=f"diagnosis:{submission_id}",
-                    novelContext=True,
-                    evidenceQuote=str(error.get("originalText") or "")[:600],
+                    taskDifficulty=_diagnosis_task_difficulty(
+                        diagnostic.cefrEstimate.value
+                    ),
+                    evaluatorConfidence=float(item["confidence"]),
+                    occurrenceCount=int(item["occurrenceCount"]),
+                    contextKey=context_key,
+                    novelContext=False,
+                    evidenceQuote=str(item["evidenceQuote"])[:600],
                 ),
             ))
         update_activity_run(

@@ -174,6 +174,7 @@ def _verification_snapshot(
     source_refs: Iterable[dict],
     source_type: str,
     now: datetime,
+    memory_kind: Optional[str] = None,
 ) -> dict:
     """Track whether a memory is tentative, observed, or corroborated."""
     refs = list(source_refs)
@@ -182,9 +183,31 @@ def _verification_snapshot(
         for ref in refs
         if ref.get("sourceId")
     }
+    independent_days = {
+        str(ref.get("createdAt") or "")[:10]
+        for ref in refs
+        if str(ref.get("createdAt") or "")[:10]
+    }
     if source_type == "manual":
         state = "confirmed"
         reason = "learner_confirmed"
+    elif memory_kind == "weakness":
+        # One short answer is useful evidence, but it is not enough to establish
+        # a durable weakness. Require independent submissions and cross-day
+        # repetition before confirming the memory.
+        if (
+            len(independent_sources) >= 3
+            and len(independent_days) >= 2
+            and confidence >= 0.7
+        ):
+            state = "confirmed"
+            reason = "repeated_across_days"
+        elif len(independent_sources) >= 2 and confidence >= 0.7:
+            state = "observed"
+            reason = "repeated_independent_observations"
+        else:
+            state = "candidate"
+            reason = "needs_repeated_weakness_evidence"
     elif len(independent_sources) >= 2 and confidence >= 0.7:
         state = "confirmed"
         reason = "corroborated_sources"
@@ -197,8 +220,22 @@ def _verification_snapshot(
     return {
         "state": state,
         "reason": reason,
+        "policy": (
+            "learner-confirmed-v1"
+            if source_type == "manual"
+            else (
+                "weakness-repeat-across-days-v2"
+                if memory_kind == "weakness"
+                else "source-corroboration-v1"
+            )
+        ),
         "independentSourceCount": len(independent_sources),
-        "needsConfirmation": state == "candidate",
+        "independentDayCount": len(independent_days),
+        "needsConfirmation": (
+            state != "confirmed"
+            if memory_kind == "weakness"
+            else state == "candidate"
+        ),
         "updatedAt": iso_at(now),
     }
 
@@ -872,6 +909,7 @@ def remember_candidates(
                 source_refs=memory.get("sourceRefs") or [],
                 source_type=source_type,
                 now=now,
+                memory_kind=candidate.kind,
             )
             if candidate.kind == "weakness":
                 memory["lastObservedAt"] = now_text
@@ -929,6 +967,7 @@ def remember_candidates(
             source_refs=memory["sourceRefs"],
             source_type=source_type,
             now=now,
+            memory_kind=candidate.kind,
         )
         if candidate.kind == "weakness":
             memory["lastObservedAt"] = now_text
@@ -1109,6 +1148,7 @@ def forget_memories_from_source(
             source_refs=remaining,
             source_type=str(memory.get("sourceType") or "system"),
             now=now,
+            memory_kind=str(memory.get("kind") or ""),
         )
         persist_memory(memory)
         changed.append(public_memory(memory))

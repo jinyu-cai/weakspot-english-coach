@@ -185,6 +185,17 @@ scores, mastery >= 85, two successful exercise formats, and 14 recurrence-free
 days are all required. The row then becomes `resolved` and stops being recalled;
 fresh evidence for the same weakness reactivates the same row.
 
+Plain writing diagnoses use conservative evidence before that lifecycle begins.
+An error counts as failure evidence only when its `originalText` is grounded in
+the learner's submitted text. A success requires an explicit `targetEvidence`
+item with a grounded learner quote; the absence of an error is never treated as
+success. Learning state retains lifetime counters plus a bounded 20-opportunity
+window with event failure rate, weighted risk, independent-success rate, and
+grounded error-occurrence counts. A generated weakness remains `candidate`
+after one submission, becomes `observed` after two independent submissions,
+and is `confirmed` only after at least three submissions across two days.
+Learner-created manual memories remain confirmed immediately.
+
 MemoryAgent also tracks retention and modality-specific evidence from stealth
 missions. Text chat excludes weakness/strategy rows and low-relevance memories
 from ordinary reply personalization. Text probes are event-driven rather than
