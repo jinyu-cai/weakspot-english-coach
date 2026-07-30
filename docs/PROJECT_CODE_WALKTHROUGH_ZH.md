@@ -274,7 +274,7 @@ Pydantic models 定义 API 与 LLM 的严格合同：
 - `model_catalog._normalized`：标准化模型名；`_add_option`：加入不重复安全选项；`configured_server_models`：由配置产生可选 deep/fast 模型；`catalog_payload`：公开 JSON；`server_model_by_id`、`server_model_pair`、`server_model_for_name`：allowlist 查询。
 - `embedding_client.embeddings_available`：检查 Qwen embedding 配置；`_get_client`：创建 client；`embed_texts`：批量获取向量并在失败时返回可降级结果；`embed_text`：单条包装。
 - `output_language.normalize_output_language`：不合法语言回退英文；`language_instruction`：返回给模型的回答语言规则。
-- `tts_service._speed_for_style`：gentle/natural/challenge 转语速；`generate_speech`：服务器端调用 OpenAI Speech 返回 MP3 bytes。
+- `tts_service.generate_speech`：服务器端调用 Qwen3-TTS-Flash，校验供应商音频 URL 后下载并返回音频 bytes 与媒体类型。
 - `coach_service._selected_fast_model`、`selected_coach_model`：fast/deep 选择；`_response_model_for_request`：按 preferred type 选择 union schema；`select_scenario_family`：避免连续场景重复；`_compact_skill_context`：压缩 learner skills；`_public_response`：只公开可渲染 mission；`generate_coach_mission`：主生成器；`_bounded_transcript_excerpt`：限制版权材料给模型的长度；`generate_transcript_mission`：从受权 transcript 生成任务。
 - `realtime_prompts.realtime_hint_instruction`：Realtime conversation 的语言提示。
 

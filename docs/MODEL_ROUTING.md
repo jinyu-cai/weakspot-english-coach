@@ -10,7 +10,7 @@ Production observed on 2026-07-21:
 - Fast slot: `deepseek-v4-flash`
 - Adaptive mission planner: `gpt-5.6-sol` through the OpenAI Responses API
 - Realtime voice: the configured OpenAI Realtime model
-- Speech: the configured OpenAI TTS model
+- Speech: the configured Qwen3-TTS-Flash model
 - Memory retrieval: the configured Qwen embedding model when available, with a
   lexical fallback
 

@@ -61,19 +61,20 @@ QWEN_MODEL_STUDIO_API_KEY=your_model_studio_api_key
 QWEN_MODEL_STUDIO_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
 QWEN_MODEL_STUDIO_MODEL=qwen3.7-max
 QWEN_MODEL_STUDIO_FAST_MODEL=qwen3.7-plus
+QWEN_TTS_BASE_URL=https://dashscope-intl.aliyuncs.com/api/v1
+QWEN_TTS_MODEL=qwen3-tts-flash
+QWEN_TTS_VOICE=Cherry
+QWEN_TTS_LANGUAGE=English
 QWEN_EMBEDDING_MODEL=text-embedding-v4
 QWEN_EMBEDDING_DIMENSIONS=256
 MEMORY_ENABLED=true
 MEMORY_CONTEXT_TOKEN_BUDGET=700
 MEMORY_CONTEXT_TOKEN_SAFETY_RATIO=0.85
 
-# Voice features remain OpenAI-backed and are independent of Qwen text routing.
+# Realtime voice chat remains OpenAI-backed.
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_REALTIME_MODEL=gpt-realtime-mini-2025-12-15
 OPENAI_REALTIME_MODELS=gpt-realtime-mini-2025-12-15,gpt-realtime-2
-OPENAI_TTS_BASE_URL=https://api.openai.com/v1
-OPENAI_TTS_MODEL=tts-1-hd
-OPENAI_TTS_VOICE=nova
 ```
 
 For an embedding-only host such as the normal Oracle deployment, omit
@@ -101,9 +102,9 @@ curl -fsS http://127.0.0.1:8000/api/v1/memory/next-action \
 Run `python -m scripts.smoke_test` inside the deployed container as an offline
 route/schema check. Before the demonstration, also verify one Fast and one Deep
 Qwen request, a 256-dimensional `text-embedding-v4` response, and a short TTS
-response. The `tts-1` family supports a smaller voice set than newer speech
-models, so keep the documented `tts-1-hd` + `nova` pair together unless both
-values are revalidated.
+response. Coach listening uses the same Model Studio key by default and calls
+the native Qwen endpoint, whose base URL ends in `/api/v1` rather than
+`/compatible-mode/v1`.
 
 8. Configure Nginx and TLS for the same stable API hostname used by Oracle. Keep
    Vercel's `NEXT_PUBLIC_API_BASE_URL=https://enapi.jinxxx.de`; no frontend
