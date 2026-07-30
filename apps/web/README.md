@@ -190,8 +190,9 @@ pnpm build
 ## Learn More
 
 For a source-guided introduction to React/Next.js, the FastAPI backend, and the
-complete request/data flow, start with the repo-level
-[`development.md`](../../development.md).
+complete request/data flow, start with the repo-level Chinese
+[`development.md`](../../development.md) or the matching English
+[`development.en.md`](../../development.en.md).
 
 To learn more, take a look at the following resources:
 

@@ -2,7 +2,9 @@
 
 > 适合读者：学过一点数据结构、网络、操作系统或编程基础，但没有 Python、FastAPI、云部署和完整 Web 工程经验的人。
 >
-> 最后核对日期：2026-07-16（`main` @ `584b527`）。本文以当前代码为准，不再作为“让 AI 生成项目的规格”，而是作为读懂真实实现的学习笔记。
+> 最后核对日期：2026-07-29（`main` @ `b884aec`）。本文以真实代码为准，不再作为“让 AI 生成项目的规格”，而是作为读懂和重建项目的学习教程。
+>
+> English edition: [`development.en.md`](development.en.md). 两个版本使用相同的 0–23 章结构；代码、命令和文件路径保持一致，方便双语对照。
 
 ## 0. 先说明：原来的笔记有什么问题
 
@@ -25,6 +27,7 @@
 | route/service/repository 分层 | 文件很多，但没有职责边界 | 第 6 章 |
 | 当前 Diagnose 完整链路 | 示例已与真实实现分叉 | 第 7 章 |
 | Qwen/DeepSeek/Auto/Deep/Fast/BYOK | 缺失 | 第 8 章 |
+| GPT-5.6 Responses API 自适应任务 | 缺失 | 第 8.8 节 |
 | DynamoDB Decimal/TTL/当前 key | 部分过时 | 第 9 章 |
 | Chat、Import、Notes、Stats、OAuth | 缺失 | 第 10.1–10.9 节 |
 | Coach 五类任务、动态场景、情境词汇、Input Lab 2.0、Speech | 缺失 | 第 8.7、10.10–10.15 节 |
@@ -33,9 +36,11 @@
 | 混合练习 sessionSlot 多样性 | 缺失 | 第 10.3、12.4 节 |
 | Session Win / welcome-back | 缺失 | 第 10.6.1、13.2 节 |
 | Coach 计时结束后的反馈冻结 | 缺失 | 第 10.10 节 |
+| 随机场景两阶段请求与 500 调试 | 缺失 | 第 10.16 节 |
 | 前端请求与环境变量 | 偏脚手架说明 | 第 13 章 |
 | 无密钥本地学习、测试、部署 | 命令和依赖过时 | 第 14–16 章 |
 | 工程取舍和后续学习路径 | 缺失 | 第 18–21 章 |
+| 从空目录重建最小同类项目 | 缺失 | 第 23 章 |
 
 当前文档的分工如下：
 
@@ -43,6 +48,7 @@
 | --- | --- | --- |
 | `README.md` | 产品、功能和技术栈总览 | 第一次认识项目 |
 | `development.md` | 从 Python/FastAPI 基础到完整请求链路 | 系统学习代码 |
+| `development.en.md` | 与本文对应的英文教程 | 用英文学习或核对术语 |
 | `apps/api/README.md` | 后端命令、接口和配置速查 | 实际启动或调试后端 |
 | `apps/web/README.md` | 前端运行和后端连接方式 | 实际启动或修改前端 |
 | `LOCAL_TESTING.md` | 分层测试与发布前检查 | 写完代码之后 |
@@ -242,39 +248,242 @@ dict[str, int]
 
 ### 4.5 `Literal` 和 `Optional`
 
+它们都是用来缩小“一个值允许是什么”的类型标注。先看 `Literal`：
+
 ```py
+from typing import Literal
+
 MemoryKind = Literal["preference", "goal", "strategy", "weakness", "episode"]
 ```
 
-这表示值只能从五个字符串中选择。`Optional[str]` 表示字符串或 `None`。
+`MemoryKind` 在这里不是一个新的 Python class，而是一个类型别名。它表示：被标注为
+`MemoryKind` 的值，应该是下面五个字符串之一：
+
+```py
+def save_memory(kind: MemoryKind) -> None:
+    ...
+
+save_memory("goal")       # 合法：是五个候选值之一
+save_memory("weakness")   # 合法
+save_memory("random")     # 类型检查器会提示错误
+```
+
+普通的 `str` 可以是任意字符串，而 `Literal[...]` 把范围进一步限制成几个明确的值。这很适合表示
+“记忆类型”“模型模式”“语言代码”这类有限选项。
+
+不过，`Literal` 本身主要是给编辑器和类型检查器看的。Python 运行函数时不会自动阻止
+`save_memory("random")`；如果这个值来自 HTTP 请求，还需要 Pydantic 等工具在运行时验证。
+
+`Optional` 表示“这个位置可以有指定类型的值，也可以没有值”：
+
+```py
+from typing import Optional
+
+def display_name(nickname: Optional[str]) -> str:
+    if nickname is None:
+        return "Anonymous"
+    return nickname
+```
+
+这里的 `Optional[str]` 等价于 Python 3.10+ 写法 `str | None`：
+
+```py
+nickname: Optional[str]
+nickname: str | None       # 含义相同
+```
+
+要特别注意：`Optional[str]` 不代表调用函数时可以省略这个参数，它只代表参数值可以是 `None`：
+
+```py
+display_name(None)         # 合法，结果是 "Anonymous"
+display_name("Jin")        # 合法，结果是 "Jin"
+display_name()             # 错误：仍然缺少 nickname 参数
+```
+
+如果希望参数既能省略，又能接受 `None`，还要给它一个默认值：
+
+```py
+def display_name(nickname: str | None = None) -> str:
+    ...
+```
 
 ### 4.6 f-string
+
+f-string 是把变量值放进字符串的一种写法。字符串前面的 `f` 表示可以计算其中 `{...}` 里的内容：
 
 ```py
 def user_pk(user_id: str) -> str:
     return f"USER#{user_id}"
 ```
 
-如果 `user_id == "abc"`，结果就是 `USER#abc`。
+调用过程可以展开成：
+
+```py
+user_id = "abc"
+result = f"USER#{user_id}"
+#              └─ 把变量 user_id 的值放到这里
+
+print(result)  # USER#abc
+```
+
+它与下面的字符串拼接结果相同，但通常更容易读：
+
+```py
+"USER#" + user_id
+```
+
+花括号里也可以放简单表达式：
+
+```py
+name = "jin"
+count = 3
+
+message = f"{name.upper()} has {count + 1} tasks"
+# 结果："JIN has 4 tasks"
+```
+
+本项目用 `USER#abc` 这种字符串作为 DynamoDB key 的一部分。`USER#` 是固定前缀，
+`abc` 是具体用户 ID；前缀让人和程序都能快速看出这条数据属于用户。
 
 ### 4.7 list/dict comprehension
+
+comprehension（推导式）是“遍历一批数据，并顺便创建新容器”的简写。假设
+`list_skills(user_id)` 返回：
+
+```py
+skills = [
+    {"skillCode": "grammar.article", "mastery": 40},
+    {"skillCode": "vocabulary.travel", "mastery": 75},
+]
+```
+
+原代码使用的是 dict comprehension（字典推导式）：
 
 ```py
 existing_skills = {skill["skillCode"]: skill for skill in list_skills(user_id)}
 ```
 
-它把技能列表转换为以 `skillCode` 为 key 的字典，便于 O(1) 查找。
+可以从右向左理解：
+
+1. `for skill in list_skills(user_id)`：逐个取出技能字典。
+2. `skill["skillCode"]`：把当前技能的编号作为新字典的 key。
+3. 冒号后面的 `skill`：把完整的技能字典作为 value。
+
+它等价于下面这段普通循环：
+
+```py
+existing_skills = {}
+
+for skill in list_skills(user_id):
+    key = skill["skillCode"]
+    existing_skills[key] = skill
+```
+
+最终得到：
+
+```py
+existing_skills = {
+    "grammar.article": {
+        "skillCode": "grammar.article",
+        "mastery": 40,
+    },
+    "vocabulary.travel": {
+        "skillCode": "vocabulary.travel",
+        "mastery": 75,
+    },
+}
+```
+
+转换的目的，是让程序可以直接按编号找技能：
+
+```py
+article_skill = existing_skills["grammar.article"]
+```
+
+这里的 `O(1)` 是算法复杂度的近似说法，意思是：字典通常可以根据 key 直接定位数据。
+即使技能数量增加，单次查询所需时间通常也不会跟着线性增长。相比之下，如果保留原来的列表，
+程序就要从头逐项比较，最坏要检查完整个列表，这叫 `O(n)`。
+
+如果输入列表中有两个技能使用相同的 `skillCode`，后出现的技能会覆盖前一个，因为字典的 key
+不能重复。
 
 ### 4.8 `*` 和 `**`
 
+在下面两个容器字面量中，`*` 和 `**` 都表示“把容器拆开，将里面的内容放到这里”。
+
+先看列表：
+
 ```py
 all_candidates = [*ai_candidates, *heuristic_candidates]
+```
+
+假设：
+
+```py
+ai_candidates = ["AI-A", "AI-B"]
+heuristic_candidates = ["RULE-C"]
+```
+
+那么：
+
+```py
+all_candidates = [*ai_candidates, *heuristic_candidates]
+# 结果：["AI-A", "AI-B", "RULE-C"]
+```
+
+如果不加 `*`，两个列表本身会成为外层列表的两个元素：
+
+```py
+all_candidates = [ai_candidates, heuristic_candidates]
+# 结果：[["AI-A", "AI-B"], ["RULE-C"]]
+```
+
+所以这里的 `*` 相当于把两个列表展开后再按顺序合并，也可以写成：
+
+```py
+all_candidates = ai_candidates + heuristic_candidates
+```
+
+再看字典：
+
+```py
 result = {**old_record, "status": "forgotten"}
 ```
 
-- `*list` 展开列表。
-- `**dict` 展开字典。
-- 后面的相同 key 会覆盖前面的值。
+假设旧数据是：
+
+```py
+old_record = {
+    "memoryId": "m-001",
+    "status": "active",
+    "content": "Practice articles",
+}
+```
+
+`**old_record` 会先把旧字典中的所有 key-value 放进新字典，然后再写入
+`"status": "forgotten"`：
+
+```py
+result = {
+    "memoryId": "m-001",
+    "status": "forgotten",
+    "content": "Practice articles",
+}
+```
+
+因为 `"status": "forgotten"` 出现在后面，所以它覆盖了旧的 `"status": "active"`。
+`old_record` 本身不会被修改；`result` 是一个新的字典。这种写法经常用于“保留旧记录的大部分字段，
+只更新其中几个字段”。
+
+覆盖顺序始终是从左到右，后面的同名 key 获胜：
+
+```py
+defaults = {"mode": "fast", "language": "en"}
+user_settings = {"mode": "deep"}
+
+settings = {**defaults, **user_settings}
+# 结果：{"mode": "deep", "language": "en"}
+```
 
 ### 4.9 class、Pydantic 和 dataclass
 
@@ -602,31 +811,82 @@ Model Studio Qwen 路径会：
 
 ### 8.7 Coach Speech/TTS 是第三条模型路径
 
-Coach 听力和语音场景使用普通 OpenAI Speech API，而不是 Realtime：
+Coach 听力和语音场景使用 Qwen 的非实时 TTS API，而不是 Realtime：
 
 ```text
 浏览器 POST /api/v1/coach/speech { text, style }
   -> rate_limited("coach_speech")
   -> tts_service.generate_speech
-  -> OpenAI audio.speech.create
-  -> private, no-store audio/mpeg
+  -> Qwen3-TTS-Flash 原生生成接口
+  -> 校验 Alibaba 音频 URL 并下载
+  -> private, no-store provider audio
 ```
 
 几个容易混淆的概念：
 
-- **TTS**（text-to-speech）：服务器把已经存在的英文文字变成 MP3。
+- **TTS**（text-to-speech）：服务器把已经存在的英文文字变成音频。
 - **ASR/STT**（speech-to-text）：浏览器的 Web Speech Recognition 把用户说话暂存成可编辑文字。
 - **Realtime**：Chat 中持续的双向语音会话。
 
-`CoachSpeechRequest` 最多接收 4096 个字符，只允许 `gentle / natural / challenge` 三种 style；service 把它们映射到 0.9 / 1.0 / 1.06 的速度。模型和声音来自服务器环境变量：
+`CoachSpeechRequest` 最多接收 4096 个字符，只允许 `gentle / natural / challenge` 三种 style；`qwen3-tts-flash` 试用期间保留这个客户端合同，但不据此改变语速。模型、声音和语言来自服务器环境变量：
 
 ```text
-OPENAI_TTS_BASE_URL
-OPENAI_TTS_MODEL
-OPENAI_TTS_VOICE
+QWEN_TTS_API_KEY
+QWEN_TTS_BASE_URL
+QWEN_TTS_MODEL
+QWEN_TTS_VOICE
+QWEN_TTS_LANGUAGE
 ```
 
-默认是 `tts-1-hd` 与 `marin`。OpenAI key 只在后端；前端既不接收也不缓存 key。服务未配置或 provider 失败时，API 返回 503/502，Coach 显示回退说明并使用浏览器 `speechSynthesis`，所以语音增强失败不会阻断文字练习。owner-only Input Lab 2.0 当前仍直接使用浏览器 speech synthesis；不要误写成它已经接入同一 MP3 路径。
+默认是 `qwen3-tts-flash`、`Cherry` 与 `English`。服务优先使用专用 `QWEN_TTS_API_KEY`；未设置时依次复用 `QWEN_MODEL_STUDIO_API_KEY`、`QWEN_EMBEDDING_API_KEY`。key 只在后端，前端既不接收也不缓存。服务未配置或 provider 失败时，API 返回 503/502，Coach 显示回退说明并使用浏览器 `speechSynthesis`，所以语音增强失败不会阻断文字练习。owner-only Input Lab 2.0 当前仍直接使用浏览器 speech synthesis；不要误写成它已经接入同一服务端音频路径。
+
+### 8.8 GPT-5.6 Adaptive Mission Planner
+
+Coach 有两种明确分开的运行路径：
+
+```text
+runtimeMode = "adaptive_planner"
+  -> official OpenAI Responses API
+  -> gpt-5.6-sol + Pydantic Structured Outputs
+  -> mission + plannerInsight + generation metadata
+
+runtimeMode = "selected_provider"
+  -> 当前用户选择的安全 server pair / BYOK provider
+  -> OpenAI-compatible Chat Completions
+  -> mission
+```
+
+前者用于 Today’s Mission，后者用于 Chat 页面的随机情境。不能把第二条路径生成的内容标成 GPT-5.6 证据。`coach_service.py` 的核心分支是：
+
+```py
+if uses_adaptive_mission_planner(req):
+    result, generation = parse_gpt56_mission(
+        messages=messages,
+        response_model=_gpt56_response_model_for_request(req),
+        user_id=user_id,
+        max_output_tokens=max_tokens,
+        trace_id=trace_id,
+    )
+    planner_insight = result.plannerInsight
+else:
+    result = parse_with_model(
+        messages=messages,
+        response_model=_response_model_for_request(req),
+        model=selected_coach_model(req, llm_provider),
+        provider=llm_provider,
+    )
+```
+
+`openai_mission_service.py` 使用官方 Responses API、`store=False`、哈希后的 safety identifier，并直接把响应解析成指定 Pydantic model。`config.py` 还会 fail closed：功能开启但没有 key，或 model 名不以 `gpt-5.6` 开头时，任务生成失败，而不是偷偷换模型后继续展示错误的运行时标签。
+
+返回值中的 `plannerInsight` 回答四件事：
+
+- `whyNow`：为什么现在练这个。
+- `evidenceUsed`：哪些有界证据参与选择。
+- `adaptation`：时长、模态和精力选项怎样改变任务。
+- `evaluationFocus`：完成后观察什么可见语言信号。
+
+前端只有同时看到 `mission.generation.provider === "OpenAI"` 和 `plannerInsight` 才显示证据面板。也就是说，UI 展示的是后端返回的运行时事实，不是写死的宣传文案。
 
 ## 9. DynamoDB：不是把 SQL 表换个名字
 
@@ -934,6 +1194,75 @@ Chat 的“AI 新场景”不是跳到一组固定模板。前端先请求 `guid
 - 当前页面用浏览器 speech synthesis 播放返回的有界片段，并不保存为 Input Learning capture；停止页面后该 mission 不可恢复。
 
 Input Lab 1.0 `/input` 仍是正常用户功能，并未因为 2.0 实验页而隐藏。把“owner-only UI”“server-side authorization”“版权来源声明”和“不支持 URL 抓取”分开理解，是这条功能最重要的安全课。
+
+### 10.16 随机对话为什么曾出现两个连续 500，以及怎样定位
+
+Chat 页面的“Generate a random conversation”实际包含两个串行 POST：
+
+```text
+1. POST /api/v1/coach/missions
+   返回 guided_scene mission
+2. POST /api/v1/chat/sessions
+   把 mission 变成可持久化的 Chat session
+```
+
+所以用户只看到一个红色 toast，并不代表只有一个后端函数。浏览器 Network 面板必须分别检查两个请求的 status、response body 和 request payload。
+
+前端实现位于 `apps/web/app/chat/page.tsx`：
+
+```tsx
+const mission = await generateCoachMission({
+  durationMinutes: sceneGenerationMode === "deep" ? 15 : 10,
+  modality: "text",
+  energy: "normal",
+  generationMode: sceneGenerationMode,
+  runtimeMode: "selected_provider",
+  preferredType: "guided_scene",
+})
+
+const session = await createChatSession(
+  DEMO_USER_ID,
+  mission.title,
+  undefined,
+  mission.scene?.scenarioPrompt,
+  mission.scene?.starterMessage,
+  mission.scene?.scenarioFamily,
+  mission.scene?.scenarioKey,
+)
+```
+
+第一类失败来自 AI 可能生成超过 session 合同的长 `scenarioPrompt`。只让模型“尽量简短”并不可靠，因此 `CoachScene` 在模型边界做确定性裁剪：
+
+```py
+class CoachScene(BaseModel):
+    scenarioPrompt: str = Field(
+        min_length=1,
+        max_length=COACH_SCENARIO_PROMPT_MAX_CHARACTERS,
+    )
+
+    @field_validator("scenarioPrompt", mode="before")
+    def bound_scenario_prompt(cls, value: object) -> object:
+        # 保留开头的角色/设定和结尾的行为规则
+        ...
+```
+
+第二类边界发生在生成成功后创建 session：`ChatCreateSessionRequest.topic` 允许最多 300 字符，而 ActivityRun `title` 最多 240 字符。当前 Coach mission title 自身最多 160 字符，因此正常动态场景不会触发这一差值；但普通客户端可以提交 241–300 字符 topic，未来上游合同也可能变宽。route 应在写入**较窄的下游合同**前显式投影，而不是依赖某一个调用方碰巧更短：
+
+```py
+CreateActivityRunRequest(
+    title=req.topic[:240] if req.topic else "English conversation",
+    goal=req.topic or "Practice meaningful English conversation.",
+)
+```
+
+同时，DynamoDB 单条 item 仍有大小上限。repository 在序列化后检查 item 大小，并把特定异常转换成 API 的 `413 payload_too_large`；未知异常才是 500。这样前端和日志能区分“用户/模型 payload 太大”与“服务器内部故障”。
+
+这一故障给新手四个通用调试原则：
+
+1. 一个按钮可能调用多个 API，逐个定位失败请求。
+2. Pydantic 上游验证通过，不代表更窄的下游 model/database 一定能接收。
+3. LLM 输出必须有确定性边界；prompt 约束不是数据库保护。
+4. 500 response 应携带服务端 request/trace ID，日志用该 ID 串起 route 和 service。
 
 ## 11. 新功能：MemoryAgent 详细讲解
 
@@ -1274,10 +1603,12 @@ cd apps/api
 uv sync
 ```
 
-启动 moto + fake AI 后端。若本机已经有真实 `.env`，显式空值可以保证这次学习环境不会沿用 DynamoDB Local 地址或调用 OpenAI Speech：
+启动 moto + fake AI 后端。若本机已经有真实 `.env`，显式空值可以保证这次学习环境不会沿用 DynamoDB Local 地址或调用付费语音服务：
 
 ```bash
-DYNAMODB_ENDPOINT_URL= OPENAI_API_KEY= uv run python -m scripts.dev_server
+DYNAMODB_ENDPOINT_URL= OPENAI_API_KEY= QWEN_TTS_API_KEY= \
+QWEN_MODEL_STUDIO_API_KEY= QWEN_EMBEDDING_API_KEY= \
+uv run python -m scripts.dev_server
 ```
 
 它会：
@@ -1317,7 +1648,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm dev
 
 每做一步，回到 route 找 decorator，再顺着 import 跟到 service/repository。
 
-`POST /api/v1/coach/speech` 返回二进制 MP3，不是 JSON，而且配置真实 key 时会调用付费服务；先用 `coach_contract_test` 理解合同，再决定是否做 live probe。`/coach/input-lab-2/transcript-missions` 需要真实 owner session，Swagger 中伪造 `userId` 不会获得 owner 权限。
+`POST /api/v1/coach/speech` 返回二进制音频（当前 Qwen 通常返回 WAV），不是 JSON，而且配置真实 key 时会调用付费服务；先用 `coach_contract_test` 理解合同，再决定是否做 live probe。`/coach/input-lab-2/transcript-missions` 需要真实 owner session，Swagger 中伪造 `userId` 不会获得 owner 权限。
 
 ### 14.3 curl 示例
 
@@ -1583,3 +1914,331 @@ API forget 后不会再召回，但 DynamoDB 行通过 TTL 稍后物理删除。
 10. 若改了并行出题，是否仍传入并处理 `sessionSlot` / `sessionSize`，避免 diversity 回退。
 
 学习项目时不要试图一次读完所有文件。选择一条用户行为，从前端按钮一路跟到 DynamoDB，再跟着 response 回到页面；这是从“会写代码”走向“理解工程”的最快方法。
+
+## 23. 从空目录重建一个最小版 WeakSpot
+
+这一章不是复制完整生产项目，而是把最重要的结构缩成一个可以在一两天内完成的学习项目。完成后你会拥有：
+
+- 一个 React/Next.js 输入页面。
+- 一个 FastAPI `/diagnose` endpoint。
+- Pydantic 请求/响应验证。
+- 一个可替换的 AI service。
+- 一个内存 repository（之后再换 DynamoDB）。
+- 一个最小自动测试。
+
+### 23.1 第一步：建立目录
+
+```text
+mini-english-coach/
+├── api/
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── models.py
+│   │   ├── service.py
+│   │   └── repository.py
+│   └── test_api.py
+└── web/
+    └── app/page.tsx
+```
+
+先只实现一条纵向功能。初学者常犯的错误是同时建立十张表、二十个页面，最后任何一条链都跑不通。
+
+### 23.2 定义数据合同
+
+`api/app/models.py`：
+
+```py
+from typing import Literal
+from pydantic import BaseModel, Field
+
+
+class DiagnoseRequest(BaseModel):
+    text: str = Field(min_length=10, max_length=5000)
+    outputLanguage: Literal["en", "zh-CN"] = "en"
+
+
+class ErrorItem(BaseModel):
+    code: Literal["grammar.verb_tense", "grammar.article", "clarity.expression"]
+    original: str
+    corrected: str
+    explanation: str
+
+
+class DiagnoseResponse(BaseModel):
+    submissionId: str
+    score: int = Field(ge=0, le=100)
+    correctedText: str
+    errors: list[ErrorItem]
+```
+
+先写 model 的原因是：浏览器、route、service 和测试都需要共同回答“什么输入才合法、什么输出才完整”。`Literal` 能防止 AI 自行发明无限分类。
+
+### 23.3 用 repository 隔离存储
+
+`api/app/repository.py`：
+
+```py
+from copy import deepcopy
+
+_submissions: dict[str, dict] = {}
+
+
+def save_submission(item: dict) -> None:
+    _submissions[item["submissionId"]] = deepcopy(item)
+
+
+def get_submission(submission_id: str) -> dict | None:
+    item = _submissions.get(submission_id)
+    return deepcopy(item) if item else None
+```
+
+这还不是生产数据库，但 route 不需要知道数据存在 dict 还是 DynamoDB。以后只替换 repository：
+
+```py
+def save_submission(item: dict) -> None:
+    table.put_item(Item=to_dynamo(item))
+```
+
+真实项目的 `apps/api/app/db/repositories.py` 就是这个思想的大型版本。
+
+### 23.4 写一个可替换的 service
+
+`api/app/service.py`：
+
+```py
+from app.models import DiagnoseResponse, ErrorItem
+
+
+def diagnose_text(text: str) -> DiagnoseResponse:
+    errors: list[ErrorItem] = []
+    corrected = text
+
+    # 学习阶段先用确定性规则；以后把函数内部换成结构化 AI。
+    if "Yesterday I go" in text:
+        corrected = text.replace("Yesterday I go", "Yesterday I went")
+        errors.append(ErrorItem(
+            code="grammar.verb_tense",
+            original="Yesterday I go",
+            corrected="Yesterday I went",
+            explanation="A finished past event needs the past-tense verb.",
+        ))
+
+    return DiagnoseResponse(
+        submissionId="",  # route 负责生成系统 ID
+        score=max(0, 100 - len(errors) * 12),
+        correctedText=corrected,
+        errors=errors,
+    )
+```
+
+Service 只处理“怎样诊断”，不读取 HTTP cookie，也不渲染按钮。以后接 AI 时仍返回同一个 `DiagnoseResponse`：
+
+```py
+result = client.chat.completions.parse(
+    model="your-model",
+    messages=messages,
+    response_format=DiagnoseResponse,
+)
+return result.choices[0].message.parsed
+```
+
+生产项目还会在 AI 输出后重新验证 evidence quote、taxonomy 和长度，因为“结构正确”不等于“事实有依据”。
+
+### 23.5 把它挂成 FastAPI route
+
+`api/app/main.py`：
+
+```py
+from uuid import uuid4
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.models import DiagnoseRequest, DiagnoseResponse
+from app.repository import save_submission
+from app.service import diagnose_text
+
+app = FastAPI(title="Mini English Coach")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/health")
+def health() -> dict:
+    return {"ok": True}
+
+
+@app.post("/diagnose", response_model=DiagnoseResponse)
+def diagnose(request: DiagnoseRequest) -> DiagnoseResponse:
+    result = diagnose_text(request.text)
+    result.submissionId = f"sub_{uuid4().hex[:12]}"
+    save_submission(result.model_dump())
+    return result
+```
+
+运行：
+
+```bash
+cd api
+uv init
+uv add fastapi "uvicorn[standard]" pydantic pytest httpx
+uv run uvicorn app.main:app --reload --port 8000
+```
+
+打开 `http://localhost:8000/docs`，先不用前端就能验证合同。
+
+### 23.6 写前端请求层
+
+不要直接在每个按钮里复制 `fetch`。先建立统一函数：
+
+```ts
+type ErrorItem = {
+  code: string
+  original: string
+  corrected: string
+  explanation: string
+}
+
+type DiagnoseResponse = {
+  submissionId: string
+  score: number
+  correctedText: string
+  errors: ErrorItem[]
+}
+
+export async function diagnose(text: string): Promise<DiagnoseResponse> {
+  const response = await fetch("http://localhost:8000/diagnose", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, outputLanguage: "en" }),
+  })
+  if (!response.ok) {
+    const message = await response.text()
+    throw new Error(`Diagnose failed (${response.status}): ${message}`)
+  }
+  return response.json()
+}
+```
+
+真实项目的 `apiFetch` 进一步统一处理 base URL、cookie、语言、模型 headers、timeout 和结构化错误。
+
+### 23.7 写最小 React 页面
+
+`web/app/page.tsx`：
+
+```tsx
+"use client"
+
+import { useState } from "react"
+import { diagnose } from "../lib/api"
+
+export default function HomePage() {
+  const [text, setText] = useState("")
+  const [result, setResult] = useState<Awaited<ReturnType<typeof diagnose>> | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
+
+  async function submit() {
+    setLoading(true)
+    setError("")
+    try {
+      setResult(await diagnose(text))
+    } catch (value) {
+      setError(value instanceof Error ? value.message : "Unknown error")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <main>
+      <h1>Mini English Coach</h1>
+      <textarea value={text} onChange={(event) => setText(event.target.value)} />
+      <button disabled={loading || text.trim().length < 10} onClick={submit}>
+        {loading ? "Analyzing..." : "Analyze"}
+      </button>
+      {error ? <p role="alert">{error}</p> : null}
+      {result ? (
+        <section>
+          <h2>Score: {result.score}</h2>
+          <p>{result.correctedText}</p>
+          {result.errors.map((item) => (
+            <article key={`${item.code}-${item.original}`}>
+              <strong>{item.original} → {item.corrected}</strong>
+              <p>{item.explanation}</p>
+            </article>
+          ))}
+        </section>
+      ) : null}
+    </main>
+  )
+}
+```
+
+这个组件已经包含一个完整异步状态机：idle、loading、success、error。生产项目只是在此基础上增加页面导航、缓存、恢复、国际化和更多结果组件。
+
+### 23.8 写第一个自动测试
+
+`api/test_api.py`：
+
+```py
+from fastapi.testclient import TestClient
+from app.main import app
+
+client = TestClient(app)
+
+
+def test_diagnose_past_tense() -> None:
+    response = client.post(
+        "/diagnose",
+        json={"text": "Yesterday I go to school.", "outputLanguage": "en"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["correctedText"] == "Yesterday I went to school."
+    assert payload["errors"][0]["code"] == "grammar.verb_tense"
+
+
+def test_rejects_short_text() -> None:
+    response = client.post("/diagnose", json={"text": "Hi"})
+    assert response.status_code == 422
+```
+
+第一个测试证明成功链，第二个测试证明边界真的由 Pydantic 执行。以后每增加一层，就增加对应测试：
+
+```text
+加入身份 -> 测试 body userId 不能冒充别人
+加入 AI -> fake AI 合同测试 + malformed JSON 测试
+加入 DynamoDB -> moto repository/integration 测试
+加入幂等 -> 同 clientAttemptId 重试不重复写
+加入分页 -> fixture 超过一页仍完整返回
+```
+
+### 23.9 按阶段扩展，而不是一次复制整个项目
+
+推荐顺序：
+
+1. Diagnose + 内存 repository。
+2. 换 DynamoDB，并学习 PK/SK。
+3. 加 profile 和 skill mastery。
+4. 加 practice generate/submit，使用 `clientAttemptId` 保证重试幂等。
+5. 加 text chat，保存 session/message，并限制最近上下文。
+6. 加 OAuth cookie 身份和 rate limit。
+7. 加 Memory retrieval，并把 context 限制在固定条数/token budget。
+8. 加 Coach mission scheduler，再接结构化生成模型。
+9. 最后才加 Realtime/TTS、云部署和多 provider。
+
+每一阶段都要满足四个完成条件：
+
+```text
+Swagger/curl 能调用
+浏览器能显示 loading/success/error
+自动测试覆盖成功与至少一个失败边界
+secret 不进入浏览器或 Git
+```
+
+做到这里，你已经不只是“看懂 WeakSpot”，而是理解了如何把一个产品需求分成合同、业务逻辑、存储、UI 和验证，并能逐步建立自己的同类项目。
