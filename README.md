@@ -217,11 +217,13 @@ docs/       architecture, MemoryAgent design, submission, demo, deployment
 ## Learn the codebase
 
 If you have some CS/programming background but are new to Python, FastAPI, and
-production Web engineering, start with the Chinese
-[beginner learning guide](development.md). It explains the required Python
+production Web engineering, start with the
+[Chinese beginner learning guide](development.md) or its matching
+[English edition](development.en.md). They explain the required Python
 syntax, HTTP/FastAPI request lifecycle, route/service/repository layering,
 DynamoDB key design, the original diagnosis-plan-practice loop, server model
-selection, and the complete MemoryAgent flow using the current source code.
+selection, the complete MemoryAgent flow, and how to rebuild a smaller version
+of the project from an empty directory using the current source code.
 
 After that, use [Architecture](docs/ARCHITECTURE.md) for the production view,
 [MemoryAgent Design](docs/MEMORY_AGENT_DESIGN.md) for algorithm details, and
