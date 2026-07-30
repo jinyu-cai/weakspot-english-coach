@@ -61,13 +61,13 @@ P0 **不会自动判断图片内容是否描述正确**。任务完成后显示�
 
 ### 3.3 `listen_retell`：听后复述、推断与迁移
 
-普通 Coach 任务使用 AI 生成的原创英文短脚本；owner-only Input Lab 2.0 则使用 owner 明确提供的字幕片段。前端优先调用服务端 `POST /coach/speech`，由后端使用 OpenAI Speech API 生成 MP3，并遵守任务返回的 `playLimit`（合同范围 1–3 次，默认通常为 2 次）。OpenAI key 始终留在后端；UI 明确标注声音由 AI 生成。
+普通 Coach 任务使用 AI 生成的原创英文短脚本；owner-only Input Lab 2.0 则使用 owner 明确提供的字幕片段。前端优先调用服务端 `POST /coach/speech`，由后端使用 Qwen3-TTS-Flash 生成音频，并遵守任务返回的 `playLimit`（合同范围 1–3 次，默认通常为 2 次）。Model Studio key 始终留在后端；UI 明确标注声音由 AI 生成。
 
 同一端点也用于 Coach 的 `guided_scene` 语音回答模式：AI 角色的新回复会自动播放，每条 AI 消息都可重播；文字回答模式不会自动发声。现有 `/chat` Realtime voice 继续使用 OpenAI Realtime API，不经过本端点。
 
-默认模型为仍受支持、偏高质量的 `tts-1-hd`，默认 voice 为该模型支持的 `nova`，都可通过服务器环境变量调整。服务端会校验 `tts-1` 系列的 model/voice 组合，避免把只受新模型支持的 voice 发送给 `tts-1-hd`。若 OpenAI 未配置、调用失败或浏览器无法播放返回的 MP3，前端才回退到 Web Speech API `speechSynthesis` 并向用户说明；回退声音的语速和断句仍可能随浏览器变化。生成的 Blob 只在当前任务页面缓存，并设置服务端 `private, no-store`，不写入数据库。
+默认模型为 `qwen3-tts-flash`，默认 voice 为 `Cherry`，默认语言为 `English`，都可通过服务器环境变量调整。若 Qwen 未配置、调用失败或浏览器无法播放返回的音频，前端才回退到 Web Speech API `speechSynthesis` 并向用户说明；回退声音的语速和断句仍可能随浏览器变化。生成的 Blob 只在当前任务页面缓存，并设置服务端 `private, no-store`，不写入数据库。
 
-实现依据是 OpenAI 官方 [Audio API create speech reference](https://platform.openai.com/docs/api-reference/audio/createSpeech) 与 [`tts-1-hd` model page](https://developers.openai.com/api/docs/models/tts-1-hd)。当前模型目录已把 `gpt-4o-mini-tts` 标为 deprecated，因此原型不把它设为默认；如供应商以后调整推荐模型，可通过环境变量迁移并重新做声音 QA。
+实现依据是 Alibaba Cloud Model Studio 官方 [Qwen-TTS 非实时语音合成 API](https://www.alibabacloud.com/help/en/model-studio/qwen-tts-api)；如供应商以后调整推荐模型，可通过环境变量迁移并重新做声音 QA。
 
 用户看不到自动展示的脚本文本，而是复述主旨、推断意图、重新组织信息或将信息用于新情境。AI TTS 改善了自然度，但动态生成语音仍不是版本固定的听力测验基准；可重复比较的版本化音频仍属于后续工作。
 
@@ -252,7 +252,7 @@ P0 页面只验证“提供字幕 → 生成任务 → 限次播放”的实验�
 - 非 owner 返回 403。
 - 成功响应始终是 `listen_retell` mission；`listening.script` 是服务端截取的 owner 片段。
 
-### 10.3 OpenAI AI 语音
+### 10.3 Qwen AI 语音
 
 `POST /coach/speech`
 
@@ -264,11 +264,11 @@ P0 页面只验证“提供字幕 → 生成任务 → 限次播放”的实验�
 ```
 
 - `text`：规范化后 1–4,096 字符，禁止额外字段。
-- `style`：`gentle | natural | challenge`，只映射到受限语速；客户端不能提交任意声音指令、模型或 voice。
-- 使用 `rate_limited("coach_speech")`；OpenAI key、base URL、model 和 voice 均来自服务器环境。
-- 成功返回 `audio/mpeg`，并带 `Cache-Control: private, no-store`。
+- `style`：`gentle | natural | challenge`；保留现有客户端合同，`qwen3-tts-flash` 试用期间不据此改变语速。
+- 使用 `rate_limited("coach_speech")`；Qwen key、base URL、model、voice 和 language 均来自服务器环境。
+- 成功返回供应商音频类型（当前通常为 `audio/wav`），并带 `Cache-Control: private, no-store`。
 - 未配置返回 503 `tts_not_configured`；供应商失败返回 502 `tts_provider_error`。两种情况前端都可回退到浏览器语音。
-- 环境变量：`OPENAI_API_KEY`、`OPENAI_TTS_BASE_URL`、`OPENAI_TTS_MODEL`、`OPENAI_TTS_VOICE`。默认分别复用服务端 OpenAI key、官方 `/v1` base URL、`tts-1-hd` 和 `nova`。
+- 环境变量：优先使用专用 `QWEN_TTS_API_KEY`；未设置时依次复用 `QWEN_MODEL_STUDIO_API_KEY`、`QWEN_EMBEDDING_API_KEY`。其余为 `QWEN_TTS_BASE_URL`、`QWEN_TTS_MODEL`、`QWEN_TTS_VOICE`、`QWEN_TTS_LANGUAGE`，默认分别为国际区原生 `/api/v1`、`qwen3-tts-flash`、`Cherry` 和 `English`。
 
 ### 10.4 动态场景与 Chat 的衔接
 
@@ -312,7 +312,7 @@ Coach 场景结束时沿用现有分析路径，并增加保守提示字段：
 - `generationMode` 默认走 Fast，并能在同一安全模型组合中显式切换到 Deep；
 - 动态场景包含受限 family 与唯一 key，并在仍有未使用 family 时避开最近 family；
 - 词汇任务强制包含 `vocab.word_choice`，带任务语境的诊断把上下文标成不可信数据，并让不同上下文产生不同去重 hash；
-- TTS 合同拒绝空白文本与不兼容的 model/voice 组合，离线 fake OpenAI client 验证 `tts-1-hd`、`nova`、MP3 和受限语速参数，不访问真实 API；
+- TTS 合同拒绝空白文本，离线 fake HTTP client 验证 `qwen3-tts-flash`、`Cherry`、English、受信任音频 URL 和 WAV 返回，不访问真实 API；
 - owner 字幕片段按 `listen_retell` 合同返回；
 - `require_owner` 拒绝非 owner；
 - 字幕请求拒绝 `sourceUrl`；
@@ -357,7 +357,7 @@ pnpm build
 - 五种 Coach 任务均可从 Setup 进入 Briefing、Active 和 Feedback。
 - Chat 动态卡片直接进入带 AI 开场白的新场景；连续生成时尽量不重复最近的场景家族。
 - `/vocabulary` 可生成语境任务，传入受限分析上下文，并将单次 `vocab.word_choice` 显示为待确认证据。
-- OpenAI TTS 配置时优先播放 AI MP3；未配置/失败时显示回退说明并播放浏览器语音；UI 始终显示 AI voice disclosure。
+- Qwen TTS 配置时优先播放 AI 音频；未配置/失败时显示回退说明并播放浏览器语音；UI 始终显示 AI voice disclosure。
 - 语音转写不可用时有文字回退；转写不会自动提交。
 - 图片页没有视觉模型评分承诺；内容自检与语言诊断分栏显示。
 - 使用提示后显示 assisted；不使用提示只写“本次独立”，不宣称长期掌握。
@@ -394,7 +394,7 @@ facts 不能在作答前下发成隐藏答案，也不能把内容遗漏直接�
 
 ### 12.3 版本化基准音频
 
-当前 OpenAI TTS 已替换浏览器声音作为主路径，但同一脚本重新生成的韵律仍可能不同。若要做严格可比的听力测试，应补充项目自制/明确授权、版本化的固定音频：保存 transcript hash、voice、model、语速、音频时长、授权来源和 asset version。这样才能稳定比较不同用户与不同时间的听力难度，同时保留完成后可访问的文字稿。
+当前 Qwen TTS 已替换浏览器声音作为主路径，但同一脚本重新生成的韵律仍可能不同。若要做严格可比的听力测试，应补充项目自制/明确授权、版本化的固定音频：保存 transcript hash、voice、model、语速、音频时长、授权来源和 asset version。这样才能稳定比较不同用户与不同时间的听力难度，同时保留完成后可访问的文字稿。
 
 ### 12.4 Micro-video
 
