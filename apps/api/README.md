@@ -86,7 +86,7 @@ POST /chat/realtime/{session_id}/kick
 POST /chat-import/analyze
 
 POST /coach/missions                  # generationMode=fast|deep (deep default)
-POST /coach/speech                    # server-side OpenAI Speech API MP3
+POST /coach/speech                    # server-side Qwen3-TTS-Flash audio
 POST /coach/input-lab-2/transcript-missions # owner-only supplied transcript
 
 GET  /memory?status=active|resolved|superseded|expired|forgotten|all
@@ -417,14 +417,14 @@ Realtime voice is separate from the text provider. Configure
 exchanges the server key for short-lived Realtime client secrets so the browser
 never sees the real OpenAI key.
 
-Coach listening also uses the server-side `OPENAI_API_KEY`, through the OpenAI
-Speech API rather than an OpenAI-compatible text provider. Configure
-`OPENAI_TTS_BASE_URL`, `OPENAI_TTS_MODEL`, and `OPENAI_TTS_VOICE` as needed;
-defaults are the official `/v1` endpoint, `tts-1-hd`, and `nova`. The service
-also rejects model/voice combinations that the configured `tts-1` family does
-not support before making a provider request. The speech
-endpoint accepts only bounded text plus a small style enum, returns no-store
-MP3, and the frontend falls back to browser speech when it is unavailable.
+Coach listening uses Model Studio's native non-realtime speech endpoint with
+`qwen3-tts-flash`. It reuses `QWEN_MODEL_STUDIO_API_KEY` or
+`QWEN_EMBEDDING_API_KEY` by default; configure `QWEN_TTS_API_KEY` only for a
+separate speech account. The remaining defaults are
+`QWEN_TTS_BASE_URL=https://dashscope-intl.aliyuncs.com/api/v1`,
+`QWEN_TTS_VOICE=Cherry`, and `QWEN_TTS_LANGUAGE=English`. The speech endpoint
+accepts only bounded text plus the existing style enum, returns no-store audio,
+and the frontend falls back to browser speech when it is unavailable.
 
 Text chat and prediction use the saved fast slot. End-of-session analysis uses
 the saved deep slot. Users can choose both before starting a new text chat.

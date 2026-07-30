@@ -285,56 +285,108 @@ def main() -> None:
     else:
         raise AssertionError("The speech endpoint accepted blank text")
 
-    previous_openai_key = settings.openai_api_key
-    previous_tts_model = settings.openai_tts_model
-    previous_tts_voice = settings.openai_tts_voice
-    previous_openai_client = tts_service.OpenAI
+    previous_qwen_key = settings.qwen_model_studio_api_key
+    previous_embedding_key = settings.qwen_embedding_api_key
+    previous_tts_key = settings.qwen_tts_api_key
+    previous_tts_base_url = settings.qwen_tts_base_url
+    previous_tts_model = settings.qwen_tts_model
+    previous_tts_voice = settings.qwen_tts_voice
+    previous_tts_language = settings.qwen_tts_language
+    previous_http_client = tts_service.httpx.Client
     captured_speech_request = {}
 
-    class _FakeSpeechResponse:
-        content = b"ID3-contract-audio"
+    class _FakeGenerationResponse:
+        headers = {"content-type": "application/json"}
 
-    class _FakeSpeech:
         @staticmethod
-        def create(**kwargs):
-            captured_speech_request.update(kwargs)
-            return _FakeSpeechResponse()
+        def raise_for_status():
+            return None
 
-    class _FakeAudio:
-        speech = _FakeSpeech()
+        @staticmethod
+        def json():
+            return {
+                "status_code": 200,
+                "output": {
+                    "audio": {
+                        "url": "https://dashscope-result-sg.oss-ap-southeast-1.aliyuncs.com/audio.wav",
+                    },
+                },
+            }
 
-    class _FakeOpenAI:
-        audio = _FakeAudio()
+    class _FakeAudioResponse:
+        content = b"RIFF-contract-audio"
+        headers = {"content-type": "audio/wav"}
 
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    class _FakeHTTPClient:
         def __init__(self, **_kwargs):
             pass
 
-    try:
-        settings.openai_api_key = "test-only-key"
-        settings.openai_tts_model = "tts-1-hd"
-        settings.openai_tts_voice = "marin"
-        tts_service.OpenAI = _FakeOpenAI
-        try:
-            tts_service.generate_speech("An incompatible voice test.")
-        except tts_service.TTSNotConfiguredError:
-            pass
-        else:
-            raise AssertionError("tts-1-hd accepted an incompatible voice")
+        def __enter__(self):
+            return self
 
-        settings.openai_tts_voice = "nova"
-        assert tts_service.generate_speech("A natural test sentence.") == b"ID3-contract-audio"
+        def __exit__(self, *_args):
+            return None
+
+        @staticmethod
+        def post(url, *, headers, json):
+            captured_speech_request.update({
+                "url": url,
+                "headers": headers,
+                "json": json,
+            })
+            return _FakeGenerationResponse()
+
+        @staticmethod
+        def get(url):
+            captured_speech_request["audio_url"] = url
+            return _FakeAudioResponse()
+
+    try:
+        settings.qwen_model_studio_api_key = ""
+        settings.qwen_embedding_api_key = "shared-test-only-key"
+        settings.qwen_tts_api_key = ""
+        settings.qwen_tts_base_url = "https://dashscope-intl.aliyuncs.com/api/v1"
+        settings.qwen_tts_model = "qwen3-tts-flash"
+        settings.qwen_tts_voice = "Cherry"
+        settings.qwen_tts_language = "English"
+        tts_service.httpx.Client = _FakeHTTPClient
+        generated = tts_service.generate_speech("A natural test sentence.")
+        assert generated.content == b"RIFF-contract-audio"
+        assert generated.media_type == "audio/wav"
         assert captured_speech_request == {
-            "model": "tts-1-hd",
-            "voice": "nova",
-            "input": "A natural test sentence.",
-            "response_format": "mp3",
-            "speed": 1.0,
+            "url": (
+                "https://dashscope-intl.aliyuncs.com/api/v1"
+                "/services/aigc/multimodal-generation/generation"
+            ),
+            "headers": {
+                "Authorization": "Bearer shared-test-only-key",
+                "Content-Type": "application/json",
+            },
+            "json": {
+                "model": "qwen3-tts-flash",
+                "input": {
+                    "text": "A natural test sentence.",
+                    "voice": "Cherry",
+                    "language_type": "English",
+                },
+            },
+            "audio_url": (
+                "https://dashscope-result-sg.oss-ap-southeast-1.aliyuncs.com/audio.wav"
+            ),
         }
     finally:
-        settings.openai_api_key = previous_openai_key
-        settings.openai_tts_model = previous_tts_model
-        settings.openai_tts_voice = previous_tts_voice
-        tts_service.OpenAI = previous_openai_client
+        settings.qwen_model_studio_api_key = previous_qwen_key
+        settings.qwen_embedding_api_key = previous_embedding_key
+        settings.qwen_tts_api_key = previous_tts_key
+        settings.qwen_tts_base_url = previous_tts_base_url
+        settings.qwen_tts_model = previous_tts_model
+        settings.qwen_tts_voice = previous_tts_voice
+        settings.qwen_tts_language = previous_tts_language
+        tts_service.httpx.Client = previous_http_client
 
     non_owner = Identity(
         user_id="guest_test",

@@ -1,44 +1,19 @@
-"""Server-side OpenAI text-to-speech for generated learning material."""
+"""Server-side Qwen text-to-speech for generated learning material."""
 
 from __future__ import annotations
 
-from openai import OpenAI, OpenAIError
+from dataclasses import dataclass
+from urllib.parse import urlparse
+
+import httpx
 
 from app.config import settings
 from app.models.coach import CoachSpeechStyle
 
 
-ALLOWED_TTS_VOICES = {
-    "alloy",
-    "ash",
-    "ballad",
-    "coral",
-    "echo",
-    "fable",
-    "onyx",
-    "nova",
-    "sage",
-    "shimmer",
-    "verse",
-    "marin",
-    "cedar",
-}
-
-# The current Speech API exposes more voices for newer TTS models, while the
-# tts-1 family accepts only this smaller subset. Validate the combination
-# locally so an individually valid model and voice cannot fail later with a
-# provider-side 400 response.
-TTS_1_VOICES = {
-    "alloy",
-    "ash",
-    "coral",
-    "echo",
-    "fable",
-    "nova",
-    "onyx",
-    "sage",
-    "shimmer",
-}
+QWEN_TTS_GENERATION_PATH = "/services/aigc/multimodal-generation/generation"
+MAX_AUDIO_BYTES = 10 * 1024 * 1024
+ALLOWED_AUDIO_HOST_SUFFIXES = (".aliyuncs.com", ".aliyuncs.com.cn")
 
 
 class TTSNotConfiguredError(RuntimeError):
@@ -49,63 +24,96 @@ class TTSProviderError(RuntimeError):
     pass
 
 
-def _speed_for_style(style: CoachSpeechStyle) -> float:
-    return {"gentle": 0.9, "natural": 1.0, "challenge": 1.06}[style]
+@dataclass(frozen=True)
+class SpeechAudio:
+    content: bytes
+    media_type: str
 
 
-def generate_speech(text: str, style: CoachSpeechStyle = "natural") -> bytes:
-    """Generate an MP3 without exposing the OpenAI credential to the client."""
+def _generation_url() -> str:
+    base_url = settings.qwen_tts_base_url.strip().rstrip("/")
+    if not base_url.startswith("https://"):
+        raise TTSNotConfiguredError("The Qwen speech base URL must use HTTPS.")
+    return f"{base_url}{QWEN_TTS_GENERATION_PATH}"
 
-    if not settings.openai_api_key:
-        raise TTSNotConfiguredError("OpenAI speech is not configured.")
 
-    voice = settings.openai_tts_voice.strip().lower()
-    if voice not in ALLOWED_TTS_VOICES:
-        raise TTSNotConfiguredError("The configured OpenAI speech voice is not supported.")
+def _validated_audio_url(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise TTSProviderError("Qwen speech returned no audio URL.")
+    url = value.strip()
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower()
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not any(hostname.endswith(suffix) for suffix in ALLOWED_AUDIO_HOST_SUFFIXES)
+    ):
+        raise TTSProviderError("Qwen speech returned an untrusted audio URL.")
+    return url
 
-    model = settings.openai_tts_model.strip()
-    if not model:
-        raise TTSNotConfiguredError("The OpenAI speech model is not configured.")
-    if model in {"tts-1", "tts-1-hd"} and voice not in TTS_1_VOICES:
-        raise TTSNotConfiguredError(
-            f"The configured OpenAI speech voice is not supported by {model}."
-        )
 
-    request: dict = {
+def generate_speech(
+    text: str,
+    style: CoachSpeechStyle = "natural",
+) -> SpeechAudio:
+    """Generate speech through Qwen3-TTS-Flash without exposing credentials."""
+
+    api_key = settings.qwen_tts_effective_api_key.strip()
+    if not api_key:
+        raise TTSNotConfiguredError("Qwen speech is not configured.")
+
+    model = settings.qwen_tts_model.strip()
+    voice = settings.qwen_tts_voice.strip()
+    language = settings.qwen_tts_language.strip()
+    if not model or not voice:
+        raise TTSNotConfiguredError("The Qwen speech model and voice are required.")
+
+    # qwen3-tts-flash does not support instruction control. Keep the bounded
+    # style field in the public API so the browser contract remains stable.
+    _ = style
+    request = {
         "model": model,
-        "voice": voice,
-        "input": text,
-        "response_format": "mp3",
-        "speed": _speed_for_style(style),
+        "input": {
+            "text": text,
+            "voice": voice,
+            "language_type": language or "English",
+        },
     }
-    # The supported tts-1 family does not accept instructions. Keep this
-    # branch for deployments that intentionally opt into an instruction-aware
-    # speech model later.
-    if model.startswith("gpt-4o-mini-tts"):
-        request["instructions"] = (
-            "Speak as a warm, natural English learning partner. Use clear phrasing, "
-            "human pauses, and an encouraging tone without exaggeration."
-        )
 
     try:
-        client = OpenAI(
-            api_key=settings.openai_api_key,
-            base_url=settings.openai_tts_base_url,
-            timeout=60.0,
-        )
-        response = client.audio.speech.create(**request)
-        content = getattr(response, "content", None)
-        if isinstance(content, bytes):
-            return content
-        read = getattr(response, "read", None)
-        if callable(read):
-            data = read()
-            if isinstance(data, bytes):
-                return data
-        raise TTSProviderError("OpenAI speech returned no audio bytes.")
+        with httpx.Client(timeout=60.0) as client:
+            response = client.post(
+                _generation_url(),
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=request,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            provider_status = payload.get("status_code")
+            if provider_status not in (None, 200):
+                code = payload.get("code") or "provider_error"
+                raise TTSProviderError(f"Qwen speech request failed: {code}.")
+
+            audio_url = _validated_audio_url(
+                ((payload.get("output") or {}).get("audio") or {}).get("url")
+            )
+            audio_response = client.get(audio_url)
+            audio_response.raise_for_status()
+            content = audio_response.content
+            if not content:
+                raise TTSProviderError("Qwen speech returned an empty audio file.")
+            if len(content) > MAX_AUDIO_BYTES:
+                raise TTSProviderError("Qwen speech audio exceeded the size limit.")
+
+            media_type = audio_response.headers.get("content-type", "").split(";")[0].strip()
+            if not media_type.startswith("audio/"):
+                media_type = "audio/wav"
+            return SpeechAudio(content=content, media_type=media_type)
     except TTSProviderError:
         raise
-    except OpenAIError as exc:
-        raise TTSProviderError(f"OpenAI speech request failed: {type(exc).__name__}") from exc
-    except Exception as exc:
-        raise TTSProviderError(f"OpenAI speech response failed: {type(exc).__name__}") from exc
+    except (httpx.HTTPError, ValueError, TypeError) as exc:
+        raise TTSProviderError(
+            f"Qwen speech request failed: {type(exc).__name__}"
+        ) from exc

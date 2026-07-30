@@ -138,7 +138,7 @@ def create_coach_speech(
     req: CoachSpeechRequest,
     identity: Identity = Depends(rate_limited("coach_speech")),
 ):
-    """Return AI-generated MP3 audio; the OpenAI key stays on the server."""
+    """Return AI-generated audio; the Qwen key stays on the server."""
 
     try:
         audio = generate_speech(req.text, req.style)
@@ -161,8 +161,8 @@ def create_coach_speech(
         ) from exc
 
     return Response(
-        content=audio,
-        media_type="audio/mpeg",
+        content=audio.content,
+        media_type=audio.media_type,
         headers={
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",

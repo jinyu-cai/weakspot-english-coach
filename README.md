@@ -200,10 +200,10 @@ in [Coach Mode / Input Lab 2.0 P0](docs/COACH_MODE_P0.md).
 | Build Week planner | OpenAI Responses API, `gpt-5.6-sol`, Pydantic Structured Outputs |
 | Daily backend | FastAPI/Python 3.11 in Docker on Oracle Cloud, Nginx, TLS, DeepSeek |
 | Existing alternate backend | Same FastAPI release on Alibaba Cloud ECS |
-| Qwen | Model Studio `qwen3.7-max`, `qwen3.7-plus`, `text-embedding-v4` |
+| Qwen | Model Studio `qwen3.7-max`, `qwen3.7-plus`, `qwen3-tts-flash`, `text-embedding-v4` |
 | Persistence | Amazon DynamoDB single-table design with TTL |
 | Traffic routing | Stable Cloudflare API hostname in front of the active FastAPI origin |
-| Voice | OpenAI Realtime API for voice chat; OpenAI Speech API for Coach listening; browser speech fallback |
+| Voice | OpenAI Realtime API for voice chat; Qwen3-TTS-Flash for Coach listening; browser speech fallback |
 | Auth | GitHub/Google OAuth, server-resolved identity, per-tier limits |
 
 ## Repository
@@ -257,6 +257,10 @@ QWEN_MODEL_STUDIO_API_KEY=...
 QWEN_MODEL_STUDIO_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
 QWEN_MODEL_STUDIO_MODEL=qwen3.7-max
 QWEN_MODEL_STUDIO_FAST_MODEL=qwen3.7-plus
+QWEN_TTS_BASE_URL=https://dashscope-intl.aliyuncs.com/api/v1
+QWEN_TTS_MODEL=qwen3-tts-flash
+QWEN_TTS_VOICE=Cherry
+QWEN_TTS_LANGUAGE=English
 QWEN_EMBEDDING_MODEL=text-embedding-v4
 QWEN_EMBEDDING_DIMENSIONS=256
 ```
