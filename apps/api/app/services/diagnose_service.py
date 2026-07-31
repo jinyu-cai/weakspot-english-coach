@@ -9,7 +9,7 @@ from app.services.model_routing import reasoning_effort_for_tier, select_text_mo
 from app.services.output_language import language_instruction
 
 DiagnosisMode = Literal["fast", "deep"]
-DEEPSEEK_MAX_OUTPUT_TOKENS = 384_000
+DIAGNOSIS_MAX_OUTPUT_TOKENS = 32_768
 
 SYSTEM_PROMPT = """
 You are an expert English tutor for Chinese native speakers.
@@ -178,7 +178,7 @@ def diagnose_english_text(
     diagnosis_mode: DiagnosisMode = "deep",
     output_language: OutputLanguage = "en",
     llm_provider: LLMProviderConfig | None = None,
-    max_output_tokens: int | None = DEEPSEEK_MAX_OUTPUT_TOKENS,
+    max_output_tokens: int | None = DIAGNOSIS_MAX_OUTPUT_TOKENS,
     trace_id: str | None = None,
     memory_context: str | None = None,
     analysis_context: str | None = None,

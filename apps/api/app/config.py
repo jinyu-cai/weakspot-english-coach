@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     openai_compat_base_url: str = ""
     openai_compat_model: str = ""
     openai_compat_fast_model: str = ""
+    # Primary text-chat profile. One server-side OpenRouter key serves both
+    # quality tiers while the exact model IDs remain independently routable.
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_model: str = "openai/gpt-5.6-luna-pro"
+    openrouter_fast_model: str = "openai/gpt-5.6-luna"
     qwen_model_studio_api_key: str = ""
     qwen_model_studio_base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
     qwen_model_studio_model: str = "qwen3.7-max"
@@ -122,6 +128,10 @@ class Settings(BaseSettings):
         return bool(self.qwen_model_studio_api_key)
 
     @property
+    def uses_openrouter(self) -> bool:
+        return bool(self.openrouter_api_key.strip())
+
+    @property
     def embedding_api_key(self) -> str:
         return self.qwen_embedding_api_key or self.qwen_model_studio_api_key
 
@@ -139,24 +149,32 @@ class Settings(BaseSettings):
 
     @property
     def default_llm_api_key(self) -> str:
+        if self.uses_openrouter:
+            return self.openrouter_api_key
         if self.uses_qwen_model_studio:
             return self.qwen_model_studio_api_key
         return self.openai_compat_api_key or self.deepseek_api_key
 
     @property
     def default_llm_base_url(self) -> str:
+        if self.uses_openrouter:
+            return self.openrouter_base_url
         if self.uses_qwen_model_studio:
             return self.qwen_model_studio_base_url
         return self.openai_compat_base_url or self.deepseek_base_url
 
     @property
     def default_llm_model(self) -> str:
+        if self.uses_openrouter:
+            return self.openrouter_model
         if self.uses_qwen_model_studio:
             return self.qwen_model_studio_model
         return self.openai_compat_model or self.llm_model
 
     @property
     def default_llm_fast_model(self) -> str:
+        if self.uses_openrouter:
+            return self.openrouter_fast_model
         if self.uses_qwen_model_studio:
             return self.qwen_model_studio_fast_model
         return self.openai_compat_fast_model or self.llm_model_fast

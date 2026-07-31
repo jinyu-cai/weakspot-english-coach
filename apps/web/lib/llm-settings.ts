@@ -47,9 +47,11 @@ export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 export const QWEN_MODEL_STUDIO_INTERNATIONAL_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 export const QWEN_37_MAX_MODEL = "qwen3.7-max"
 export const QWEN_37_PLUS_MODEL = "qwen3.7-plus"
+export const OPENROUTER_56_LUNA_PRO_MODEL = "openai/gpt-5.6-luna-pro"
+export const OPENROUTER_56_LUNA_MODEL = "openai/gpt-5.6-luna"
 export const SERVER_DEFAULT_MODEL_ID = "default"
-export const DEFAULT_SERVER_DEEP_MODEL_ID = "qwen-deep"
-export const DEFAULT_SERVER_FAST_MODEL_ID = "qwen-fast"
+export const DEFAULT_SERVER_DEEP_MODEL_ID = "openrouter-deep"
+export const DEFAULT_SERVER_FAST_MODEL_ID = "openrouter-fast"
 export const LLM_SETTINGS_CHANGE_EVENT = "weakspot:llm-settings-change"
 
 const STORAGE_KEY = "weakspot.llmSettings.v1"
@@ -168,11 +170,11 @@ export function hasCustomLLMSettings() {
 export function getLLMProviderHeaders(): Record<string, string> {
   const settings = loadLLMSettings()
   if (!settings.apiKey || !settings.model) {
-    const isQwenDefault = (
+    const isServerDefault = (
       settings.serverDeepModelId === DEFAULT_SERVER_DEEP_MODEL_ID
       && settings.serverFastModelId === DEFAULT_SERVER_FAST_MODEL_ID
     )
-    return isQwenDefault
+    return isServerDefault
       ? {}
       : {
         "X-LLM-Server-Deep-Model": settings.serverDeepModelId,

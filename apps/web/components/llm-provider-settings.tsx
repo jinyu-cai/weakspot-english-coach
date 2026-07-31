@@ -57,7 +57,7 @@ export function LLMProviderSettings() {
   const fastServerModels = serverModelsForMode(serverModels, "fast")
   const selectedDeepModel = deepServerModels.find((model) => model.id === settings.serverDeepModelId)
   const selectedFastModel = fastServerModels.find((model) => model.id === settings.serverFastModelId)
-  const isQwenDefault = (
+  const isServerDefault = (
     settings.serverDeepModelId === DEFAULT_SERVER_DEEP_MODEL_ID
     && settings.serverFastModelId === DEFAULT_SERVER_FAST_MODEL_ID
   )
@@ -181,7 +181,7 @@ export function LLMProviderSettings() {
             <Badge variant={configured ? "default" : "secondary"}>
               {configured
                 ? t.settings.custom
-                : isQwenDefault
+                : isServerDefault
                   ? t.settings.serverDefault
                   : `${selectedDeepModel?.provider || t.settings.serverDeep} / ${selectedFastModel?.provider || t.settings.serverFast}`}
             </Badge>
@@ -248,7 +248,7 @@ export function LLMProviderSettings() {
             <input
               value={settings.model}
               onChange={(event) => update("model", event.target.value)}
-              placeholder="deepseek-v4-pro"
+              placeholder="openai/gpt-5.6-luna-pro"
               className="h-9 rounded-lg border border-input bg-background px-3 text-sm font-normal outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             />
           </label>
@@ -258,7 +258,7 @@ export function LLMProviderSettings() {
             <input
               value={settings.fastModel}
               onChange={(event) => update("fastModel", event.target.value)}
-              placeholder="deepseek-v4-flash"
+              placeholder="openai/gpt-5.6-luna"
               className="h-9 rounded-lg border border-input bg-background px-3 text-sm font-normal outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             />
           </label>
