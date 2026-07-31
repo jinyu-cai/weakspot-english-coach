@@ -89,6 +89,8 @@ import {
 } from "./mock-data"
 import {
   getLLMProviderHeaders,
+  OPENROUTER_56_LUNA_MODEL,
+  OPENROUTER_56_LUNA_PRO_MODEL,
   QWEN_37_MAX_MODEL,
   QWEN_37_PLUS_MODEL,
   type ServerLLMModel,
@@ -271,9 +273,23 @@ export async function getServerLLMModels(): Promise<ServerLLMModel[]> {
         id: "default",
         label: "Server default",
         provider: "Server",
-        model: QWEN_37_MAX_MODEL,
-        fastModel: QWEN_37_PLUS_MODEL,
+        model: OPENROUTER_56_LUNA_PRO_MODEL,
+        fastModel: OPENROUTER_56_LUNA_MODEL,
         adaptive: true,
+      },
+      {
+        id: "openrouter-deep",
+        label: "GPT-5.6 Luna Pro",
+        provider: "OpenRouter",
+        model: OPENROUTER_56_LUNA_PRO_MODEL,
+        mode: "deep",
+      },
+      {
+        id: "openrouter-fast",
+        label: "GPT-5.6 Luna",
+        provider: "OpenRouter",
+        model: OPENROUTER_56_LUNA_MODEL,
+        mode: "fast",
       },
       {
         id: "qwen-deep",

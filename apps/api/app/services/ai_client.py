@@ -11,6 +11,7 @@ import json
 import logging
 import time
 from typing import Optional, Type, TypeVar
+from urllib.parse import urlparse
 
 from openai import OpenAI, OpenAIError
 from pydantic import BaseModel, ValidationError
@@ -22,6 +23,10 @@ T = TypeVar("T", bound=BaseModel)
 _client: Optional[OpenAI] = None
 logger = logging.getLogger("uvicorn.error")
 HIGH_REASONING_EFFORT = "high"
+OPENROUTER_OPENAI_PROVIDER_ROUTING = {
+    "only": ["openai"],
+    "allow_fallbacks": False,
+}
 
 
 @dataclass(frozen=True)
@@ -96,6 +101,21 @@ def _uses_model_studio_qwen(model: str, base_url: str) -> bool:
     )
 
 
+def _uses_openrouter_openai_provider(model: str, base_url: str) -> bool:
+    """Identify OpenAI models sent through the official OpenRouter API host."""
+    normalized_model = model.strip().lower()
+    hostname = (urlparse(base_url.strip()).hostname or "").lower()
+    return normalized_model.startswith("openai/") and hostname == "openrouter.ai"
+
+
+def _provider_extra_body(model: str, base_url: str) -> Optional[dict]:
+    if _uses_model_studio_qwen(model, base_url):
+        return {"enable_thinking": False}
+    if _uses_openrouter_openai_provider(model, base_url):
+        return {"provider": OPENROUTER_OPENAI_PROVIDER_ROUTING}
+    return None
+
+
 def parse_with_model(
     messages: list,
     response_model: Type[T],
@@ -119,6 +139,7 @@ def parse_with_model(
     else:
         base_url = settings.default_llm_base_url
     uses_model_studio_qwen = _uses_model_studio_qwen(selected_model, base_url)
+    uses_openrouter_openai = _uses_openrouter_openai_provider(selected_model, base_url)
 
     schema = json.dumps(response_model.model_json_schema(), ensure_ascii=False)
 
@@ -134,7 +155,7 @@ def parse_with_model(
     last_error: Optional[Exception] = None
     trace = trace_id or "-"
     logger.info(
-        "llm[%s] start model=%s response_model=%s schema_bytes=%d max_tokens=%s reasoning_effort=%s qwen_json_mode=%s",
+        "llm[%s] start model=%s response_model=%s schema_bytes=%d max_tokens=%s reasoning_effort=%s qwen_json_mode=%s openrouter_openai_only=%s",
         trace,
         selected_model,
         response_model.__name__,
@@ -142,9 +163,17 @@ def parse_with_model(
         max_tokens if max_tokens is not None else "unlimited",
         reasoning_effort or "disabled",
         uses_model_studio_qwen,
+        uses_openrouter_openai,
     )
 
-    use_reasoning_effort = bool(reasoning_effort) and not uses_model_studio_qwen
+    # Luna Pro already selects OpenAI's Pro reasoning mode at the model level.
+    # OpenRouter exposes its own `reasoning` object, so do not also send the
+    # OpenAI-SDK-specific reasoning_effort field on this compatibility path.
+    use_reasoning_effort = (
+        bool(reasoning_effort)
+        and not uses_model_studio_qwen
+        and not uses_openrouter_openai
+    )
     for attempt in range(1, 3):  # one retry
         attempt_started = time.perf_counter()
         try:
@@ -152,13 +181,18 @@ def parse_with_model(
                 model=selected_model,
                 messages=messages,
                 response_format={"type": "json_object"},
-                temperature=0.2,
                 timeout=600,
             )
+            # Luna's published OpenRouter parameter set does not require a
+            # temperature override, and OpenAI reasoning endpoints may reject
+            # unsupported sampling parameters.
+            if not uses_openrouter_openai:
+                create_kwargs["temperature"] = 0.2
             if max_tokens is not None:
                 create_kwargs["max_tokens"] = max_tokens
-            if uses_model_studio_qwen:
-                create_kwargs["extra_body"] = {"enable_thinking": False}
+            extra_body = _provider_extra_body(selected_model, base_url)
+            if extra_body:
+                create_kwargs["extra_body"] = extra_body
             while True:
                 if use_reasoning_effort:
                     create_kwargs["reasoning_effort"] = reasoning_effort

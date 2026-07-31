@@ -4,10 +4,11 @@ This document records the intended quality/latency policy for every AI-backed
 product flow. Exact model names remain deployment configuration; the application
 routes provider-neutral work to a `Deep` or `Fast` slot.
 
-Production observed on 2026-07-21:
+Target text-chat routing:
 
-- Deep slot: `deepseek-v4-pro`
-- Fast slot: `deepseek-v4-flash`
+- Deep slot: `openai/gpt-5.6-luna-pro` through OpenRouter
+- Fast slot: `openai/gpt-5.6-luna` through OpenRouter
+- OpenRouter provider routing: only `openai`, with provider fallbacks disabled
 - Adaptive mission planner: `gpt-5.6-sol` through the OpenAI Responses API
 - Realtime voice: the configured OpenAI Realtime model
 - Speech: the configured Qwen3-TTS-Flash model
@@ -23,7 +24,7 @@ model.
 
 | Product operation | Route | Reason |
 | --- | --- | --- |
-| Diagnose writing | User-selected Fast/Deep; Fast default | Fast supports interactive checks; Deep remains available for a thorough report. |
+| Diagnose writing | OpenRouter Luna Fast/Deep; Fast API default | Fast supports interactive checks; Deep remains available for a thorough report. When the OpenRouter key is configured, browser provider overrides are ignored for Diagnose. |
 | Import ChatGPT history | User-selected Fast/Deep; Fast default | The learner controls the tradeoff for potentially large imports. |
 | Chat reply | Fast default; Deep optional per session | A conversation turn is latency-sensitive; the chosen model is pinned to the session. |
 | Chat completion suggestions | Fast | Small, bounded prediction used while typing. |

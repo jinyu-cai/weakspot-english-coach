@@ -132,11 +132,49 @@ def main() -> None:
     print("Diagnose word-count validation OK (minimum 5 meaningful words).")
 
     from app.config import Settings
-    from app.services.ai_client import LLMProviderConfig, _provider_connection, _uses_model_studio_qwen
-    from app.services.model_catalog import catalog_payload, server_model_by_id, server_model_pair
+    from app.services.ai_client import (
+        LLMProviderConfig,
+        OPENROUTER_OPENAI_PROVIDER_ROUTING,
+        _provider_connection,
+        _provider_extra_body,
+        _uses_model_studio_qwen,
+        _uses_openrouter_openai_provider,
+    )
+    from app.services.model_catalog import (
+        catalog_payload,
+        openrouter_text_provider,
+        server_model_by_id,
+        server_model_pair,
+    )
+
+    openrouter_settings = Settings(
+        openrouter_api_key="test-openrouter-key",
+        qwen_model_studio_api_key="test-qwen-key",
+        deepseek_api_key="test-deepseek-key",
+        openai_compat_api_key="",
+    )
+    fixed_openrouter_provider = openrouter_text_provider(openrouter_settings)
+    assert fixed_openrouter_provider is not None
+    assert openrouter_settings.default_llm_model == "openai/gpt-5.6-luna-pro"
+    assert openrouter_settings.default_llm_fast_model == "openai/gpt-5.6-luna"
+    assert fixed_openrouter_provider.model == "openai/gpt-5.6-luna-pro"
+    assert fixed_openrouter_provider.fast_model == "openai/gpt-5.6-luna"
+    assert _uses_openrouter_openai_provider(
+        fixed_openrouter_provider.model,
+        fixed_openrouter_provider.base_url,
+    )
+    assert not _uses_openrouter_openai_provider(
+        fixed_openrouter_provider.model,
+        "https://openrouter.ai.attacker.example/api/v1",
+    )
+    assert _provider_extra_body(
+        fixed_openrouter_provider.model,
+        fixed_openrouter_provider.base_url,
+    ) == {"provider": OPENROUTER_OPENAI_PROVIDER_ROUTING}
 
     qwen_settings = Settings(
         qwen_model_studio_api_key="test-qwen-key",
+        openrouter_api_key="",
         deepseek_api_key="",
         openai_compat_api_key="",
     )
@@ -152,6 +190,7 @@ def main() -> None:
     assert server_model_by_id("deepseek-deep", qwen_settings) is None
     mixed_settings = Settings(
         qwen_model_studio_api_key="test-qwen-key",
+        openrouter_api_key="",
         deepseek_api_key="test-deepseek-key",
     )
     mixed_provider = server_model_pair("qwen-deep", "deepseek-fast", mixed_settings)
@@ -171,6 +210,7 @@ def main() -> None:
     embedding_only_settings = Settings(
         qwen_embedding_api_key="test-embedding-key",
         qwen_embedding_base_url="https://embedding.example/v1",
+        openrouter_api_key="",
         deepseek_api_key="test-deepseek-key",
     )
     assert embedding_only_settings.uses_qwen_model_studio is False
@@ -214,6 +254,8 @@ def main() -> None:
     assert select_input_learning_model(routing_provider) == "deep-model"
     assert select_diagnose_model("fast", routing_provider) == "fast-model"
     assert select_diagnose_model("deep", routing_provider) == "deep-model"
+    assert select_diagnose_model("fast", fixed_openrouter_provider) == "openai/gpt-5.6-luna"
+    assert select_diagnose_model("deep", fixed_openrouter_provider) == "openai/gpt-5.6-luna-pro"
     assert select_chat_import_model("fast", routing_provider) == "fast-model"
     assert select_chat_import_model("deep", routing_provider) == "deep-model"
     assert CoachMissionRequest().generationMode == "deep"

@@ -78,6 +78,26 @@ def configured_server_models(config: Settings = settings) -> list[ServerModelOpt
 
     _add_option(
         options,
+        option_id="openrouter-deep",
+        label="GPT-5.6 Luna Pro",
+        provider_label="OpenRouter",
+        api_key=config.openrouter_api_key,
+        base_url=config.openrouter_base_url,
+        model=config.openrouter_model,
+        mode="deep",
+    )
+    _add_option(
+        options,
+        option_id="openrouter-fast",
+        label="GPT-5.6 Luna",
+        provider_label="OpenRouter",
+        api_key=config.openrouter_api_key,
+        base_url=config.openrouter_base_url,
+        model=config.openrouter_fast_model,
+        mode="fast",
+    )
+    _add_option(
+        options,
         option_id="deepseek-deep",
         label="DeepSeek · Deep",
         provider_label="DeepSeek",
@@ -148,6 +168,20 @@ def configured_server_models(config: Settings = settings) -> list[ServerModelOpt
         seen.add(key)
         deduped.append(option)
     return deduped
+
+
+def openrouter_text_provider(config: Settings = settings) -> Optional[LLMProviderConfig]:
+    """Return the deployment's fixed OpenRouter Deep/Fast pair when configured."""
+    if not config.uses_openrouter:
+        return None
+    return LLMProviderConfig(
+        api_key=_normalized(config.openrouter_api_key),
+        base_url=_normalized(config.openrouter_base_url).rstrip("/"),
+        model=_normalized(config.openrouter_model),
+        fast_model=_normalized(config.openrouter_fast_model),
+        server_deep_model_id="openrouter-deep",
+        server_fast_model_id="openrouter-fast",
+    )
 
 
 def catalog_payload(config: Settings = settings) -> dict:
