@@ -96,6 +96,7 @@ import {
   type ServerLLMModel,
 } from "./llm-settings"
 import { getOutputLanguage } from "./language"
+import { fetchWithTotalTimeout } from "./timed-fetch"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
 const USE_MOCK = !API_BASE_URL
@@ -208,49 +209,39 @@ async function apiFetch<T>(
   init?: RequestInit,
   timeoutMs = DEFAULT_API_TIMEOUT_MS,
 ): Promise<T> {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), timeoutMs)
-  const abortFromCaller = () => controller.abort()
-  init?.signal?.addEventListener("abort", abortFromCaller, { once: true })
-  let res: Response
-  try {
-    res = await fetch(`${API_BASE_URL}/api/v1${path}`, {
+  return fetchWithTotalTimeout(
+    `${API_BASE_URL}/api/v1${path}`,
+    {
+      ...init,
       credentials: "include",
       headers: {
         "Content-Type": "application/json",
         ...getLLMProviderHeaders(),
         ...(init?.headers ?? {}),
       },
-      ...init,
-      signal: controller.signal,
-    })
-  } catch (error) {
-    if (controller.signal.aborted && !init?.signal?.aborted) {
-      throw new Error("The request timed out. Your current work is still safe.")
-    }
-    throw error
-  } finally {
-    clearTimeout(timeout)
-    init?.signal?.removeEventListener("abort", abortFromCaller)
-  }
-  if (!res.ok) {
-    const message = await getErrorMessage(res, path)
-    if (res.status === 429 && typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("weakspot:needauth", { detail: { message } }))
-    }
-    throw new Error(message)
-  }
-  const payload = await res.json()
-  if (payload && typeof payload === "object" && !Array.isArray(payload) && "error" in payload && payload.error) {
-    const detail = "detail" in payload ? payload.detail : undefined
-    const message = typeof detail === "string"
-      ? detail
-      : "message" in payload
-        ? String(payload.message)
-        : `Request failed: ${path}`
-    throw new Error(message)
-  }
-  return payload as T
+    },
+    timeoutMs,
+    async (res) => {
+      if (!res.ok) {
+        const message = await getErrorMessage(res, path)
+        if (res.status === 429 && typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("weakspot:needauth", { detail: { message } }))
+        }
+        throw new Error(message)
+      }
+      const payload = await res.json()
+      if (payload && typeof payload === "object" && !Array.isArray(payload) && "error" in payload && payload.error) {
+        const detail = "detail" in payload ? payload.detail : undefined
+        const message = typeof detail === "string"
+          ? detail
+          : "message" in payload
+            ? String(payload.message)
+            : `Request failed: ${path}`
+        throw new Error(message)
+      }
+      return payload as T
+    },
+  )
 }
 
 const LEARNER_HISTORY_PAGE_SIZE = 100
@@ -449,7 +440,7 @@ export async function diagnose(
         : {}),
       ...(learningContext ? { learningContext } : {}),
     })),
-  })
+  }, LLM_OPERATION_TIMEOUT_MS)
 }
 
 export async function analyzeChatImport(
@@ -1478,14 +1469,20 @@ export async function synthesizeCoachSpeech(
 ): Promise<Blob> {
   if (USE_MOCK) throw new Error("AI speech is unavailable in mock mode.")
   const path = "/coach/speech"
-  const res = await fetch(`${API_BASE_URL}/api/v1${path}`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, style }),
-  })
-  if (!res.ok) throw new Error(await getErrorMessage(res, path))
-  return res.blob()
+  return fetchWithTotalTimeout(
+    `${API_BASE_URL}/api/v1${path}`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, style }),
+    },
+    LLM_OPERATION_TIMEOUT_MS,
+    async (res) => {
+      if (!res.ok) throw new Error(await getErrorMessage(res, path))
+      return res.blob()
+    },
+  )
 }
 
 /* ---- Chat ---- */

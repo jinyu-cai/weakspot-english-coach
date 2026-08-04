@@ -183,9 +183,24 @@ You can start editing the page by modifying `apps/web/app/page.tsx`. The page au
 Run type and production-build checks before opening a PR:
 
 ```bash
+pnpm lint
 pnpm exec tsc --noEmit
+pnpm test:chat-import
+pnpm test:timeouts
 pnpm build
 ```
+
+`test:chat-import` executes the real batching helper and verifies that long
+conversations preserve message order while staying within the backend's
+120-message ordinary-tier contract, the 20-conversation batch limit, and the
+serialized UTF-8 byte budget.
+
+`test:timeouts` checks both the call-site contract and the runtime deadline:
+ordinary requests retain the 20-second default, Diagnose and Coach Speech use
+the 110-second model-operation timeout, and the timer remains active after
+response headers until the JSON/audio body has been consumed. It prevents the
+UI from reintroducing a premature “Failed to fetch” or waiting forever on a
+slow/incomplete response body.
 
 ## Learn More
 
