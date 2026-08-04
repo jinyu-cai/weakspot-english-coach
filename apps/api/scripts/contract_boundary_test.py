@@ -19,6 +19,7 @@ from app.api.routes import chat as chat_routes
 from app.api.routes import coach as coach_routes
 from app.api.routes import diagnose as diagnose_routes
 from app.config import settings
+from app.core.taxonomy import ERROR_TAXONOMY
 from app.db.repositories import ItemTooLargeError
 from app.models.chat import (
     CHAT_MESSAGE_MAX_CHARACTERS,
@@ -36,6 +37,7 @@ from app.models.diagnostic import (
     DIAGNOSE_TEXT_MAX_CHARACTERS,
     DiagnosticErrorAI,
     DiagnoseRequest,
+    SkillUpdateAI,
     TargetEvidenceAI,
 )
 from app.models.learning import (
@@ -189,6 +191,15 @@ def main() -> None:
 
     # Skill codes are rejected at both generated-output and incoming-request
     # boundaries, before persistence can fail after a paid model call.
+    expected_skill_codes = list(ERROR_TAXONOMY)
+    for model, field_name in (
+        (DiagnosticErrorAI, "code"),
+        (SkillUpdateAI, "skillCode"),
+        (TargetEvidenceAI, "skillCode"),
+    ):
+        field_schema = model.model_json_schema()["properties"][field_name]
+        assert field_schema["enum"] == expected_skill_codes, (model.__name__, field_schema)
+
     invalid_skill = "invented.skill"
     _expect_validation_error(
         lambda: LearningPlanDayAI(
