@@ -11,8 +11,9 @@ Run from the apps/api directory:
 
 import json
 from decimal import Decimal
+from types import SimpleNamespace
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 
 def main() -> None:
@@ -29,6 +30,26 @@ def main() -> None:
     assert health_payload["status"] == "ok"
     assert health_payload["capabilities"]["openaiBuildWeek"]["model"].startswith("gpt-5.6")
     assert health_payload["capabilities"]["openaiBuildWeek"]["api"] == "responses"
+
+    from unittest.mock import patch
+
+    from app.api.routes.auth import _safe_redirect
+    from app.config import settings
+
+    with patch.object(settings, "frontend_url", "https://app.example"):
+        assert _safe_redirect("https://app.example/dashboard?day=1") == (
+            "https://app.example/dashboard?day=1"
+        )
+        for unsafe in (
+            "https://app.example.evil.test/steal",
+            "https://app.example@evil.test/steal",
+            "http://app.example/steal",
+            "https://app.example:444/steal",
+            "//evil.test/steal",
+            "https://app.example/dashboard\nLocation: https://evil.test",
+        ):
+            assert _safe_redirect(unsafe) == "https://app.example"
+    print("OAuth redirect exact-origin validation OK.")
 
     # 2. JSON schema generation for every AI response model.
     from app.models.chat_import import ChatImportAIResult
@@ -153,10 +174,32 @@ def main() -> None:
         deepseek_api_key="test-deepseek-key",
         openai_compat_api_key="",
     )
-    fixed_openrouter_provider = openrouter_text_provider(openrouter_settings)
-    assert fixed_openrouter_provider is not None
+    assert openrouter_settings.uses_openrouter is True
+    assert openrouter_settings.default_llm_api_key == "test-openrouter-key"
+    assert openrouter_settings.default_llm_base_url == "https://openrouter.ai/api/v1"
     assert openrouter_settings.default_llm_model == "openai/gpt-5.6-luna-pro"
     assert openrouter_settings.default_llm_fast_model == "openai/gpt-5.6-luna"
+    openrouter_catalog = catalog_payload(openrouter_settings)
+    assert [entry["id"] for entry in openrouter_catalog["models"][:3]] == [
+        "default",
+        "openrouter-deep",
+        "openrouter-fast",
+    ]
+    assert all("apiKey" not in entry and "baseUrl" not in entry for entry in openrouter_catalog["models"])
+    selected_openrouter_pair = server_model_pair(
+        "openrouter-deep",
+        "openrouter-fast",
+        openrouter_settings,
+    )
+    assert selected_openrouter_pair is not None
+    assert selected_openrouter_pair.model == "openai/gpt-5.6-luna-pro"
+    assert selected_openrouter_pair.fast_model == "openai/gpt-5.6-luna"
+    assert _provider_connection(
+        selected_openrouter_pair,
+        selected_openrouter_pair.fast_model,
+    ) == ("test-openrouter-key", "https://openrouter.ai/api/v1")
+    fixed_openrouter_provider = openrouter_text_provider(openrouter_settings)
+    assert fixed_openrouter_provider is not None
     assert fixed_openrouter_provider.model == "openai/gpt-5.6-luna-pro"
     assert fixed_openrouter_provider.fast_model == "openai/gpt-5.6-luna"
     assert _uses_openrouter_openai_provider(
@@ -171,6 +214,51 @@ def main() -> None:
         fixed_openrouter_provider.model,
         fixed_openrouter_provider.base_url,
     ) == {"provider": OPENROUTER_OPENAI_PROVIDER_ROUTING}
+
+    class OpenRouterSmokeResult(BaseModel):
+        value: str
+
+    openrouter_create_kwargs = {}
+
+    def create_openrouter_completion(**kwargs):
+        openrouter_create_kwargs.update(kwargs)
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content='{"value":"ok"}'),
+                    finish_reason="stop",
+                )
+            ],
+            usage=None,
+        )
+
+    openrouter_client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=create_openrouter_completion)
+        )
+    )
+    from app.services import ai_client as ai_client_module
+
+    with (
+        patch.object(ai_client_module.settings, "use_fake_ai", False),
+        patch.object(ai_client_module, "get_client", return_value=openrouter_client),
+    ):
+        parsed_openrouter = ai_client_module.parse_with_model(
+            messages=[
+                {"role": "system", "content": "Return a result."},
+                {"role": "user", "content": "Test."},
+            ],
+            response_model=OpenRouterSmokeResult,
+            model=fixed_openrouter_provider.model,
+            provider=fixed_openrouter_provider,
+            reasoning_effort="high",
+        )
+    assert parsed_openrouter.value == "ok"
+    assert openrouter_create_kwargs["extra_body"] == {
+        "provider": OPENROUTER_OPENAI_PROVIDER_ROUTING
+    }
+    assert "temperature" not in openrouter_create_kwargs
+    assert "reasoning_effort" not in openrouter_create_kwargs
 
     qwen_settings = Settings(
         qwen_model_studio_api_key="test-qwen-key",

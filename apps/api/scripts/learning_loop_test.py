@@ -8,6 +8,7 @@ from uuid import uuid4
 os.environ.setdefault("DYNAMODB_ENDPOINT_URL", "")
 
 from moto import mock_aws
+from pydantic import ValidationError
 
 from app.models.learning import (
     CreateActivityRunRequest,
@@ -135,6 +136,29 @@ def main() -> int:
             ),
         )
         assert completed["completedAt"] and completed["hintLevel"] == 2
+        try:
+            update_activity_run(
+                user_id,
+                run["id"],
+                UpdateActivityRunRequest(status="started"),
+            )
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("A completed ActivityRun must not move back to started.")
+
+        try:
+            RecordEvidenceRequest(
+                clientEventId="event-invalid-opportunity",
+                skillCode="grammar.article",
+                outcome="no_opportunity",
+                opportunityPresent=True,
+            )
+        except ValidationError:
+            pass
+        else:
+            raise AssertionError("no_opportunity must require opportunityPresent=false.")
+
         overview = learning_overview(user_id)
         article = next(row for row in overview["states"] if row["skillCode"] == "grammar.article")
         unassessed = next(row for row in overview["states"] if row["skillCode"] == "style.register")

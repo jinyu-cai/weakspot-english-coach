@@ -2346,9 +2346,13 @@ def main() -> int:
         assert any(item.get("ttl") for item in failed_session_stage_rows)
         assert any("ttl" not in item for item in failed_session_stage_rows)
 
-        # Worst-case UTF-8 content (Chinese + four-byte emoji at the 16k-char
-        # API limit) must be split by serialized bytes, not message count. The
-        # resulting transactions stay below the conservative 3.5MB budget.
+        # The public request contract deliberately accepts at most eight
+        # messages so a worst-case request remains below the proxy body limit.
+        # The repository still defends its larger internal batch boundary:
+        # worst-case UTF-8 content (Chinese + four-byte emoji at the 16k-char
+        # message limit) must be split by serialized bytes, not message count,
+        # and each staging transaction must stay below the conservative 3.5MB
+        # budget.
         bulk_voice_session_id = f"cs_voice_bulk_{uuid.uuid4().hex[:8]}"
         save_chat_session({
             "id": bulk_voice_session_id,
@@ -2362,17 +2366,44 @@ def main() -> int:
         })
         max_utf8_content = "中😀" * 8_000
         assert len(max_utf8_content) == 16_000
-        bulk_payload = {
+        public_overflow_payload = {
             "userId": "ignored",
             "messages": [
                 {
                     "role": "assistant",
-                    "content": max_utf8_content,
-                    "clientMessageId": f"voice-bulk-{index}",
+                    "content": "Public transcript request boundary.",
+                    "clientMessageId": f"voice-public-overflow-{index}",
                 }
-                for index in range(70)
+                for index in range(9)
             ],
         }
+        response = chat_client.post(
+            f"/api/v1/chat/sessions/{bulk_voice_session_id}/transcript",
+            json=public_overflow_payload,
+        )
+        assert response.status_code == 422, response.text
+
+        bulk_messages = [
+            {
+                "id": f"cm_voice_bulk_{index:03d}",
+                "userId": chat_user,
+                "sessionId": bulk_voice_session_id,
+                "role": "assistant",
+                "content": max_utf8_content,
+                "clientMessageId": f"voice-bulk-{index}",
+                "corrections": None,
+                "betterExpression": None,
+                "source": "client_transcript",
+                "createdAt": voice_now,
+            }
+            for index in range(70)
+        ]
+        bulk_claim_id = f"bulk_claim_{uuid.uuid4().hex[:12]}"
+        assert repository_module.claim_chat_session_turn(
+            chat_user,
+            bulk_voice_session_id,
+            bulk_claim_id,
+        )
         bulk_transactions: list[list[dict]] = []
 
         def record_bulk_transaction(*args, **kwargs):
@@ -2384,13 +2415,20 @@ def main() -> int:
             "transact_write_items",
             side_effect=record_bulk_transaction,
         ):
-            response = chat_client.post(
-                f"/api/v1/chat/sessions/{bulk_voice_session_id}/transcript",
-                json=bulk_payload,
+            repository_module.finalize_chat_session_transcript_batch(
+                chat_user,
+                bulk_voice_session_id,
+                bulk_claim_id,
+                f"tb_bulk_{uuid.uuid4().hex[:12]}",
+                bulk_messages,
+                "Large voice transcript batch",
+                len(bulk_messages),
             )
-        assert response.status_code == 200, response.text
-        assert response.json()["saved"] == 70
         assert len(list_chat_messages(chat_user, bulk_voice_session_id, limit=None)) == 70
+        bulk_voice_session = get_chat_session(chat_user, bulk_voice_session_id)
+        assert bulk_voice_session is not None
+        assert bulk_voice_session["messageCount"] == 70
+        assert not bulk_voice_session.get("turnClaimId")
         stage_transactions = [
             transaction for transaction in bulk_transactions
             if transaction and "ConditionCheck" in transaction[0]

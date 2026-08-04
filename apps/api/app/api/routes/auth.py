@@ -1,5 +1,5 @@
 from typing import Optional
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -38,10 +38,36 @@ def _configured_auth_providers() -> list[str]:
 
 
 def _safe_redirect(redirect: Optional[str]) -> str:
-    """Only allow redirects back to our own frontend (prevents open-redirect)."""
-    if redirect and settings.frontend_url and redirect.startswith(settings.frontend_url):
-        return redirect
-    return settings.frontend_url or "/"
+    """Allow only an absolute HTTP(S) URL with the configured frontend origin."""
+    fallback = settings.frontend_url or "/"
+    if not redirect or not settings.frontend_url:
+        return fallback
+    if any(ord(character) < 32 for character in redirect):
+        return fallback
+
+    try:
+        allowed = urlsplit(settings.frontend_url)
+        candidate = urlsplit(redirect)
+
+        def origin(parts) -> tuple[str, str, int | None]:
+            scheme = parts.scheme.lower()
+            default_port = 443 if scheme == "https" else 80 if scheme == "http" else None
+            return scheme, (parts.hostname or "").lower(), parts.port or default_port
+
+        allowed_origin = origin(allowed)
+        candidate_origin = origin(candidate)
+    except ValueError:
+        return fallback
+
+    if (
+        allowed_origin[0] not in {"http", "https"}
+        or not allowed_origin[1]
+        or candidate.username is not None
+        or candidate.password is not None
+        or candidate_origin != allowed_origin
+    ):
+        return fallback
+    return redirect
 
 
 @router.get("/auth/github/login")

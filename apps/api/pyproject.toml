@@ -22,5 +22,6 @@ package = false
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.0.0",
     "moto>=5.2.2",
 ]
