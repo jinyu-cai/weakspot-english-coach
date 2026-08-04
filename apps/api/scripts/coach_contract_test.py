@@ -315,13 +315,27 @@ def main() -> None:
 
     class _FakeAudioResponse:
         content = b"RIFF-contract-audio"
-        headers = {"content-type": "audio/wav"}
+        headers = {
+            "content-type": "audio/wav",
+            "content-length": str(len(content)),
+        }
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
 
         @staticmethod
         def raise_for_status():
             return None
 
+        def iter_bytes(self):
+            yield self.content
+
     class _FakeHTTPClient:
+        audio_response_class = _FakeAudioResponse
+
         def __init__(self, **_kwargs):
             pass
 
@@ -341,9 +355,10 @@ def main() -> None:
             return _FakeGenerationResponse()
 
         @staticmethod
-        def get(url):
+        def stream(method, url):
+            assert method == "GET"
             captured_speech_request["audio_url"] = url
-            return _FakeAudioResponse()
+            return _FakeHTTPClient.audio_response_class()
 
     try:
         settings.qwen_model_studio_api_key = ""
@@ -378,6 +393,49 @@ def main() -> None:
                 "https://dashscope-result-sg.oss-ap-southeast-1.aliyuncs.com/audio.wav"
             ),
         }
+        for untrusted_url in (
+            "http://dashscope-result-sg.oss-ap-southeast-1.aliyuncs.com/audio.wav",
+            "https://dashscope-result-sg.oss-ap-southeast-1.aliyuncs.com.evil.test/audio.wav",
+            "https://evilaliyuncs.com/audio.wav",
+        ):
+            try:
+                tts_service._validated_audio_url(untrusted_url)
+            except tts_service.TTSProviderError:
+                pass
+            else:
+                raise AssertionError(
+                    f"The speech downloader accepted an untrusted URL: {untrusted_url}"
+                )
+
+        class _OversizedLengthResponse(_FakeAudioResponse):
+            headers = {
+                "content-type": "audio/wav",
+                "content-length": str(tts_service.MAX_AUDIO_BYTES + 1),
+            }
+
+        _FakeHTTPClient.audio_response_class = _OversizedLengthResponse
+        try:
+            tts_service.generate_speech("Reject an oversized declared file.")
+        except tts_service.TTSProviderError as exc:
+            assert "size limit" in str(exc)
+        else:
+            raise AssertionError("The speech downloader trusted an oversized Content-Length")
+
+        class _OversizedStreamResponse(_FakeAudioResponse):
+            headers = {"content-type": "audio/wav"}
+
+            def iter_bytes(self):
+                chunk = b"x" * (1024 * 1024)
+                for _ in range(11):
+                    yield chunk
+
+        _FakeHTTPClient.audio_response_class = _OversizedStreamResponse
+        try:
+            tts_service.generate_speech("Reject an oversized streamed file.")
+        except tts_service.TTSProviderError as exc:
+            assert "size limit" in str(exc)
+        else:
+            raise AssertionError("The speech downloader buffered more than 10 MB")
     finally:
         settings.qwen_model_studio_api_key = previous_qwen_key
         settings.qwen_embedding_api_key = previous_embedding_key

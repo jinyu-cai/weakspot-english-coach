@@ -44,7 +44,7 @@ def _validated_audio_url(value: object) -> str:
     parsed = urlparse(url)
     hostname = (parsed.hostname or "").lower()
     if (
-        parsed.scheme not in {"http", "https"}
+        parsed.scheme != "https"
         or not any(hostname.endswith(suffix) for suffix in ALLOWED_AUDIO_HOST_SUFFIXES)
     ):
         raise TTSProviderError("Qwen speech returned an untrusted audio URL.")
@@ -99,15 +99,34 @@ def generate_speech(
             audio_url = _validated_audio_url(
                 ((payload.get("output") or {}).get("audio") or {}).get("url")
             )
-            audio_response = client.get(audio_url)
-            audio_response.raise_for_status()
-            content = audio_response.content
+            with client.stream("GET", audio_url) as audio_response:
+                audio_response.raise_for_status()
+                content_length = audio_response.headers.get("content-length")
+                if content_length:
+                    try:
+                        if int(content_length) > MAX_AUDIO_BYTES:
+                            raise TTSProviderError(
+                                "Qwen speech audio exceeded the size limit."
+                            )
+                    except ValueError:
+                        pass
+
+                content_buffer = bytearray()
+                for chunk in audio_response.iter_bytes():
+                    if len(content_buffer) + len(chunk) > MAX_AUDIO_BYTES:
+                        raise TTSProviderError(
+                            "Qwen speech audio exceeded the size limit."
+                        )
+                    content_buffer.extend(chunk)
+                content = bytes(content_buffer)
+                media_type = (
+                    audio_response.headers.get("content-type", "")
+                    .split(";")[0]
+                    .strip()
+                )
             if not content:
                 raise TTSProviderError("Qwen speech returned an empty audio file.")
-            if len(content) > MAX_AUDIO_BYTES:
-                raise TTSProviderError("Qwen speech audio exceeded the size limit.")
 
-            media_type = audio_response.headers.get("content-type", "").split(";")[0].strip()
             if not media_type.startswith("audio/"):
                 media_type = "audio/wav"
             return SpeechAudio(content=content, media_type=media_type)
