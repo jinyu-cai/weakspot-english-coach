@@ -1,6 +1,7 @@
 import json
 from typing import Literal
 
+from app.core.taxonomy import format_skill_code_list
 from app.models.common import OutputLanguage
 from app.models.diagnostic import DiagnoseLearningContext, DiagnosticAIResult
 from app.services.ai_client import LLMProviderConfig, parse_with_model
@@ -11,7 +12,9 @@ from app.services.output_language import language_instruction
 DiagnosisMode = Literal["fast", "deep"]
 DEEPSEEK_MAX_OUTPUT_TOKENS = 384_000
 
-SYSTEM_PROMPT = """
+DIAGNOSTIC_SKILL_CODE_LIST = format_skill_code_list(prefix="   - ")
+
+SYSTEM_PROMPT = f"""
 You are an expert English tutor for Chinese native speakers.
 
 Analyze the student's English writing and return a structured diagnostic report.
@@ -22,17 +25,7 @@ Important requirements:
 3. Find every learner error you can identify. Include recurring patterns and
    isolated issues; do not cap the number of errors.
 4. Classify every error using exactly one of these category codes:
-   - grammar.verb_tense
-   - grammar.article
-   - grammar.preposition
-   - grammar.subject_verb_agreement
-   - vocab.word_choice
-   - vocab.repetition
-   - sentence.structure
-   - sentence.variety
-   - discourse.coherence
-   - style.register
-   - clarity.expression
+{DIAGNOSTIC_SKILL_CODE_LIST}
    Put the chosen code in the `code` field, and a short human label in `category`.
    Never invent, refine, or return any other code.
 5. For each error provide: the original text span, a corrected version, an English

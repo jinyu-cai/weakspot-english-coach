@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.models.common import CEFRLevel, OutputLanguage, Severity
 from app.models.memory import MemoryCandidate
-from app.core.taxonomy import ERROR_TAXONOMY
+from app.core.taxonomy import ERROR_TAXONOMY, SkillCode
 
 
 DiagnosisMode = Literal["fast", "deep"]
@@ -40,7 +40,7 @@ class DiagnoseRequest(BaseModel):
 
 
 class DiagnosticErrorAI(BaseModel):
-    code: str
+    code: SkillCode
     category: str
     severity: Severity
     originalText: str
@@ -49,27 +49,13 @@ class DiagnosticErrorAI(BaseModel):
     microLessonZh: str
     practiceGoal: str
 
-    @field_validator("code")
-    @classmethod
-    def validate_error_code(cls, value: str) -> str:
-        if value not in ERROR_TAXONOMY:
-            raise ValueError(f"Unsupported diagnostic error code: {value}")
-        return value
-
 
 class SkillUpdateAI(BaseModel):
-    skillCode: str
+    skillCode: SkillCode
     label: str
     zhLabel: str
     masteryDelta: float
     evidenceZh: str
-
-    @field_validator("skillCode")
-    @classmethod
-    def validate_skill_code(cls, value: str) -> str:
-        if value not in ERROR_TAXONOMY:
-            raise ValueError(f"Unsupported skill update code: {value}")
-        return value
 
 
 class LearningNoteAI(BaseModel):
@@ -104,18 +90,11 @@ class DiagnoseLearningContext(BaseModel):
 
 
 class TargetEvidenceAI(BaseModel):
-    skillCode: str
+    skillCode: SkillCode
     opportunityPresent: bool
     outcome: Literal["success", "failure", "avoided", "no_opportunity"]
     evidenceQuote: str = Field(default="", max_length=EVIDENCE_QUOTE_MAX_CHARACTERS)
     confidence: float = Field(default=0.0, ge=0, le=1)
-
-    @field_validator("skillCode")
-    @classmethod
-    def validate_skill_code(cls, value: str) -> str:
-        if value not in ERROR_TAXONOMY:
-            raise ValueError(f"Unsupported target skill: {value}")
-        return value
 
     @field_validator("evidenceQuote", mode="before")
     @classmethod
