@@ -1,9 +1,13 @@
 # v0.dev Prompt — WeakSpot English Coach (frontend)
 
-Paste everything in the **PROMPT** block below into v0.dev to generate the UI.
-After v0 generates it, export/download the project into `apps/web/`, then drop in
-the integration kit from `apps/web/lib/` (see `apps/web/README.md`) and switch
-the pages from mock data to the real `api-client.ts` calls.
+> Historical bootstrap artifact. It records the original five-page v0 prompt;
+> it is not the current product contract. Do **not** regenerate or overwrite
+> `apps/web` from it. Use the repo-level `development.md`, `development.en.md`,
+> and current source for learning or changes.
+
+The original workflow was to paste the **PROMPT** block into v0.dev, export it
+to `apps/web/`, then add the integration layer. It is preserved only for design
+provenance; the current app now contains many additional routes and contracts.
 
 > Why v0: the hackathon **requires** the frontend to be built with Vercel v0 and
 > deployed on Vercel. Keep the v0 project link + Team ID for submission.
@@ -12,6 +16,7 @@ the pages from mock data to the real `api-client.ts` calls.
 
 ## PROMPT
 
+````text
 Build a polished, production-quality **Next.js (App Router) + TypeScript + Tailwind + shadcn/ui** web app called **"WeakSpot English Coach"**.
 
 **Product:** An adaptive English-learning coach for Chinese-speaking learners. Unlike a generic chatbot, it *discovers* what the learner needs to practice: the user writes English, the app diagnoses specific weaknesses (verb tense, repetitive vocabulary, clarity, register, etc.), builds an evolving "weakness profile," and turns those real mistakes into a personalized plan and targeted exercises. Tagline: **"Instead of asking what you want to practice, it discovers what you need to practice."**
@@ -85,4 +90,4 @@ interface PracticeGrade { isCorrect:boolean; score:number; feedbackZh:string; co
 - `GET /history/{userId}` → `{ submissions, errors }`
 
 Make it responsive, accessible, and genuinely demo-ready. The diagnostic report and the dashboard weakness chart are the two screens that must look impressive.
-```
+````
