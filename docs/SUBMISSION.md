@@ -131,12 +131,16 @@ Secret-free deterministic benchmark (`moto` + lexical fallback):
 
 | Metric | Result |
 | --- | ---: |
-| Recall@6 | 1.00 (5/5 fixtures) |
+| Recall@6 | 0.80 (4/5 fixtures) |
 | Expired/superseded suppression | 100% |
 | Token-budget compliance | 100% |
 | Raw fixture history | 1,444 conservative estimated tokens |
 | Average Memory Pack | 183.8 conservative estimated tokens |
 | Context reduction | 87.3% |
+
+This current secret-free result is a five-case lexical-fallback regression
+floor, not a production recall claim. It misses the article-weakness fixture
+under the effective token budget; the script prints the miss for review.
 
 Run it with:
 

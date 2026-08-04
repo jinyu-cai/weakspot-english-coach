@@ -428,13 +428,19 @@ DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
 The deterministic benchmark currently reports:
 
 ```text
-Recall@6:               1.00 (5/5 fixtures)
+Recall@6:               0.80 (4/5 fixtures)
 Stale-memory suppression: pass
 Token-budget compliance: pass
 Raw history:            1,444 conservative estimated tokens
 Average Memory Pack:    183.8 conservative estimated tokens
 Context reduction:       87.3%
 ```
+
+The lexical fallback currently misses the article-weakness fixture under the
+effective token budget because critical goal/preference reservations outrank
+it. The assertion deliberately treats 0.80 as a regression floor and prints
+the missed key plus selected alternatives. Do not present this five-case
+fixture as a production recall measurement.
 
 Set `MEMORY_BENCHMARK_LIVE=1` with a Model Studio key to exercise the live Qwen
 embedding path. The default benchmark intentionally uses the lexical fallback

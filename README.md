@@ -142,7 +142,7 @@ model metadata returned with a newly generated Coach mission.
 
 ```text
 diagnose / chat / import / practice
-  -> Qwen structured analysis + durable memory candidates
+  -> configured structured text analysis + durable memory candidates
   -> consolidate, merge evidence, replace conflicts, expire stale memory
   -> store MEMORY# rows in DynamoDB
   -> hybrid retrieve into a bounded Memory Pack
@@ -289,14 +289,19 @@ Frontend:
 
 ```bash
 cd apps/web
+pnpm lint
 pnpm exec tsc --noEmit
+pnpm test:chat-import
+pnpm test:timeouts
 pnpm build
 ```
 
-The deterministic MemoryAgent benchmark achieves Recall@6 `1.00`, suppresses
-expired/superseded rows, stays within every conservative effective budget, and
-reduces the sample context by `87.3%`. See [MemoryAgent Design](docs/MEMORY_AGENT_DESIGN.md) for the
-method and live-embedding option.
+The current secret-free lexical MemoryAgent benchmark achieves Recall@6 `0.80`
+(4/5 fixtures), suppresses expired/superseded rows, stays within every
+conservative effective budget, and reduces the sample context by `87.3%`.
+This is a regression floor, not a production-quality claim. See
+[MemoryAgent Design](docs/MEMORY_AGENT_DESIGN.md) for the missed lexical case
+and the separate live-embedding option.
 
 ## Submission material
 
