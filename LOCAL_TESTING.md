@@ -65,7 +65,10 @@ Use this when you are changing UI and do not need the backend yet.
 ```bash
 cd apps/web
 pnpm install --frozen-lockfile
+pnpm lint
 pnpm exec tsc --noEmit
+pnpm test:chat-import
+pnpm test:timeouts
 pnpm build
 pnpm dev
 ```
@@ -171,8 +174,10 @@ Open [http://localhost:3000](http://localhost:3000), then verify:
 Diagnose creates records
 Practice submit creates attempts
 Memory Center recalls and forgets a manual memory
-Chat model selector shows independent Deep and Fast choices (Qwen defaults,
-mixed Qwen/DeepSeek combinations available when both providers are configured)
+Chat model selector shows independent Deep and Fast choices; Server default
+matches the active deployment (Oracle currently OpenRouter Luna Pro/Luna,
+Alibaba Qwen), and cross-provider choices appear only when both providers are
+configured
 Input Learning `/input` saves grounded material, creates an attention mission
 without pasted material, opens a saved capture, and deletes it
 Chat quietly exercises a due weakness and reveals the result only in the
@@ -220,7 +225,10 @@ cd apps/api && uv run python -m scripts.integration_test
 cd apps/api && DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_agent_test
 cd apps/api && DYNAMODB_ENDPOINT_URL= uv run python -m scripts.stealth_input_test
 cd apps/api && DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
+cd apps/web && pnpm lint
 cd apps/web && pnpm exec tsc --noEmit
+cd apps/web && pnpm test:chat-import
+cd apps/web && pnpm test:timeouts
 cd apps/web && pnpm build
 ```
 

@@ -3,6 +3,10 @@ import type { ChatImportConversation, ChatImportMessage } from "./types"
 
 const CHAT_IMPORT_BATCH_MAX_BYTES = 200_000
 const CHAT_IMPORT_BATCH_MAX_CONVERSATIONS = 20
+// Keep every request valid for the backend's ordinary-access contract. Owner
+// accounts may accept more, but the browser should not need to know a user's
+// server-side quota tier before it can create safe batches.
+const CHAT_IMPORT_CONVERSATION_MAX_MESSAGES = 120
 
 type RawExportMessage = {
   id?: string
@@ -245,7 +249,13 @@ function conversationSegments(
 
   for (const message of messages) {
     const candidate = { ...base, messages: [...segmentMessages, message] }
-    if (segmentMessages.length && conversationPayloadBytes([candidate]) > maxBytes - 512) {
+    if (
+      segmentMessages.length
+      && (
+        segmentMessages.length >= CHAT_IMPORT_CONVERSATION_MAX_MESSAGES
+        || conversationPayloadBytes([candidate]) > maxBytes - 512
+      )
+    ) {
       segments.push({ ...base, messages: segmentMessages })
       segmentMessages = [message]
     } else {
@@ -264,8 +274,9 @@ function conversationSegments(
 
 /**
  * Keep each request comfortably below common ingress limits using serialized
- * UTF-8 bytes, not JavaScript character count. Oversized conversations are
- * split only at message boundaries (or within one exceptional message).
+ * UTF-8 bytes, not JavaScript character count. Conversations are also split at
+ * 120 messages so every request satisfies the backend's ordinary-access
+ * contract. An exceptional oversized message is split by UTF-8 bytes first.
  */
 export function chunkChatImportConversations(
   conversations: ChatImportConversation[],
