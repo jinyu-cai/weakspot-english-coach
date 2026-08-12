@@ -54,6 +54,7 @@ export function useRealtimeChat(
   const pcRef = useRef<RTCPeerConnection | null>(null)
   const dcRef = useRef<RTCDataChannel | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const durationTimerRef = useRef<number | null>(null)
   const sessionIdRef = useRef<string | null>(null)
   const modelRef = useRef<string>("")
   const transcriptRef = useRef<TranscriptEntry[]>([])
@@ -196,6 +197,10 @@ export function useRealtimeChat(
   }, [])
 
   const cleanup = useCallback(() => {
+    if (durationTimerRef.current !== null) {
+      window.clearTimeout(durationTimerRef.current)
+      durationTimerRef.current = null
+    }
     dcRef.current?.close()
     dcRef.current = null
     pcRef.current?.close()
@@ -225,7 +230,7 @@ export function useRealtimeChat(
       setSessionId(null)
 
       try {
-        const { clientSecret, sessionId, model } = await createRealtimeSession(
+        const { clientSecret, sessionId, model, maxDurationSeconds } = await createRealtimeSession(
           userId,
           topic,
           realtimeModel,
@@ -284,6 +289,20 @@ export function useRealtimeChat(
         pc.onconnectionstatechange = () => {
           if (pc.connectionState === "connected") {
             setStatus("connected")
+            if (maxDurationSeconds && durationTimerRef.current === null) {
+              durationTimerRef.current = window.setTimeout(() => {
+                durationTimerRef.current = null
+                void (async () => {
+                  try {
+                    const endedSessionId = await endSessionRef.current({ intentional: false })
+                    onAutoEndRef.current?.(endedSessionId)
+                  } catch {
+                    setStatus("error")
+                    setError(getCopy(getOutputLanguage()).chat.voicePanel.saveTranscriptFailed)
+                  }
+                })()
+              }, maxDurationSeconds * 1000)
+            }
           } else if (
             (pc.connectionState === "failed" || pc.connectionState === "disconnected")
             && !intentionalDisconnectRef.current

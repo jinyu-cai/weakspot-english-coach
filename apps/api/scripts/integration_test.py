@@ -1137,9 +1137,9 @@ def main() -> int:
             "gpt-realtime-mini-2025-12-15",
             "gpt-realtime-bad",
         ], selected_voice_models
-        assert session_expires_at[0:4] == [None, None, None, None], session_expires_at
-        assert isinstance(session_expires_at[4], int), session_expires_at
-        assert session_expires_at[5] is None, session_expires_at
+        # Session duration is enforced by the browser and sideband monitor.
+        # OpenAI's current client-secret schema rejects session.expires_at.
+        assert session_expires_at == [None] * 6, session_expires_at
         assert sideband_calls and sideband_calls[0][2] == "rtc_integration_test", sideband_calls
         assert kick_calls and kick_calls[0][2] == "integration_test", kick_calls
         print(
