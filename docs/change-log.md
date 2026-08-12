@@ -55,6 +55,10 @@ Summary:
   prevents a second multi-minute retry.
 - Retryable saved drafts can start a fresh background job; only an active claim
   is reported as currently processing.
+- Production validation also caught that the official DeepSeek endpoint rejects
+  the catalog alias `ds-v4-flash-0731`. Server-managed DeepSeek Fast calls now
+  translate that stable product alias to the accepted API name
+  `deepseek-v4-flash`, while the selector and saved sessions retain the alias.
 
 Tests run:
 

@@ -28,6 +28,8 @@ OPENROUTER_OPENAI_PROVIDER_ROUTING = {
     "only": ["openai"],
     "allow_fallbacks": False,
 }
+DEEPSEEK_FLASH_PRODUCT_MODEL = "ds-v4-flash-0731"
+DEEPSEEK_FLASH_API_MODEL = "deepseek-v4-flash"
 
 
 @dataclass(frozen=True)
@@ -64,6 +66,29 @@ def _provider_connection(
     ):
         return provider.fast_api_key, provider.fast_base_url
     return provider.api_key, provider.base_url
+
+
+def _provider_request_model(
+    provider: Optional[LLMProviderConfig],
+    selected_model: str,
+    base_url: str,
+) -> str:
+    """Translate a server catalog alias to the provider's accepted API name."""
+
+    if selected_model != DEEPSEEK_FLASH_PRODUCT_MODEL:
+        return selected_model
+    if provider is not None and (
+        provider.is_byok
+        or not (
+            provider.server_model_id == "deepseek-fast"
+            or provider.server_fast_model_id == "deepseek-fast"
+        )
+    ):
+        return selected_model
+    hostname = (urlparse(base_url.strip()).hostname or "").lower()
+    if hostname == "api.deepseek.com":
+        return DEEPSEEK_FLASH_API_MODEL
+    return selected_model
 
 
 def get_client(
@@ -176,9 +201,10 @@ def parse_with_model(
         base_url = settings.default_llm_fast_base_url
     else:
         base_url = settings.default_llm_base_url
-    uses_model_studio_qwen = _uses_model_studio_qwen(selected_model, base_url)
+    request_model = _provider_request_model(provider, selected_model, base_url)
+    uses_model_studio_qwen = _uses_model_studio_qwen(request_model, base_url)
     uses_openrouter = _uses_openrouter_api(base_url)
-    uses_openrouter_openai = _uses_openrouter_openai_provider(selected_model, base_url)
+    uses_openrouter_openai = _uses_openrouter_openai_provider(request_model, base_url)
 
     schema = json.dumps(response_model.model_json_schema(), ensure_ascii=False)
 
@@ -202,11 +228,12 @@ def parse_with_model(
     last_error: Optional[Exception] = None
     trace = trace_id or "-"
     logger.info(
-        "llm[%s] start model=%s response_model=%s schema_bytes=%d max_tokens=%s "
+        "llm[%s] start model=%s request_model=%s response_model=%s schema_bytes=%d max_tokens=%s "
         "completion_token_budget=%s reasoning_effort=%s qwen_json_mode=%s "
         "openrouter_openai_only=%s native_structured_output=%s native_structured_strict=%s max_attempts=%d",
         trace,
         selected_model,
+        request_model,
         response_model.__name__,
         len(schema.encode("utf-8")),
         max_tokens if max_tokens is not None else "unlimited",
@@ -232,7 +259,7 @@ def parse_with_model(
         attempt_started = time.perf_counter()
         try:
             create_kwargs: dict = dict(
-                model=selected_model,
+                model=request_model,
                 messages=messages,
                 response_format=(
                     {
@@ -262,7 +289,7 @@ def parse_with_model(
             elif max_tokens is not None:
                 create_kwargs["max_tokens"] = max_tokens
             extra_body = _provider_extra_body(
-                selected_model,
+                request_model,
                 base_url,
                 reasoning_effort,
             )
