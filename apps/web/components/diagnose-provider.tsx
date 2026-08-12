@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { diagnose } from "@/lib/api-client"
 import { DEMO_USER_ID } from "@/lib/mock-data"
@@ -43,6 +43,7 @@ export function DiagnoseProvider({ children }: { children: ReactNode }) {
   const [originalText, setOriginalText] = useState("")
   const [isDuplicate, setIsDuplicate] = useState(false)
   const [error, setError] = useState<unknown>(null)
+  const requestInFlight = useRef(false)
   const { t } = useLanguage()
 
   useEffect(() => {
@@ -71,6 +72,11 @@ export function DiagnoseProvider({ children }: { children: ReactNode }) {
   }, [t.nav.items.diagnose])
 
   const handleAnalyze = useCallback(async () => {
+    // React state is not updated synchronously. Guard the request itself so a
+    // fast double-click or a long-running-state action cannot submit the same
+    // diagnosis twice before the loading UI re-renders.
+    if (requestInFlight.current) return false
+    requestInFlight.current = true
     setLoading(true)
     setIsDuplicate(false)
     setError(null)
@@ -114,6 +120,7 @@ export function DiagnoseProvider({ children }: { children: ReactNode }) {
       })
       return false
     } finally {
+      requestInFlight.current = false
       setLoading(false)
     }
   }, [diagnosisMode, t, text])

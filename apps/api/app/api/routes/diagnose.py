@@ -265,14 +265,23 @@ async def diagnose(
         "X-Accel-Buffering": "no",
     }
 
+    # Start the worker before returning the StreamingResponse. If the client
+    # disconnects before Starlette begins consuming the body, the acquired
+    # claim must still have a job that will either complete it or release it.
+    future = loop.run_in_executor(
+        None,
+        lambda: _run_diagnosis_job(
+            req, profile, text_hash, request_id, started,
+            diagnosis_mode, identity, llm_provider, pre["claim"],
+        ),
+    )
+
+    # A disconnected streaming consumer will never call future.result(). Read
+    # the exception in a callback as well so a background failure is observed;
+    # _run_diagnosis_job owns claim cleanup independently of the connection.
+    future.add_done_callback(_observe_diagnosis_future)
+
     async def generate():
-        future = loop.run_in_executor(
-            None,
-            lambda: _llm_and_persist(
-                req, profile, text_hash, request_id, started,
-                diagnosis_mode, identity, llm_provider, pre["claim"],
-            ),
-        )
 
         # Immediate keepalive flushes HTTP headers through Cloudflare.
         yield b" "
@@ -285,7 +294,6 @@ async def diagnose(
         try:
             result = future.result()
         except ItemTooLargeError as e:
-            release_diagnosis_request(req.userId, text_hash, request_id)
             logger.warning(
                 "diagnose[%s] payload_too_large total_ms=%d size_bytes=%d",
                 request_id,
@@ -300,14 +308,12 @@ async def diagnose(
                 "detail": "The diagnosis result is too large to store.",
             }
         except ValueError as e:
-            release_diagnosis_request(req.userId, text_hash, request_id)
             logger.exception(
                 "diagnose[%s] ai_error total_ms=%d",
                 request_id, _elapsed_ms(started),
             )
             result = {"error": True, "detail": f"AI error [{request_id}]: {e}"}
         except Exception as e:
-            release_diagnosis_request(req.userId, text_hash, request_id)
             logger.exception(
                 "diagnose[%s] server_error total_ms=%d",
                 request_id, _elapsed_ms(started),
@@ -331,6 +337,46 @@ async def diagnose(
 # ---------------------------------------------------------------------------
 # Helpers — run inside the threadpool via run_in_executor
 # ---------------------------------------------------------------------------
+
+def _observe_diagnosis_future(future: asyncio.Future) -> None:
+    """Consume a background exception when the streaming client disconnects."""
+    try:
+        future.exception()
+    except asyncio.CancelledError:
+        pass
+
+
+def _run_diagnosis_job(
+    req,
+    profile,
+    text_hash,
+    request_id,
+    started,
+    diagnosis_mode,
+    identity,
+    llm_provider,
+    claim,
+):
+    """Run one claimed diagnosis and release its claim on every worker error.
+
+    Cleanup belongs to the worker rather than the streaming response consumer:
+    browsers and proxies may disconnect while the thread is still running.
+    """
+    try:
+        return _llm_and_persist(
+            req,
+            profile,
+            text_hash,
+            request_id,
+            started,
+            diagnosis_mode,
+            identity,
+            llm_provider,
+            claim,
+        )
+    except BaseException:
+        release_diagnosis_request(req.userId, text_hash, request_id)
+        raise
 
 def _pre_check(
     user_id: str,

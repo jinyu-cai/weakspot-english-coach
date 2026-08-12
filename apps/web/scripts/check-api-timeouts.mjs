@@ -57,8 +57,10 @@ function findCall(node, name) {
 
 const defaultTimeout = findVariableInitializer("DEFAULT_API_TIMEOUT_MS")
 const llmTimeout = findVariableInitializer("LLM_OPERATION_TIMEOUT_MS")
+const diagnoseTimeout = findVariableInitializer("DIAGNOSE_OPERATION_TIMEOUT_MS")
 assert.equal(defaultTimeout?.getText(sourceFile), "20_000")
 assert.equal(llmTimeout?.getText(sourceFile), "110_000")
+assert.equal(diagnoseTimeout?.getText(sourceFile), "610_000")
 
 const diagnoseFunction = findFunction("diagnose")
 assert.ok(diagnoseFunction?.body, "diagnose() must remain a declared function")
@@ -68,8 +70,24 @@ const diagnoseApiFetch = findCall(diagnoseFunction.body, "apiFetch")
 assert.ok(diagnoseApiFetch, "diagnose() must call apiFetch()")
 assert.equal(
   diagnoseApiFetch.arguments[2]?.getText(sourceFile),
-  "LLM_OPERATION_TIMEOUT_MS",
-  "diagnose() must use the 110-second LLM timeout instead of the 20-second default",
+  "DIAGNOSE_OPERATION_TIMEOUT_MS",
+  "diagnose() must keep its streamed request alive through the backend's 600-second upstream deadline",
+)
+
+const providerPath = fileURLToPath(new URL("../components/diagnose-provider.tsx", import.meta.url))
+const providerSource = readFileSync(providerPath, "utf8")
+assert.match(
+  providerSource,
+  /if \(requestInFlight\.current\) return false/,
+  "DiagnoseProvider must synchronously reject a second request while one is active",
+)
+
+const pagePath = fileURLToPath(new URL("../app/page.tsx", import.meta.url))
+const pageSource = readFileSync(pagePath, "utf8")
+assert.match(
+  pageSource,
+  /loading && timedOut[\s\S]*?<AsyncErrorState feature="diagnose" timedOut \/>/,
+  "the long-running Diagnose state must not expose a concurrent retry action",
 )
 
 const speechFunction = findFunction("synthesizeCoachSpeech")
