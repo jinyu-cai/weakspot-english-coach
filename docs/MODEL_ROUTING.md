@@ -50,6 +50,12 @@ model.
 - Deep provider-neutral calls request `max` reasoning.
 - OpenRouter calls send the provider-neutral `reasoning.effort` object; the
   official DeepSeek compatibility endpoint receives `reasoning_effort` when supported.
+- Luna Pro dynamic scenes keep `max` reasoning but request a compact scene plan
+  through native JSON Schema. The server expands that bounded plan into the
+  full learner task and facilitator prompt. OpenRouter receives an explicit
+  `max_completion_tokens` total budget because hidden reasoning tokens count as
+  completion tokens; this prevents MAX reasoning from consuming the entire
+  response and truncating the final JSON.
 - The GPT-5.6 adaptive mission planner uses its separately configured reasoning
   level (`medium` in the current production deployment).
 - Qwen Model Studio JSON calls keep thinking disabled because this compatibility

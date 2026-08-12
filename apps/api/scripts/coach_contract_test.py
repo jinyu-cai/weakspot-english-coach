@@ -28,11 +28,13 @@ from app.models.coach import (
     CoachPlannerInsight,
     DecisionResponseMissionAIResult,
     GPT56DecisionResponseMissionAIResult,
+    GuidedScenePlanAIResult,
     CoachMissionRequest,
     CoachSpeechRequest,
     InputLab2TranscriptMissionRequest,
 )
 from app.services.ai_client import LLMProviderConfig
+from app.services import ai_client as ai_client_module
 from app.services.chat_service import build_chat_messages, build_predict_messages
 from app.services.coach_service import (
     SCENARIO_FAMILIES,
@@ -216,8 +218,71 @@ def main() -> None:
         coach_service_module.parse_with_model = original_coach_parse
 
     assert generated_scene.mission.type == "guided_scene"
+    assert captured_scene_call["response_model"] is GuidedScenePlanAIResult
     assert captured_scene_call["model"] == "deep-model"
     assert captured_scene_call["reasoning_effort"] == "max"
+    assert captured_scene_call["openrouter_completion_token_budget"] == 8_000
+    assert captured_scene_call["use_native_structured_output"] is True
+    assert "first complication" in generated_scene.mission.scene.scenarioPrompt
+    assert "second complication" in generated_scene.mission.scene.scenarioPrompt
+    assert len(generated_scene.mission.scene.scenarioPrompt) < 3_200
+
+    captured_openrouter_call = {}
+    compact_plan = fake_for(GuidedScenePlanAIResult)
+
+    class _FakeChatCompletions:
+        @staticmethod
+        def create(**kwargs):
+            captured_openrouter_call.update(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content=compact_plan.model_dump_json()),
+                        finish_reason="stop",
+                    )
+                ],
+                usage=SimpleNamespace(
+                    prompt_tokens=800,
+                    completion_tokens=320,
+                    total_tokens=1120,
+                ),
+            )
+
+    class _FakeChatClient:
+        chat = SimpleNamespace(completions=_FakeChatCompletions())
+
+    previous_get_client = ai_client_module.get_client
+    previous_fake_ai = settings.use_fake_ai
+    settings.use_fake_ai = False
+    ai_client_module.get_client = lambda *_args, **_kwargs: _FakeChatClient()
+    try:
+        parsed_plan = ai_client_module.parse_with_model(
+            messages=[
+                {"role": "system", "content": "Create a compact scene plan."},
+                {"role": "user", "content": "Use a workplace setting."},
+            ],
+            response_model=GuidedScenePlanAIResult,
+            max_tokens=4_000,
+            model="openai/gpt-5.6-luna-pro",
+            provider=LLMProviderConfig(
+                api_key="test-openrouter-key",
+                base_url="https://openrouter.ai/api/v1",
+                model="openai/gpt-5.6-luna-pro",
+            ),
+            reasoning_effort="max",
+            openrouter_completion_token_budget=8_000,
+            use_native_structured_output=True,
+        )
+    finally:
+        ai_client_module.get_client = previous_get_client
+        settings.use_fake_ai = previous_fake_ai
+
+    assert parsed_plan == compact_plan
+    assert captured_openrouter_call["max_completion_tokens"] == 8_000
+    assert "max_tokens" not in captured_openrouter_call
+    assert captured_openrouter_call["response_format"]["type"] == "json_schema"
+    assert captured_openrouter_call["response_format"]["json_schema"]["strict"] is True
+    assert captured_openrouter_call["extra_body"]["reasoning"] == {"effort": "max"}
 
     long_scene_request = CoachMissionRequest(
         durationMinutes=15,

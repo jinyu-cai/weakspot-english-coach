@@ -18,6 +18,52 @@ Known issues:
 Next step:
 ```
 
+## 2026-08-11 — Restore Luna Pro random scene generation
+
+Date: 2026-08-11 PDT
+
+Branch: `codex/fix-random-scene-generation` → `main`
+
+GitHub status: Fix PR pending.
+
+Deploy status: Pending merge and Oracle deployment. No frontend runtime change
+is required.
+
+Root cause:
+
+- Production traces showed repeated Luna Pro/MAX scene calls ending with
+  `finish_reason=length`. OpenRouter counted hidden reasoning inside the
+  completion budget, leaving either no visible response or truncated JSON.
+- The invalid-output retry repeated the same expensive request. Two upstream
+  attempts took roughly 112–118 seconds, so the browser's 110-second deadline
+  aborted before the backend returned its final 502 response. This appeared in
+  Chrome as a request with only provisional headers.
+
+Summary:
+
+- Kept dynamic scenes on `openai/gpt-5.6-luna-pro` with `reasoning=max`.
+- Replaced the oversized model-authored mission payload with a strict compact
+  scene-plan schema; the backend now expands that plan deterministically into
+  the complete learner task and progressive facilitator prompt.
+- Sent the supported `max_completion_tokens` parameter with an 8,000-token
+  total budget for this OpenRouter reasoning call and enabled native structured
+  outputs.
+- Added contract coverage for the compact scene route, MAX reasoning, strict
+  JSON Schema, and the exact OpenRouter completion-budget parameter.
+
+Tests run:
+
+- Backend compilation, smoke, Coach contract, and full integration suites —
+  pass.
+- Real Luna Pro/MAX generation — pass in 42.84 seconds on the first attempt;
+  returned a complete guided scene with a 1,465-character facilitator prompt.
+- `git diff --check` — pass.
+
+Known issues: None for the reproduced failure mode.
+
+Next step: Merge, deploy the exact backend archive to Oracle, verify one public
+random scene, then replace the pending statuses with production evidence.
+
 ## 2026-08-11 — Luna Pro / DS V4 Flash model pair
 
 Date: 2026-08-11 PDT

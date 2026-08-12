@@ -21,7 +21,10 @@ from app.models.coach import (
     GPT56ListenRetellMissionAIResult,
     GPT56PictureStoryMissionAIResult,
     GPT56VocabularyInActionMissionAIResult,
+    GuidedSceneMissionAI,
     GuidedSceneMissionAIResult,
+    GuidedScenePlanAI,
+    GuidedScenePlanAIResult,
     InputLab2TranscriptMissionRequest,
     ListenRetellMissionAIResult,
     PictureStoryMissionAIResult,
@@ -126,6 +129,26 @@ the mission, return plannerInsight with an evidence-bounded explanation:
 Keep the explanation compact. The plannerInsight and mission must agree on the
 same target skills, task type, and difficulty.
 """.strip()
+
+
+GUIDED_SCENE_PLAN_SYSTEM_PROMPT = """
+Design one realistic long-form English roleplay for an adaptive language coach.
+Return only the compact scene plan required by the response schema.
+
+Requirements:
+- Create a fresh situation with a practical goal and more than one reasonable
+  solution. Avoid generic textbook prompts.
+- Keep every field to one short sentence or phrase. Never write the full live
+  dialogue or repeat the role descriptions.
+- complicationOne and complicationTwo are distinct hidden developments that
+  the roleplay assistant can reveal progressively after relevant questions.
+- endingCondition is a clear agreement or outcome, not a scripted answer.
+- starterMessage is one short, natural, in-character English opening line.
+- Do not include corrections, grading keys, or a model answer.
+""".strip()
+
+
+OPENROUTER_MAX_REASONING_SCENE_BUDGET = 8_000
 
 
 def guided_scene_design_requirements(req: CoachMissionRequest) -> str:
@@ -258,6 +281,100 @@ def _compact_skill_context(learner_skills: list[dict] | None) -> str:
     return "Lowest current skill states (use for personalization, not as proven facts):\n" + "\n".join(rows)
 
 
+def _guided_scene_from_plan(
+    plan: GuidedScenePlanAI,
+    req: CoachMissionRequest,
+    *,
+    target_skills: list[str] | None,
+    scenario_family: CoachScenarioFamily,
+) -> GuidedSceneMissionAI:
+    """Expand a compact model-authored plan into the stable public mission shape."""
+
+    skills = list(target_skills or [])[:4] or [
+        "clarity.expression",
+        "sentence.structure",
+    ]
+    if req.outputLanguage == "zh":
+        eyebrow = "沉浸式对话"
+        briefing = f"场景：{plan.setting} 你的角色：{plan.userRole} 目标：{plan.goal}"
+        task_prompt = (
+            "保持角色，用英语通过提问、澄清和协商推进对话。根据新信息调整方案，"
+            f"最终完成这个目标：{plan.goal}"
+        )
+        success_criteria = [
+            "主动询问需求、限制和关键信息",
+            "用清晰完整的句子解释选择和理由",
+            "根据对话中的新情况调整方案",
+            "在结束前确认具体且可行的共识",
+        ]
+        hints = [
+            "先弄清对方最需要什么，不要急着给出完整方案。",
+            "可以使用：Could you clarify…? / What if we…? / Would it work if…?",
+            "说明理由时可用 because、so、if 和 that 连接想法。",
+        ]
+    else:
+        eyebrow = "Guided conversation"
+        briefing = f"Setting: {plan.setting} Your role: {plan.userRole} Goal: {plan.goal}"
+        task_prompt = (
+            "Stay in role and move the conversation forward through questions, "
+            "clarification, and negotiation. Adapt when new information appears, "
+            f"then work toward this outcome: {plan.goal}"
+        )
+        success_criteria = [
+            "Ask about needs, constraints, and missing details",
+            "Explain choices and reasons in clear, complete sentences",
+            "Adapt the plan when the situation changes",
+            "Confirm a specific, workable agreement before ending",
+        ]
+        hints = [
+            "Clarify what the other person needs before proposing a full solution.",
+            "Useful language: Could you clarify…? / What if we…? / Would it work if…?",
+            "Connect your reasoning with because, so, if, and that.",
+        ]
+
+    scenario_prompt = f"""
+Stay in role as {plan.aiRole}. The learner is {plan.userRole}. Respond in
+English, move the scene naturally, and do not correct the learner during the
+roleplay. Aim for roughly 12-20 learner/assistant turns. Reveal only one useful
+development at a time, ask focused follow-up questions, and react to the
+learner's choices. Do not announce these beats or expose the full plan.
+
+Setting: {plan.setting}
+Shared goal: {plan.goal}
+
+1. Open naturally from the setting and learn what the learner understands and
+   wants to do.
+2. Let the learner clarify needs and constraints before accepting a solution.
+3. When relevant, reveal this first complication: {plan.complicationOne}
+4. After the learner adapts, reveal this distinct second complication:
+   {plan.complicationTwo}
+5. Negotiate details and allow multiple workable approaches. If an answer is
+   vague, ask one focused question instead of solving the situation.
+6. End only after this condition is met: {plan.endingCondition}
+""".strip()
+
+    return GuidedSceneMissionAI(
+        title=plan.title,
+        eyebrow=eyebrow,
+        briefing=briefing,
+        targetSkills=skills,
+        taskPrompt=task_prompt,
+        successCriteria=success_criteria,
+        hints=hints,
+        type="guided_scene",
+        scene={
+            "setting": plan.setting,
+            "userRole": plan.userRole,
+            "aiRole": plan.aiRole,
+            "goal": plan.goal,
+            "scenarioPrompt": scenario_prompt,
+            "starterMessage": plan.starterMessage,
+            "scenarioFamily": scenario_family,
+            "scenarioKey": f"{scenario_family}:pending",
+        },
+    )
+
+
 def _public_response(
     mission_content: BaseModel,
     req: CoachMissionRequest | InputLab2TranscriptMissionRequest,
@@ -325,7 +442,12 @@ def generate_coach_mission(
     requested_type = req.preferredType or "Choose the most useful of the five types."
     selected_family = select_scenario_family(recent_scenario_families)
     recent_family_context = ", ".join((recent_scenario_families or [])[:8]) or "none"
-    scene_design = guided_scene_design_requirements(req)
+    compact_selected_guided_scene = (
+        req.runtimeMode == "selected_provider"
+        and req.preferredType == "guided_scene"
+        and req.generationMode == "deep"
+    )
+    scene_design = "" if compact_selected_guided_scene else guided_scene_design_requirements(req)
     excluded_vocabulary = json.dumps(req.excludedVocabulary, ensure_ascii=False)
     user_prompt = f"""
 Create one mission with this configuration:
@@ -359,8 +481,9 @@ Allowed first-party picture assets (use only for picture_story):
 {asset_catalog}
 """.strip()
 
-    base_system_prompt = f"{MISSION_SYSTEM_PROMPT}\n\n{language_instruction(req.outputLanguage)}"
     use_adaptive_planner = uses_adaptive_mission_planner(req)
+    use_compact_guided_scene = not use_adaptive_planner and compact_selected_guided_scene
+    base_system_prompt = f"{MISSION_SYSTEM_PROMPT}\n\n{language_instruction(req.outputLanguage)}"
     messages = [
         {
             "role": "system",
@@ -383,6 +506,35 @@ Allowed first-party picture assets (use only for picture_story):
             trace_id=trace_id,
         )
         planner_insight = result.plannerInsight
+        mission_content = cast(BaseModel, result.mission)
+    elif use_compact_guided_scene:
+        compact_messages = [
+            {
+                "role": "system",
+                "content": (
+                    f"{GUIDED_SCENE_PLAN_SYSTEM_PROMPT}\n\n"
+                    f"{language_instruction(req.outputLanguage)}"
+                ),
+            },
+            {"role": "user", "content": user_prompt},
+        ]
+        plan_result = parse_with_model(
+            messages=compact_messages,
+            response_model=GuidedScenePlanAIResult,
+            max_tokens=max_tokens,
+            model=selected_coach_model(req, llm_provider),
+            provider=llm_provider,
+            trace_id=trace_id,
+            reasoning_effort=reasoning_effort_for_tier(req.generationMode),
+            openrouter_completion_token_budget=OPENROUTER_MAX_REASONING_SCENE_BUDGET,
+            use_native_structured_output=True,
+        )
+        mission_content = _guided_scene_from_plan(
+            plan_result.plan,
+            req,
+            target_skills=recommended_skills,
+            scenario_family=selected_family,
+        )
     else:
         result = parse_with_model(
             messages=messages,
@@ -393,7 +545,7 @@ Allowed first-party picture assets (use only for picture_story):
             trace_id=trace_id,
             reasoning_effort=reasoning_effort_for_tier(req.generationMode),
         )
-    mission_content = cast(BaseModel, result.mission)
+        mission_content = cast(BaseModel, result.mission)
     return _public_response(
         mission_content,
         req,

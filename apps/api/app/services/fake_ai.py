@@ -30,6 +30,8 @@ from app.models.coach import (
     DecisionResponseMissionAIResult,
     GuidedSceneMissionAI,
     GuidedSceneMissionAIResult,
+    GuidedScenePlanAI,
+    GuidedScenePlanAIResult,
     ListenRetellMissionAI,
     ListenRetellMissionAIResult,
     PictureStoryMissionAI,
@@ -469,6 +471,22 @@ def _fake_guided_scene_mission() -> GuidedSceneMissionAIResult:
     return GuidedSceneMissionAIResult(mission=_fake_guided_scene_content())
 
 
+def _fake_guided_scene_plan() -> GuidedScenePlanAIResult:
+    return GuidedScenePlanAIResult(
+        plan=GuidedScenePlanAI(
+            title="Rework the handoff plan",
+            setting="A project room shortly before an important client handoff.",
+            userRole="The teammate responsible for coordinating the handoff.",
+            aiRole="Morgan, a practical project lead.",
+            goal="Agree on a clear handoff plan despite changing constraints.",
+            complicationOne="A required review will finish thirty minutes late.",
+            complicationTwo="The client asks for one additional summary page.",
+            endingCondition="Both people confirm owners, timing, and a fallback.",
+            starterMessage="Thanks for coming in—what do you know about today's handoff?",
+        )
+    )
+
+
 def _fake_picture_story_mission() -> PictureStoryMissionAIResult:
     return PictureStoryMissionAIResult(mission=_fake_picture_story_content())
 
@@ -519,6 +537,7 @@ _BUILDERS = {
     PracticeGradeAIResult: _fake_grade,
     CoachMissionAIResult: _fake_coach_mission,
     GuidedSceneMissionAIResult: _fake_guided_scene_mission,
+    GuidedScenePlanAIResult: _fake_guided_scene_plan,
     PictureStoryMissionAIResult: _fake_picture_story_mission,
     ListenRetellMissionAIResult: _fake_listen_retell_mission,
     DecisionResponseMissionAIResult: _fake_decision_response_mission,

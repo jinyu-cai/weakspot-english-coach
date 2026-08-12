@@ -156,6 +156,8 @@ def parse_with_model(
     provider: Optional[LLMProviderConfig] = None,
     trace_id: Optional[str] = None,
     reasoning_effort: Optional[str] = DEEP_REASONING_EFFORT,
+    openrouter_completion_token_budget: Optional[int] = None,
+    use_native_structured_output: bool = False,
 ) -> T:
     # Local testing: return canned results without calling an external model.
     if settings.use_fake_ai:
@@ -178,27 +180,41 @@ def parse_with_model(
 
     schema = json.dumps(response_model.model_json_schema(), ensure_ascii=False)
 
+    native_structured_output = use_native_structured_output and uses_openrouter_openai
     messages = list(messages)
-    messages[0] = {
-        "role": "system",
-        "content": messages[0]["content"]
-        + "\n\nReturn ONLY a valid json object that conforms to this JSON schema. "
-        "Do not use markdown code fences and do not add any commentary.\n"
-        "JSON schema:\n" + schema,
-    }
+    if native_structured_output:
+        messages[0] = {
+            "role": "system",
+            "content": messages[0]["content"]
+            + "\n\nReturn only the requested structured result. Keep every field concise.",
+        }
+    else:
+        messages[0] = {
+            "role": "system",
+            "content": messages[0]["content"]
+            + "\n\nReturn ONLY a valid json object that conforms to this JSON schema. "
+            "Do not use markdown code fences and do not add any commentary.\n"
+            "JSON schema:\n" + schema,
+        }
 
     last_error: Optional[Exception] = None
     trace = trace_id or "-"
     logger.info(
-        "llm[%s] start model=%s response_model=%s schema_bytes=%d max_tokens=%s reasoning_effort=%s qwen_json_mode=%s openrouter_openai_only=%s",
+        "llm[%s] start model=%s response_model=%s schema_bytes=%d max_tokens=%s "
+        "completion_token_budget=%s reasoning_effort=%s qwen_json_mode=%s "
+        "openrouter_openai_only=%s native_structured_output=%s",
         trace,
         selected_model,
         response_model.__name__,
         len(schema.encode("utf-8")),
         max_tokens if max_tokens is not None else "unlimited",
+        openrouter_completion_token_budget
+        if openrouter_completion_token_budget is not None
+        else "provider_default",
         reasoning_effort or "disabled",
         uses_model_studio_qwen,
         uses_openrouter_openai,
+        native_structured_output,
     )
 
     # OpenRouter exposes a provider-neutral `reasoning` object. Do not also
@@ -214,7 +230,18 @@ def parse_with_model(
             create_kwargs: dict = dict(
                 model=selected_model,
                 messages=messages,
-                response_format={"type": "json_object"},
+                response_format=(
+                    {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": response_model.__name__,
+                            "strict": True,
+                            "schema": response_model.model_json_schema(),
+                        },
+                    }
+                    if native_structured_output
+                    else {"type": "json_object"}
+                ),
                 timeout=600,
             )
             # Luna's published OpenRouter parameter set does not require a
@@ -222,7 +249,13 @@ def parse_with_model(
             # unsupported sampling parameters.
             if not uses_openrouter_openai:
                 create_kwargs["temperature"] = 0.2
-            if max_tokens is not None:
+            if uses_openrouter_openai and openrouter_completion_token_budget is not None:
+                # Reasoning tokens count toward OpenRouter's completion budget.
+                # Use the non-deprecated total-budget parameter for compact
+                # structured calls that reserve most of their budget for MAX
+                # reasoning while still leaving room for the final JSON.
+                create_kwargs["max_completion_tokens"] = openrouter_completion_token_budget
+            elif max_tokens is not None:
                 create_kwargs["max_tokens"] = max_tokens
             extra_body = _provider_extra_body(
                 selected_model,
