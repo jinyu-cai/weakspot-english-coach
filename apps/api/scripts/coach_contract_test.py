@@ -213,11 +213,18 @@ def main() -> None:
                 preferredType="guided_scene",
             ),
             llm_provider=model_pair,
+            recommended_skills=[
+                "grammar.verb_tense",
+                "grammar.verb_form",
+                "grammar.auxiliary",
+                "grammar.verb_tense",
+            ],
         )
     finally:
         coach_service_module.parse_with_model = original_coach_parse
 
     assert generated_scene.mission.type == "guided_scene"
+    assert generated_scene.mission.targetSkills == ["grammar.verb_tense"]
     assert captured_scene_call["response_model"] is GuidedScenePlanAIResult
     assert captured_scene_call["model"] == "deep-model"
     assert captured_scene_call["reasoning_effort"] == "max"

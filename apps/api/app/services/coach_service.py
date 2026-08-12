@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Type, cast
+from typing import Type, cast, get_args
 from uuid import uuid4
 
 from pydantic import BaseModel
@@ -14,6 +14,7 @@ from app.models.coach import (
     CoachMissionResponse,
     CoachPlannerInsight,
     CoachScenarioFamily,
+    CoachSkillCode,
     DecisionResponseMissionAIResult,
     GPT56CoachMissionAIResult,
     GPT56DecisionResponseMissionAIResult,
@@ -149,6 +150,21 @@ Requirements:
 
 
 OPENROUTER_MAX_REASONING_SCENE_BUDGET = 8_000
+PUBLIC_COACH_SKILL_CODES = frozenset(get_args(CoachSkillCode))
+
+
+def _normalized_coach_skill_codes(
+    target_skills: list[str] | None,
+) -> list[CoachSkillCode]:
+    """Keep scheduler-only skill IDs out of the public Coach mission contract."""
+
+    normalized: list[CoachSkillCode] = []
+    for skill in target_skills or []:
+        if skill in PUBLIC_COACH_SKILL_CODES and skill not in normalized:
+            normalized.append(cast(CoachSkillCode, skill))
+        if len(normalized) == 4:
+            break
+    return normalized or ["clarity.expression", "sentence.structure"]
 
 
 def guided_scene_design_requirements(req: CoachMissionRequest) -> str:
@@ -290,10 +306,7 @@ def _guided_scene_from_plan(
 ) -> GuidedSceneMissionAI:
     """Expand a compact model-authored plan into the stable public mission shape."""
 
-    skills = list(target_skills or [])[:4] or [
-        "clarity.expression",
-        "sentence.structure",
-    ]
+    skills = _normalized_coach_skill_codes(target_skills)
     if req.outputLanguage == "zh":
         eyebrow = "沉浸式对话"
         briefing = f"场景：{plan.setting} 你的角色：{plan.userRole} 目标：{plan.goal}"
@@ -387,7 +400,7 @@ def _public_response(
 ) -> CoachMissionResponse:
     payload = mission_content.model_dump(mode="json")
     if target_skills:
-        payload["targetSkills"] = target_skills[:4]
+        payload["targetSkills"] = _normalized_coach_skill_codes(target_skills)
     if payload.get("type") == "vocabulary_in_action":
         skills = [skill for skill in payload.get("targetSkills", []) if skill != "vocab.word_choice"]
         payload["targetSkills"] = ["vocab.word_choice", *skills][:4]
