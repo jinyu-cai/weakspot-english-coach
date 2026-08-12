@@ -79,6 +79,8 @@ GET  /chat/sessions/{session_id}/messages
 POST /chat/send
 POST /chat/predict
 POST /chat/sessions/{session_id}/analyze
+POST /chat/sessions/{session_id}/analysis-jobs
+GET  /chat/sessions/{session_id}/analysis
 POST /chat/sessions/{session_id}/transcript
 POST /chat/realtime/session
 POST /chat/realtime/{session_id}/sideband

@@ -1750,10 +1750,41 @@ export async function analyzeSession(
       },
     }
   }
-  return apiFetch<SessionAnalysisResponse>(`/chat/sessions/${sessionId}/analyze`, {
+  type AnalysisJobResponse = Partial<SessionAnalysisResponse> & {
+    status: "idle" | "processing" | "completed"
+    sessionId: string
+  }
+
+  const completedResult = (payload: AnalysisJobResponse) => {
+    if (payload.status !== "completed" || !payload.analysis) return null
+    return payload as SessionAnalysisResponse
+  }
+
+  const started = await apiFetch<AnalysisJobResponse>(`/chat/sessions/${sessionId}/analysis-jobs`, {
     method: "POST",
     body: JSON.stringify(withOutputLanguage({ hintLevel })),
-  }, LLM_OPERATION_TIMEOUT_MS)
+  })
+  const immediate = completedResult(started)
+  if (immediate) return immediate
+
+  let lastReadError: unknown
+  for (let attempt = 0; attempt < 72; attempt += 1) {
+    await delay(5_000)
+    try {
+      const status = await apiFetch<AnalysisJobResponse>(`/chat/sessions/${sessionId}/analysis`)
+      const completed = completedResult(status)
+      if (completed) return completed
+      if (status.status === "idle" && attempt >= 2) {
+        throw new Error("Session analysis stopped before completing. Please try again.")
+      }
+    } catch (error) {
+      lastReadError = error
+      if (error instanceof Error && /stopped before completing/i.test(error.message)) throw error
+    }
+  }
+  throw lastReadError instanceof Error
+    ? lastReadError
+    : new Error("Session analysis is still processing. Please check this conversation again shortly.")
 }
 
 /* ---- Voice / Realtime ---- */

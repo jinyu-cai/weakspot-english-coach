@@ -56,6 +56,12 @@ model.
   `max_completion_tokens` total budget because hidden reasoning tokens count as
   completion tokens; this prevents MAX reasoning from consuming the entire
   response and truncating the final JSON.
+- End-of-chat analysis also stays on the selected Deep model with `max`
+  reasoning. Because MAX reserves roughly 95% of an OpenRouter completion
+  budget for reasoning, the UI starts this work as a background job and polls a
+  read-only status endpoint instead of holding one browser request open. The
+  model returns a strict compact evidence plan under a 20,000-token completion
+  budget; the server expands it into the established analysis contract.
 - The GPT-5.6 adaptive mission planner uses its separately configured reasoning
   level (`medium` in the current production deployment).
 - Qwen Model Studio JSON calls keep thinking disabled because this compatibility

@@ -18,6 +18,61 @@ Known issues:
 Next step:
 ```
 
+## 2026-08-11 — Make end-of-chat analysis asynchronous
+
+Date: 2026-08-11 PDT
+
+Branch: `codex/fix-chat-session-analysis` → `main`
+
+GitHub status: Fix PR pending.
+
+Deploy status: Pending frontend and Oracle backend deployment.
+
+Root cause:
+
+- Production session `cs_06e18422535e` started analysis successfully, but a
+  legacy Fast-only session record routed durable analysis to
+  `openai/gpt-5.6-luna` instead of the selected Deep model.
+- Both upstream attempts used `reasoning=max`, consumed the full 12,000-token
+  completion budget, returned no visible JSON with `finish_reason=length`, and
+  took 95.79 and 96.98 seconds. The original request failed after 194 seconds.
+- After the browser deadline, a second end-chat request reached the still-live
+  analysis claim and correctly returned `409 analysis_in_progress`; the UI
+  displayed that recoverable state as a failure.
+
+Summary:
+
+- Legacy Fast-only sessions now resolve end-of-chat analysis against the
+  current Deep provider, while new sessions continue to use their saved
+  Deep/Fast pair. Default analysis therefore uses Luna Pro with MAX reasoning.
+- Added an asynchronous analysis-job endpoint and a read-only status endpoint.
+  Chat and Coach start the job, retain the analyzing state, and poll for up to
+  six minutes instead of holding a request across browser or proxy deadlines.
+- Replaced the oversized analysis response with a strict compact evidence-plan
+  schema and deterministic expansion into the existing public analysis shape.
+- OpenRouter receives a 20,000-token total completion budget and only one
+  upstream attempt. This leaves space for compact JSON after MAX reasoning and
+  prevents a second multi-minute retry.
+- Retryable saved drafts can start a fresh background job; only an active claim
+  is reported as currently processing.
+
+Tests run:
+
+- Backend compilation, Coach contract, smoke, full integration, and the full
+  stealth/input/concurrency suite — pass.
+- Frontend ESLint, API timeout contract, TypeScript, and production build —
+  pass.
+- Real synthetic Luna Pro/MAX compact analysis — pass in 272.78 seconds;
+  returned 4 corrections, 2 natural expressions, 2 weaknesses, and a complete
+  summary.
+- `git diff --check` — pass.
+
+Known issues: MAX reasoning analysis can take several minutes by design; the UI
+now represents it as background processing instead of a failed HTTP request.
+
+Next step: Merge, deploy both runtimes, and verify a production background
+analysis job reaches `completed` without a 409 or proxy timeout.
+
 ## 2026-08-11 — Restore Luna Pro random scene generation
 
 Date: 2026-08-11 PDT

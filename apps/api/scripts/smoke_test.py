@@ -386,6 +386,7 @@ def main() -> None:
     # uses Fast without high reasoning, while generative or durable learning
     # analysis uses Deep.
     from app.models.coach import CoachMissionRequest
+    from app.api.routes.chat import _session_analysis_provider
     from app.services.chat_import_service import select_chat_import_model
     from app.services.coach_service import selected_coach_model
     from app.services.diagnose_service import select_diagnose_model
@@ -414,6 +415,13 @@ def main() -> None:
     assert select_practice_grading_model(routing_provider) == "fast-model"
     assert select_plan_generation_model(routing_provider) == "deep-model"
     assert select_session_analysis_model(routing_provider) == "deep-model"
+    assert _session_analysis_provider(
+        {
+            "textModel": "legacy-fast-model",
+            "textModelMode": "fast",
+        },
+        routing_provider,
+    ) is routing_provider
     assert select_input_learning_model(routing_provider) == "deep-model"
     assert select_diagnose_model("fast", routing_provider) == "fast-model"
     assert select_diagnose_model("deep", routing_provider) == "deep-model"

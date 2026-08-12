@@ -158,6 +158,8 @@ def parse_with_model(
     reasoning_effort: Optional[str] = DEEP_REASONING_EFFORT,
     openrouter_completion_token_budget: Optional[int] = None,
     use_native_structured_output: bool = False,
+    native_structured_output_strict: bool = True,
+    max_attempts: int = 2,
 ) -> T:
     # Local testing: return canned results without calling an external model.
     if settings.use_fake_ai:
@@ -202,7 +204,7 @@ def parse_with_model(
     logger.info(
         "llm[%s] start model=%s response_model=%s schema_bytes=%d max_tokens=%s "
         "completion_token_budget=%s reasoning_effort=%s qwen_json_mode=%s "
-        "openrouter_openai_only=%s native_structured_output=%s",
+        "openrouter_openai_only=%s native_structured_output=%s native_structured_strict=%s max_attempts=%d",
         trace,
         selected_model,
         response_model.__name__,
@@ -215,6 +217,8 @@ def parse_with_model(
         uses_model_studio_qwen,
         uses_openrouter_openai,
         native_structured_output,
+        native_structured_output_strict if native_structured_output else "disabled",
+        max(1, max_attempts),
     )
 
     # OpenRouter exposes a provider-neutral `reasoning` object. Do not also
@@ -224,7 +228,7 @@ def parse_with_model(
         and not uses_model_studio_qwen
         and not uses_openrouter
     )
-    for attempt in range(1, 3):  # one retry
+    for attempt in range(1, max(1, max_attempts) + 1):
         attempt_started = time.perf_counter()
         try:
             create_kwargs: dict = dict(
@@ -235,7 +239,7 @@ def parse_with_model(
                         "type": "json_schema",
                         "json_schema": {
                             "name": response_model.__name__,
-                            "strict": True,
+                            "strict": native_structured_output_strict,
                             "schema": response_model.model_json_schema(),
                         },
                     }

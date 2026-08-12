@@ -83,6 +83,7 @@ def main() -> int:
         from app.main import app
         from app.services import memory_write_service as memory_write_service_module
         from app.services.decision_service import recommend_next_action
+        from app.services.fake_ai import fake_for
         from app.services.realtime_sideband import RealtimeSidebandState, _handle_realtime_event
         from botocore.exceptions import ClientError
         from scripts.create_table import create_table
@@ -199,7 +200,7 @@ def main() -> int:
 
         print("   plan error scope         -> default weekly, explicit all")
 
-        from app.models.chat import SessionAnalysisAI
+        from app.models.chat import SessionAnalysisAI, SessionAnalysisPlanAI
         from app.services import plan_service as plan_service_module
         from app.services import session_analysis_service as session_analysis_service_module
         from app.services.ai_client import LLMProviderConfig
@@ -223,7 +224,7 @@ def main() -> int:
 
         def capture_analysis_parse(**kwargs):
             analysis_call.update(kwargs)
-            return SessionAnalysisAI(summaryZh="Routing test")
+            return fake_for(SessionAnalysisPlanAI)
 
         try:
             plan_service_module.parse_with_model = capture_plan_parse
@@ -248,8 +249,12 @@ def main() -> int:
         assert plan_call["max_tokens"] == 12_000, plan_call
         assert plan_call["reasoning_effort"] == "max", plan_call
         assert analysis_call["model"] == "deep-model", analysis_call
+        assert analysis_call["response_model"] is SessionAnalysisPlanAI, analysis_call
         assert analysis_call["max_tokens"] == 12_000, analysis_call
         assert analysis_call["reasoning_effort"] == "max", analysis_call
+        assert analysis_call["openrouter_completion_token_budget"] == 20_000, analysis_call
+        assert analysis_call["use_native_structured_output"] is True, analysis_call
+        assert analysis_call["max_attempts"] == 1, analysis_call
         oversized_analysis = SessionAnalysisAI(
             summaryZh="Bounded",
             strengthsZh=[f"Strength {index}" for index in range(10)],
@@ -352,8 +357,6 @@ def main() -> int:
 
         # 5. practice submit
         from app.services import practice_service as practice_service_module
-        from app.services.fake_ai import fake_for
-
         practice_grade_call = {}
         original_practice_parse = practice_service_module.parse_with_model
 
@@ -1216,6 +1219,30 @@ def main() -> int:
         r = client.get(f"/api/v1/history/{user}")
         assert r.status_code == 200, r.text
         assert len(r.json()["errors"]) == errors_after_first_analysis, "duplicate analysis should not add errors"
+
+        r = client.post(
+            "/api/v1/chat/sessions",
+            json={"userId": user, "topic": "Async analysis regression"},
+        )
+        assert r.status_code == 200, r.text
+        async_session_id = r.json()["session"]["id"]
+        r = client.post(
+            "/api/v1/chat/send",
+            json={
+                "userId": user,
+                "sessionId": async_session_id,
+                "text": "Yesterday I go to the library and study English.",
+            },
+        )
+        assert r.status_code == 200, r.text
+        r = client.post(f"/api/v1/chat/sessions/{async_session_id}/analysis-jobs")
+        assert r.status_code == 202, r.text
+        assert r.json()["status"] == "processing", r.text
+        r = client.get(f"/api/v1/chat/sessions/{async_session_id}/analysis")
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "completed", r.text
+        assert r.json()["analysis"]["corrections"], r.text
+
         print(
             "10. POST /chat/sessions/{id}/analyze -> "
             f"{len(chat_analysis['savedErrors'])} errors, "

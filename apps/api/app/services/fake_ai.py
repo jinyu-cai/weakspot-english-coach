@@ -14,6 +14,7 @@ from app.models.chat import (
     ChatReplyAI,
     CorrectionAI,
     SessionAnalysisAI,
+    SessionAnalysisPlanAI,
     SessionCorrectionAI,
     SessionNaturalExpressionAI,
     StealthProbeAssessmentAI,
@@ -310,6 +311,55 @@ def _fake_session_analysis() -> SessionAnalysisAI:
     )
 
 
+def _fake_session_analysis_plan() -> SessionAnalysisPlanAI:
+    return SessionAnalysisPlanAI(
+        summary="You communicated clearly; focus next on past tense and natural phrasing.",
+        corrections=[
+            {
+                "code": "grammar.verb_tense",
+                "severity": "high",
+                "original": "I go to the park yesterday",
+                "corrected": "I went to the park yesterday",
+                "teachingNote": "Use the simple past for a finished event marked by yesterday.",
+                "practiceGoal": "Retell three things you did yesterday in the simple past.",
+            }
+        ],
+        naturalExpressions=[
+            {
+                "original": "The weather was very good",
+                "natural": "The weather was gorgeous.",
+                "teachingNote": "A specific adjective sounds more natural than very good here.",
+                "context": "Describing pleasant weather or a travel experience.",
+                "example": "The weather was gorgeous, so we walked by the river.",
+            }
+        ],
+        weaknesses=[
+            {
+                "code": "grammar.verb_tense",
+                "severity": "high",
+                "evidenceQuote": "I go to the park yesterday",
+                "teachingNote": "Past-time markers are not yet consistently triggering past verbs.",
+                "practiceGoal": "Practice short yesterday stories using past verbs.",
+            }
+        ],
+        strengths=["You kept the conversation moving with complete ideas."],
+        nextActions=["Practice the simple past in short personal stories."],
+        memoryCandidates=[],
+        stealthProbeAssessments=[
+            {
+                "probeId": None,
+                "opportunityPresent": True,
+                "outcome": "failure",
+                "evidenceQuote": "I go to the park yesterday",
+                "rationale": "A past-event prompt created a fair opportunity.",
+                "confidence": 0.98,
+                "hintLevel": 0,
+            }
+        ],
+        targetEvidence=[],
+    )
+
+
 def _fake_guided_scene_content() -> GuidedSceneMissionAI:
     return GuidedSceneMissionAI(
         type="guided_scene",
@@ -530,6 +580,7 @@ _BUILDERS = {
     ChatReplyAI: _fake_chat_reply,
     ChatPredictionAI: _fake_prediction,
     SessionAnalysisAI: _fake_session_analysis,
+    SessionAnalysisPlanAI: _fake_session_analysis_plan,
     ChatImportAIResult: _fake_chat_import,
     DiagnosticAIResult: _fake_diagnostic,
     LearningPlanAIResult: _fake_plan,

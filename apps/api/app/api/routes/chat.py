@@ -4,7 +4,7 @@ import logging
 import time
 from uuid import uuid4
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, status
 
 from app.api.deps import Identity, get_llm_provider, rate_limited, resolve_identity
 from app.config import settings
@@ -43,7 +43,12 @@ from app.models.learning import (
 )
 from app.services.ai_client import LLMProviderConfig
 from app.services.chat_service import chat_reply, predict_completion
-from app.services.model_catalog import server_model_by_id, server_model_for_name, server_model_pair
+from app.services.model_catalog import (
+    default_text_provider,
+    server_model_by_id,
+    server_model_for_name,
+    server_model_pair,
+)
 from app.services.model_routing import reasoning_effort_for_tier
 from app.services.memory_service import (
     heuristic_memory_candidates,
@@ -190,6 +195,20 @@ def _public_session(session: dict) -> dict:
     ):
         public.pop(internal_key, None)
     return public
+
+
+def _completed_analysis_payload(session: dict, session_id: str) -> dict:
+    return {
+        "status": "completed",
+        "analysis": session.get("analysis"),
+        "savedNotes": session.get("analysisSavedNotes") or [],
+        "savedErrors": session.get("analysisSavedErrors") or [],
+        "updatedSkills": session.get("analysisUpdatedSkills") or [],
+        "sessionId": session_id,
+        "duplicate": True,
+        "stealthPractice": session.get("stealthPractice"),
+        "stealthPractices": _session_stealth_practices(session),
+    }
 
 
 def _session_stealth_probes(session: dict) -> list[dict]:
@@ -427,6 +446,38 @@ def _session_provider(
     # falls back to the current server default below.
     selected = server_model_for_name(str(session.get("textModel") or ""))
     return selected.config if selected is not None else None
+
+
+def _session_analysis_provider(
+    session: dict,
+    request_provider: LLMProviderConfig | None,
+) -> LLMProviderConfig | None:
+    """Resolve durable analysis to Deep even for legacy Fast-only sessions."""
+
+    if request_provider is not None and request_provider.is_byok:
+        return request_provider
+
+    deep_model_id = str(session.get("llmServerDeepModelId") or "").strip()
+    fast_model_id = str(session.get("llmServerFastModelId") or "").strip()
+    if deep_model_id and fast_model_id:
+        selected_pair = server_model_pair(deep_model_id, fast_model_id)
+        if selected_pair is not None:
+            return selected_pair
+
+    server_model_id = str(session.get("llmServerModelId") or "").strip()
+    if server_model_id:
+        selected = server_model_by_id(server_model_id)
+        if selected is not None and selected.mode == "deep":
+            return selected.config
+
+    stored = server_model_for_name(str(session.get("textModel") or ""))
+    if stored is not None and stored.mode == "deep":
+        return stored.config
+
+    # Old sessions persisted only the Fast model name (and no opaque pair
+    # IDs). Their conversation should remain reproducible on that Fast model,
+    # but end-of-session learning analysis follows the current Deep selection.
+    return request_provider or default_text_provider()
 
 
 def _session_text_model(session: dict, llm_provider: LLMProviderConfig | None) -> str:
@@ -898,6 +949,73 @@ def predict(
         raise HTTPException(status_code=500, detail=f"Request {request_id} failed: {e}") from e
 
 
+def _run_chat_analysis_background(
+    session_id: str,
+    req: AnalyzeSessionRequest,
+    llm_provider: LLMProviderConfig | None,
+    identity: Identity,
+) -> None:
+    try:
+        analyze_chat_session(session_id, req, llm_provider, identity)
+    except HTTPException as exc:
+        logger.warning(
+            "analysis_job session=%s status=%s detail=%s",
+            session_id,
+            exc.status_code,
+            exc.detail,
+        )
+    except Exception:
+        logger.exception("analysis_job session=%s unexpected_error", session_id)
+
+
+@router.post(
+    "/sessions/{session_id}/analysis-jobs",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def start_chat_session_analysis(
+    session_id: str,
+    background_tasks: BackgroundTasks,
+    req: AnalyzeSessionRequest = Body(default_factory=AnalyzeSessionRequest),
+    llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
+    identity: Identity = Depends(rate_limited("chat")),
+):
+    """Start durable MAX-reasoning analysis without holding an HTTP request."""
+
+    session = get_chat_session(identity.user_id, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Chat session not found.")
+    if session.get("analysis"):
+        return _completed_analysis_payload(session, session_id)
+    if session.get("analysisClaimId"):
+        return {"status": "processing", "sessionId": session_id}
+
+    background_tasks.add_task(
+        _run_chat_analysis_background,
+        session_id,
+        req,
+        llm_provider,
+        identity,
+    )
+    return {"status": "processing", "sessionId": session_id}
+
+
+@router.get("/sessions/{session_id}/analysis")
+def get_chat_session_analysis(
+    session_id: str,
+    identity: Identity = Depends(resolve_identity),
+):
+    """Return completed analysis or a non-mutating background-job status."""
+
+    session = get_chat_session(identity.user_id, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Chat session not found.")
+    if session.get("analysis"):
+        return _completed_analysis_payload(session, session_id)
+    if session.get("analysisClaimId"):
+        return {"status": "processing", "sessionId": session_id}
+    return {"status": "idle", "sessionId": session_id}
+
+
 @router.post("/sessions/{session_id}/analyze")
 def analyze_chat_session(
     session_id: str,
@@ -915,32 +1033,14 @@ def analyze_chat_session(
     if not session:
         raise HTTPException(status_code=404, detail="Chat session not found.")
     if session.get("analysis"):
-        return {
-            "analysis": session.get("analysis"),
-            "savedNotes": session.get("analysisSavedNotes") or [],
-            "savedErrors": session.get("analysisSavedErrors") or [],
-            "updatedSkills": session.get("analysisUpdatedSkills") or [],
-            "sessionId": session_id,
-            "duplicate": True,
-            "stealthPractice": session.get("stealthPractice"),
-            "stealthPractices": _session_stealth_practices(session),
-        }
+        return _completed_analysis_payload(session, session_id)
 
-    effective_provider = _session_provider(session, llm_provider)
+    effective_provider = _session_analysis_provider(session, llm_provider)
 
     if not claim_chat_session_analysis(user_id, session_id, request_id):
         current = get_chat_session(user_id, session_id)
         if current and current.get("analysis"):
-            return {
-                "analysis": current.get("analysis"),
-                "savedNotes": current.get("analysisSavedNotes") or [],
-                "savedErrors": current.get("analysisSavedErrors") or [],
-                "updatedSkills": current.get("analysisUpdatedSkills") or [],
-                "sessionId": session_id,
-                "duplicate": True,
-                "stealthPractice": current.get("stealthPractice"),
-                "stealthPractices": _session_stealth_practices(current),
-            }
+            return _completed_analysis_payload(current, session_id)
         raise HTTPException(
             status_code=409,
             detail={
