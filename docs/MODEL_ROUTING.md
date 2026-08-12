@@ -22,6 +22,11 @@ Users may select another available Deep/Fast pair or provide BYOK models. A BYOK
 request without a separate Fast model necessarily falls back to its primary
 model.
 
+`ds-v4-flash-0731` is the stable product/catalog alias. Calls to the official
+DeepSeek host translate it server-side to that endpoint's accepted API model
+name, `deepseek-v4-flash`; stored sessions and the public selector keep the
+product alias.
+
 ## Product routing matrix
 
 | Product operation | Route | Reason |

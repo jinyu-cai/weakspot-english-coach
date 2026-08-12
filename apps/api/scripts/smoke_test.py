@@ -158,6 +158,7 @@ def main() -> None:
         OPENROUTER_OPENAI_PROVIDER_ROUTING,
         _provider_connection,
         _provider_extra_body,
+        _provider_request_model,
         _uses_model_studio_qwen,
         _uses_openrouter_api,
         _uses_openrouter_openai_provider,
@@ -228,6 +229,26 @@ def main() -> None:
         default_provider,
         default_provider.fast_model,
     ) == ("test-deepseek-key", "https://api.deepseek.com")
+    assert _provider_request_model(
+        default_provider,
+        default_provider.fast_model,
+        "https://api.deepseek.com",
+    ) == "deepseek-v4-flash"
+    assert _provider_request_model(
+        default_provider,
+        default_provider.fast_model,
+        "https://api.deepseek.com.attacker.example",
+    ) == "ds-v4-flash-0731"
+    assert _provider_request_model(
+        LLMProviderConfig(
+            api_key="custom-key",
+            base_url="https://api.deepseek.com",
+            model="ds-v4-flash-0731",
+            is_byok=True,
+        ),
+        "ds-v4-flash-0731",
+        "https://api.deepseek.com",
+    ) == "ds-v4-flash-0731"
 
     openrouter_only_settings = Settings(
         openrouter_api_key="test-openrouter-key",
@@ -331,6 +352,7 @@ def main() -> None:
             reasoning_effort="medium",
         )
     assert parsed_openrouter_fast.value == "ok"
+    assert openrouter_create_kwargs["model"] == "deepseek-v4-flash"
     assert "extra_body" not in openrouter_create_kwargs
     assert openrouter_create_kwargs["temperature"] == 0.2
     assert openrouter_create_kwargs["reasoning_effort"] == "medium"
