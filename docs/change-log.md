@@ -18,6 +18,54 @@ Known issues:
 Next step:
 ```
 
+## 2026-08-12 — Prevent empty Diagnose structured output
+
+Date: 2026-08-12 PDT
+
+Branch: `codex/fix-diagnose-empty-output` → `main`
+
+GitHub status: Pending review and merge.
+
+Deploy status: Pending backend deployment. No frontend runtime change is
+required.
+
+Root cause:
+
+- Production trace `772a3e76e9` showed both Luna Pro attempts ending with
+  `finish_reason=length`, roughly 24,800 completion tokens, and zero visible
+  output characters. The `max` reasoning policy consumed the available output
+  budget before the required JSON began, so Pydantic correctly reported EOF on
+  an empty string.
+- The validation retry repeated the same reasoning configuration and therefore
+  repeated the same expensive failure.
+
+Summary:
+
+- Diagnose now uses `medium` reasoning for both Fast and Deep reports, reserves
+  an explicit bounded OpenRouter completion budget, and enables strict native
+  JSON Schema output for compatible OpenAI models.
+- An unlimited account is still bounded to the Diagnose service ceiling of
+  32,768 completion tokens; lower guest/member access limits remain enforced.
+- A validation retry lowers reasoning to `minimal` so a length-exhausted first
+  attempt cannot repeat with the identical budget allocation.
+- Removed the Deep prompt's open-ended step-by-step instruction and replaced it
+  with a requirement to finish the concise structured report.
+
+Tests run:
+
+- Backend smoke, Diagnose claim/concurrency, contract-boundary, and full
+  learner-loop integration suites — pass.
+- The smoke gate reproduces an empty `finish_reason=length` first response and
+  verifies recovery with the same 8,192-token completion limit, strict JSON
+  Schema, and `minimal` retry reasoning.
+- `git diff --check` — pass.
+
+Known issues: A real Luna Pro Diagnose call and production health check remain
+to be completed after deployment.
+
+Next step: Open and merge the hotfix PR, deploy the exact merge commit to the
+Oracle backend, and verify Diagnose against the production provider.
+
 ## 2026-08-11 — Route Daily Coach voice roleplays through Realtime
 
 Date: 2026-08-11 PDT

@@ -53,6 +53,13 @@ product alias.
 
 - Fast calls request `medium` reasoning.
 - Deep provider-neutral calls request `max` reasoning.
+- Diagnose is a structured-output exception: both Fast and Deep request
+  `medium` reasoning so the selected model retains enough completion budget for
+  the full diagnostic JSON. OpenRouter OpenAI calls use strict native JSON
+  Schema and an explicit total completion budget capped at 32,768 tokens (or
+  the caller's lower access-tier limit). If validation still fails, the second
+  attempt drops to `minimal` reasoning instead of repeating the same
+  output-starved request.
 - OpenRouter calls send the provider-neutral `reasoning.effort` object; the
   official DeepSeek compatibility endpoint receives `reasoning_effort` when supported.
 - Luna Pro dynamic scenes keep `max` reasoning but request a compact scene plan

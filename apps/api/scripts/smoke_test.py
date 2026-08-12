@@ -357,6 +357,56 @@ def main() -> None:
     assert openrouter_create_kwargs["temperature"] == 0.2
     assert openrouter_create_kwargs["reasoning_effort"] == "medium"
 
+    openrouter_retry_calls = []
+
+    def create_openrouter_retry_completion(**kwargs):
+        openrouter_retry_calls.append(kwargs)
+        if len(openrouter_retry_calls) == 1:
+            content = ""
+            finish_reason = "length"
+        else:
+            content = '{"value":"recovered"}'
+            finish_reason = "stop"
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content=content),
+                    finish_reason=finish_reason,
+                )
+            ],
+            usage=None,
+        )
+
+    openrouter_retry_client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=create_openrouter_retry_completion)
+        )
+    )
+    with (
+        patch.object(ai_client_module.settings, "use_fake_ai", False),
+        patch.object(ai_client_module, "get_client", return_value=openrouter_retry_client),
+    ):
+        parsed_openrouter_retry = ai_client_module.parse_with_model(
+            messages=[
+                {"role": "system", "content": "Return a result."},
+                {"role": "user", "content": "Test."},
+            ],
+            response_model=OpenRouterSmokeResult,
+            model=fixed_openrouter_provider.model,
+            provider=fixed_openrouter_provider,
+            reasoning_effort="medium",
+            retry_reasoning_effort="minimal",
+            openrouter_completion_token_budget=8_192,
+            use_native_structured_output=True,
+        )
+    assert parsed_openrouter_retry.value == "recovered"
+    assert len(openrouter_retry_calls) == 2
+    assert openrouter_retry_calls[0]["max_completion_tokens"] == 8_192
+    assert openrouter_retry_calls[0]["extra_body"]["reasoning"] == {"effort": "medium"}
+    assert openrouter_retry_calls[1]["extra_body"]["reasoning"] == {"effort": "minimal"}
+    assert openrouter_retry_calls[1]["response_format"]["type"] == "json_schema"
+    assert openrouter_retry_calls[1]["response_format"]["json_schema"]["strict"] is True
+
     qwen_settings = Settings(
         qwen_model_studio_api_key="test-qwen-key",
         openrouter_api_key="",
@@ -411,7 +461,11 @@ def main() -> None:
     from app.api.routes.chat import _session_analysis_provider
     from app.services.chat_import_service import select_chat_import_model
     from app.services.coach_service import selected_coach_model
-    from app.services.diagnose_service import select_diagnose_model
+    from app.services.diagnose_service import (
+        DIAGNOSIS_MAX_OUTPUT_TOKENS,
+        diagnose_english_text,
+        select_diagnose_model,
+    )
     from app.services.input_learning_service import select_input_learning_model
     from app.services.model_routing import reasoning_effort_for_tier
     from app.services.plan_service import select_plan_generation_model
@@ -422,7 +476,7 @@ def main() -> None:
         select_practice_grading_model,
     )
     from app.services.session_analysis_service import select_session_analysis_model
-    from app.services import practice_service
+    from app.services import diagnose_service, practice_service
     from app.services.fake_ai import fake_for
 
     routing_provider = LLMProviderConfig(
@@ -459,6 +513,44 @@ def main() -> None:
     ) == "fast-model"
     assert reasoning_effort_for_tier("fast") == "medium"
     assert reasoning_effort_for_tier("deep") == "max"
+
+    diagnose_calls = []
+    original_diagnose_parse = diagnose_service.parse_with_model
+
+    def capture_diagnose_call(**kwargs):
+        diagnose_calls.append(kwargs)
+        return fake_for(kwargs["response_model"])
+
+    diagnose_service.parse_with_model = capture_diagnose_call
+    try:
+        diagnose_english_text(
+            "Yesterday I go to the store and buy two apple.",
+            diagnosis_mode="deep",
+            llm_provider=fixed_openrouter_provider,
+            max_output_tokens=8_192,
+        )
+        diagnose_english_text(
+            "Yesterday I go to the store and buy two apple.",
+            diagnosis_mode="deep",
+            llm_provider=fixed_openrouter_provider,
+            max_output_tokens=None,
+        )
+    finally:
+        diagnose_service.parse_with_model = original_diagnose_parse
+
+    assert diagnose_calls[0]["model"] == "openai/gpt-5.6-luna-pro"
+    assert diagnose_calls[0]["max_tokens"] == 8_192
+    assert diagnose_calls[0]["openrouter_completion_token_budget"] == 8_192
+    assert diagnose_calls[0]["reasoning_effort"] == "medium"
+    assert diagnose_calls[0]["retry_reasoning_effort"] == "minimal"
+    assert diagnose_calls[0]["use_native_structured_output"] is True
+    assert "Think step by step" not in diagnose_calls[0]["messages"][0]["content"]
+    assert diagnose_calls[1]["max_tokens"] == DIAGNOSIS_MAX_OUTPUT_TOKENS
+    assert (
+        diagnose_calls[1]["openrouter_completion_token_budget"]
+        == DIAGNOSIS_MAX_OUTPUT_TOKENS
+    )
+    print("Diagnose completion budget + strict structured-output retry policy OK.")
 
     practice_calls = []
     original_practice_parse = practice_service.parse_with_model
