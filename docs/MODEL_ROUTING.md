@@ -7,8 +7,10 @@ routes provider-neutral work to a `Deep` or `Fast` slot.
 Target text-chat routing:
 
 - Deep slot: `openai/gpt-5.6-luna-pro` through OpenRouter
-- Fast slot: `openai/gpt-5.6-luna` through OpenRouter
-- OpenRouter provider routing: only `openai`, with provider fallbacks disabled
+- Default Fast slot: `ds-v4-flash-0731` through the official DeepSeek API
+- Alternate Fast slot: `openai/gpt-5.6-luna` through OpenRouter
+- Reasoning: Deep uses `max`; Fast uses `medium`
+- Luna Pro provider routing: only `openai`, with provider fallbacks disabled
 - Adaptive mission planner: `gpt-5.6-sol` through the OpenAI Responses API
 - Realtime voice: the configured OpenAI Realtime model
 - Speech: the configured Qwen3-TTS-Flash model
@@ -24,7 +26,7 @@ model.
 
 | Product operation | Route | Reason |
 | --- | --- | --- |
-| Diagnose writing | OpenRouter Luna Fast/Deep; Fast API default | Fast supports interactive checks; Deep remains available for a thorough report. When the OpenRouter key is configured, browser provider overrides are ignored for Diagnose. |
+| Diagnose writing | Selectable Fast/Deep pair; DS V4 Flash 0731 Fast / Luna Pro Deep by default | Fast supports interactive checks; Deep remains available for a thorough report. The selected safe pair is honored for Diagnose. |
 | Import ChatGPT history | User-selected Fast/Deep; Fast default | The learner controls the tradeoff for potentially large imports. |
 | Chat reply | Fast default; Deep optional per session | A conversation turn is latency-sensitive; the chosen model is pinned to the session. |
 | Chat completion suggestions | Fast | Small, bounded prediction used while typing. |
@@ -44,14 +46,15 @@ model.
 
 ## Reasoning policy
 
-- Fast calls omit `reasoning_effort`, avoiding hidden high-reasoning latency on
-  models intended for quick interaction.
-- Deep provider-neutral calls request `high` reasoning when supported.
+- Fast calls request `medium` reasoning.
+- Deep provider-neutral calls request `max` reasoning.
+- OpenRouter calls send the provider-neutral `reasoning.effort` object; the
+  official DeepSeek compatibility endpoint receives `reasoning_effort` when supported.
 - The GPT-5.6 adaptive mission planner uses its separately configured reasoning
   level (`medium` in the current production deployment).
 - Qwen Model Studio JSON calls keep thinking disabled because this compatibility
   path relies on its structured JSON behavior.
 
 Model routing is covered by the offline smoke gate, including the exact Practice
-contract: generation uses Deep, grading uses Fast, and Fast grading does not ask
-for high reasoning.
+contract: generation uses Deep with max reasoning and grading uses Fast with
+medium reasoning.

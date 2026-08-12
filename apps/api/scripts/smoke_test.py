@@ -159,10 +159,13 @@ def main() -> None:
         _provider_connection,
         _provider_extra_body,
         _uses_model_studio_qwen,
+        _uses_openrouter_api,
         _uses_openrouter_openai_provider,
     )
     from app.services.model_catalog import (
         catalog_payload,
+        default_server_model_ids,
+        default_text_provider,
         openrouter_text_provider,
         server_model_by_id,
         server_model_pair,
@@ -178,14 +181,26 @@ def main() -> None:
     assert openrouter_settings.default_llm_api_key == "test-openrouter-key"
     assert openrouter_settings.default_llm_base_url == "https://openrouter.ai/api/v1"
     assert openrouter_settings.default_llm_model == "openai/gpt-5.6-luna-pro"
-    assert openrouter_settings.default_llm_fast_model == "openai/gpt-5.6-luna"
+    assert openrouter_settings.default_llm_fast_model == "ds-v4-flash-0731"
+    assert openrouter_settings.default_llm_fast_api_key == "test-deepseek-key"
+    assert openrouter_settings.default_llm_fast_base_url == "https://api.deepseek.com"
+    assert default_server_model_ids(openrouter_settings) == (
+        "openrouter-deep",
+        "deepseek-fast",
+    )
     openrouter_catalog = catalog_payload(openrouter_settings)
+    assert openrouter_catalog["models"][0]["fastModel"] == "ds-v4-flash-0731"
     assert [entry["id"] for entry in openrouter_catalog["models"][:3]] == [
         "default",
         "openrouter-deep",
         "openrouter-fast",
     ]
     assert all("apiKey" not in entry and "baseUrl" not in entry for entry in openrouter_catalog["models"])
+    openrouter_catalog_by_id = {
+        entry["id"]: entry for entry in openrouter_catalog["models"]
+    }
+    assert openrouter_catalog_by_id["openrouter-fast"]["model"] == "openai/gpt-5.6-luna"
+    assert openrouter_catalog_by_id["deepseek-fast"]["model"] == "ds-v4-flash-0731"
     selected_openrouter_pair = server_model_pair(
         "openrouter-deep",
         "openrouter-fast",
@@ -202,6 +217,33 @@ def main() -> None:
     assert fixed_openrouter_provider is not None
     assert fixed_openrouter_provider.model == "openai/gpt-5.6-luna-pro"
     assert fixed_openrouter_provider.fast_model == "openai/gpt-5.6-luna"
+    default_provider = default_text_provider(openrouter_settings)
+    assert default_provider is not None
+    assert default_provider.model == "openai/gpt-5.6-luna-pro"
+    assert default_provider.fast_model == "ds-v4-flash-0731"
+    assert default_provider.server_deep_model_id == "openrouter-deep"
+    assert default_provider.server_fast_model_id == "deepseek-fast"
+    assert default_provider.is_default is True
+    assert _provider_connection(
+        default_provider,
+        default_provider.fast_model,
+    ) == ("test-deepseek-key", "https://api.deepseek.com")
+
+    openrouter_only_settings = Settings(
+        openrouter_api_key="test-openrouter-key",
+        deepseek_api_key="",
+        qwen_model_studio_api_key="",
+        openai_compat_api_key="",
+    )
+    assert default_server_model_ids(openrouter_only_settings) == (
+        "openrouter-deep",
+        "openrouter-fast",
+    )
+    openrouter_only_provider = default_text_provider(openrouter_only_settings)
+    assert openrouter_only_provider is not None
+    assert openrouter_only_provider.fast_model == "openai/gpt-5.6-luna"
+    assert _uses_openrouter_api(fixed_openrouter_provider.base_url)
+    assert not _uses_openrouter_api("https://openrouter.ai.attacker.example/api/v1")
     assert _uses_openrouter_openai_provider(
         fixed_openrouter_provider.model,
         fixed_openrouter_provider.base_url,
@@ -213,7 +255,19 @@ def main() -> None:
     assert _provider_extra_body(
         fixed_openrouter_provider.model,
         fixed_openrouter_provider.base_url,
-    ) == {"provider": OPENROUTER_OPENAI_PROVIDER_ROUTING}
+        "max",
+    ) == {
+        "provider": OPENROUTER_OPENAI_PROVIDER_ROUTING,
+        "reasoning": {"effort": "max"},
+    }
+    assert _provider_extra_body(
+        fixed_openrouter_provider.fast_model,
+        fixed_openrouter_provider.base_url,
+        "medium",
+    ) == {
+        "provider": OPENROUTER_OPENAI_PROVIDER_ROUTING,
+        "reasoning": {"effort": "medium"},
+    }
 
     class OpenRouterSmokeResult(BaseModel):
         value: str
@@ -251,14 +305,35 @@ def main() -> None:
             response_model=OpenRouterSmokeResult,
             model=fixed_openrouter_provider.model,
             provider=fixed_openrouter_provider,
-            reasoning_effort="high",
+            reasoning_effort="max",
         )
     assert parsed_openrouter.value == "ok"
     assert openrouter_create_kwargs["extra_body"] == {
-        "provider": OPENROUTER_OPENAI_PROVIDER_ROUTING
+        "provider": OPENROUTER_OPENAI_PROVIDER_ROUTING,
+        "reasoning": {"effort": "max"},
     }
     assert "temperature" not in openrouter_create_kwargs
     assert "reasoning_effort" not in openrouter_create_kwargs
+
+    openrouter_create_kwargs.clear()
+    with (
+        patch.object(ai_client_module.settings, "use_fake_ai", False),
+        patch.object(ai_client_module, "get_client", return_value=openrouter_client),
+    ):
+        parsed_openrouter_fast = ai_client_module.parse_with_model(
+            messages=[
+                {"role": "system", "content": "Return a result."},
+                {"role": "user", "content": "Test."},
+            ],
+            response_model=OpenRouterSmokeResult,
+            model=default_provider.fast_model,
+            provider=default_provider,
+            reasoning_effort="medium",
+        )
+    assert parsed_openrouter_fast.value == "ok"
+    assert "extra_body" not in openrouter_create_kwargs
+    assert openrouter_create_kwargs["temperature"] == 0.2
+    assert openrouter_create_kwargs["reasoning_effort"] == "medium"
 
     qwen_settings = Settings(
         qwen_model_studio_api_key="test-qwen-key",
@@ -284,7 +359,7 @@ def main() -> None:
     mixed_provider = server_model_pair("qwen-deep", "deepseek-fast", mixed_settings)
     assert mixed_provider is not None
     assert mixed_provider.model == "qwen3.7-max"
-    assert mixed_provider.fast_model == "deepseek-v4-flash"
+    assert mixed_provider.fast_model == "ds-v4-flash-0731"
     assert mixed_provider.server_deep_model_id == "qwen-deep"
     assert mixed_provider.server_fast_model_id == "deepseek-fast"
     assert _provider_connection(mixed_provider, mixed_provider.model) == (
@@ -342,6 +417,7 @@ def main() -> None:
     assert select_input_learning_model(routing_provider) == "deep-model"
     assert select_diagnose_model("fast", routing_provider) == "fast-model"
     assert select_diagnose_model("deep", routing_provider) == "deep-model"
+    assert select_diagnose_model("fast", default_provider) == "ds-v4-flash-0731"
     assert select_diagnose_model("fast", fixed_openrouter_provider) == "openai/gpt-5.6-luna"
     assert select_diagnose_model("deep", fixed_openrouter_provider) == "openai/gpt-5.6-luna-pro"
     assert select_chat_import_model("fast", routing_provider) == "fast-model"
@@ -351,8 +427,8 @@ def main() -> None:
     assert selected_coach_model(
         CoachMissionRequest(generationMode="fast"), routing_provider
     ) == "fast-model"
-    assert reasoning_effort_for_tier("fast") is None
-    assert reasoning_effort_for_tier("deep") == "high"
+    assert reasoning_effort_for_tier("fast") == "medium"
+    assert reasoning_effort_for_tier("deep") == "max"
 
     practice_calls = []
     original_practice_parse = practice_service.parse_with_model
@@ -381,11 +457,11 @@ def main() -> None:
         practice_service.parse_with_model = original_practice_parse
 
     assert practice_calls[0]["model"] == "deep-model"
-    assert practice_calls[0]["reasoning_effort"] == "high"
+    assert practice_calls[0]["reasoning_effort"] == "max"
     assert practice_calls[1]["model"] == "fast-model"
-    assert practice_calls[1]["reasoning_effort"] is None
+    assert practice_calls[1]["reasoning_effort"] == "medium"
     assert practice_calls[1]["max_tokens"] == 2_048
-    print("Task-aware Deep/Fast routing + Practice grading latency policy OK.")
+    print("Task-aware Deep/Fast routing + explicit max/medium reasoning policy OK.")
 
     from app.core.mastery import update_skill_from_error
     from app.db.serialization import clean, to_dynamo

@@ -10,7 +10,11 @@ from fastapi import Depends, Header, HTTPException, Request, Response
 from app.config import settings
 from app.db.repositories import get_access_role, incr_rate_counter
 from app.services.ai_client import LLMProviderConfig
-from app.services.model_catalog import server_model_by_id, server_model_pair
+from app.services.model_catalog import (
+    default_text_provider,
+    server_model_by_id,
+    server_model_pair,
+)
 
 
 def get_llm_provider(
@@ -67,7 +71,7 @@ def get_llm_provider(
                 detail="Choose either a server model or a custom LLM provider, not both.",
             )
         if requested_server_model == "default":
-            return None
+            return default_text_provider()
         selected = server_model_by_id(requested_server_model)
         if selected is None:
             raise HTTPException(
@@ -80,7 +84,7 @@ def get_llm_provider(
         return selected.config
 
     if not has_byok_values:
-        return None
+        return default_text_provider()
 
     api_key = (x_llm_api_key or "").strip()
     base_url = (x_llm_base_url or "https://api.openai.com/v1").strip().rstrip("/")

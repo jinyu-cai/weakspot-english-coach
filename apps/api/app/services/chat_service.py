@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from app.config import settings
 from app.models.chat import ChatPredictionAI, ChatReplyAI
-from app.services.ai_client import HIGH_REASONING_EFFORT, LLMProviderConfig, parse_with_model
+from app.services.ai_client import DEEP_REASONING_EFFORT, LLMProviderConfig, parse_with_model
 from app.services.memory_service import MEMORY_EXTRACTION_INSTRUCTION
 from app.services.model_routing import reasoning_effort_for_tier, select_text_model
 
@@ -105,7 +105,7 @@ def chat_reply(
     trace_id: Optional[str] = None,
     memory_context: Optional[str] = None,
     hidden_practice_instruction: Optional[str] = None,
-    reasoning_effort: Optional[str] = HIGH_REASONING_EFFORT,
+    reasoning_effort: Optional[str] = DEEP_REASONING_EFFORT,
 ) -> ChatReplyAI:
     messages = build_chat_messages(
         history,

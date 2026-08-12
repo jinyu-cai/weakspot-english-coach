@@ -64,7 +64,7 @@ from app.services.stealth_practice_service import (
 router = APIRouter(prefix="/chat")
 logger = logging.getLogger("uvicorn.error")
 
-FALLBACK_DEFAULT_TEXT_CHAT_MODEL = "deepseek-v4-flash"
+FALLBACK_DEFAULT_TEXT_CHAT_MODEL = "ds-v4-flash-0731"
 MAX_TEXT_STEALTH_PROBES = 3
 MAX_TEXT_STEALTH_PROBE_HISTORY = 12
 
@@ -364,7 +364,7 @@ def _new_session_model(
     llm_provider: LLMProviderConfig | None,
 ) -> tuple[str, str, str | None, str | None, str | None]:
     """Resolve a new session to its exact server model when possible."""
-    if llm_provider is not None:
+    if llm_provider is not None and (not llm_provider.is_default or not requested_model):
         # Preserve legacy clients: paired server choices historically used the
         # Fast slot, while BYOK chat historically used its primary model.
         resolved_mode = requested_mode or (

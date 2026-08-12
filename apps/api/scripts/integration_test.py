@@ -246,10 +246,10 @@ def main() -> int:
 
         assert plan_call["model"] == "deep-model", plan_call
         assert plan_call["max_tokens"] == 12_000, plan_call
-        assert plan_call["reasoning_effort"] == "high", plan_call
+        assert plan_call["reasoning_effort"] == "max", plan_call
         assert analysis_call["model"] == "deep-model", analysis_call
         assert analysis_call["max_tokens"] == 12_000, analysis_call
-        assert analysis_call["reasoning_effort"] == "high", analysis_call
+        assert analysis_call["reasoning_effort"] == "max", analysis_call
         oversized_analysis = SessionAnalysisAI(
             summaryZh="Bounded",
             strengthsZh=[f"Strength {index}" for index in range(10)],
@@ -379,7 +379,7 @@ def main() -> int:
         assert (
             practice_grade_call["model"] == settings.default_llm_fast_model
         ), practice_grade_call
-        assert practice_grade_call["reasoning_effort"] is None, practice_grade_call
+        assert practice_grade_call["reasoning_effort"] == "medium", practice_grade_call
         assert practice_grade_call["max_tokens"] == 2_048, practice_grade_call
         print(
             f"5. POST /practice/submit   -> score {g['grade']['score']}, "
@@ -600,10 +600,19 @@ def main() -> int:
         original_chat_reply = chat_routes.chat_reply
         selected_text_models = []
         selected_text_max_tokens = []
+        selected_text_reasoning_efforts = []
 
-        def fake_chat_reply(*, model=None, llm_provider=None, max_tokens=None, **kwargs):
+        def fake_chat_reply(
+            *,
+            model=None,
+            llm_provider=None,
+            max_tokens=None,
+            reasoning_effort=None,
+            **kwargs,
+        ):
             selected_text_models.append(model or (llm_provider.model if llm_provider else None))
             selected_text_max_tokens.append(max_tokens)
+            selected_text_reasoning_efforts.append(reasoning_effort)
             return ChatReplyAI(
                 reply="Model routing test reply.",
                 corrections=[],
@@ -615,6 +624,10 @@ def main() -> int:
         model_setting_names = (
             "deepseek_api_key",
             "openai_compat_api_key",
+            "openrouter_api_key",
+            "openrouter_base_url",
+            "openrouter_model",
+            "openrouter_fast_model",
             "qwen_model_studio_api_key",
             "qwen_model_studio_base_url",
             "qwen_model_studio_model",
@@ -627,6 +640,7 @@ def main() -> int:
             # sent to DashScope.
             settings.deepseek_api_key = ""
             settings.openai_compat_api_key = ""
+            settings.openrouter_api_key = ""
             settings.qwen_model_studio_api_key = "test-qwen-key"
             settings.qwen_model_studio_base_url = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
             settings.qwen_model_studio_model = "qwen3.7-max"
@@ -680,6 +694,7 @@ def main() -> int:
             )
             assert r.status_code == 200, r.text
             assert selected_text_models[-1] == "qwen3.7-plus", selected_text_models
+            assert selected_text_reasoning_efforts[-1] == "medium", selected_text_reasoning_efforts
 
             r = client.post(
                 "/api/v1/chat/sessions",
@@ -703,6 +718,7 @@ def main() -> int:
             )
             assert r.status_code == 200, r.text
             assert selected_text_models[-1] == "qwen3.7-max", selected_text_models
+            assert selected_text_reasoning_efforts[-1] == "max", selected_text_reasoning_efforts
 
             r = client.post(
                 "/api/v1/chat/sessions",
@@ -749,7 +765,7 @@ def main() -> int:
             )
             assert r.status_code == 200, r.text
             mixed_session = r.json()["session"]
-            assert mixed_session["textModel"] == "deepseek-v4-flash", mixed_session
+            assert mixed_session["textModel"] == "ds-v4-flash-0731", mixed_session
             assert mixed_session["textModelMode"] == "fast", mixed_session
             assert mixed_session["llmServerDeepModelId"] == "qwen-deep", mixed_session
             assert mixed_session["llmServerFastModelId"] == "deepseek-fast", mixed_session
@@ -763,7 +779,7 @@ def main() -> int:
                 json={"userId": user, "sessionId": mixed_session["id"], "text": "Hello from mixed routing."},
             )
             assert r.status_code == 200, r.text
-            assert selected_text_models[-1] == "deepseek-v4-flash", selected_text_models
+            assert selected_text_models[-1] == "ds-v4-flash-0731", selected_text_models
 
             r = client.post(
                 "/api/v1/chat/sessions",

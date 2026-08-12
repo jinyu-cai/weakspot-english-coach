@@ -6,7 +6,7 @@ and provider on the server. The legacy single-ID path remains available for
 older clients.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal, Optional
 
 from app.config import Settings, settings
@@ -109,8 +109,8 @@ def configured_server_models(config: Settings = settings) -> list[ServerModelOpt
     _add_option(
         options,
         option_id="deepseek-fast",
-        label="DeepSeek · Fast",
-        provider_label="DeepSeek",
+        label="DS V4 Flash 0731",
+        provider_label="DeepSeek Official",
         api_key=config.deepseek_api_key,
         base_url=config.deepseek_base_url,
         model=config.llm_model_fast,
@@ -171,7 +171,7 @@ def configured_server_models(config: Settings = settings) -> list[ServerModelOpt
 
 
 def openrouter_text_provider(config: Settings = settings) -> Optional[LLMProviderConfig]:
-    """Return the deployment's fixed OpenRouter Deep/Fast pair when configured."""
+    """Return the selectable OpenRouter Luna Pro/Luna pair when configured."""
     if not config.uses_openrouter:
         return None
     return LLMProviderConfig(
@@ -191,8 +191,14 @@ def catalog_payload(config: Settings = settings) -> dict:
     model and deep requests use the configured deep model. Explicit entries use
     one exact model for every text request.
     """
-    default_model = _normalized(config.default_llm_model)
-    default_fast_model = _normalized(config.default_llm_fast_model) or default_model
+    default_provider = default_text_provider(config)
+    default_model = _normalized(
+        default_provider.model if default_provider else config.default_llm_model
+    )
+    default_fast_model = _normalized(
+        default_provider.fast_model if default_provider and default_provider.fast_model
+        else config.default_llm_fast_model
+    ) or default_model
     return {
         "models": [
             {
@@ -235,6 +241,29 @@ def server_model_pair(
         server_deep_model_id=deep.id,
         server_fast_model_id=fast.id,
     )
+
+
+def default_server_model_ids(config: Settings = settings) -> tuple[str, str] | None:
+    """Return the preferred Deep/Fast IDs for this deployment's configured keys."""
+    if config.uses_openrouter:
+        fast_id = "deepseek-fast" if config.uses_deepseek else "openrouter-fast"
+        return "openrouter-deep", fast_id
+    if config.uses_qwen_model_studio:
+        return "qwen-deep", "qwen-fast"
+    if config.openai_compat_api_key.strip():
+        return "openai-compatible-deep", "openai-compatible-fast"
+    if config.uses_deepseek:
+        return "deepseek-deep", "deepseek-fast"
+    return None
+
+
+def default_text_provider(config: Settings = settings) -> Optional[LLMProviderConfig]:
+    """Resolve the deployment default, including a cross-provider Fast slot."""
+    model_ids = default_server_model_ids(config)
+    if model_ids is None:
+        return None
+    provider = server_model_pair(*model_ids, config=config)
+    return replace(provider, is_default=True) if provider is not None else None
 
 
 def server_model_for_name(model: str, config: Settings = settings) -> Optional[ServerModelOption]:

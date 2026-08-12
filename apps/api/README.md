@@ -348,19 +348,19 @@ Then put Nginx in front and issue HTTPS with Certbot (see `DEPLOY.md` and
 The frontend's `NEXT_PUBLIC_API_BASE_URL` must point at
 the HTTPS backend domain, and that domain must be listed in `CORS_ORIGINS`.
 Production uses one stable API hostname: Cloudflare normally sends it to the
-Oracle/OpenRouter deployment and sends it to the release-matched Alibaba/Qwen
+Oracle/DeepSeek deployment and sends it to the release-matched Alibaba/Qwen
 deployment only for the final submission demo. Deploy and health-check the same
 commit on both servers before changing the Cloudflare origin.
 
 ## AI client note (OpenAI-compatible / BYOK)
 
 The backend uses the OpenAI Python SDK against an OpenAI-compatible chat
-completions API. The current Oracle daily-production deployment uses OpenRouter
-with GPT-5.6 Luna Pro/Luna for deep/fast text, Qwen `text-embedding-v4` for
-semantic retrieval, and Qwen3-TTS-Flash for Coach Speech. The release-matched
-Alibaba demo deployment uses Qwen Model Studio for text and embeddings. The
-code remains provider-neutral; each deployment chooses its default from its
-configured server-side environment. Provider-neutral deployments can use:
+completions API. The current Oracle daily-production deployment uses DeepSeek
+for deep/fast text, Qwen `text-embedding-v4` for semantic retrieval, and
+Qwen3-TTS-Flash for Coach Speech. The release-matched Alibaba demo deployment
+uses Qwen Model Studio for text and embeddings. The code remains
+provider-neutral; each deployment chooses its default from its configured
+server-side environment. Provider-neutral deployments can use:
 
 ```bash
 OPENAI_COMPAT_API_KEY=...
@@ -404,20 +404,21 @@ X-LLM-Server-Fast-Model: deepseek-fast
 ```
 
 The server resolves that ID to its matching key, endpoint, and exact model. No
-provider credentials or base URLs are returned to the browser. “Server
-default” is deployment-specific: Oracle currently resolves to its OpenRouter
-Luna Pro/Luna pair, while Alibaba resolves to its Qwen Max/Plus pair. An
-explicitly selected slot can use any matching configured model, including
-cross-provider combinations.
+provider credentials or base URLs are returned to the browser. When both
+OpenRouter and DeepSeek are configured, “Server default” resolves to Luna Pro
+Deep plus official DS V4 Flash 0731 Fast. OpenRouter Luna remains a selectable
+Fast alternative. Other deployments can default to their configured Qwen or
+DeepSeek pair. An explicitly selected slot can use any matching configured
+model, including mixed-provider combinations.
 The built-in selector applies to text features (diagnosis, plans, practice,
 imports, and new text chats). Text-chat sessions retain their chosen pair so a
 later browser selection does not change an existing session. The legacy
 `X-LLM-Server-Model` single-model header remains supported for older clients.
 
-With OpenRouter, DeepSeek, and/or Qwen configured, the catalog exposes each
-configured model. Removing a provider removes its choices; old chat sessions
-safely fall back to the current server default instead of sending a model name
-to the wrong provider.
+With both DeepSeek and Qwen configured, the catalog exposes each configured
+model. Removing a provider removes its choices; old chat sessions safely fall
+back to the current server default instead of sending a model name to the wrong
+provider.
 
 The app also supports per-request BYOK for OpenAI-compatible providers. Send:
 

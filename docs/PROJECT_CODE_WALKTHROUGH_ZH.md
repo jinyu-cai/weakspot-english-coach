@@ -100,13 +100,11 @@ DiagnosticInput（React）
 重要 property：
 
 - `cors_origin_list`：把逗号分隔的域名变成列表。
-- `uses_openrouter`：是否配置 OpenRouter server-side key；配置后它成为默认文字 provider。
 - `uses_qwen_model_studio`：是否配置 Qwen Model Studio key。
-- `embedding_api_key`、`embedding_base_url`：允许 Oracle 在使用 OpenRouter/DeepSeek 文字模型时，独立复用
-  Qwen `text-embedding-v4` 做语义召回。
+- `embedding_api_key`、`embedding_base_url`：允许 Oracle 在仍使用 DeepSeek 文字模型时，独立复用 Qwen
+  `text-embedding-v4` 做语义召回。
 - `qwen_tts_effective_api_key`：优先专用 TTS key，否则依次复用 Model Studio / embedding key。
-- `default_llm_api_key`、`default_llm_base_url`、`default_llm_model`、`default_llm_fast_model`：依次解析
-  OpenRouter、Qwen、通用 OpenAI-compatible 和旧 DeepSeek 配置。
+- `default_llm_api_key`、`default_llm_base_url`、`default_llm_model`、`default_llm_fast_model`：Qwen 已配置时优先 Qwen；否则使用通用 OpenAI-compatible 配置，再回退旧 DeepSeek 配置。
 - `openai_build_week_effective_api_key`：自适应任务规划器未配置专用 key 时复用 `OPENAI_API_KEY`。
 - `openai_realtime_model_list`：解析允许的语音模型列表。
 - `owner_login_set`、`owner_email_set`、`member_login_set`、`member_email_set`：将配置名单转成小写集合。
@@ -114,9 +112,9 @@ DiagnosticInput（React）
 
 密钥只存在后端 `.env` 或云环境；浏览器绝不能读到 `qwen_model_studio_api_key`、AWS key、session secret 或 OAuth secret。
 
-例如当前 Oracle 以 OpenRouter Luna Pro/Luna 作为默认文字 pair，同时保留已配置的 DeepSeek 文字选项，
-并通过 `QWEN_EMBEDDING_API_KEY` 使用 Qwen embedding；`qwen_tts_effective_api_key` 还可复用同一 Qwen
-key，而不会把它下发到浏览器。
+例如 Oracle 可以只配置 DeepSeek 文字 key + `QWEN_EMBEDDING_API_KEY`：模型目录仍显示 DeepSeek，
+Memory 召回却可使用 Qwen embedding；`qwen_tts_effective_api_key` 还可复用同一 Qwen key，而不会把它下发
+到浏览器。
 
 ### 4.3 `app/api/deps.py`
 
@@ -338,7 +336,8 @@ Practice、Import 等还承担跨 service/repository 的业务编排。长期重
 
 - `model_catalog._normalized`：标准化模型名；`_add_option`：加入不重复安全选项；`configured_server_models`：由配置产生可选 deep/fast 模型；`catalog_payload`：公开 JSON；`server_model_by_id`、`server_model_pair`、`server_model_for_name`：allowlist 查询。
 - `model_routing.select_text_model`：把 `fast/deep` tier 解析到请求 provider 或服务器默认模型；
-  `reasoning_effort_for_tier`：fast 省略 reasoning effort，deep 使用高推理设置。
+  `reasoning_effort_for_tier`：fast 使用 `medium`，deep 使用 `max`；OpenRouter adapter 将其转换为统一的
+  `reasoning.effort` 请求对象。
 - `embedding_client.embeddings_available`：检查 Qwen embedding 配置；`_get_client`：创建 client；`embed_texts`：批量获取向量并在失败时返回可降级结果；`embed_text`：单条包装。
 - `output_language.normalize_output_language`：不合法语言回退英文；`language_instruction`：返回给模型的回答语言规则。
 - `tts_service._generation_url`：只接受 HTTPS Qwen base URL；`_validated_audio_url`：只接受 HTTPS 且属于
@@ -557,10 +556,9 @@ Practice、Import 等还承担跨 service/repository 的业务编排。长期重
 
 部署时，Next.js 在 Vercel，FastAPI 在 Docker/Nginx 后。生产前端只知道稳定 API host；模型、AWS、OAuth 密钥留在后端。详细运行命令见 `apps/api/README.md`、`apps/web/README.md` 和 `LOCAL_TESTING.md`。
 
-当前 Oracle 日常源站不是“一个模型包办全部”：默认文字 pair 是 OpenRouter Luna Pro/Luna，安全目录还
-保留已配置的 DeepSeek deep/fast；语义检索使用 Qwen `text-embedding-v4`，Coach Speech 使用
-Qwen3-TTS-Flash，OpenAI key 服务 Realtime 和 opt-in GPT-5.6 自适应任务。理解部署时要按这些独立路径
-检查，不能用一次文字 chat 成功推断所有语音/embedding 功能也成功。
+当前 Oracle 日常源站不是“一个模型包办全部”：安全文字目录是 DeepSeek deep/fast，语义检索使用 Qwen
+`text-embedding-v4`，Coach Speech 使用 Qwen3-TTS-Flash，OpenAI key 服务 Realtime 和 opt-in GPT-5.6
+自适应任务。理解部署时要按这四条独立路径检查，不能用一次文字 chat 成功推断所有语音/embedding 功能也成功。
 
 ## 11. 修改功能时的实战路线
 
