@@ -24,10 +24,19 @@ Date: 2026-08-11 PDT
 
 Branch: `codex/ds-v4-flash-release` → `main`
 
-GitHub status: Release PR pending.
+GitHub status: PR #99 merged into `main` at
+`286d1fd81453d6f5cd762ae33582b6280f72e430`. All GitHub/Vercel checks passed.
 
-Deploy status: Pending merge. The normal production targets are Vercel for the
-frontend and `oracle-us-sj` for the backend.
+Deploy status: **frontend and backend LIVE**. Vercel deployment
+`CqY4qNVRPySZQyBnvrdS9xbRrSHY` succeeded for the merged commit, the production
+Chat page returns HTTP 200, and its JavaScript bundle contains
+`ds-v4-flash-0731`. The exact merged `apps/api` archive with SHA-256
+`ad1a18d88b5c4d09afcfa89d2335f263139c3eda487ba966ccf1fbf413b0ef7e`
+was deployed to `oracle-us-sj`. The production `.env` was preserved and updated
+only from the prior Fast model to `ds-v4-flash-0731`; its resulting SHA-256 is
+`7d46de79fe375cead8a37a77fe9b65c5fc94ba2da60aac4bf6507a19f3d3f171`.
+The prior backend remains recoverable at
+`/home/ubuntu/weakspot-backend.rollback-286d1fd-20260812T000723Z`.
 
 Summary:
 
@@ -50,14 +59,21 @@ Tests run:
 - Frontend ESLint, standalone TypeScript, timeout/import contract scripts, and
   Next.js production build — pass.
 
-Known issue: DS V4 Flash becomes the deployed default only when the production
-`DEEPSEEK_API_KEY` is configured; otherwise the catalog deliberately falls back
-to Luna Fast instead of advertising an unusable model.
+Production verification:
 
-Next step: Merge the release PR, deploy the exact merged backend to Oracle,
-allow Vercel to deploy `main`, verify the public model catalog and frontend,
-then replace the pending statuses above with the final commit and deployment
-evidence.
+- Oracle container and public API health — pass.
+- Public model catalog default — `openai/gpt-5.6-luna-pro` Deep and
+  `ds-v4-flash-0731` Fast.
+- Public model selectors — Luna Fast and DeepSeek Official DS V4 Flash both
+  present.
+- Production-origin CORS preflight — HTTP 200.
+- Vercel merged-commit status and public frontend — pass.
+
+Known issue: removing the production `DEEPSEEK_API_KEY` intentionally changes
+the server default Fast path to Luna, avoiding an unusable advertised model.
+
+Next step: Monitor upstream model latency and error rates for the cross-provider
+pair; keep the recorded Oracle rollback directory until the release is stable.
 
 ## 2026-07-21 — Task-aware model routing and faster Practice grading
 
