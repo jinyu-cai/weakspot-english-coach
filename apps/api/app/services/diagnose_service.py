@@ -6,11 +6,13 @@ from app.models.common import OutputLanguage
 from app.models.diagnostic import DiagnoseLearningContext, DiagnosticAIResult
 from app.services.ai_client import LLMProviderConfig, parse_with_model
 from app.services.memory_service import MEMORY_EXTRACTION_INSTRUCTION
-from app.services.model_routing import reasoning_effort_for_tier, select_text_model
+from app.services.model_routing import select_text_model
 from app.services.output_language import language_instruction
 
 DiagnosisMode = Literal["fast", "deep"]
 DIAGNOSIS_MAX_OUTPUT_TOKENS = 32_768
+DIAGNOSIS_REASONING_EFFORT = "medium"
+DIAGNOSIS_RETRY_REASONING_EFFORT = "minimal"
 
 DIAGNOSTIC_SKILL_CODE_LIST = format_skill_code_list(prefix="   - ")
 
@@ -90,7 +92,8 @@ Deep diagnosis mode — be thorough and detailed:
 - learningNotes: extract all useful notes the text supports.
   Give rich explanations, context, and examples.
 - strengthsZh, weaknessesZh, recommendedNextActionsZh: be comprehensive.
-- Think step by step. Take your time to analyze deeply.
+- Analyze carefully, but keep the required structured report concise enough to
+  finish within the response budget.
 """.strip()
 
 
@@ -179,12 +182,14 @@ def diagnose_english_text(
 ) -> DiagnosticAIResult:
     user_prompt = build_diagnose_user_prompt(input_text, analysis_context, learning_context)
     selected_model = select_diagnose_model(diagnosis_mode, llm_provider=llm_provider)
+    effective_max_tokens = min(
+        max_output_tokens or DIAGNOSIS_MAX_OUTPUT_TOKENS,
+        DIAGNOSIS_MAX_OUTPUT_TOKENS,
+    )
     if diagnosis_mode == "fast":
         system_prompt = f"{SYSTEM_PROMPT}\n\n{language_instruction(output_language)}\n\n{FAST_PROMPT_APPENDIX}\n\n{MEMORY_EXTRACTION_INSTRUCTION}"
-        max_tokens = max_output_tokens
     else:
         system_prompt = f"{SYSTEM_PROMPT}\n\n{language_instruction(output_language)}\n\n{DEEP_PROMPT_APPENDIX}\n\n{MEMORY_EXTRACTION_INSTRUCTION}"
-        max_tokens = max_output_tokens
 
     messages = [{"role": "system", "content": system_prompt}]
     if memory_context:
@@ -197,9 +202,12 @@ def diagnose_english_text(
     return parse_with_model(
         messages=messages,
         response_model=DiagnosticAIResult,
-        max_tokens=max_tokens,
+        max_tokens=effective_max_tokens,
         model=selected_model,
         provider=llm_provider,
         trace_id=trace_id,
-        reasoning_effort=reasoning_effort_for_tier(diagnosis_mode),
+        reasoning_effort=DIAGNOSIS_REASONING_EFFORT,
+        retry_reasoning_effort=DIAGNOSIS_RETRY_REASONING_EFFORT,
+        openrouter_completion_token_budget=effective_max_tokens,
+        use_native_structured_output=True,
     )

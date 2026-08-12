@@ -185,6 +185,7 @@ def parse_with_model(
     use_native_structured_output: bool = False,
     native_structured_output_strict: bool = True,
     max_attempts: int = 2,
+    retry_reasoning_effort: Optional[str] = None,
 ) -> T:
     # Local testing: return canned results without calling an external model.
     if settings.use_fake_ai:
@@ -229,7 +230,7 @@ def parse_with_model(
     trace = trace_id or "-"
     logger.info(
         "llm[%s] start model=%s request_model=%s response_model=%s schema_bytes=%d max_tokens=%s "
-        "completion_token_budget=%s reasoning_effort=%s qwen_json_mode=%s "
+        "completion_token_budget=%s reasoning_effort=%s retry_reasoning_effort=%s qwen_json_mode=%s "
         "openrouter_openai_only=%s native_structured_output=%s native_structured_strict=%s max_attempts=%d",
         trace,
         selected_model,
@@ -241,6 +242,7 @@ def parse_with_model(
         if openrouter_completion_token_budget is not None
         else "provider_default",
         reasoning_effort or "disabled",
+        retry_reasoning_effort or "unchanged",
         uses_model_studio_qwen,
         uses_openrouter_openai,
         native_structured_output,
@@ -251,11 +253,16 @@ def parse_with_model(
     # OpenRouter exposes a provider-neutral `reasoning` object. Do not also
     # send the OpenAI-SDK-specific top-level reasoning_effort field there.
     use_reasoning_effort = (
-        bool(reasoning_effort)
+        bool(reasoning_effort or retry_reasoning_effort)
         and not uses_model_studio_qwen
         and not uses_openrouter
     )
     for attempt in range(1, max(1, max_attempts) + 1):
+        attempt_reasoning_effort = (
+            retry_reasoning_effort
+            if attempt > 1 and retry_reasoning_effort is not None
+            else reasoning_effort
+        )
         attempt_started = time.perf_counter()
         try:
             create_kwargs: dict = dict(
@@ -291,13 +298,13 @@ def parse_with_model(
             extra_body = _provider_extra_body(
                 request_model,
                 base_url,
-                reasoning_effort,
+                attempt_reasoning_effort,
             )
             if extra_body:
                 create_kwargs["extra_body"] = extra_body
             while True:
                 if use_reasoning_effort:
-                    create_kwargs["reasoning_effort"] = reasoning_effort
+                    create_kwargs["reasoning_effort"] = attempt_reasoning_effort
                 else:
                     create_kwargs.pop("reasoning_effort", None)
                 try:
