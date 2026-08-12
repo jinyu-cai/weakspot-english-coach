@@ -317,9 +317,6 @@ def create_realtime_session(
                 },
             },
         }
-        if expires_at is not None:
-            realtime_session_config["expires_at"] = expires_at
-
         resp = httpx.post(
             "https://api.openai.com/v1/realtime/client_secrets",
             headers={
