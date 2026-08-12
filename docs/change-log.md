@@ -22,12 +22,23 @@ Next step:
 
 Date: 2026-08-11 PDT
 
-Branch: `codex/fix-random-scene-generation` → `main`
+Branches: `codex/fix-random-scene-generation` and
+`codex/fix-random-scene-skill-filter` → `main`
 
-GitHub status: Fix PR pending.
+GitHub status: PR #101 merged at
+`8c6c0dab677aefde812b4a08020d96384859e9a5`; production verification exposed
+a scheduler/public skill-code boundary issue, fixed by PR #102 and merged at
+`a112ceccb64c3c67f0de822efd786a5cc7811411`. Both PRs passed 2/2 GitHub/Vercel
+checks before merge.
 
-Deploy status: Pending merge and Oracle deployment. No frontend runtime change
-is required.
+Deploy status: **backend LIVE** on `oracle-us-sj` at exact merged commit
+`a112ceccb64c3c67f0de822efd786a5cc7811411`. The deployed archive SHA-256 is
+`62881946a857ced443a05dda301f69f9375da7620fb3f7d426f1aa848928b973`.
+The production `.env` SHA-256 remained
+`7d46de79fe375cead8a37a77fe9b65c5fc94ba2da60aac4bf6507a19f3d3f171`.
+The immediate rollback directory is
+`/home/ubuntu/weakspot-backend.rollback-8c6c0da-20260812T0145Z`. No frontend
+runtime change was required.
 
 Root cause:
 
@@ -50,6 +61,8 @@ Summary:
   outputs.
 - Added contract coverage for the compact scene route, MAX reasoning, strict
   JSON Schema, and the exact OpenRouter completion-budget parameter.
+- Normalized scheduler recommendations at the Coach response boundary so
+  internal skill IDs cannot invalidate the public mission schema.
 
 Tests run:
 
@@ -57,12 +70,18 @@ Tests run:
   pass.
 - Real Luna Pro/MAX generation — pass in 42.84 seconds on the first attempt;
   returned a complete guided scene with a 1,465-character facilitator prompt.
+- Public production `POST /api/v1/coach/missions` — HTTP 200 in 23.63 seconds;
+  returned a complete guided scene with an activity-run ID and a
+  1,490-character facilitator prompt. Production logs show one upstream Luna
+  Pro/MAX attempt, `finish_reason=stop`, native schema validation success, and
+  no retry.
+- Public production health — HTTP 200; backend container healthy.
 - `git diff --check` — pass.
 
 Known issues: None for the reproduced failure mode.
 
-Next step: Merge, deploy the exact backend archive to Oracle, verify one public
-random scene, then replace the pending statuses with production evidence.
+Next step: Monitor normal production usage for any provider-side latency
+regression.
 
 ## 2026-08-11 — Luna Pro / DS V4 Flash model pair
 
