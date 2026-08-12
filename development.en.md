@@ -1,14 +1,17 @@
 # WeakSpot English Coach: A From-Zero Development Guide
 
-> Audience: a first-year student with no prior development experience. You may never have used a terminal or written a program.
+> Audience: a first-year student with no prior development experience. You may never have used a terminal or written
+> a program.
 >
-> Last source audit: 2026-08-03 PDT.
+> Last source audit: 2026-07-30.
 >
-> Chinese edition: [`development.md`](development.md). Both editions use the same 0–24 chapter structure and the same source paths, commands, and implementation boundaries.
+> Chinese edition: [`development.md`](development.md). Both editions use the same 0–24 chapter structure and the same
+> source paths, commands, and implementation boundaries.
 
 ## 0. How to use this guide
 
-This is a guide to the code that exists, not an early product specification. Read it with the repository open. For each feature, follow the same path:
+This is a guide to the code that exists, not an early product specification. Read it with the repository open. For
+each feature, follow the same path:
 
 ```text
 user action
@@ -43,7 +46,8 @@ This guide treats a knowledge point as adequately explained only when it answers
 1. **What is it?** Start with a plain-language definition.
 2. **Why does this project need it?** Name the failure, cost, or security boundary it addresses.
 3. **Where is it in the code?** Point to the current file, function, or data flow.
-4. **How can I verify it?** Give an input/output example, numerical calculation, failure counterexample, or runnable experiment.
+4. **How can I verify it?** Give an input/output example, numerical calculation, failure counterexample, or runnable
+   experiment.
 
 When reading an example, cover its result and predict the status code, returned value, or state transition first.
 Then run it. A wrong prediction tells you whether you missed the concept, a boundary, or a deployment-specific
@@ -123,7 +127,7 @@ Browser
   -> Next.js UI
   -> HTTPS + JSON
   -> FastAPI
-  -> OpenRouter / Qwen / DeepSeek (text) + OpenAI Realtime (voice)
+  -> OpenAI / Qwen / DeepSeek
   -> DynamoDB
 ```
 
@@ -133,7 +137,8 @@ Provider, AWS, OAuth, and session secrets stay on the server. A browser can insp
 
 ### 2.1 Client, server, and API
 
-A client sends a request. A server validates it, performs work, and returns a response. An API is the contract between them.
+A client sends a request. A server validates it, performs work, and returns a response. An API is the contract between
+them.
 
 ```http
 POST /api/v1/diagnose
@@ -151,7 +156,8 @@ Content-Type: application/json
 - `/api/v1/diagnose` is the path.
 - Headers carry metadata.
 - The body is JSON.
-- A `2xx` status means success; `4xx` means the request or authorization is wrong; `5xx` means the server/provider path failed.
+- A `2xx` status means success; `4xx` means the request or authorization is wrong; `5xx` means the server/provider path
+  failed.
 
 ### 2.2 JSON and typed objects
 
@@ -161,7 +167,8 @@ JSON uses `true`, `false`, and `null`; Python uses `True`, `False`, and `None`.
 {"score": 88, "errors": [], "duplicate": false}
 ```
 
-Pydantic converts validated JSON into Python objects. TypeScript types describe the same shape in the frontend, but browser types disappear at runtime; the server must still validate.
+Pydantic converts validated JSON into Python objects. TypeScript types describe the same shape in the frontend, but
+browser types disappear at runtime; the server must still validate.
 
 ### 2.3 Origin, cookies, and CORS
 
@@ -319,7 +326,8 @@ def clamp(value: float, low: float = 0, high: float = 100) -> float:
     return min(value, high)
 ```
 
-Indentation is syntax. Type hints help editors, tests, and validation, but plain Python does not compile them like Java types.
+Indentation is syntax. Type hints help editors, tests, and validation, but plain Python does not compile them like Java
+types.
 
 Common project types:
 
@@ -348,7 +356,7 @@ def display_name(nickname: str | None = None) -> str:
 It does **not** make a parameter optional by itself; the `= None` default is what lets the caller omit it. Python
 does not reject a bad `Literal` at runtime by itself, so external JSON still needs Pydantic validation.
 
-### 4.2.1 Assignment, comparison, loops, and return
+#### 4.2.1 Assignment, comparison, loops, and return
 
 `=` assigns a value; `==` compares values:
 
@@ -372,7 +380,7 @@ for index, error in enumerate(errors, start=1):
 `return` ends the current function and gives a value to its caller. `print(value)` only displays it; a function that
 prints but does not return gives its caller `None`.
 
-### 4.2.2 Lists, dictionaries, attributes, and methods
+#### 4.2.2 Lists, dictionaries, attributes, and methods
 
 ```py
 codes = ["grammar.article", "grammar.verb_tense"]
@@ -396,7 +404,7 @@ settings.api_key      # attribute on a configuration object
 When a name is unfamiliar, ask where it was imported/assigned, what type is left of the dot, what arguments enter,
 what returns, and who handles exceptions.
 
-### 4.2.3 A complete first Python program
+#### 4.2.3 A complete first Python program
 
 On a disposable learning branch, save this complete file as `apps/api/python_basics_lab.py`:
 
@@ -487,7 +495,8 @@ class CoachMissionRequest(BaseModel):
     outputLanguage: Literal["en", "zh-CN"] = "en"
 ```
 
-Pydantic rejects invalid JSON before business logic runs and generates OpenAPI schemas. It validates structure, not factual truth.
+Pydantic rejects invalid JSON before business logic runs and generates OpenAPI schemas. It validates structure, not
+factual truth.
 
 For example, this body is rejected with 422 before Coach generation:
 
@@ -514,7 +523,9 @@ This object organizes data inside the process; it is not an HTTP schema and must
 
 ### 4.5 Synchronous and asynchronous work
 
-`def` is synchronous. `async def` can `await` non-blocking work. A synchronous boto3 or model SDK call does not become non-blocking merely because its route is `async`; the project uses worker threads for long blocking operations where needed.
+`def` is synchronous. `async def` can `await` non-blocking work. A synchronous boto3 or model SDK call does not become
+non-blocking merely because its route is `async`; the project uses worker threads for long blocking operations where
+needed.
 
 ```py
 try:
@@ -637,13 +648,17 @@ def retrieve(
     req.userId = identity.user_id
 ```
 
-FastAPI first parses JSON, validates `RetrieveMemoryRequest`, resolves identity, checks quota, and then calls the route. The server overwrites body `userId`; a client is never allowed to impersonate another user by editing JSON.
+FastAPI first parses JSON, validates `RetrieveMemoryRequest`, resolves identity, checks quota, and then calls the route.
+The server overwrites body `userId`; a client is never allowed to impersonate another user by editing JSON.
 
 ### 5.4 Streaming and generated docs
 
-Deep diagnosis can stream whitespace keepalives while a worker performs the long model/database path. The final bytes still form valid JSON. When replacing a dependency-created response with `StreamingResponse`, guest cookies must be copied to the actual response.
+Deep diagnosis can stream whitespace keepalives while a worker performs the long model/database path. The final bytes
+still form valid JSON. When replacing a dependency-created response with `StreamingResponse`, guest cookies must be
+copied to the actual response.
 
-Open `http://localhost:8000/docs` after startup. Swagger shows every path, schema, and response and is the best first debugging client.
+Open `http://localhost:8000/docs` after startup. Swagger shows every path, schema, and response and is the best first
+debugging client.
 
 The wire body of a long diagnosis is approximately:
 
@@ -696,7 +711,8 @@ Unsupported quote: "at school" does not occur in the learner text.
 
 ### 7.1 Frontend and request
 
-`apps/web/app/page.tsx` gathers text. `apps/web/lib/api-client.ts` adds the base URL, cookies, language, model-selection headers, timeout, and error parsing:
+`apps/web/app/page.tsx` gathers text. `apps/web/lib/api-client.ts` adds the base URL, cookies, language, model-selection
+headers, timeout, and error parsing:
 
 ```ts
 return apiFetch<DiagnoseResponse>("/diagnose", {
@@ -723,7 +739,8 @@ return apiFetch<DiagnoseResponse>("/diagnose", {
 7. calls the structured diagnosis service;
 8. persists the submission, errors, notes, evidence, profile, and memories.
 
-The central lesson is that HTTP retries are normal. A request ID/hash plus conditional repository claim makes expensive side effects idempotent.
+The central lesson is that HTTP retries are normal. A request ID/hash plus conditional repository claim makes expensive
+side effects idempotent.
 
 For example:
 
@@ -750,7 +767,8 @@ Pydantic JSON schema
   -> one repair retry for malformed structure
 ```
 
-The server then checks evidence grounding. An error quote or positive-evidence quote must come from learner text. Absence of an error is not automatically a success.
+The server then checks evidence grounding. An error quote or positive-evidence quote must come from learner text.
+Absence of an error is not automatically a success.
 
 Two failures illustrate the two validation layers:
 
@@ -772,7 +790,8 @@ corresponding long-term weakness Memory is already in its `confirmed` verificati
 quotes may become positive evidence. Evidence updates mastery and recent risk, while memory candidates pass through
 validation, merge, conflict, expiry, and capacity rules.
 
-The response includes diagnosis, notes, saved memories, recall IDs, and trace metadata. The UI renders the report and a Session Win without creating another backend record.
+The response includes diagnosis, notes, saved memories, recall IDs, and trace metadata. The UI renders the report and a
+Session Win without creating another backend record.
 
 A simplified result is:
 
@@ -1019,37 +1038,31 @@ prove a fact.
 
 ### 8.2 Server model catalog and BYOK
 
-The server may expose OpenRouter, Qwen, DeepSeek, or a provider-neutral OpenAI-compatible configuration. `GET /api/v1/llm/models` returns safe IDs and names, never keys or internal base URLs.
+The server may expose OpenRouter, Qwen, DeepSeek, or a provider-neutral OpenAI-compatible configuration.
+`GET /api/v1/llm/models` returns safe IDs and names, never keys or internal base URLs.
 
-The default provider priority in `config.py` is explicit:
-
-```text
-OPENROUTER_API_KEY          -> OpenRouter Luna Pro/Luna
-QWEN_MODEL_STUDIO_API_KEY  -> Qwen
-OPENAI_COMPAT_API_KEY       -> provider-neutral configuration
-otherwise                  -> legacy DeepSeek configuration
-```
-
-The current Oracle production origin uses OpenRouter Luna Pro/Luna as the default text pair and also exposes its
-configured DeepSeek alternatives. The safe catalog is generated from the providers configured on that server; it is
-not a permanent frontend constant.
+The current default pair is `openai/gpt-5.6-luna-pro` through OpenRouter for Deep and `ds-v4-flash-0731` through the
+official DeepSeek API for Fast. OpenRouter Luna remains a selectable Fast alternative. Deep requests use `max`
+reasoning; Fast requests use `medium` reasoning.
 
 The browser normally sends two allowlisted IDs:
 
 ```http
 X-LLM-Server-Deep-Model: openrouter-deep
-X-LLM-Server-Fast-Model: openrouter-fast
+X-LLM-Server-Fast-Model: deepseek-fast
 ```
 
-`get_llm_provider` resolves them against the server catalog. BYOK is a separate path that requires a browser-provided API key and model and cannot be mixed with server selection.
+`get_llm_provider` resolves them against the server catalog. BYOK is a separate path that requires a browser-provided
+API key and model and cannot be mixed with server selection.
 
-For example, a session created with `deepseek-deep` keeps its stored provider/model even if the global selector changes
+For example, a session created with `openrouter-deep` keeps its stored provider/model even if the global selector changes
 tomorrow. New sessions use the new choice. Mixing server-selection headers with BYOK is rejected rather than choosing
 one silently.
 
 `services/model_routing.py` keeps quality policy provider-neutral:
 `select_text_model("fast"|"deep", provider)` resolves the concrete model, while
-`reasoning_effort_for_tier` omits high reasoning for fast work and preserves it for deep work.
+`reasoning_effort_for_tier` selects `medium` for Fast and `max` for Deep. OpenRouter receives this through its unified
+`reasoning.effort` object.
 
 ### 8.3 Text, Realtime, and Speech are different systems
 
@@ -1058,7 +1071,9 @@ one silently.
 - Coach listening uses Qwen3-TTS-Flash and returns private, no-store provider audio.
 - Browser speech recognition and `speechSynthesis` are local browser fallbacks.
 
-The configured TTS defaults are `qwen3-tts-flash`, `Cherry`, and `English`. A dedicated `QWEN_TTS_API_KEY` takes priority; otherwise the backend reuses the configured Model Studio text or embedding key. A TTS failure returns 503/502 and must not block text practice.
+The configured TTS defaults are `qwen3-tts-flash`, `Cherry`, and `English`. A dedicated `QWEN_TTS_API_KEY` takes
+priority; otherwise the backend reuses the configured Model Studio text or embedding key. A TTS failure returns
+503/502 and must not block text practice.
 
 Concrete data flows:
 
@@ -1069,7 +1084,7 @@ TTS: existing "Hold on a second." -> one request -> complete `audio/*` (currentl
 ASR: learner voice -> browser-generated editable text
 ```
 
-Selecting OpenRouter, Qwen, or DeepSeek for text does not switch OpenAI Realtime. `style` remains a stable public TTS field, but
+Selecting Qwen or DeepSeek for text does not switch OpenAI Realtime. `style` remains a stable public TTS field, but
 Qwen3-TTS-Flash currently ignores instruction-style speed control.
 
 ### 8.4 GPT-5.6 Adaptive Mission Planner
@@ -1109,7 +1124,9 @@ else:
     )
 ```
 
-The Responses path uses `store=False`, a hashed safety identifier, a server-only key, and fails closed when enabled without a key or with a model not beginning with `gpt-5.6`. The UI shows the evidence panel only when the response itself reports OpenAI generation metadata.
+The Responses path uses `store=False`, a hashed safety identifier, a server-only key, and fails closed when enabled
+without a key or with a model not beginning with `gpt-5.6`. The UI shows the evidence panel only when the response
+itself reports OpenAI generation metadata.
 
 For example, `runtimeMode="selected_provider"` may generate a valid guided scene, but the UI must not label its
 selection rationale as GPT-5.6 evidence. Only a response containing both OpenAI generation metadata and
@@ -1178,7 +1195,8 @@ save_memory(memory)
 get_chat_session(user_id, session_id)
 ```
 
-`db/serialization.py` converts Python floats to DynamoDB `Decimal` and converts them back on reads. List functions must follow `LastEvaluatedKey` when the user-facing result is unbounded.
+`db/serialization.py` converts Python floats to DynamoDB `Decimal` and converts them back on reads. List functions must
+follow `LastEvaluatedKey` when the user-facing result is unbounded.
 
 For example:
 
@@ -1190,7 +1208,8 @@ For example:
 Trying to send the raw float through boto3 can fail serialization. Returning the raw `Decimal` can in turn fail JSON
 encoding, so the conversion belongs at the repository boundary.
 
-TTL is eventual physical deletion. The application must immediately filter an expired or forgotten memory by business state and cannot wait for DynamoDB cleanup.
+TTL is eventual physical deletion. The application must immediately filter an expired or forgotten memory by business
+state and cannot wait for DynamoDB cleanup.
 
 If `expiresAt` was 12:00 and it is now 12:01, retrieval must exclude the item even when the DynamoDB console still shows
 the row. That visible row is expected until the asynchronous TTL worker removes it.
@@ -1199,7 +1218,8 @@ the row. That visible row is expected until the asynchronous TTL worker removes 
 
 ### 10.1 Profile, plan, and practice
 
-Profile stores level and counts. `SKILL#...` rows store mastery and evidence history. Plan reads profile, weak skills, bounded errors, and memory, then saves a seven-day plan.
+Profile stores level and counts. `SKILL#...` rows store mastery and evidence history. Plan reads profile, weak skills,
+bounded errors, and memory, then saves a seven-day plan.
 
 One learner can simultaneously have:
 
@@ -1222,9 +1242,12 @@ fill_blank
 rewrite_sentence
 ```
 
-Mixed sessions pass `sessionSlot` and `sessionSize`. The decision service rotates skills and replay/variation/transfer stages so four parallel questions do not collapse into the same sentence shell.
+Mixed sessions pass `sessionSlot` and `sessionSize`. The decision service rotates skills and
+replay/variation/transfer stages so four parallel questions do not collapse into the same sentence shell.
 
-Submission uses `clientAttemptId`. The browser keeps the ID after a failed response and changes it only when the learner changes the answer or exercise. Repository claims and immutable grade drafts prevent a retry from grading or updating mastery twice.
+Submission uses `clientAttemptId`. The browser keeps the ID after a failed response and changes it only when the learner
+changes the answer or exercise. Repository claims and immutable grade drafts prevent a retry from grading or updating
+mastery twice.
 
 A plan request can say:
 
@@ -1253,14 +1276,16 @@ format in slot 3. Four unrelated top-one calls would often clone the same error 
 
 ### 10.2 History, Notebook, and Daily Wins
 
-History and Notebook are learner archives, so their repositories read all DynamoDB pages. Internal prompt summaries may use explicit limits, but those limits must not leak into user-facing archives.
+History and Notebook are learner archives, so their repositories read all DynamoDB pages. Internal prompt summaries
+may use explicit limits, but those limits must not leak into user-facing archives.
 
 Manual History deletion removes the submission, errors, source notes, hash, and source contribution to legacy
 mastery/Memory. It does **not yet** retract the newer `RUN#`, `EVIDENCE#`, and recomputed `LEARNING#` records, so
 Learning Overview may retain that source until a concurrency-safe evidence-rebuild path is implemented. Automatic
 weakness resolution does not delete Notebook notes; it changes their reversible Current/Previous classification.
 
-Daily Wins aggregates server events by the learner's timezone. Session Win is different: it is a frontend-only, per-completion card stored in localStorage for a welcome-back hint.
+Daily Wins aggregates server events by the learner's timezone. Session Win is different: it is a frontend-only,
+per-completion card stored in localStorage for a welcome-back hint.
 
 Deletion example:
 
@@ -1280,7 +1305,9 @@ to July 29. Slicing the UTC date would move the streak to the wrong day.
 
 ### 10.3 Text chat and imported history
 
-Text chat stores a session and messages. Each reply uses only recent messages and a bounded Memory Pack. End-of-session analysis produces corrections, natural expressions, notes, and evidence. Imported ChatGPT history is chunked and bounded before analysis.
+Text chat stores a session and messages. Each reply uses only recent messages and a bounded Memory Pack. End-of-session
+analysis produces corrections, natural expressions, notes, and evidence. Imported ChatGPT history is chunked and
+bounded before analysis.
 
 For example, when a session contains 80 stored messages and `memory_chat_recent_messages=12`, the 81st reply prompt
 uses the latest 12 plus bounded Memory. DynamoDB still keeps all 80. Bounded model context is not deletion of the
@@ -1305,7 +1332,8 @@ learner error.
 owner -> member -> signed-in user -> guest
 ```
 
-GitHub/Google OAuth creates an HttpOnly session cookie. A guest receives a long-lived guest cookie. The backend derives the identity and quota and always ignores a body-supplied user ID for authorization.
+GitHub/Google OAuth creates an HttpOnly session cookie. A guest receives a long-lived guest cookie. The backend derives
+the identity and quota and always ignores a body-supplied user ID for authorization.
 
 If a guest edits JSON to `"userId":"owner"`, the route still replaces it with the guest identity. If the quota is
 already exhausted, the dependency returns 429 before the provider call or DynamoDB writes.
@@ -1322,7 +1350,8 @@ The five mission variants are a Pydantic discriminated union:
 | `decision_response` | Situation, audience, goal, constraints |
 | `vocabulary_in_action` | Word data, situation, concepts, audience, tone |
 
-Shared fields include title, briefing, target skills, task prompt, criteria, and progressive hints. The frontend state machine is:
+Shared fields include title, briefing, target skills, task prompt, criteria, and progressive hints. The frontend state
+machine is:
 
 ```text
 setup -> briefing -> active -> feedback
@@ -1368,7 +1397,11 @@ const session = await createChatSession(
 )
 ```
 
-Model output can exceed a downstream contract even when the upstream mission validates. `CoachScene` therefore bounds `scenarioPrompt` deterministically, preserving the role/setup head and behavioral-rules tail. A Chat request permits a 300-character topic while ActivityRun title permits 240. Current Coach titles are already bounded to 160, but ordinary clients and future upstream contracts need the route's own protection. Session creation projects the topic into narrower metadata:
+Model output can exceed a downstream contract even when the upstream mission validates. `CoachScene` therefore bounds
+`scenarioPrompt` deterministically, preserving the role/setup head and behavioral-rules tail. A Chat request permits a
+300-character topic while ActivityRun title permits 240. Current Coach titles are already bounded to 160, but ordinary
+clients and future upstream contracts need the route's own protection. Session creation projects the topic into
+narrower metadata:
 
 ```py
 CreateActivityRunRequest(
@@ -1377,16 +1410,20 @@ CreateActivityRunRequest(
 )
 ```
 
-Repository item-size failures become a specific `413 payload_too_large`; unknown faults remain 500 with a trace ID. Debug each Network request separately and correlate its trace ID with backend logs.
+Repository item-size failures become a specific `413 payload_too_large`; unknown faults remain 500 with a trace ID.
+Debug each Network request separately and correlate its trace ID with backend logs.
 
 ### 10.7 Input Learning and owner-only Input Lab 2
 
-`/input` either extracts source-grounded language items from supplied material or creates an attention mission when material is absent. Source evidence must be an exact substring; pasted content is untrusted data.
+`/input` either extracts source-grounded language items from supplied material or creates an attention mission when
+material is absent. Source evidence must be an exact substring; pasted content is untrusted data.
 
-`/input/experimental` is owner-only in both UI and backend. It accepts an explicitly supplied transcript and rights basis, forbids extra URL fields, performs no URL fetching, bounds the excerpt by duration, and does not treat the rights assertion as an automated legal decision.
+`/input/experimental` is owner-only in both UI and backend. It accepts an explicitly supplied transcript and rights
+basis, forbids extra URL fields, performs no URL fetching, bounds the excerpt by duration, and does not treat the rights
+assertion as an automated legal decision.
 
-For example, a direct request from a non-owner must return 403 even if the person manually opens the hidden URL. Hiding navigation
-without `require_owner` on the endpoint would be a security bug.
+For example, a direct request from a non-owner must return 403 even if the person manually opens the hidden URL. Hiding
+navigation without `require_owner` on the endpoint would be a security bug.
 
 ### 10.8 Coach tasks reuse the existing evidence chain
 
@@ -1446,13 +1483,16 @@ The allowlist controls the family, while the generated key distinguishes two dif
 
 ### 11.1 Why mastery is not enough
 
-`grammar.article = 52` cannot represent “the learner wants business English,” “short feedback works better,” or “last week's interview was important.” Memory stores semantic, cross-session context in five kinds:
+`grammar.article = 52` cannot represent “the learner wants business English,” “short feedback works better,” or “last
+week's interview was important.” Memory stores semantic, cross-session context in five kinds:
 
 ```text
 preference  goal  strategy  weakness  episode
 ```
 
-A candidate passes through validation, canonical-key creation, merge/conflict handling, embedding, kind-specific expiry, capacity pruning, and only then a `MEMORY#` write. A memory-write lease protects the multi-step operation; a lost claim becomes retryable 409 instead of an invisible overwrite.
+A candidate passes through validation, canonical-key creation, merge/conflict handling, embedding, kind-specific
+expiry, capacity pruning, and only then a `MEMORY#` write. A memory-write lease protects the multi-step operation; a
+lost claim becomes retryable 409 instead of an invisible overwrite.
 
 | Kind | Example | Default lifetime |
 | --- | --- | --- |
@@ -1468,7 +1508,8 @@ fact supersedes the old one. The system should not retrieve two contradictory pr
 
 ### 11.2 Retrieval and forgetting
 
-Retrieval combines semantic similarity, lexical overlap, confidence, importance, recency, and pinned state. The pack is intentionally bounded:
+Retrieval combines semantic similarity, lexical overlap, confidence, importance, recency, and pinned state. The pack
+is intentionally bounded:
 
 ```text
 at most 6 memories
@@ -1476,9 +1517,11 @@ under 700 estimated tokens
 with a 15% safety reserve
 ```
 
-Each retrieval writes an explainable trace of selected IDs, component scores, reasons, and token estimate. Forgetting removes an item from retrieval immediately; DynamoDB TTL performs physical cleanup later.
+Each retrieval writes an explainable trace of selected IDs, component scores, reasons, and token estimate. Forgetting
+removes an item from retrieval immediately; DynamoDB TTL performs physical cleanup later.
 
-A weakness resolves only after adequate independent, spaced, varied evidence. A later failure may reopen it. Notebook notes remain stored during both states.
+A weakness resolves only after adequate independent, spaced, varied evidence. A later failure may reopen it. Notebook
+notes remain stored during both states.
 
 The simplified ranking score is:
 
@@ -1631,7 +1674,9 @@ real provider key.
 
 ## 12. Adaptive next-action decisions
 
-The scheduler does not simply pick the lowest mastery. A skill score combines need, error density, due/spacing state, weakness confidence, goal relevance, and exploration. A format score includes previous results, productive difficulty, and variety. The response exposes its breakdown and reason.
+The scheduler does not simply pick the lowest mastery. A skill score combines need, error density, due/spacing state,
+weakness confidence, goal relevance, and exploration. A format score includes previous results, productive difficulty,
+and variety. The response exposes its breakdown and reason.
 
 The current base skill formula is:
 
@@ -1690,7 +1735,8 @@ skill = _pick_session_skill(ranked_skills, session_slot, session_size)
 stage = _session_progression(state, session_slot)
 ```
 
-The client sends slot/size for each parallel generation. Slot zero may replay a known fingerprint; later slots change context and surface form. Several individually correct top-one choices do not automatically make a diverse batch.
+The client sends slot/size for each parallel generation. Slot zero may replay a known fingerprint; later slots change
+context and surface form. Several individually correct top-one choices do not automatically make a diverse batch.
 
 ## 13. Reading the frontend
 
@@ -1786,8 +1832,8 @@ useEffect(() => {
 }, [])
 ```
 
-`[]` means run after first mount; `[userId]` reruns when `userId` changes. Cleanup prevents a late result from updating an
-unmounted screen. Direct calculations and click handlers do not need an effect.
+`[]` means run after first mount; `[userId]` reruns when `userId` changes. Cleanup prevents a late result from updating
+an unmounted screen. Direct calculations and click handlers do not need an effect.
 
 Every async screen should distinguish idle, loading, success, valid-empty, and error-with-retry. A catalog 500 must not
 be disguised as one fabricated default option.
@@ -2133,7 +2179,8 @@ assert response.status_code == 200
 assert response.json()["diagnostic"]["errors"][0]["code"] == "grammar.verb_tense"
 ```
 
-A 200-only assertion does not prove evidence or persistence. A service-only unit test does not prove auth, HTTP, or JSON.
+A 200-only assertion does not prove evidence or persistence. A service-only unit test does not prove auth, HTTP, or
+JSON.
 
 | Command | What it proves |
 | --- | --- |
@@ -2157,7 +2204,8 @@ A 200-only assertion does not prove evidence or persistence. A service-only unit
 | `pnpm test:timeouts` | 20/110-second call sites and the total deadline through slow response bodies |
 | `pnpm build` | Next.js production compilation |
 
-Fake AI and moto prove contracts and business logic, not live provider availability. Production still needs a small health/model/feature probe. Run `tsc` separately; do not treat a successful Next build as sufficient type checking.
+Fake AI and moto prove contracts and business logic, not live provider availability. Production still needs a small
+health/model/feature probe. Run `tsc` separately; do not treat a successful Next build as sufficient type checking.
 
 The frontend currently has no Vitest/Jest/Playwright browser suite. Lint, types, the Import/timeout regressions, and
 build do not prove click behavior, hook cleanup, localStorage resume, accessibility, or Network error rendering. Run
@@ -2165,8 +2213,8 @@ the manual Chapter 13.6 lab before release.
 
 Read a failure from the bottom: find the repository file/line, compare expected with actual, and inspect the response
 body. `assert 422 == 200` should lead you to Pydantic `detail`; do not change the expectation merely to make it green.
-Use Red → Green → Refactor: first observe the new test fail, make the smallest fix, then clean structure without changing
-behavior.
+Use Red → Green → Refactor: first observe the new test fail, make the smallest fix, then clean structure without
+changing behavior.
 
 ## 16. Deployment architecture
 
@@ -2199,10 +2247,9 @@ The stable API hostname is separate from its origin. Before switching traffic, b
 SHA and compatible configuration. CORS and cookies care about the public origin (`scheme://host:port`), while Nginx
 cares about the private upstream; confusing those two produces failures that look like “the network.”
 
-The deployment configuration audited on **2026-08-03 PDT** uses OpenRouter Luna Pro/Luna as the Oracle origin's
-default text pair and also exposes configured DeepSeek deep/fast alternatives. It uses Qwen `text-embedding-v4` for
-semantic retrieval, Qwen3-TTS-Flash for Coach speech, and OpenAI for Realtime plus the opt-in adaptive planner. This
-is a dated configuration snapshot, not an eternal product guarantee: verify the safe model
+The deployment configuration audited on **2026-07-30** exposes DeepSeek deep/fast for text, Qwen
+`text-embedding-v4` for semantic retrieval, Qwen3-TTS-Flash for Coach speech, and OpenAI for Realtime plus the opt-in
+adaptive planner. This is a dated configuration snapshot, not an eternal product guarantee: verify the safe model
 catalog and one bounded feature probe after every deploy. These are separate configuration paths; a single “AI
 provider” label would be misleading.
 
@@ -2930,12 +2977,15 @@ Exercise format: write “prediction → reason → code entry point → verific
 3. `routes/debug.py` and its decorator exist, but `include_router` is missing. What does the request return?
 4. A guest changes body `userId` to the owner. Which identity writes to DynamoDB?
 5. How does a concurrent retry of the same diagnosis avoid a second model charge and mastery update?
-6. AI returns valid JSON, but an error `originalText` is absent from learner text. Will Pydantic catch it? What must happen?
-7. Does one grounded article error immediately confirm a weakness? What do two same-day sources and three cross-day sources mean?
+6. AI returns valid JSON, but an error `originalText` is absent from learner text. Will Pydantic catch it? What must
+   happen?
+7. Does one grounded article error immediately confirm a weakness? What do two same-day sources and three cross-day
+   sources mean?
 8. The model reports no preposition error. May the system automatically record preposition success?
 9. What do text Chat, OpenAI Realtime, Qwen TTS, and browser ASR each consume and produce?
 10. Why convert `73.5` to `Decimal("73.5")` for DynamoDB? Should business behavior wait for TTL deletion?
-11. There are 25 lifetime opportunities with five failures; the last 20 contain four. How should lifetime and recent rates be represented?
+11. There are 25 lifetime opportunities with five failures; the last 20 contain four. How should lifetime and recent
+    rates be represented?
 12. Using section 11.2 weights, what score comes from `.80/.50/.90/.70/.20/1.0`? What if pinned?
 13. Why can four individually correct top-one practice calls still make a poor mixed session without slot/size?
 14. Why does a browser still call the old API after a Vercel variable changes without redeployment?
@@ -2944,7 +2994,8 @@ Exercise format: write “prediction → reason → code entry point → verific
     you identify the repository root?
 17. Before creating a learning branch, `git status --short` already shows someone else's `M` and `??`. Why must you not
     reset/restore them, and what is the safe alternative?
-18. After Analyze is clicked in Chapter 23, how should `loading/result/error` represent idle, loading, success, and error?
+18. After Analyze is clicked in Chapter 23, how should `loading/result/error` represent idle, loading, success, and
+    error?
 19. How does “no Network request” differ from a 422 response, and what evidence should you record before debugging?
 20. Ordinary API work has 20 seconds and model work 110. Why is clearing the timer when `fetch()` returns headers still
     a bug, and which test proves the body is covered?

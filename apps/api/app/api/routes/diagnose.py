@@ -47,7 +47,6 @@ from app.services.memory_service import (
     remember_candidates,
     retrieve_memory_pack,
 )
-from app.services.model_catalog import openrouter_text_provider
 from app.services.learning_service import (
     create_activity_run,
     record_evidence,
@@ -209,10 +208,9 @@ async def diagnose(
     whitespace is ignored by JSON.parse on the client side.
     """
     req.userId = identity.user_id
-    # Diagnose is deployment-pinned to the OpenRouter OpenAI pair. Once the
-    # server key is configured, browser BYOK or an older saved model selection
-    # cannot silently move diagnosis onto another model/provider.
-    llm_provider = openrouter_text_provider() or llm_provider
+    # The dependency resolves either the deployment default pair or the
+    # learner's explicit allowlisted/BYOK choice. Fast and Deep remain
+    # selectable without exposing server credentials.
     request_id = uuid4().hex[:10]
     started = time.perf_counter()
     diagnosis_mode = req.diagnosisMode

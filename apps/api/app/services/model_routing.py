@@ -3,7 +3,11 @@
 from typing import Literal, Optional
 
 from app.config import settings
-from app.services.ai_client import HIGH_REASONING_EFFORT, LLMProviderConfig
+from app.services.ai_client import (
+    DEEP_REASONING_EFFORT,
+    FAST_REASONING_EFFORT,
+    LLMProviderConfig,
+)
 
 
 ModelTier = Literal["fast", "deep"]
@@ -26,6 +30,6 @@ def select_text_model(
 
 
 def reasoning_effort_for_tier(tier: ModelTier) -> Optional[str]:
-    """Fast work favors response time; Deep work keeps the quality setting."""
+    """Resolve the product's explicit reasoning contract for each model tier."""
 
-    return None if tier == "fast" else HIGH_REASONING_EFFORT
+    return FAST_REASONING_EFFORT if tier == "fast" else DEEP_REASONING_EFFORT

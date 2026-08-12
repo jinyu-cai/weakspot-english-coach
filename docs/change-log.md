@@ -18,6 +18,47 @@ Known issues:
 Next step:
 ```
 
+## 2026-08-11 — Luna Pro / DS V4 Flash model pair
+
+Date: 2026-08-11 PDT
+
+Branch: `codex/ds-v4-flash-release` → `main`
+
+GitHub status: Release PR pending.
+
+Deploy status: Pending merge. The normal production targets are Vercel for the
+frontend and `oracle-us-sj` for the backend.
+
+Summary:
+
+- Added selectable OpenRouter Luna and DeepSeek Official DS V4 Flash Fast
+  options for Diagnose and Chat.
+- Made Luna Pro with `max` reasoning the Deep default and DS V4 Flash 0731 with
+  `medium` reasoning the Fast default whenever both production keys exist.
+- Kept a safe Luna Fast fallback for deployments without a DeepSeek key and
+  migrated the browser's previous server-default pair without overriding an
+  explicit learner selection.
+- Made diagnosis honor the resolved server/BYOK model pair, and documented the
+  provider-specific reasoning payloads and deployment settings.
+- Repaired heading levels and Markdown wrapping in `development.en.md`.
+
+Tests run:
+
+- Backend smoke and Coach contract suites — pass.
+- Full in-process integration loop — pass.
+- Backend Python compilation — pass.
+- Frontend ESLint, standalone TypeScript, timeout/import contract scripts, and
+  Next.js production build — pass.
+
+Known issue: DS V4 Flash becomes the deployed default only when the production
+`DEEPSEEK_API_KEY` is configured; otherwise the catalog deliberately falls back
+to Luna Fast instead of advertising an unusable model.
+
+Next step: Merge the release PR, deploy the exact merged backend to Oracle,
+allow Vercel to deploy `main`, verify the public model catalog and frontend,
+then replace the pending statuses above with the final commit and deployment
+evidence.
+
 ## 2026-07-21 — Task-aware model routing and faster Practice grading
 
 Date: 2026-07-21 PDT

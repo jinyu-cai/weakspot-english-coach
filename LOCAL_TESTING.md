@@ -175,9 +175,8 @@ Diagnose creates records
 Practice submit creates attempts
 Memory Center recalls and forgets a manual memory
 Chat model selector shows independent Deep and Fast choices; Server default
-matches the active deployment (Oracle currently OpenRouter Luna Pro/Luna,
-Alibaba Qwen), and cross-provider choices appear only when both providers are
-configured
+matches the active deployment (Oracle currently DeepSeek, Alibaba Qwen), and
+mixed Qwen/DeepSeek choices appear only when both providers are configured
 Input Learning `/input` saves grounded material, creates an attention mission
 without pasted material, opens a saved capture, and deletes it
 Chat quietly exercises a due weakness and reveals the result only in the

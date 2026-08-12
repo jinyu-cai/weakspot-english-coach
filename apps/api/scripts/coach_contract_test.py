@@ -44,6 +44,7 @@ from app.services.coach_service import (
     uses_adaptive_mission_planner,
 )
 from app.services import tts_service
+from app.services import coach_service as coach_service_module
 from app.services import openai_mission_service
 from app.services.fake_ai import fake_for
 from app.services.diagnose_service import (
@@ -192,6 +193,31 @@ def main() -> None:
     assert selected_coach_model(
         CoachMissionRequest(generationMode="deep"), model_pair
     ) == "deep-model"
+
+    captured_scene_call = {}
+    original_coach_parse = coach_service_module.parse_with_model
+
+    def capture_scene_parse(**kwargs):
+        captured_scene_call.update(kwargs)
+        return fake_for(kwargs["response_model"])
+
+    coach_service_module.parse_with_model = capture_scene_parse
+    try:
+        generated_scene = generate_coach_mission(
+            CoachMissionRequest(
+                durationMinutes=15,
+                generationMode="deep",
+                runtimeMode="selected_provider",
+                preferredType="guided_scene",
+            ),
+            llm_provider=model_pair,
+        )
+    finally:
+        coach_service_module.parse_with_model = original_coach_parse
+
+    assert generated_scene.mission.type == "guided_scene"
+    assert captured_scene_call["model"] == "deep-model"
+    assert captured_scene_call["reasoning_effort"] == "max"
 
     long_scene_request = CoachMissionRequest(
         durationMinutes=15,

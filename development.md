@@ -2,7 +2,7 @@
 
 > 适合读者：真正从零开始的大一新生。你可以还没写过程序、没用过终端，也不知道 API、端口、数据库和部署是什么。
 >
-> 最后核对日期：2026-08-03 PDT。本文以真实代码为准，不再作为“让 AI 生成项目的规格”，而是作为读懂和重建项目的学习教程。
+> 最后核对日期：2026-07-30。本文以真实代码为准，不再作为“让 AI 生成项目的规格”，而是作为读懂和重建项目的学习教程。
 >
 > English edition: [`development.en.md`](development.en.md). 两个版本使用相同的 0–24 章结构；代码、命令和文件路径保持一致，方便双语对照。
 
@@ -10,7 +10,7 @@
 
 原来的 `development.md` 有 2400 多行，看起来很详细，但它其实是项目早期的生成规格草稿，不是按当前代码编写的教程。它存在这些问题：
 
-- 大量示例仍使用 `pip`、`requirements.txt`、OpenAI 和旧目录，当前项目实际使用 `uv`、`pyproject.toml`、`apps/api` 和 OpenRouter/Qwen/DeepSeek。
+- 大量示例仍使用 `pip`、`requirements.txt`、OpenAI 和旧目录，当前项目实际使用 `uv`、`pyproject.toml`、`apps/api` 和 Qwen/DeepSeek。
 - 只讲了最早的 Diagnose、Profile、Plan、Practice，没有覆盖登录、限流、文字/语音聊天、ChatGPT 导入、学习笔记、Daily Wins、服务端模型选择和 MemoryAgent。
 - 代码片段是“准备实现什么”，不一定等于仓库里“现在怎样实现”。
 - 它直接给出长代码，但没有先解释 HTTP、依赖注入、Pydantic、ASGI、线程池、DynamoDB 访问模式等概念。
@@ -26,7 +26,7 @@
 | FastAPI/Uvicorn/Depends/Streaming | 只给样板，缺少运行原理 | 第 5 章 |
 | route/service/repository 分层 | 文件很多，但没有职责边界 | 第 6 章 |
 | 当前 Diagnose 完整链路 | 示例已与真实实现分叉 | 第 7 章 |
-| OpenRouter/Qwen/DeepSeek/Auto/Deep/Fast/BYOK | 缺失 | 第 8 章 |
+| Qwen/DeepSeek/Auto/Deep/Fast/BYOK | 缺失 | 第 8 章 |
 | GPT-5.6 Responses API 自适应任务 | 缺失 | 第 8.9 节 |
 | DynamoDB Decimal/TTL/当前 key | 部分过时 | 第 9 章 |
 | Chat、Import、Notes、Stats、OAuth | 缺失 | 第 10.1–10.9 节 |
@@ -147,12 +147,12 @@ WeakSpot 不是“再做一个聊天机器人”，而是把用户每次真实�
   -> Next.js 前端（显示页面、收集输入）
   -> HTTPS + JSON
   -> FastAPI 后端（身份、业务规则、AI、数据库）
-  -> OpenRouter / Qwen / DeepSeek（文字生成）+ OpenAI Realtime（双向语音）
+  -> Qwen / DeepSeek（文字生成）+ OpenAI Realtime（双向语音）
   -> Qwen3-TTS-Flash（把现有文字合成音频）
   -> DynamoDB
 ```
 
-浏览器永远不应该直接拿到服务器的 OpenRouter、Qwen、DeepSeek、AWS 或 OAuth secret。
+浏览器永远不应该直接拿到服务器的 Qwen、DeepSeek、AWS 或 OAuth secret。
 
 ## 2. 先补齐最少的 Web 基础
 
@@ -1083,7 +1083,7 @@ http://localhost:8000/docs
 
 分层的价值不是“文件更多显得专业”，而是让你能够单独测试和替换每个边界。
 
-例如切换 OpenRouter/Qwen/DeepSeek 时，大部分 route 不需要变化；它们仍然调用 `parse_with_model`。
+例如切换 Qwen/DeepSeek 时，大部分 route 不需要变化；它们仍然调用 `parse_with_model`。
 
 ## 7. 完整跟读一次 Diagnose 请求
 
@@ -1518,8 +1518,8 @@ uv run python -m scripts.learning_loop_test
 
 | 词 | 普通语言 | 本项目例子 |
 | --- | --- | --- |
-| provider | 提供网络服务和计费的一方 | OpenRouter、Alibaba Model Studio、DeepSeek、OpenAI |
-| model | provider 托管的具体模型 | GPT-5.6 Luna、Qwen、DeepSeek chat、GPT-5.6 Sol、Qwen3-TTS-Flash |
+| provider | 提供网络服务和计费的一方 | Alibaba Model Studio、DeepSeek、OpenAI |
+| model | provider 托管的具体模型 | Qwen、DeepSeek chat、GPT-5.6、Qwen3-TTS-Flash |
 | API | 程序通过网络调用服务的合同 | Chat Completions、Responses、Realtime、TTS |
 | SDK | 帮程序构造 API 请求的代码库 | Python `openai` package |
 | prompt | 发给文字模型的指令和上下文 | 诊断规则、learner text、Memory Pack |
@@ -1564,12 +1564,13 @@ embedding 是另一类模型调用：它把文本变成一串数字向量。两�
 
 ### 8.2 为什么可以同时支持多个提供方
 
-OpenRouter、Qwen、DeepSeek 和很多服务都提供近似 OpenAI Chat Completions 的接口。项目统一使用 OpenAI Python SDK，但传入不同的 `base_url`、key 和 model。
+Qwen、DeepSeek 和很多服务都提供近似 OpenAI Chat Completions 的接口。项目统一使用 OpenAI Python SDK，但传入不同的 `base_url`、key 和 model。
 
 默认优先级在 `config.py`：
 
 ```text
-有 OPENROUTER_API_KEY -> OpenRouter Luna Pro/Luna
+同时有 OPENROUTER_API_KEY 与 DEEPSEEK_API_KEY -> 默认组合：Luna Pro Deep / 官方 DS V4 Flash 0731 Fast
+只有 OPENROUTER_API_KEY -> OpenRouter（Deep: Luna Pro / Fast: Luna）
 否则有 QWEN_MODEL_STUDIO_API_KEY -> Qwen
 否则有 OPENAI_COMPAT_API_KEY -> provider-neutral 配置
 否则 -> 旧 DeepSeek 配置
@@ -1591,22 +1592,23 @@ deepseek-deep  -> 配置 DeepSeek key 时才出现
 deepseek-fast  -> 配置 DeepSeek key 时才出现
 ```
 
-日常 Oracle 生产源站当前以 OpenRouter Luna Pro/Luna 作为 default，并同时公开已配置的 OpenRouter 与
-DeepSeek deep/fast 选项；Alibaba 最终展示源站配置 Qwen。若一台服务器同时配置多个 provider，安全目录
-会显示对应选项，允许用户组合 deep 与 fast。不要把某次部署看到的目录误认为前端常量。
+当前默认组合是 OpenRouter Deep `openai/gpt-5.6-luna-pro` 与 DeepSeek 官方 Fast
+`ds-v4-flash-0731`；OpenRouter Luna 仍保留为可选 Fast。若一台服务器同时配置多个 provider，安全目录
+才会显示对应选项，并允许用户组合 deep 与 fast。不要把某次部署看到的目录误认为前端常量。
 
 当前 UI 独立选择 deep 和 fast，因此浏览器通常发送两个 allowlisted ID：
 
 ```http
 X-LLM-Server-Deep-Model: openrouter-deep
-X-LLM-Server-Fast-Model: openrouter-fast
+X-LLM-Server-Fast-Model: deepseek-fast
 ```
 
 后端在 allowlist 中解析 pair，再使用自己的 secret。旧的单模型 `X-LLM-Server-Model` 仍为兼容保留；新前端不需要把 deep/fast 挤成一个不透明选项。选择 `default` pair 才保留服务器按任务自动路由。
 
 任务最终选 fast 还是 deep，不应散落在每个 service 里。`services/model_routing.py` 用
 `select_text_model(tier, provider)` 统一解析：fast 优先请求的 `fast_model`，缺失时退回 deep；deep 还保留
-高 reasoning effort，fast 则省略。这让“速度/质量策略”和“具体 provider 名字”保持分离。
+`max` reasoning effort，fast 使用 `medium`。OpenRouter 通过统一的 `reasoning.effort` 对象接收该设置。
+这让“速度/质量策略”和“具体 provider 名字”保持分离。
 
 ### 8.4 为什么已有 Chat session 不随全局选择变化
 
@@ -3547,9 +3549,9 @@ docker compose config
 
 ### 16.4 当前双后端
 
-- Oracle Cloud：日常生产源站；默认文字 pair 是 OpenRouter Luna Pro/Luna，安全目录还提供已配置的
-  DeepSeek deep/fast；语义检索使用 Qwen `text-embedding-v4`，Coach Speech 使用 Qwen3-TTS-Flash。
-  embedding 不可用时才退化为 lexical similarity。
+- Oracle Cloud：日常生产源站；安全模型目录当前提供 DeepSeek deep/fast，语义检索使用 Qwen
+  `text-embedding-v4`，Coach Speech 使用 Qwen3-TTS-Flash。embedding 不可用时才退化为 lexical
+  similarity。
 - Alibaba ECS：最终展示源站，Qwen chat + embedding；平时保持配置与版本同步，但不承载日常流量。
 - 两者使用同一 DynamoDB learner state。
 

@@ -22,7 +22,8 @@ T = TypeVar("T", bound=BaseModel)
 
 _client: Optional[OpenAI] = None
 logger = logging.getLogger("uvicorn.error")
-HIGH_REASONING_EFFORT = "high"
+FAST_REASONING_EFFORT = "medium"
+DEEP_REASONING_EFFORT = "max"
 OPENROUTER_OPENAI_PROVIDER_ROUTING = {
     "only": ["openai"],
     "allow_fallbacks": False,
@@ -47,6 +48,7 @@ class LLMProviderConfig:
     server_model_id: Optional[str] = None
     server_deep_model_id: Optional[str] = None
     server_fast_model_id: Optional[str] = None
+    is_default: bool = False
     is_byok: bool = False
 
 
@@ -72,6 +74,19 @@ def get_client(
     if provider is not None:
         api_key, base_url = _provider_connection(provider, model or provider.model)
         return OpenAI(api_key=api_key, base_url=base_url)
+
+    if model and model == settings.default_llm_fast_model:
+        fast_api_key = settings.default_llm_fast_api_key
+        fast_base_url = settings.default_llm_fast_base_url
+        if (
+            fast_api_key
+            and fast_base_url
+            and (
+                fast_api_key != settings.default_llm_api_key
+                or fast_base_url != settings.default_llm_base_url
+            )
+        ):
+            return OpenAI(api_key=fast_api_key, base_url=fast_base_url)
 
     global _client
     if _client is None:
@@ -104,16 +119,33 @@ def _uses_model_studio_qwen(model: str, base_url: str) -> bool:
 def _uses_openrouter_openai_provider(model: str, base_url: str) -> bool:
     """Identify OpenAI models sent through the official OpenRouter API host."""
     normalized_model = model.strip().lower()
+    return normalized_model.startswith("openai/") and _uses_openrouter_api(base_url)
+
+
+def _uses_openrouter_api(base_url: str) -> bool:
+    """Match only the official OpenRouter host, not lookalike subdomains."""
     hostname = (urlparse(base_url.strip()).hostname or "").lower()
-    return normalized_model.startswith("openai/") and hostname == "openrouter.ai"
+    return hostname == "openrouter.ai"
 
 
-def _provider_extra_body(model: str, base_url: str) -> Optional[dict]:
+def _provider_extra_body(
+    model: str,
+    base_url: str,
+    reasoning_effort: Optional[str] = None,
+) -> Optional[dict]:
     if _uses_model_studio_qwen(model, base_url):
         return {"enable_thinking": False}
+    if not _uses_openrouter_api(base_url):
+        return None
+
+    extra_body: dict = {}
     if _uses_openrouter_openai_provider(model, base_url):
-        return {"provider": OPENROUTER_OPENAI_PROVIDER_ROUTING}
-    return None
+        extra_body["provider"] = OPENROUTER_OPENAI_PROVIDER_ROUTING
+    if reasoning_effort:
+        # OpenRouter normalizes reasoning across providers through this object.
+        # Keep it in extra_body so the OpenAI SDK forwards it unchanged.
+        extra_body["reasoning"] = {"effort": reasoning_effort}
+    return extra_body or None
 
 
 def parse_with_model(
@@ -123,7 +155,7 @@ def parse_with_model(
     model: Optional[str] = None,
     provider: Optional[LLMProviderConfig] = None,
     trace_id: Optional[str] = None,
-    reasoning_effort: Optional[str] = HIGH_REASONING_EFFORT,
+    reasoning_effort: Optional[str] = DEEP_REASONING_EFFORT,
 ) -> T:
     # Local testing: return canned results without calling an external model.
     if settings.use_fake_ai:
@@ -136,9 +168,12 @@ def parse_with_model(
         raise ValueError("No LLM model configured.")
     if provider:
         _, base_url = _provider_connection(provider, selected_model)
+    elif selected_model == settings.default_llm_fast_model:
+        base_url = settings.default_llm_fast_base_url
     else:
         base_url = settings.default_llm_base_url
     uses_model_studio_qwen = _uses_model_studio_qwen(selected_model, base_url)
+    uses_openrouter = _uses_openrouter_api(base_url)
     uses_openrouter_openai = _uses_openrouter_openai_provider(selected_model, base_url)
 
     schema = json.dumps(response_model.model_json_schema(), ensure_ascii=False)
@@ -166,13 +201,12 @@ def parse_with_model(
         uses_openrouter_openai,
     )
 
-    # Luna Pro already selects OpenAI's Pro reasoning mode at the model level.
-    # OpenRouter exposes its own `reasoning` object, so do not also send the
-    # OpenAI-SDK-specific reasoning_effort field on this compatibility path.
+    # OpenRouter exposes a provider-neutral `reasoning` object. Do not also
+    # send the OpenAI-SDK-specific top-level reasoning_effort field there.
     use_reasoning_effort = (
         bool(reasoning_effort)
         and not uses_model_studio_qwen
-        and not uses_openrouter_openai
+        and not uses_openrouter
     )
     for attempt in range(1, 3):  # one retry
         attempt_started = time.perf_counter()
@@ -190,7 +224,11 @@ def parse_with_model(
                 create_kwargs["temperature"] = 0.2
             if max_tokens is not None:
                 create_kwargs["max_tokens"] = max_tokens
-            extra_body = _provider_extra_body(selected_model, base_url)
+            extra_body = _provider_extra_body(
+                selected_model,
+                base_url,
+                reasoning_effort,
+            )
             if extra_body:
                 create_kwargs["extra_body"] = extra_body
             while True:

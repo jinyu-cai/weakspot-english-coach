@@ -79,7 +79,7 @@ MEMORY_CHAT_RECENT_MESSAGES=12
 DEEPSEEK_API_KEY=<deepseek-api-key>
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 LLM_MODEL=deepseek-v4-pro
-LLM_MODEL_FAST=deepseek-v4-flash
+LLM_MODEL_FAST=ds-v4-flash-0731
 
 # Realtime voice only; keep this server-side.
 OPENAI_API_KEY=<openai-api-key>

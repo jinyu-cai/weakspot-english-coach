@@ -49,12 +49,14 @@ export const QWEN_37_MAX_MODEL = "qwen3.7-max"
 export const QWEN_37_PLUS_MODEL = "qwen3.7-plus"
 export const OPENROUTER_56_LUNA_PRO_MODEL = "openai/gpt-5.6-luna-pro"
 export const OPENROUTER_56_LUNA_MODEL = "openai/gpt-5.6-luna"
+export const DEEPSEEK_DS_V4_FLASH_0731_MODEL = "ds-v4-flash-0731"
 export const SERVER_DEFAULT_MODEL_ID = "default"
 export const DEFAULT_SERVER_DEEP_MODEL_ID = "openrouter-deep"
-export const DEFAULT_SERVER_FAST_MODEL_ID = "openrouter-fast"
+export const DEFAULT_SERVER_FAST_MODEL_ID = "deepseek-fast"
 export const LLM_SETTINGS_CHANGE_EVENT = "weakspot:llm-settings-change"
 
 const STORAGE_KEY = "weakspot.llmSettings.v1"
+const DEFAULT_SERVER_PAIR_VERSION = 2
 
 const defaultSettings: LLMSettings = {
   apiKey: "",
@@ -65,7 +67,10 @@ const defaultSettings: LLMSettings = {
   serverFastModelId: DEFAULT_SERVER_FAST_MODEL_ID,
 }
 
-type StoredLLMSettings = Partial<LLMSettings> & { serverModelId?: string }
+type StoredLLMSettings = Partial<LLMSettings> & {
+  serverModelId?: string
+  serverDefaultVersion?: number
+}
 
 function legacyServerPair(serverModelId?: string): Pick<LLMSettings, "serverDeepModelId" | "serverFastModelId"> {
   const legacyId = (serverModelId || "").trim()
@@ -127,13 +132,24 @@ export function loadLLMSettings(): LLMSettings {
     if (!raw) return defaultSettings
     const parsed = JSON.parse(raw) as StoredLLMSettings
     const legacyPair = legacyServerPair(parsed.serverModelId)
+    const usedPreviousDefaultPair = (
+      !parsed.serverDefaultVersion
+      && parsed.serverDeepModelId === "openrouter-deep"
+      && parsed.serverFastModelId === "openrouter-fast"
+      && !parsed.apiKey
+      && !parsed.model
+    )
     return {
       apiKey: parsed.apiKey ?? "",
       baseUrl: parsed.baseUrl || DEFAULT_OPENAI_BASE_URL,
       model: parsed.model ?? "",
       fastModel: parsed.fastModel ?? "",
-      serverDeepModelId: parsed.serverDeepModelId || legacyPair.serverDeepModelId,
-      serverFastModelId: parsed.serverFastModelId || legacyPair.serverFastModelId,
+      serverDeepModelId: usedPreviousDefaultPair
+        ? DEFAULT_SERVER_DEEP_MODEL_ID
+        : parsed.serverDeepModelId || legacyPair.serverDeepModelId,
+      serverFastModelId: usedPreviousDefaultPair
+        ? DEFAULT_SERVER_FAST_MODEL_ID
+        : parsed.serverFastModelId || legacyPair.serverFastModelId,
     }
   } catch {
     return defaultSettings
@@ -151,6 +167,7 @@ export function saveLLMSettings(settings: LLMSettings) {
       fastModel: settings.fastModel.trim(),
       serverDeepModelId: settings.serverDeepModelId.trim() || DEFAULT_SERVER_DEEP_MODEL_ID,
       serverFastModelId: settings.serverFastModelId.trim() || DEFAULT_SERVER_FAST_MODEL_ID,
+      serverDefaultVersion: DEFAULT_SERVER_PAIR_VERSION,
     }),
   )
   window.dispatchEvent(new Event(LLM_SETTINGS_CHANGE_EVENT))
