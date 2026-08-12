@@ -13,7 +13,7 @@ import {
 } from "lucide-react"
 import { useRealtimeChat } from "@/hooks/use-realtime-chat"
 import { DEMO_USER_ID } from "@/lib/mock-data"
-import type { RealtimeVoiceModel } from "@/lib/types"
+import type { RealtimeSessionContext, RealtimeVoiceModel } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
@@ -23,6 +23,8 @@ import { useLanguage } from "@/components/language-provider"
 
 interface VoiceChatPanelProps {
   topic?: string
+  sessionContext?: RealtimeSessionContext
+  onConnected?: () => void
   onEnd: (sessionId?: string) => void
   onLifecycleChange?: (state: VoiceChatLifecycle) => void
 }
@@ -32,7 +34,7 @@ export interface VoiceChatLifecycle {
   pending: boolean
 }
 
-export function VoiceChatPanel({ topic, onEnd, onLifecycleChange }: VoiceChatPanelProps) {
+export function VoiceChatPanel({ topic, sessionContext, onConnected, onEnd, onLifecycleChange }: VoiceChatPanelProps) {
   const [voiceModel, setVoiceModel] = useState<RealtimeVoiceModel>("gpt-realtime-mini-2025-12-15")
   const { t } = useLanguage()
   const onEndRef = useRef(onEnd)
@@ -58,10 +60,20 @@ export function VoiceChatPanel({ topic, onEnd, onLifecycleChange }: VoiceChatPan
   })
 
   const transcriptEndRef = useRef<HTMLDivElement>(null)
+  const connectedNotifiedRef = useRef(false)
 
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [transcript])
+
+  useEffect(() => {
+    if (status === "connected" && !connectedNotifiedRef.current) {
+      connectedNotifiedRef.current = true
+      onConnected?.()
+    } else if (status === "idle" || status === "error") {
+      connectedNotifiedRef.current = false
+    }
+  }, [onConnected, status])
 
   const voiceActive = status === "connecting" || status === "connected" || isSavingTranscript
 
@@ -74,7 +86,7 @@ export function VoiceChatPanel({ topic, onEnd, onLifecycleChange }: VoiceChatPan
   }, [onLifecycleChange])
 
   async function handleConnect() {
-    await connect(topic, voiceModel)
+    await connect(topic, voiceModel, sessionContext)
   }
 
   async function handleEnd() {

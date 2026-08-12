@@ -936,6 +936,16 @@ export interface VoiceBetterExpression {
   explanationZh: string
 }
 
+export interface RealtimeSessionContext {
+  scenarioPrompt?: string
+  starterMessage?: string
+  scenarioFamily?: string
+  scenarioKey?: string
+  missionRunId?: string
+  missionType?: string
+  missionTargetSkills?: string[]
+}
+
 export interface RealtimeSessionResponse {
   clientSecret: string
   sessionId: string

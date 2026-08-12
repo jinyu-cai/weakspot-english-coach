@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { createRealtimeSession, saveVoiceTranscript } from "@/lib/api-client"
-import type { RealtimeVoiceModel, VoiceCompletion } from "@/lib/types"
+import type { RealtimeSessionContext, RealtimeVoiceModel, VoiceCompletion } from "@/lib/types"
 import { getCopy } from "@/lib/i18n"
 import { getOutputLanguage } from "@/lib/language"
 
@@ -204,7 +204,11 @@ export function useRealtimeChat(
   }, [stopMicrophone])
 
   const connect = useCallback(
-    async (topic?: string, realtimeModel: RealtimeVoiceModel = "gpt-realtime-mini-2025-12-15") => {
+    async (
+      topic?: string,
+      realtimeModel: RealtimeVoiceModel = "gpt-realtime-mini-2025-12-15",
+      context?: RealtimeSessionContext,
+    ) => {
       if (status === "connecting" || status === "connected") return
       if (sessionIdRef.current && transcriptRef.current.length > 0) {
         setStatus("error")
@@ -221,7 +225,12 @@ export function useRealtimeChat(
       setSessionId(null)
 
       try {
-        const { clientSecret, sessionId, model } = await createRealtimeSession(userId, topic, realtimeModel)
+        const { clientSecret, sessionId, model } = await createRealtimeSession(
+          userId,
+          topic,
+          realtimeModel,
+          context,
+        )
         sessionIdRef.current = sessionId
         setSessionId(sessionId)
         modelRef.current = model
@@ -245,6 +254,13 @@ export function useRealtimeChat(
         const dc = pc.createDataChannel("oai-events")
         dcRef.current = dc
         dc.onmessage = handleDataChannelMessage
+        const starterMessage = context?.starterMessage?.trim()
+        if (starterMessage) {
+          dc.onopen = () => {
+            if (dc.readyState !== "open") return
+            dc.send(JSON.stringify({ type: "response.create" }))
+          }
+        }
 
         const offer = await pc.createOffer()
         await pc.setLocalDescription(offer)

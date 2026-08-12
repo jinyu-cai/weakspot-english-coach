@@ -72,6 +72,7 @@ def main() -> int:
         from app.db import repositories as repository_module
         from app.db.repositories import (
             get_activity_run,
+            get_chat_session,
             get_exercise,
             list_chat_messages,
             save_error,
@@ -897,6 +898,7 @@ def main() -> int:
         original_kick_realtime = realtime_routes.kick_realtime_session
         selected_voice_models = []
         session_expires_at = []
+        realtime_session_configs = []
         owner_voice_session_id = None
         sideband_calls = []
         kick_calls = []
@@ -911,6 +913,7 @@ def main() -> int:
         def fake_realtime_post(url, *, headers, json, timeout):
             selected_voice_models.append(json["session"]["model"])
             session_expires_at.append(json["session"].get("expires_at"))
+            realtime_session_configs.append(json["session"])
             return FakeRealtimeResponse()
 
         async def fake_start_sideband(*, user_id, session_id, call_id, max_duration_seconds):
@@ -976,6 +979,37 @@ def main() -> int:
             custom_realtime_session = r.json()
             assert custom_realtime_session["model"] == "owner-custom-realtime-model", custom_realtime_session
             assert custom_realtime_session["maxDurationSeconds"] is None, custom_realtime_session
+
+            r = client.post(
+                "/api/v1/chat/realtime/session",
+                json={
+                    "userId": user,
+                    "topic": "Community event roleplay",
+                    "scenarioPrompt": "You are the co-host at a lantern walk welcome table.",
+                    "starterMessage": "Hi! Is this your first time helping with the lantern walk?",
+                    "scenarioFamily": "community_event",
+                    "scenarioKey": "community-event-lantern-walk",
+                    "missionRunId": "lr_coach_realtime",
+                    "missionType": "guided_scene",
+                    "missionTargetSkills": ["grammar.verb_tense", "sentence.structure"],
+                },
+            )
+            assert r.status_code == 200, r.text
+            coach_voice_session_id = r.json()["sessionId"]
+            coach_voice_session = get_chat_session("owner", coach_voice_session_id)
+            assert coach_voice_session is not None
+            assert coach_voice_session["mode"] == "voice", coach_voice_session
+            assert coach_voice_session["scenarioFamily"] == "community_event", coach_voice_session
+            assert coach_voice_session["scenarioKey"] == "community-event-lantern-walk", coach_voice_session
+            assert coach_voice_session["missionRunId"] == "lr_coach_realtime", coach_voice_session
+            assert coach_voice_session["learningRunId"] == "lr_coach_realtime", coach_voice_session
+            assert coach_voice_session["missionType"] == "guided_scene", coach_voice_session
+            assert coach_voice_session["missionTargetSkills"] == [
+                "grammar.verb_tense",
+                "sentence.structure",
+            ], coach_voice_session
+            assert "DAILY MISSION ROLEPLAY" in realtime_session_configs[-1]["instructions"]
+            assert "lantern walk welcome table" in realtime_session_configs[-1]["instructions"]
 
             r = client.post(
                 f"/api/v1/chat/realtime/{owner_voice_session_id}/sideband",
@@ -1100,15 +1134,16 @@ def main() -> int:
             "gpt-realtime-2",
             "owner-custom-realtime-model",
             "gpt-realtime-mini-2025-12-15",
+            "gpt-realtime-mini-2025-12-15",
             "gpt-realtime-bad",
         ], selected_voice_models
-        assert session_expires_at[0:3] == [None, None, None], session_expires_at
-        assert isinstance(session_expires_at[3], int), session_expires_at
-        assert session_expires_at[4] is None, session_expires_at
+        assert session_expires_at[0:4] == [None, None, None, None], session_expires_at
+        assert isinstance(session_expires_at[4], int), session_expires_at
+        assert session_expires_at[5] is None, session_expires_at
         assert sideband_calls and sideband_calls[0][2] == "rtc_integration_test", sideband_calls
         assert kick_calls and kick_calls[0][2] == "integration_test", kick_calls
         print(
-            "9. Server model catalog + Qwen session routing + realtime expiry + sideband transcript/audit/kick validated"
+            "9. Server model catalog + Qwen routing + Coach Realtime context + expiry + sideband transcript/audit/kick validated"
         )
 
         # 10. End-of-session chat analysis
