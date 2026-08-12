@@ -261,6 +261,33 @@ class GuidedSceneMissionAIResult(BaseModel):
     mission: GuidedSceneMissionAI
 
 
+class GuidedScenePlanAI(BaseModel):
+    """Compact Deep-reasoning output expanded into a full scene by the server.
+
+    OpenRouter counts hidden reasoning inside the completion budget. Keeping the
+    model-authored payload deliberately small leaves room for a valid structured
+    answer even when Luna Pro uses maximum reasoning effort.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=72)
+    setting: str = Field(min_length=1, max_length=140)
+    userRole: str = Field(min_length=1, max_length=90)
+    aiRole: str = Field(min_length=1, max_length=90)
+    goal: str = Field(min_length=1, max_length=140)
+    complicationOne: str = Field(min_length=1, max_length=140)
+    complicationTwo: str = Field(min_length=1, max_length=140)
+    endingCondition: str = Field(min_length=1, max_length=120)
+    starterMessage: str = Field(min_length=1, max_length=140)
+
+
+class GuidedScenePlanAIResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    plan: GuidedScenePlanAI
+
+
 class PictureStoryMissionAIResult(BaseModel):
     mission: PictureStoryMissionAI
 
