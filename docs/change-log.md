@@ -22,12 +22,22 @@ Next step:
 
 Date: 2026-08-12 PDT
 
-Branch: `codex/fix-diagnose-empty-output` → `main`
+Branches: `codex/fix-diagnose-empty-output` and
+`codex/document-diagnose-empty-output` → `main`
 
-GitHub status: Pending review and merge.
+GitHub status: PR [#111](https://github.com/jinyu-cai/weakspot-english-coach/pull/111)
+merged at `db240f1a90db122313c49df7124e894cdce848b2`. Vercel Preview
+passed before merge, and merged-commit Production deployment
+`Bm9DmbykpGzsKZXTN9fo3aEY22fE` succeeded.
 
-Deploy status: Pending backend deployment. No frontend runtime change is
-required.
+Deploy status: **backend LIVE** on `oracle-us-sj` at the exact merged commit.
+The deployed `apps/api` archive SHA-256 is
+`5c22b7ae2495515d9f3a4016e02ec8d8fdd24227ee0312c4c9f3d4e2da6534c5`.
+The production `.env` SHA-256 remained
+`7d46de79fe375cead8a37a77fe9b65c5fc94ba2da60aac4bf6507a19f3d3f171`;
+the immediate rollback directory is
+`/home/ubuntu/weakspot-backend.rollback-568b5c7-20260812T233138Z`. No
+frontend runtime change was required.
 
 Root cause:
 
@@ -59,12 +69,18 @@ Tests run:
   verifies recovery with the same 8,192-token completion limit, strict JSON
   Schema, and `minimal` retry reasoning.
 - `git diff --check` — pass.
+- Oracle Compose validation and image rebuild — pass. The replacement container
+  is healthy; local and public `/api/v1/health` return HTTP 200, and the startup
+  log contains no errors.
 
-Known issues: A real Luna Pro Diagnose call and production health check remain
-to be completed after deployment.
+Known issues: No known deployment issue. A synthetic live Luna Pro request was
+not sent because the execution environment requires separate explicit approval
+before sending test writing to the production external provider; production
+health and exact runtime code markers were verified without that write/cost.
 
-Next step: Open and merge the hotfix PR, deploy the exact merge commit to the
-Oracle backend, and verify Diagnose against the production provider.
+Next step: Retry the original Deep Diagnose in the UI and monitor the resulting
+trace for `finish_reason=stop`, non-empty output, and first-attempt schema
+validation success.
 
 ## 2026-08-11 — Route Daily Coach voice roleplays through Realtime
 
