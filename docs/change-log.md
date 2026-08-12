@@ -24,9 +24,18 @@ Date: 2026-08-11 PDT
 
 Branch: `codex/fix-chat-session-analysis` → `main`
 
-GitHub status: Fix PR pending.
+GitHub status: Fix PRs [#104](https://github.com/jinyu-cai/weakspot-english-coach/pull/104)
+and [#105](https://github.com/jinyu-cai/weakspot-english-coach/pull/105) merged.
 
-Deploy status: Pending frontend and Oracle backend deployment.
+Deploy status: **frontend and backend LIVE**. Final merged commit
+`0d1337e158ddba6ac0743ffdeb4879cadb6bddb2` is deployed. Vercel Production
+deployment `8RCavMB9m9XMDtwXSZNW3tanRHzy` completed successfully. The exact
+Oracle `apps/api` archive SHA-256 is
+`52a201def3ffad2b63a3f498f4c5c5942af67742453ea42af8417d4ec4ab820b`.
+The production `.env` SHA-256 remained
+`7d46de79fe375cead8a37a77fe9b65c5fc94ba2da60aac4bf6507a19f3d3f171`;
+the prior release is preserved at
+`/home/ubuntu/weakspot-backend.rollback-1a2bf6d-20260812T050722Z`.
 
 Root cause:
 
@@ -70,12 +79,20 @@ Tests run:
   returned 4 corrections, 2 natural expressions, 2 weaknesses, and a complete
   summary.
 - `git diff --check` — pass.
+- Production Fast chat — pass. The public catalog/session retained
+  `ds-v4-flash-0731`; the server log confirmed request model
+  `deepseek-v4-flash`, `reasoning_effort=medium`, and a first-attempt response.
+- Production asynchronous analysis — pass. The start endpoint returned
+  `202 processing` in 0.13 seconds; Luna Pro/MAX used the compact strict schema,
+  a 20,000-token completion budget, and one attempt. It completed in 98.394
+  seconds with one correction and one weakness, and a repeated start returned
+  the saved `completed` result without 409.
 
 Known issues: MAX reasoning analysis can take several minutes by design; the UI
 now represents it as background processing instead of a failed HTTP request.
 
-Next step: Merge, deploy both runtimes, and verify a production background
-analysis job reaches `completed` without a 409 or proxy timeout.
+Next step: No release work remains. The user can retry End Chat on the original
+session; legacy Fast-only sessions now analyze with the current Deep model.
 
 ## 2026-08-11 — Restore Luna Pro random scene generation
 
