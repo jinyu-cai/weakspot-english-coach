@@ -6,10 +6,12 @@ from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.api.deps import Identity, rate_limited, resolve_identity
 from app.config import settings
+from app.core.taxonomy import ERROR_TAXONOMY
+from app.models.coach import CoachScenarioFamily
 from app.models.common import OutputLanguage
 from app.db.repositories import (
     TranscriptCapacityError,
@@ -47,6 +49,21 @@ class RealtimeSessionRequest(BaseModel):
     topic: Optional[str] = Field(default=None, max_length=300)
     model: Optional[str] = Field(default=None, max_length=200)
     outputLanguage: OutputLanguage = "en"
+    scenarioPrompt: Optional[str] = Field(default=None, max_length=4000)
+    starterMessage: Optional[str] = Field(default=None, max_length=1200)
+    scenarioFamily: Optional[CoachScenarioFamily] = None
+    scenarioKey: Optional[str] = Field(default=None, max_length=160)
+    missionRunId: Optional[str] = Field(default=None, max_length=100)
+    missionType: Optional[str] = Field(default=None, max_length=100)
+    missionTargetSkills: List[str] = Field(default_factory=list, max_length=4)
+
+    @field_validator("missionTargetSkills")
+    @classmethod
+    def validate_mission_skills(cls, value: List[str]) -> List[str]:
+        invalid = [skill for skill in value if skill not in ERROR_TAXONOMY]
+        if invalid:
+            raise ValueError(f"Unsupported mission target skill(s): {', '.join(invalid)}")
+        return list(dict.fromkeys(value))
 
 
 class TranscriptMessage(BaseModel):
@@ -178,7 +195,8 @@ def create_realtime_session(
     try:
         memory_pack = retrieve_memory_pack(
             req.userId,
-            f"Start a realtime English conversation about {req.topic or 'general conversation'}; "
+            f"Start a realtime English conversation about "
+            f"{req.scenarioPrompt or req.topic or 'general conversation'}; "
             "honor learner preferences and goals.",
             purpose="realtime_chat",
         )
@@ -198,7 +216,14 @@ def create_realtime_session(
         "id": session_id,
         "userId": req.userId,
         "topic": req.topic,
-        "scenarioPrompt": None,
+        "scenarioPrompt": req.scenarioPrompt,
+        "starterMessage": req.starterMessage,
+        "scenarioFamily": req.scenarioFamily,
+        "scenarioKey": req.scenarioKey,
+        "missionRunId": req.missionRunId,
+        "missionType": req.missionType,
+        "missionTargetSkills": req.missionTargetSkills,
+        "learningRunId": req.missionRunId,
         "mode": "voice",
         "voiceModel": realtime_model,
         "outputLanguage": req.outputLanguage,
@@ -236,6 +261,23 @@ def create_realtime_session(
         topic=topic_text,
         language_instruction=realtime_hint_instruction(req.outputLanguage),
     )
+    if req.scenarioPrompt:
+        instructions += (
+            "\n\nDAILY MISSION ROLEPLAY\n"
+            "The following app-provided brief defines your character, setting, and goal. "
+            "Stay in character, let the learner do the work, and continue until the learner ends the call.\n"
+            "<mission_brief>\n"
+            f"{req.scenarioPrompt.strip()}\n"
+            "</mission_brief>"
+        )
+    if req.starterMessage:
+        instructions += (
+            "\nThe app will request the first response after the connection opens. "
+            "Begin by speaking this exact app-provided opening message, then wait for the learner:\n"
+            "<opening_message>\n"
+            f"{req.starterMessage.strip()}\n"
+            "</opening_message>"
+        )
     if memory_pack.get("text"):
         instructions += (
             f"\n\n{memory_pack['text']}\nPersonalize naturally. The learner's current statement always overrides memory. "

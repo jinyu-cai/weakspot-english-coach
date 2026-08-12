@@ -71,6 +71,7 @@ import type {
   PracticeSubmitResponse,
   PracticeType,
   ProfileResponse,
+  RealtimeSessionContext,
   RealtimeSessionResponse,
   SessionAnalysisResponse,
 } from "./types"
@@ -1793,10 +1794,16 @@ export async function createRealtimeSession(
   userId: string = DEMO_USER_ID,
   topic?: string,
   model: RealtimeVoiceModel = "gpt-realtime-mini-2025-12-15",
+  context?: RealtimeSessionContext,
 ): Promise<RealtimeSessionResponse> {
   return apiFetch<RealtimeSessionResponse>("/chat/realtime/session", {
     method: "POST",
-    body: JSON.stringify(withOutputLanguage({ userId, topic, model })),
+    body: JSON.stringify(withOutputLanguage({
+      ...context,
+      userId,
+      topic,
+      model,
+    })),
   })
 }
 

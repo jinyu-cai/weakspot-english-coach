@@ -137,6 +137,22 @@ def main() -> int:
             topic="x" * 301,
         )
     )
+    _expect_validation_error(
+        lambda: RealtimeSessionRequest(
+            userId="ignored",
+            missionTargetSkills=["not.a.real.skill"],
+        )
+    )
+    coach_realtime_request = RealtimeSessionRequest(
+        userId="ignored",
+        scenarioPrompt="A daily Coach roleplay.",
+        starterMessage="Welcome to the roleplay.",
+        scenarioFamily="community_event",
+        missionRunId="lr_coach_voice",
+        missionType="guided_scene",
+        missionTargetSkills=["grammar.verb_tense", "grammar.verb_tense"],
+    )
+    assert coach_realtime_request.missionTargetSkills == ["grammar.verb_tense"]
 
     # At the repository capacity, 490 four-byte UTF-8 messages pack into
     # exactly 98 chunks. The commit then uses the DynamoDB maximum of 100

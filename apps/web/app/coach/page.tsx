@@ -31,6 +31,7 @@ import { DiagnosticReport } from "@/components/diagnostic-report"
 import { useLanguage } from "@/components/language-provider"
 import { SessionSummary } from "@/components/session-summary"
 import { SessionWin } from "@/components/session-win"
+import { VoiceChatPanel, type VoiceChatLifecycle } from "@/components/voice-chat-panel"
 import { sessionWinFromCoach } from "@/lib/session-win"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -64,6 +65,7 @@ import type {
 } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { shouldSendFromChatComposer } from "@/lib/chat-composer"
+import { setVoiceNavigationLocked } from "@/lib/voice-navigation-guard"
 import {
   finishTaskResume,
   loadTaskResume,
@@ -284,6 +286,7 @@ export default function CoachPage() {
   const [chatAnalysis, setChatAnalysis] = useState<SessionAnalysis | null>(null)
   const [stealthPractice, setStealthPractice] = useState<StealthPracticeResult | null>(null)
   const [stealthPractices, setStealthPractices] = useState<StealthPracticeResult[]>([])
+  const [voiceLifecycle, setVoiceLifecycle] = useState<VoiceChatLifecycle>({ active: false, pending: false })
 
   const recognitionRef = useRef<RecognitionLike | null>(null)
   const dictationBaseRef = useRef("")
@@ -333,6 +336,13 @@ export default function CoachPage() {
     screenRef.current = screen
     attemptCompletedRef.current = attemptCompleted
   }, [attemptCompleted, chatMessages, screen])
+
+  const voiceNavigationLocked = voiceLifecycle.active || voiceLifecycle.pending
+
+  useEffect(() => {
+    setVoiceNavigationLocked(voiceNavigationLocked)
+    return () => setVoiceNavigationLocked(false)
+  }, [voiceNavigationLocked])
 
   useEffect(() => {
     if (!mission || (screen !== "briefing" && screen !== "active")) return
@@ -460,6 +470,7 @@ export default function CoachPage() {
     setChatAnalysis(null)
     setStealthPractice(null)
     setStealthPractices([])
+    setVoiceLifecycle({ active: false, pending: false })
     clearWorkTimer()
     attemptCompletedRef.current = false
     timeUpHandledRef.current = false
@@ -468,6 +479,10 @@ export default function CoachPage() {
   }
 
   function returnToBriefing() {
+    if (voiceNavigationLocked) {
+      toast.error(t.chat.voicePanel.finishBeforeLeaving)
+      return
+    }
     stopDictation(true)
     stopPlayback()
     setScreen("briefing")
@@ -479,6 +494,10 @@ export default function CoachPage() {
   }
 
   async function arrangeMission(type: CoachMissionType | undefined = preferredType) {
+    if (voiceNavigationLocked) {
+      toast.error(t.chat.voicePanel.finishBeforeLeaving)
+      return
+    }
     setGenerating(true)
     try {
       if (mission?.activityRunId && (screen === "briefing" || screen === "active")) {
@@ -557,7 +576,7 @@ export default function CoachPage() {
       return
     }
     if (!mission.scene) return
-    if (chatMessages.length === 0) {
+    if (modality === "text" && chatMessages.length === 0) {
       const opening: ChatMessage = {
         id: `coach-opening-${mission.id}`,
         userId: DEMO_USER_ID,
@@ -568,7 +587,11 @@ export default function CoachPage() {
       }
       setChatMessages([opening])
     }
-    startWorkTimer(mission.estimatedMinutes || durationMinutes)
+    if (modality === "text") {
+      startWorkTimer(mission.estimatedMinutes || durationMinutes)
+    } else {
+      clearWorkTimer()
+    }
     setScreen("active")
   }
 
@@ -696,16 +719,19 @@ export default function CoachPage() {
     }
   }
 
-  async function finishRoleplay(sessionOverride?: ChatSession | null) {
+  async function finishRoleplay(sessionOverride?: ChatSession | string | null) {
     const session = sessionOverride ?? chatSession
     if (!mission || !session || analyzing) return
-    const completedUserTurns = chatMessagesRef.current.filter((message) => message.role === "user").length
+    const sessionId = typeof session === "string" ? session : session.id
+    const completedUserTurns = typeof session === "string"
+      ? undefined
+      : chatMessagesRef.current.filter((message) => message.role === "user").length
     // Ending the roleplay completes the timed attempt; feedback review is untimed.
     markAttemptCompleted()
     setAnalyzing(true)
     setScreen("chat_feedback")
     try {
-      const result = await analyzeSession(session.id, hintLevel)
+      const result = await analyzeSession(sessionId, hintLevel)
       setChatAnalysis(result.analysis)
       setStealthPractice(result.stealthPractice ?? null)
       setStealthPractices(
@@ -717,7 +743,7 @@ export default function CoachPage() {
           status: "completed",
           hintLevel,
           playCount: playsUsed,
-          attemptCount: completedUserTurns,
+          ...(completedUserTurns === undefined ? {} : { attemptCount: completedUserTurns }),
         })
       }
       finishTaskResume("coach", "completed")
@@ -730,6 +756,16 @@ export default function CoachPage() {
     } finally {
       setAnalyzing(false)
     }
+  }
+
+  async function finishRealtimeRoleplay(sessionId?: string) {
+    setVoiceLifecycle({ active: false, pending: false })
+    if (!sessionId) {
+      clearWorkTimer()
+      setTimeUp(false)
+      return
+    }
+    await finishRoleplay(sessionId)
   }
 
   const handleWorkTimeUpRef = useRef<() => void>(() => {})
@@ -1339,7 +1375,7 @@ export default function CoachPage() {
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Button variant="ghost" size="sm" onClick={returnToBriefing}>
+        <Button variant="ghost" size="sm" onClick={returnToBriefing} disabled={voiceNavigationLocked}>
           <ArrowLeft className="size-4" /> {t.coach.mission.backToBriefing}
         </Button>
         <div className="flex flex-wrap items-center gap-2">
@@ -1367,7 +1403,7 @@ export default function CoachPage() {
             <Button variant="outline" size="sm" onClick={() => setTimeUp(false)}>
               {t.coach.mission.timeUpContinue}
             </Button>
-            {mission.type === "guided_scene" && chatSession && userTurns > 0 ? (
+            {mission.type === "guided_scene" && modality === "text" && chatSession && userTurns > 0 ? (
               <Button
                 size="sm"
                 onClick={() => void finishRoleplay()}
@@ -1428,7 +1464,29 @@ export default function CoachPage() {
             </div>
           ) : null}
 
-          {mission.type === "guided_scene" ? (
+          {mission.type === "guided_scene" && modality === "voice" && mission.scene ? (
+            <div className="h-[34rem] min-h-96 rounded-3xl border border-border bg-card p-4 shadow-sm sm:p-5">
+              <VoiceChatPanel
+                topic={mission.title}
+                sessionContext={{
+                  scenarioPrompt: mission.scene.scenarioPrompt,
+                  starterMessage: mission.scene.starterMessage,
+                  scenarioFamily: mission.scene.scenarioFamily,
+                  scenarioKey: mission.scene.scenarioKey,
+                  missionRunId: mission.activityRunId ?? undefined,
+                  missionType: mission.type,
+                  missionTargetSkills: mission.targetSkills,
+                }}
+                onConnected={() => {
+                  if (workEndsAt === null) {
+                    startWorkTimer(mission.estimatedMinutes || durationMinutes)
+                  }
+                }}
+                onEnd={finishRealtimeRoleplay}
+                onLifecycleChange={setVoiceLifecycle}
+              />
+            </div>
+          ) : mission.type === "guided_scene" ? (
             <div className="min-h-80 rounded-3xl border border-border bg-card p-4 shadow-sm sm:p-5">
               <div className="flex flex-col gap-4" role="log" aria-live="polite" aria-relevant="additions text">
                 {chatMessages.map((message) => (
@@ -1463,6 +1521,7 @@ export default function CoachPage() {
             </div>
           ) : null}
 
+          {mission.type === "guided_scene" && modality === "voice" ? null : (
           <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <label htmlFor="coach-answer" className="text-sm font-semibold">{t.coach.mission.responseLabel}</label>
@@ -1513,8 +1572,9 @@ export default function CoachPage() {
               )}
             </div>
           </div>
+          )}
 
-          {mission.type === "guided_scene" && userTurns >= 2 ? (
+          {mission.type === "guided_scene" && modality === "text" && userTurns >= 2 ? (
             <div className="flex justify-end">
               <Button variant="outline" onClick={() => void finishRoleplay()} disabled={sending || analyzing || isDictating || isSpeaking}>
                 {analyzing ? <Spinner className="size-4" /> : <CheckCircle2 className="size-4" />}
