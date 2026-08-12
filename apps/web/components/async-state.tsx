@@ -30,7 +30,7 @@ export function AsyncErrorState({
   feature: string
   error?: unknown
   timedOut?: boolean
-  onRetry: () => unknown | Promise<unknown>
+  onRetry?: () => unknown | Promise<unknown>
   compact?: boolean
 }) {
   const [retrying, setRetrying] = useState(false)
@@ -45,7 +45,9 @@ export function AsyncErrorState({
   const description = offline
     ? (zh ? "当前学习内容已保存在本设备。恢复网络后即可重试。" : "Your current work is kept on this device. Reconnect, then try again.")
     : timedOut
-      ? (zh ? "当前内容不会丢失。你可以再等一下，或在这里重试。" : "Your current work is safe. You can wait a little longer or retry here.")
+      ? onRetry
+        ? (zh ? "当前内容不会丢失。你可以再等一下，或在这里重试。" : "Your current work is safe. You can wait a little longer or retry here.")
+        : (zh ? "请求仍在运行，请保持页面打开；完成后结果会自动显示。" : "The request is still running. Keep this page open and the result will appear automatically.")
       : error instanceof Error && error.message
         ? error.message
         : (zh ? "当前内容仍然保留，可以再次请求。" : "Your current work is still here. Try the request again.")
@@ -58,6 +60,7 @@ export function AsyncErrorState({
   }, [feature, offline, timedOut])
 
   async function retry() {
+    if (!onRetry) return
     setRetrying(true)
     try {
       const succeeded = await onRetry()
@@ -76,10 +79,12 @@ export function AsyncErrorState({
           <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{description}</p>
         </div>
       </div>
-      <Button type="button" variant="outline" size="sm" onClick={() => void retry()} disabled={retrying}>
-        <RefreshCw className={retrying ? "animate-spin" : ""} data-icon="inline-start" />
-        {retrying ? (zh ? "重试中…" : "Retrying…") : (zh ? "重试" : "Try again")}
-      </Button>
+      {onRetry ? (
+        <Button type="button" variant="outline" size="sm" onClick={() => void retry()} disabled={retrying}>
+          <RefreshCw className={retrying ? "animate-spin" : ""} data-icon="inline-start" />
+          {retrying ? (zh ? "重试中…" : "Retrying…") : (zh ? "重试" : "Try again")}
+        </Button>
+      ) : null}
     </div>
   )
 

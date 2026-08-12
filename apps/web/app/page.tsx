@@ -180,7 +180,7 @@ export default function DiagnosePage() {
 
       {loading && !timedOut ? <DiagnosticLoading /> : null}
       {loading && timedOut ? (
-        <AsyncErrorState feature="diagnose" timedOut onRetry={handleAnalyze} />
+        <AsyncErrorState feature="diagnose" timedOut />
       ) : null}
       {!loading && error && !result ? (
         <AsyncErrorState feature="diagnose" error={error} onRetry={handleAnalyze} />

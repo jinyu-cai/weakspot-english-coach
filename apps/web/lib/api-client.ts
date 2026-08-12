@@ -106,6 +106,10 @@ const DEFAULT_API_TIMEOUT_MS = 20_000
 // Non-streaming model work commonly takes longer than an ordinary API request.
 // Keep this below the backend proxy's 120-second read timeout.
 const LLM_OPERATION_TIMEOUT_MS = 110_000
+// Diagnose streams keepalive bytes while deep reasoning runs. Match the
+// backend's 600-second upstream timeout instead of aborting a healthy stream at
+// the ordinary LLM-operation deadline and leaving the server job in flight.
+const DIAGNOSE_OPERATION_TIMEOUT_MS = 610_000
 export const LEARNER_RESPONSE_MAX_CHARACTERS = 12_000
 const DIAGNOSE_ANALYSIS_CONTEXT_MAX_CHARS = 2_400
 const INPUT_RESPONSE_MAX_CHARS = 8_000
@@ -442,7 +446,7 @@ export async function diagnose(
         : {}),
       ...(learningContext ? { learningContext } : {}),
     })),
-  }, LLM_OPERATION_TIMEOUT_MS)
+  }, DIAGNOSE_OPERATION_TIMEOUT_MS)
 }
 
 export async function analyzeChatImport(
