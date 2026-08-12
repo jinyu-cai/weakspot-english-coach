@@ -18,6 +18,80 @@ Known issues:
 Next step:
 ```
 
+## 2026-08-11 — Route Daily Coach voice roleplays through Realtime
+
+Date: 2026-08-11 PDT
+
+Branches: `codex/fix-daily-coach-realtime` and
+`codex/fix-realtime-session-expiry` → `main`
+
+GitHub status: PRs [#107](https://github.com/jinyu-cai/weakspot-english-coach/pull/107)
+and [#108](https://github.com/jinyu-cai/weakspot-english-coach/pull/108) merged.
+The final merge commit is `0a818bae0c6d6009d852ae596cbaadc834c2e469`.
+
+Deploy status: **frontend and backend LIVE**. Vercel Production deployment
+`2pTq6xg7YJjsVEKzzcYcTX2WnCMq` completed successfully. The exact Oracle
+`apps/api` archive SHA-256 is
+`1bc8bc01d48911ce77dbb615e9028e2e42d87743c2b7dbe55d7a8fa5f9185075`.
+The production `.env` SHA-256 remained
+`7d46de79fe375cead8a37a77fe9b65c5fc94ba2da60aac4bf6507a19f3d3f171`;
+the immediate rollback release is
+`/home/ubuntu/weakspot-backend.rollback-aadbe14-20260812T053723Z`.
+
+Root cause:
+
+- Daily Coach `guided_scene` voice missions only changed the presentation to
+  browser dictation and TTS; each learner turn still used the ordinary text
+  `/chat/send` endpoint, so the roleplay never entered a Realtime voice session.
+- The first production smoke test then exposed an older Realtime integration
+  bug: OpenAI's current client-secret schema rejects `session.expires_at` with
+  `400 Unknown parameter`, which the backend surfaced as `502` for ordinary
+  users. Local tests had mocked the upstream client-secret response.
+
+Summary:
+
+- Voice guided scenes now use the existing OpenAI Realtime WebRTC panel. Text
+  guided scenes and one-shot voice tasks such as listen-and-retell keep their
+  appropriate existing input flows.
+- The mission brief, opening line, scenario identity, ActivityRun, and target
+  skills are stored on the Realtime session and used by post-session analysis.
+- The AI character produces the app-authored opening line after the Realtime
+  data channel opens; ending the call saves the transcript before starting the
+  existing asynchronous deep analysis.
+- Navigation is locked while a call or transcript save is active. The Coach
+  timer starts only after WebRTC connects.
+- Removed the unsupported upstream `session.expires_at` field. Ordinary-user
+  duration is enforced in the browser; timeout stops the microphone, settles
+  and saves the transcript, and hands off to feedback. The sideband monitor
+  remains a server-side enforcement layer when attached.
+
+Tests run:
+
+- Backend compilation, storage contracts, and full learner-loop integration —
+  pass. Integration coverage verifies Coach Realtime context, taxonomy bounds,
+  transcript behavior, and absence of upstream `session.expires_at`.
+- Frontend ESLint, TypeScript, and Next.js production build — pass.
+- Both PRs' Vercel Preview checks and the final merge-commit Production
+  deployment — pass.
+- Public health and Realtime client-secret creation — pass. Production returned
+  a valid secret (presence only was checked and it was never printed), the
+  configured mini model, and the 120-second guest limit.
+- Production DynamoDB metadata — pass. Synthetic sessions persisted `mode=voice`,
+  `gpt-realtime-mini-2025-12-15`, `community_event`, `guided_scene`, and the
+  expected scenario key.
+- Authenticated browser QA — pass. A new 5-minute voice guided scene opened the
+  `Voice Practice` panel with Mini / Realtime 2 and `Start Voice Chat`; the old
+  dictation textarea and Send path were absent. Microphone permission and live
+  audio were deliberately not activated during automated QA.
+
+Known issues: Live audio input/output still requires the learner to grant
+browser microphone permission; automated production QA intentionally stopped
+before that permission boundary.
+
+Next step: The user can start a new Daily Mission voice roleplay and grant
+microphone access. If an exposed browser session cookie has not already been
+rotated, sign out and back in before testing.
+
 ## 2026-08-11 — Make end-of-chat analysis asynchronous
 
 Date: 2026-08-11 PDT
