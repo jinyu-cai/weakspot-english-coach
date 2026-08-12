@@ -1,6 +1,6 @@
-from typing import List, Literal, Optional
+from typing import Annotated, List, Literal, Optional
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from app.models.common import OutputLanguage, Severity
 from app.models.coach import CoachScenarioFamily
@@ -213,3 +213,118 @@ class SessionAnalysisAI(BaseModel):
             "targetEvidence": 4,
         }
         return value[:limits[info.field_name]] if isinstance(value, list) else value
+
+
+SessionAnalysisShortText = Annotated[str, Field(min_length=1, max_length=300)]
+SessionAnalysisEvidenceText = Annotated[
+    str,
+    Field(min_length=1, max_length=EVIDENCE_QUOTE_MAX_CHARACTERS),
+]
+
+
+class SessionCorrectionPlanAI(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    severity: Severity
+    original: SessionAnalysisEvidenceText
+    corrected: SessionAnalysisEvidenceText
+    teachingNote: SessionAnalysisShortText
+    practiceGoal: SessionAnalysisShortText
+
+    @field_validator("code")
+    @classmethod
+    def validate_error_code(cls, value: str) -> str:
+        if value not in ERROR_TAXONOMY:
+            raise ValueError(f"Unsupported session correction code: {value}")
+        return value
+
+
+class SessionNaturalExpressionPlanAI(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    original: SessionAnalysisEvidenceText
+    natural: SessionAnalysisEvidenceText
+    teachingNote: SessionAnalysisShortText
+    context: SessionAnalysisShortText
+    example: SessionAnalysisShortText
+
+
+class SessionWeaknessPlanAI(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    severity: Severity
+    evidenceQuote: SessionAnalysisEvidenceText
+    teachingNote: SessionAnalysisShortText
+    practiceGoal: SessionAnalysisShortText
+
+    @field_validator("code")
+    @classmethod
+    def validate_error_code(cls, value: str) -> str:
+        if value not in ERROR_TAXONOMY:
+            raise ValueError(f"Unsupported session weakness code: {value}")
+        return value
+
+
+class SessionMemoryPlanAI(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["preference", "goal", "strategy", "weakness", "episode"]
+    canonicalKey: str = Field(min_length=3, max_length=160)
+    content: str = Field(min_length=3, max_length=500)
+    evidence: str = Field(max_length=500)
+    confidence: float = Field(ge=0, le=1)
+    importance: float = Field(ge=0, le=1)
+    expiresInDays: Optional[int] = Field(ge=1, le=3650)
+
+
+class SessionProbeAssessmentPlanAI(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    probeId: Optional[str]
+    opportunityPresent: bool
+    outcome: Literal[
+        "success",
+        "hinted_success",
+        "failure",
+        "avoided",
+        "no_opportunity",
+    ]
+    evidenceQuote: str = Field(max_length=EVIDENCE_QUOTE_MAX_CHARACTERS)
+    rationale: str = Field(max_length=300)
+    confidence: float = Field(ge=0, le=1)
+    hintLevel: int = Field(ge=0, le=4)
+
+
+class SessionTargetEvidencePlanAI(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    skillCode: str
+    opportunityPresent: bool
+    outcome: Literal["success", "failure", "avoided", "no_opportunity"]
+    evidenceQuote: str = Field(max_length=EVIDENCE_QUOTE_MAX_CHARACTERS)
+    confidence: float = Field(ge=0, le=1)
+
+    @field_validator("skillCode")
+    @classmethod
+    def validate_skill_code(cls, value: str) -> str:
+        if value not in ERROR_TAXONOMY:
+            raise ValueError(f"Unsupported session target code: {value}")
+        return value
+
+
+class SessionAnalysisPlanAI(BaseModel):
+    """Compact MAX-reasoning result expanded into the public analysis shape."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str = Field(min_length=1, max_length=500)
+    corrections: List[SessionCorrectionPlanAI] = Field(max_length=4)
+    naturalExpressions: List[SessionNaturalExpressionPlanAI] = Field(max_length=2)
+    weaknesses: List[SessionWeaknessPlanAI] = Field(max_length=3)
+    strengths: List[SessionAnalysisShortText] = Field(max_length=2)
+    nextActions: List[SessionAnalysisShortText] = Field(max_length=2)
+    memoryCandidates: List[SessionMemoryPlanAI] = Field(max_length=2)
+    stealthProbeAssessments: List[SessionProbeAssessmentPlanAI] = Field(max_length=3)
+    targetEvidence: List[SessionTargetEvidencePlanAI] = Field(max_length=4)
