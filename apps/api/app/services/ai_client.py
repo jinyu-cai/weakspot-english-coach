@@ -14,6 +14,7 @@ from typing import Optional, Type, TypeVar
 from urllib.parse import urlparse
 
 from openai import OpenAI, OpenAIError
+from openai.lib._pydantic import to_strict_json_schema
 from pydantic import BaseModel, ValidationError
 
 from app.config import settings
@@ -173,6 +174,20 @@ def _provider_extra_body(
     return extra_body or None
 
 
+def _response_format_schema(
+    response_model: Type[BaseModel],
+    *,
+    strict: bool,
+) -> dict:
+    """Build the schema accepted by the selected Structured Outputs mode."""
+    if strict:
+        # Pydantic's ordinary schema leaves fields with defaults optional and
+        # object shapes open. OpenAI strict Structured Outputs requires every
+        # property in `required` and `additionalProperties: false` recursively.
+        return to_strict_json_schema(response_model)
+    return response_model.model_json_schema()
+
+
 def parse_with_model(
     messages: list,
     response_model: Type[T],
@@ -274,7 +289,10 @@ def parse_with_model(
                         "json_schema": {
                             "name": response_model.__name__,
                             "strict": native_structured_output_strict,
-                            "schema": response_model.model_json_schema(),
+                            "schema": _response_format_schema(
+                                response_model,
+                                strict=native_structured_output_strict,
+                            ),
                         },
                     }
                     if native_structured_output
