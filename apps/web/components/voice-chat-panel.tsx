@@ -180,6 +180,7 @@ export function VoiceChatPanel({ topic, sessionContext, onConnected, onEnd, onLi
                   entry.role === "user"
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted/60 text-foreground",
+                  !entry.final && "opacity-80",
                 )}
               >
                 {entry.text}

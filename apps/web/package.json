@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint .",
     "test:chat-import": "node scripts/check-chat-import-batching.mjs",
+    "test:realtime-transcript": "node scripts/check-realtime-transcript.mjs",
     "test:timeouts": "node scripts/check-api-timeouts.mjs"
   },
   "dependencies": {

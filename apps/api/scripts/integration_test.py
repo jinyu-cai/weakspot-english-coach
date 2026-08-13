@@ -1045,9 +1045,11 @@ def main() -> int:
                 _handle_realtime_event(
                     transcript_state,
                     {
-                        "type": "response.audio_transcript.delta",
+                        "type": "response.output_audio_transcript.delta",
                         "response_id": "resp_1",
                         "item_id": "output_item_1",
+                        "output_index": 0,
+                        "content_index": 0,
                         "delta": "You went",
                     },
                 )
@@ -1056,9 +1058,11 @@ def main() -> int:
                 _handle_realtime_event(
                     transcript_state,
                     {
-                        "type": "response.audio_transcript.delta",
+                        "type": "response.output_audio_transcript.delta",
                         "response_id": "resp_1",
                         "item_id": "output_item_1",
+                        "output_index": 0,
+                        "content_index": 0,
                         "delta": " to school yesterday.",
                     },
                 )
@@ -1067,9 +1071,12 @@ def main() -> int:
                 _handle_realtime_event(
                     transcript_state,
                     {
-                        "type": "response.audio_transcript.done",
+                        "type": "response.output_audio_transcript.done",
                         "response_id": "resp_1",
                         "item_id": "output_item_1",
+                        "output_index": 0,
+                        "content_index": 0,
+                        "transcript": "You went to school yesterday.",
                     },
                 )
             )
@@ -1078,13 +1085,51 @@ def main() -> int:
             assert voice_messages[0]["content"] == "I go to school yesterday.", voice_messages
             assert voice_messages[1]["content"] == "You went to school yesterday.", voice_messages
 
+            # The final response object is a lossless fallback when a transcript
+            # delta/done event is missed. It must not duplicate an already-saved turn.
+            asyncio.run(
+                _handle_realtime_event(
+                    transcript_state,
+                    {
+                        "type": "response.done",
+                        "response": {
+                            "id": "resp_1",
+                            "usage": {"total_tokens": 12},
+                            "output": [
+                                {
+                                    "id": "output_item_1",
+                                    "type": "message",
+                                    "role": "assistant",
+                                    "content": [
+                                        {
+                                            "type": "output_audio",
+                                            "transcript": "You went to school yesterday.",
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                    },
+                )
+            )
+            voice_messages = list_chat_messages("owner", owner_voice_session_id)
+            assert [msg["role"] for msg in voice_messages] == ["user", "assistant"], voice_messages
+
             r = client.post(
                 f"/api/v1/chat/sessions/{owner_voice_session_id}/transcript",
                 json={
                     "userId": "owner",
                     "messages": [
-                        {"role": "user", "content": "I go to school yesterday."},
-                        {"role": "assistant", "content": "You went to school yesterday."},
+                        {
+                            "role": "user",
+                            "content": "I go to school yesterday.",
+                            "clientMessageId": "user:input_item_1",
+                        },
+                        {
+                            "role": "assistant",
+                            "content": "You went to school yesterday.",
+                            "clientMessageId": "assistant:output_item_1",
+                        },
                     ],
                 },
             )

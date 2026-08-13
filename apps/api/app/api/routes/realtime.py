@@ -175,6 +175,20 @@ def _message_dedupe_key(
     return role, " ".join(content.strip().split())
 
 
+def _message_dedupe_keys(
+    role: str,
+    content: str,
+    client_message_id: Optional[str] = None,
+) -> set[tuple[str, str]]:
+    keys = {_message_dedupe_key(role, content, client_message_id)}
+    if client_message_id and client_message_id.strip():
+        # Sideband and browser transcript uploads share the Realtime item ID.
+        # Keep a content alias so older clients without IDs can still retry
+        # without duplicating an already-persisted sideband turn.
+        keys.add(_message_dedupe_key(role, content))
+    return keys
+
+
 @router.post("/realtime/session")
 def create_realtime_session(
     req: RealtimeSessionRequest,
@@ -500,13 +514,14 @@ def save_transcript(
 
         existing_messages = list_chat_messages(req.userId, session_id, limit=None)
         existing_keys = {
-            _message_dedupe_key(
+            key
+            for msg in existing_messages
+            if str(msg.get("content") or "").strip()
+            for key in _message_dedupe_keys(
                 str(msg.get("role") or ""),
                 str(msg.get("content") or ""),
                 str(msg.get("clientMessageId") or "") or None,
             )
-            for msg in existing_messages
-            if str(msg.get("content") or "").strip()
         }
         skipped_duplicates = 0
         new_user_texts: list[str] = []
@@ -519,7 +534,7 @@ def save_transcript(
             if dedupe_key in existing_keys:
                 skipped_duplicates += 1
                 continue
-            existing_keys.add(dedupe_key)
+            existing_keys.update(_message_dedupe_keys(msg.role, content, msg.clientMessageId))
             message = {
                 "id": f"cm_{uuid4().hex[:12]}",
                 "userId": req.userId,
