@@ -22,11 +22,21 @@ Next step:
 
 Date: 2026-08-12 PDT
 
-Branch: `codex/realtime-ai-transcript` → `main`
+Branches: `codex/realtime-ai-transcript` and
+`codex/document-realtime-ai-transcript-release` → `main`
 
-GitHub status: Pending review and merge.
+GitHub status: PR [#113](https://github.com/jinyu-cai/weakspot-english-coach/pull/113)
+merged at `454d68954c4f86dd8d3fbc71cf19a2a166f49175`. Vercel Preview
+passed before merge, and merged-commit Production deployment
+`9r8cKrfBNafV92ixa3cA6Fm4JP1m` succeeded.
 
-Deploy status: Pending frontend and backend production deployment.
+Deploy status: **frontend and backend LIVE**. The public Chat page returns HTTP
+200. The exact merged `apps/api` archive with SHA-256
+`9c47f552a106908b0ea1de58949443013b7cfdd2b4bb3b07dd6b13c87e6066b8`
+was deployed to `oracle-us-sj`. The production `.env` SHA-256 remained
+`7d46de79fe375cead8a37a77fe9b65c5fc94ba2da60aac4bf6507a19f3d3f171`;
+the immediate rollback directory is
+`/home/ubuntu/weakspot-backend.rollback-db240f1-20260813T035054Z`.
 
 Root cause:
 
@@ -63,12 +73,18 @@ Tests run:
   arrival, live partial text, final transcript replacement, `response.done`
   recovery, and duplicate suppression.
 - `git diff --check` — pass.
+- Vercel Preview and merged-commit Production deployments — pass; the public
+  `/chat` page returns HTTP 200.
+- Oracle Compose validation, image rebuild, internal/public health endpoints,
+  runtime code markers, and startup logs — pass. The replacement container is
+  healthy and both health endpoints return HTTP 200.
 
 Known issues: A live browser microphone session still requires explicit user
-permission and remains to be verified after deployment.
+permission. Automated production verification did not activate the microphone
+or send audio to the external Realtime provider.
 
-Next step: Merge the PR, verify Vercel Production, deploy the exact merge commit
-to Oracle, and run an authenticated browser Realtime transcript check.
+Next step: Start a Realtime chat in the UI, grant microphone permission, and
+confirm the Coach script appears incrementally beside the learner transcript.
 
 ## 2026-08-12 — Prevent empty Diagnose structured output
 
