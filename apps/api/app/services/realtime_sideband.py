@@ -25,6 +25,14 @@ logger = logging.getLogger("uvicorn.error")
 
 AUDIT_FLUSH_SECONDS = 5
 AUDIT_EVENT_FLUSH_INTERVAL = 20
+ASSISTANT_TRANSCRIPT_DELTA_EVENTS = {
+    "response.output_audio_transcript.delta",
+    "response.audio_transcript.delta",
+}
+ASSISTANT_TRANSCRIPT_DONE_EVENTS = {
+    "response.output_audio_transcript.done",
+    "response.audio_transcript.done",
+}
 
 _ZERO_USAGE = {
     "totalTokens": 0,
@@ -174,15 +182,12 @@ def _transcript_text(value: Any, limit: int = 8000) -> str | None:
 
 
 def _transcript_event_key(event: dict[str, Any], role: str, text: str) -> str:
-    stable_parts = [
-        event.get("item_id"),
-        event.get("response_id"),
-        event.get("output_index"),
-        event.get("content_index"),
-    ]
-    stable = [str(part) for part in stable_parts if part is not None and str(part)]
-    if stable:
-        return f"{role}:" + ":".join(stable)
+    item_id = event.get("item_id")
+    if item_id is not None and str(item_id):
+        return f"{role}:{item_id}"
+    response_id = event.get("response_id")
+    if response_id is not None and str(response_id):
+        return f"{role}:{response_id}"
     return f"{role}:{text[:300]}"
 
 
@@ -215,11 +220,10 @@ async def _save_transcript_message(
     role: str,
     text: str,
     event: dict[str, Any],
-) -> None:
+) -> bool:
     key = _transcript_event_key(event, role, text)
     if key in state.saved_transcript_keys:
-        return
-    state.saved_transcript_keys.add(key)
+        return False
 
     created_at = now_iso()
     message = {
@@ -228,6 +232,7 @@ async def _save_transcript_message(
         "sessionId": state.session_id,
         "role": role,
         "content": text,
+        "clientMessageId": key[:160],
         "corrections": None,
         "betterExpression": None,
         "source": "realtime_sideband",
@@ -235,6 +240,7 @@ async def _save_transcript_message(
         "createdAt": created_at,
     }
     await asyncio.to_thread(save_chat_message, message)
+    state.saved_transcript_keys.add(key)
     if role == "user":
         try:
             await asyncio.to_thread(
@@ -257,6 +263,42 @@ async def _save_transcript_message(
         summary,
         state.saved_transcript_message_count,
     )
+    return True
+
+
+def _response_done_assistant_transcripts(
+    event: dict[str, Any],
+) -> list[tuple[str, dict[str, Any]]]:
+    response = event.get("response")
+    if not isinstance(response, dict) or not isinstance(response.get("output"), list):
+        return []
+
+    transcripts: list[tuple[str, dict[str, Any]]] = []
+    for output_index, raw_item in enumerate(response["output"]):
+        if not isinstance(raw_item, dict) or raw_item.get("role") != "assistant":
+            continue
+        item_id = raw_item.get("id")
+        content = raw_item.get("content")
+        if not item_id or not isinstance(content, list):
+            continue
+        for content_index, raw_part in enumerate(content):
+            if not isinstance(raw_part, dict):
+                continue
+            text = _transcript_text(raw_part.get("transcript"))
+            if not text:
+                continue
+            transcripts.append(
+                (
+                    text,
+                    {
+                        "response_id": response.get("id"),
+                        "item_id": item_id,
+                        "output_index": output_index,
+                        "content_index": content_index,
+                    },
+                )
+            )
+    return transcripts
 
 
 async def _connect_realtime_sideband(call_id: str):
@@ -429,23 +471,31 @@ async def _handle_realtime_event(state: RealtimeSidebandState, event: dict[str, 
             state.last_user_transcript = _short_text(text)
             await _save_transcript_message(state, role="user", text=text, event=event)
 
-    if event_type == "response.audio_transcript.delta":
+    if event_type in ASSISTANT_TRANSCRIPT_DELTA_EVENTS:
         key = _assistant_buffer_key(event)
         state.assistant_transcript_buffers[key] = (
             state.assistant_transcript_buffers.get(key, "") + str(event.get("delta") or "")
         )
 
-    if event_type == "response.audio_transcript.done":
-        state.assistant_transcript_count += 1
+    if event_type in ASSISTANT_TRANSCRIPT_DONE_EVENTS:
         key = _assistant_buffer_key(event)
-        text = _transcript_text(event.get("transcript")) or _transcript_text(
-            state.assistant_transcript_buffers.pop(key, "")
-        )
+        buffered = state.assistant_transcript_buffers.pop(key, "")
+        text = _transcript_text(event.get("transcript")) or _transcript_text(buffered)
         if text:
             state.last_assistant_transcript = _short_text(text)
-            await _save_transcript_message(state, role="assistant", text=text, event=event)
+            if await _save_transcript_message(state, role="assistant", text=text, event=event):
+                state.assistant_transcript_count += 1
 
     if event_type == "response.done":
+        for text, transcript_event in _response_done_assistant_transcripts(event):
+            state.last_assistant_transcript = _short_text(text)
+            if await _save_transcript_message(
+                state,
+                role="assistant",
+                text=text,
+                event=transcript_event,
+            ):
+                state.assistant_transcript_count += 1
         state.response_count += 1
         state.usage["responses"] = state.response_count
         _add_usage(state, _event_usage(event))
@@ -457,6 +507,7 @@ async def _handle_realtime_event(state: RealtimeSidebandState, event: dict[str, 
         "session.created",
         "session.updated",
         "conversation.item.input_audio_transcription.completed",
+        "response.output_audio_transcript.done",
         "response.audio_transcript.done",
         "response.done",
         "error",

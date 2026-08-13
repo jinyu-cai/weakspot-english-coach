@@ -5,15 +5,13 @@ import { createRealtimeSession, saveVoiceTranscript } from "@/lib/api-client"
 import type { RealtimeSessionContext, RealtimeVoiceModel, VoiceCompletion } from "@/lib/types"
 import { getCopy } from "@/lib/i18n"
 import { getOutputLanguage } from "@/lib/language"
+import {
+  applyRealtimeTranscriptEvent,
+  createRealtimeTranscriptState,
+  type RealtimeTranscriptEntry as TranscriptEntry,
+} from "@/lib/realtime-transcript"
 
 export type ConnectionStatus = "idle" | "connecting" | "connected" | "error"
-
-interface TranscriptEntry {
-  id: string
-  role: "user" | "assistant"
-  text: string
-  final: boolean
-}
 
 interface StoredVoiceTranscript {
   sessionId: string
@@ -24,15 +22,6 @@ const TRANSCRIPT_SETTLE_MS = 1500
 
 function pendingTranscriptStorageKey(userId: string) {
   return `weakspot:pending-voice-transcript:${userId}`
-}
-
-function transcriptMessageId(message: Record<string, unknown>, role: TranscriptEntry["role"]) {
-  for (const key of ["item_id", "response_id", "event_id"]) {
-    const value = message[key]
-    if (typeof value === "string" && value.trim()) return `${role}:${value.trim()}`
-  }
-  const randomId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
-  return `${role}:${randomId}`
 }
 
 export function useRealtimeChat(
@@ -58,6 +47,7 @@ export function useRealtimeChat(
   const sessionIdRef = useRef<string | null>(null)
   const modelRef = useRef<string>("")
   const transcriptRef = useRef<TranscriptEntry[]>([])
+  const transcriptStateRef = useRef(createRealtimeTranscriptState())
   const disconnectPromiseRef = useRef<Promise<string | undefined> | null>(null)
   const onAutoEndRef = useRef(options?.onAutoEnd)
   useEffect(() => {
@@ -68,7 +58,6 @@ export function useRealtimeChat(
     async () => undefined,
   )
 
-  const aiTranscriptBufferRef = useRef("")
   const fnCallBufferRef = useRef<Record<string, { name: string; args: string }>>({})
 
   const persistPendingTranscript = useCallback((sessionId: string, entries: TranscriptEntry[]) => {
@@ -88,8 +77,7 @@ export function useRealtimeChat(
     }
   }, [userId])
 
-  const appendTranscript = useCallback((entry: TranscriptEntry) => {
-    const next = [...transcriptRef.current, entry]
+  const syncTranscript = useCallback((next: TranscriptEntry[]) => {
     transcriptRef.current = next
     setTranscript(next)
     if (sessionIdRef.current) {
@@ -105,36 +93,13 @@ export function useRealtimeChat(
       return
     }
     const type = msg.type as string
-
-    if (type === "conversation.item.input_audio_transcription.completed") {
-      const text = (msg.transcript as string) || ""
-      if (text.trim()) {
-        appendTranscript({
-          id: transcriptMessageId(msg, "user"),
-          role: "user",
-          text: text.trim(),
-          final: true,
-        })
-      }
+    const transcriptResult = applyRealtimeTranscriptEvent(transcriptStateRef.current, msg)
+    if (transcriptResult.state !== transcriptStateRef.current) {
+      transcriptStateRef.current = transcriptResult.state
+      syncTranscript(transcriptResult.state.entries)
     }
 
-    if (type === "response.audio_transcript.delta") {
-      aiTranscriptBufferRef.current += (msg.delta as string) || ""
-    }
-    if (type === "response.audio_transcript.done") {
-      const text = aiTranscriptBufferRef.current.trim()
-      if (text) {
-        appendTranscript({
-          id: transcriptMessageId(msg, "assistant"),
-          role: "assistant",
-          text,
-          final: true,
-        })
-      }
-      aiTranscriptBufferRef.current = ""
-    }
-
-    if (type === "response.audio.delta") {
+    if (transcriptResult.assistantAudioStarted) {
       setIsAiSpeaking(true)
     }
 
@@ -180,7 +145,7 @@ export function useRealtimeChat(
       }
     }
 
-    if (type === "response.done") {
+    if (transcriptResult.responseDone) {
       setIsAiSpeaking(false)
     }
 
@@ -189,7 +154,7 @@ export function useRealtimeChat(
       console.error("[realtime] server error:", detail)
       setError(String(detail))
     }
-  }, [appendTranscript])
+  }, [syncTranscript])
 
   const stopMicrophone = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop())
@@ -223,6 +188,7 @@ export function useRealtimeChat(
       setStatus("connecting")
       setError(null)
       transcriptRef.current = []
+      transcriptStateRef.current = createRealtimeTranscriptState()
       setTranscript([])
       setCompletions(null)
       clearPendingTranscript()
@@ -382,6 +348,7 @@ export function useRealtimeChat(
       sessionIdRef.current = null
       setSessionId(null)
       transcriptRef.current = []
+      transcriptStateRef.current = createRealtimeTranscriptState()
       setTranscript([])
       setStatus("idle")
       intentionalDisconnectRef.current = false
@@ -450,6 +417,7 @@ export function useRealtimeChat(
         sessionIdRef.current = stored.sessionId
         setSessionId(stored.sessionId)
         transcriptRef.current = restored
+        transcriptStateRef.current = createRealtimeTranscriptState(restored)
         setTranscript(restored)
         setStatus("error")
         setError(getCopy(getOutputLanguage()).chat.voicePanel.recoveredTranscript)
