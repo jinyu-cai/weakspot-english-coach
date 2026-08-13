@@ -18,6 +18,58 @@ Known issues:
 Next step:
 ```
 
+## 2026-08-12 — Preserve AI speech in Realtime chat transcripts
+
+Date: 2026-08-12 PDT
+
+Branch: `codex/realtime-ai-transcript` → `main`
+
+GitHub status: Pending review and merge.
+
+Deploy status: Pending frontend and backend production deployment.
+
+Root cause:
+
+- The browser and Realtime sideband still listened for the legacy
+  `response.audio_transcript.*` and `response.audio.delta` events. Current
+  Realtime sessions emit `response.output_audio_transcript.*` and
+  `response.output_audio.delta`, so the learner could hear the AI while its
+  spoken script never entered the live transcript or saved conversation.
+- User input transcription is asynchronous and may arrive after the model's
+  response events. Appending only by arrival time could therefore reverse the
+  visible learner/AI turn order.
+
+Summary:
+
+- Added a shared frontend Realtime transcript state machine that displays AI
+  speech incrementally, finalizes it from the current output-audio transcript
+  events, and orders turns using conversation item events.
+- Added a `response.done` fallback that recovers complete AI audio transcripts
+  when a delta or done event is missed, without duplicating an already captured
+  assistant turn.
+- Updated the sideband monitor to accept current and legacy event names, persist
+  stable Realtime item IDs, and deduplicate browser retries against sideband
+  messages while retaining compatibility with older clients.
+- Partial AI speech is visibly marked while streaming; completed learner and AI
+  turns are uploaded together for history and post-session analysis.
+
+Tests run:
+
+- Frontend Realtime transcript event replay, TypeScript, targeted ESLint, and
+  Next.js production build — pass.
+- Backend compilation, storage contracts, full learner-loop integration, and
+  the complete stealth/input-learning suite — pass.
+- The event replay covers current and legacy names, AI-first asynchronous event
+  arrival, live partial text, final transcript replacement, `response.done`
+  recovery, and duplicate suppression.
+- `git diff --check` — pass.
+
+Known issues: A live browser microphone session still requires explicit user
+permission and remains to be verified after deployment.
+
+Next step: Merge the PR, verify Vercel Production, deploy the exact merge commit
+to Oracle, and run an authenticated browser Realtime transcript check.
+
 ## 2026-08-12 — Prevent empty Diagnose structured output
 
 Date: 2026-08-12 PDT
