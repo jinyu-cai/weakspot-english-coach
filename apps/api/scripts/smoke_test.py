@@ -159,6 +159,7 @@ def main() -> None:
         _provider_connection,
         _provider_extra_body,
         _provider_request_model,
+        _response_format_schema,
         _uses_model_studio_qwen,
         _uses_openrouter_api,
         _uses_openrouter_openai_provider,
@@ -218,6 +219,30 @@ def main() -> None:
     assert fixed_openrouter_provider is not None
     assert fixed_openrouter_provider.model == "openai/gpt-5.6-luna-pro"
     assert fixed_openrouter_provider.fast_model == "openai/gpt-5.6-luna"
+
+    diagnostic_strict_schema = _response_format_schema(
+        DiagnosticAIResult,
+        strict=True,
+    )
+    diagnostic_objects = [
+        diagnostic_strict_schema,
+        *diagnostic_strict_schema.get("$defs", {}).values(),
+    ]
+    for object_schema in diagnostic_objects:
+        if object_schema.get("type") != "object":
+            continue
+        assert object_schema["additionalProperties"] is False
+        assert object_schema["required"] == list(object_schema["properties"])
+    assert "naturalRewrite" in diagnostic_strict_schema["required"]
+    natural_rewrite_types = {
+        variant["type"]
+        for variant in diagnostic_strict_schema["properties"]["naturalRewrite"]["anyOf"]
+    }
+    assert natural_rewrite_types == {
+        "string",
+        "null",
+    }
+    print("OpenAI strict Structured Outputs schema conversion OK.")
     default_provider = default_text_provider(openrouter_settings)
     assert default_provider is not None
     assert default_provider.model == "openai/gpt-5.6-luna-pro"
@@ -327,8 +352,14 @@ def main() -> None:
             model=fixed_openrouter_provider.model,
             provider=fixed_openrouter_provider,
             reasoning_effort="max",
+            use_native_structured_output=True,
         )
     assert parsed_openrouter.value == "ok"
+    assert openrouter_create_kwargs["response_format"]["type"] == "json_schema"
+    openrouter_schema = openrouter_create_kwargs["response_format"]["json_schema"]
+    assert openrouter_schema["strict"] is True
+    assert openrouter_schema["schema"]["additionalProperties"] is False
+    assert openrouter_schema["schema"]["required"] == ["value"]
     assert openrouter_create_kwargs["extra_body"] == {
         "provider": OPENROUTER_OPENAI_PROVIDER_ROUTING,
         "reasoning": {"effort": "max"},
