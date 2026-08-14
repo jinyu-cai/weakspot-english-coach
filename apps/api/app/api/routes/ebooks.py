@@ -168,6 +168,7 @@ def start_study_pack(
     try:
         pack = create_study_pack(identity.user_id, book_id, req)
         dispatch = bool(pack.pop("_dispatch", False))
+        claim_id = pack.pop("_claimId", None)
         if dispatch:
             background_tasks.add_task(
                 process_study_pack,
@@ -175,6 +176,7 @@ def start_study_pack(
                 pack["id"],
                 llm_provider,
                 None if identity.has_unlimited_llm_quota else identity.max_output_tokens,
+                claim_id,
             )
         elif pack.get("status") == "ready":
             response.status_code = status.HTTP_200_OK
