@@ -473,7 +473,7 @@ export default function EbookLearningPage() {
               </Card>
 
               {studyPack && studyPack.pages && studyPack.pages.length > 0 ? <>
-                <Card className="sticky top-3 z-20 border-primary/20 bg-background/95 shadow-sm backdrop-blur">
+                <Card className="z-20 border-primary/20 bg-background/95 shadow-sm backdrop-blur sm:sticky sm:top-3">
                   <CardContent className="flex flex-wrap items-center justify-between gap-3 p-3">
                     <div className="flex rounded-xl bg-muted p-1" role="tablist" aria-label={zh ? "阅读视图" : "Reader view"}>
                       <Button size="sm" variant={readerView === "reading" ? "default" : "ghost"} role="tab" aria-selected={readerView === "reading"} onClick={() => setReaderView("reading")}><BookOpen />{zh ? "阅读模式" : "Reading"}</Button>
