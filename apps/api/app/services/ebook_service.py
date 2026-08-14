@@ -24,6 +24,7 @@ from app.config import settings
 from app.core.mastery import DEFAULT_MASTERY, update_skill_from_practice
 from app.core.taxonomy import ERROR_TAXONOMY
 from app.db.repositories import (
+    delete_ebook_study_pack,
     delete_ebook_learning_target,
     delete_ebook_rows,
     delete_memory,
@@ -45,6 +46,7 @@ from app.db.repositories import (
     list_notes,
     now_iso,
     put_skill,
+    replace_ebook_last_study_pack,
     save_ebook,
     save_ebook_analysis_page,
     save_ebook_annotation,
@@ -52,7 +54,9 @@ from app.db.repositories import (
     save_ebook_page,
     save_ebook_practice_session,
     save_ebook_study_pack,
+    save_ebook_study_pack_if_processing,
     save_note,
+    update_ebook_last_studied_if_current,
 )
 from app.models.ebook import (
     ComparisonLanguage,
@@ -1000,23 +1004,27 @@ def process_study_pack(
                 "failedPages": failed,
                 "updatedAt": now_iso(),
             })
-            save_ebook_study_pack(pack)
+            if not save_ebook_study_pack_if_processing(pack, claim_id):
+                return
         if failed:
             raise EbookProcessingError(f"Could not read pages: {', '.join(map(str, failed))}")
         if not _study_pack_claim_is_current(user_id, pack_id, claim_id):
             return
         pack.update({"status": "ready", "failedPages": [], "error": None, "updatedAt": now_iso()})
-        save_ebook_study_pack(pack)
-        book.update({
-            "lastStudiedPage": pack["endPage"],
-            "lastStudyRange": {
+        if not save_ebook_study_pack_if_processing(pack, claim_id):
+            return
+        update_ebook_last_studied_if_current(
+            user_id,
+            pack["bookId"],
+            pack_id,
+            int(pack["endPage"]),
+            {
                 "startPage": pack["startPage"],
                 "endPage": pack["endPage"],
                 "modelTier": model_tier,
             },
-            "updatedAt": now_iso(),
-        })
-        save_ebook(book)
+            now_iso(),
+        )
     except Exception as exc:
         if not _study_pack_claim_is_current(user_id, pack_id, claim_id):
             return
@@ -1028,12 +1036,12 @@ def process_study_pack(
             "error": str(exc)[:500],
             "updatedAt": now_iso(),
         })
-        save_ebook_study_pack(current)
+        save_ebook_study_pack_if_processing(current, claim_id)
 
 
 def get_study_pack_for_user(user_id: str, pack_id: str) -> Optional[dict]:
     pack = get_ebook_study_pack(user_id, pack_id)
-    if not pack:
+    if not pack or pack.get("deletedAt"):
         return None
     public = _public(pack)
     model_tier: EbookModelTier = "fast" if pack.get("modelTier") == "fast" else "deep"
@@ -1075,6 +1083,30 @@ def list_study_packs_for_user(user_id: str, book_id: str) -> list[dict]:
         public.pop("pages", None)
         summaries.append(public)
     return summaries
+
+
+def delete_study_pack_for_user(user_id: str, pack_id: str) -> dict:
+    pack = get_ebook_study_pack(user_id, pack_id)
+    if not pack or pack.get("deletedAt"):
+        raise LookupError("Ebook study pack not found.")
+    deleted_at = now_iso()
+    if not delete_ebook_study_pack(user_id, pack_id, deleted_at):
+        raise LookupError("Ebook study pack not found.")
+    remaining = list_ebook_study_packs(user_id, pack["bookId"])
+    replacement = remaining[0] if remaining else None
+    replace_ebook_last_study_pack(
+        user_id,
+        pack["bookId"],
+        pack_id,
+        replacement,
+        deleted_at,
+    )
+    return {
+        "deleted": True,
+        "id": pack_id,
+        "bookId": pack["bookId"],
+        "nextStudyPackId": replacement.get("id") if replacement else None,
+    }
 
 
 def _call_on_demand_model(
