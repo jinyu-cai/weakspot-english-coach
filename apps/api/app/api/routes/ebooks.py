@@ -15,6 +15,7 @@ from app.models.ebook import (
     EbookPracticeAttemptResponse,
     EbookPracticeSessionResponse,
     EbookResponse,
+    EbookStudyPackListResponse,
     EbookStudyPackResponse,
     SubmitEbookPracticeAttemptRequest,
     UpdateEbookRequest,
@@ -31,6 +32,7 @@ from app.services.ebook_service import (
     get_study_pack_for_user,
     list_books_for_user,
     list_learning_targets_for_user,
+    list_study_packs_for_user,
     mark_annotation_unfamiliar,
     process_ebook_import,
     process_study_pack,
@@ -185,6 +187,22 @@ def start_study_pack(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/ebooks/{book_id}/study-packs",
+    response_model=EbookStudyPackListResponse,
+)
+def list_study_packs(
+    book_id: str,
+    identity: Identity = Depends(resolve_identity),
+):
+    _signed_in(identity)
+    try:
+        packs = list_study_packs_for_user(identity.user_id, book_id)
+        return {"studyPacks": packs, "count": len(packs)}
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/ebook-study-packs/{pack_id}", response_model=EbookStudyPackResponse)

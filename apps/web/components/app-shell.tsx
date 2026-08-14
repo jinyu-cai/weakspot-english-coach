@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Menu, PanelLeftClose, PanelLeftOpen } from "lucide-react"
+import { Menu } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -76,7 +76,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const pathname = usePathname()
-  const { language, t } = useLanguage()
+  const { t } = useLanguage()
   const resume = useTaskResume()
   const resumeFeature = resume?.feature
   const resumeHref = resume?.href
@@ -305,7 +305,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           sidebarCollapsed ? "w-20" : "w-[17rem]",
         )}
       >
-        <NavSidebar collapsed={sidebarCollapsed} />
+        <NavSidebar collapsed={sidebarCollapsed} onToggleCollapsed={toggleSidebar} />
       </aside>
 
       <div
@@ -317,20 +317,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Top bar */}
         <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-3 border-b border-border/80 bg-background/88 px-3 py-2 backdrop-blur-xl sm:px-5 lg:px-7">
           <div className="flex min-w-0 items-center gap-2.5">
-            <Button
-              variant="outline"
-              size="icon"
-              className="hidden lg:inline-flex"
-              onClick={toggleSidebar}
-              aria-label={sidebarCollapsed
-                ? (language === "zh-CN" ? "展开左侧栏" : "Expand sidebar")
-                : (language === "zh-CN" ? "收起左侧栏" : "Collapse sidebar")}
-              title={sidebarCollapsed
-                ? (language === "zh-CN" ? "展开左侧栏" : "Expand sidebar")
-                : (language === "zh-CN" ? "收起左侧栏" : "Collapse sidebar")}
-            >
-              {sidebarCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
-            </Button>
             <Sheet open={open} onOpenChange={setOpen}>
               <SheetTrigger
                 render={

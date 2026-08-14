@@ -1465,6 +1465,18 @@ export async function getEbookStudyPack(packId: string): Promise<EbookStudyPack>
   return studyPack
 }
 
+export async function getEbookStudyPacks(bookId: string): Promise<EbookStudyPack[]> {
+  if (USE_MOCK) {
+    return mockStudyPacks
+      .filter((pack) => pack.bookId === bookId)
+      .sort(newestFirst)
+  }
+  const { studyPacks } = await apiFetch<{ studyPacks: EbookStudyPack[]; count: number }>(
+    `/ebooks/${bookId}/study-packs`,
+  )
+  return studyPacks
+}
+
 export async function waitForEbookStudyPack(
   initial: EbookStudyPack,
   onProgress?: (studyPack: EbookStudyPack) => void,
@@ -2029,6 +2041,18 @@ export async function getChatMessages(
     }
   }
   return apiFetch<ChatMessagesResponse>(`/chat/sessions/${sessionId}/messages`)
+}
+
+export async function deleteChatSession(
+  sessionId: string,
+): Promise<{ deleted: boolean; id: string }> {
+  if (USE_MOCK) {
+    await delay(250)
+    return { deleted: true, id: sessionId }
+  }
+  return apiFetch<{ deleted: boolean; id: string }>(`/chat/sessions/${sessionId}`, {
+    method: "DELETE",
+  })
 }
 
 export interface SendChatMessageRequest {

@@ -13,9 +13,11 @@ from app.core.pagination import decode_dynamo_cursor, encode_dynamo_cursor
 from app.core.taxonomy import ERROR_TAXONOMY
 from app.db.keys import user_pk
 from app.db.repositories import (
+    ChatSessionBusyError,
     ItemTooLargeError,
     claim_chat_session_analysis,
     claim_chat_session_turn,
+    delete_chat_session_rows,
     finalize_chat_session_turn,
     get_chat_session,
     list_chat_messages,
@@ -192,6 +194,7 @@ def _public_session(session: dict) -> dict:
         "turnClaimId",
         "turnClaimedAt",
         "turnClaimedAtEpoch",
+        "deletingAt",
     ):
         public.pop(internal_key, None)
     return public
@@ -344,6 +347,14 @@ def _probe_activation_turn(probe: dict) -> int:
 
 def _ensure_text_session_writable(session: dict) -> None:
     """Reject cross-modality writes and writes after end-session analysis."""
+    if session.get("deletingAt"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "session_deleting",
+                "message": "This conversation is being deleted.",
+            },
+        )
     if session.get("mode") == "voice":
         raise HTTPException(
             status_code=400,
@@ -611,6 +622,23 @@ def get_messages(
     messages = list_chat_messages(identity.user_id, session_id, limit=None)
     session["messageCount"] = len(messages)
     return {"session": _public_session(session), "messages": messages}
+
+
+@router.delete("/sessions/{session_id}")
+def delete_session(
+    session_id: str,
+    identity: Identity = Depends(resolve_identity),
+):
+    try:
+        removed = delete_chat_session_rows(identity.user_id, session_id)
+    except ChatSessionBusyError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "chat_session_busy", "message": str(exc)},
+        ) from exc
+    if removed is None:
+        raise HTTPException(status_code=404, detail="Chat session not found.")
+    return {"deleted": True, "id": session_id, "removed": removed}
 
 
 @router.post("/send")

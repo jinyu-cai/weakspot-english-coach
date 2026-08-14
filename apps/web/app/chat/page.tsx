@@ -13,12 +13,14 @@ import {
   Mic,
   Plus,
   Sparkles,
+  Trash2,
   WandSparkles,
 } from "lucide-react"
 import {
   analyzeSession,
   boundLearnerResponseText,
   createChatSession,
+  deleteChatSession,
   getChatMessages,
   getChatSessions,
   generateCoachMission,
@@ -95,6 +97,7 @@ export default function ChatPage() {
   const [loadingSessions, setLoadingSessions] = useState(true)
   const [sessionsError, setSessionsError] = useState<unknown>(null)
   const [creatingSession, setCreatingSession] = useState(false)
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
   const [mode, setMode] = useState<ChatMode>("voice")
   const [viewState, setViewState] = useState<ViewState>("chat")
   const [analysis, setAnalysis] = useState<SessionAnalysis | null>(null)
@@ -544,6 +547,34 @@ export default function ChatPage() {
     }
   }
 
+  async function handleDeleteSession(session: ChatSession) {
+    if (deletingSessionId || sending || analyzingSessionIds.has(session.id)) return
+    if (activeSession?.id === session.id && voiceNavigationLocked) {
+      toast.error(t.chat.voicePanel.finishBeforeLeaving)
+      return
+    }
+    if (!window.confirm(t.chat.deleteConversationConfirm)) return
+    setDeletingSessionId(session.id)
+    try {
+      await deleteChatSession(session.id)
+      analysisInFlightRef.current.delete(session.id)
+      setAnalyzingSessionIds(new Set(analysisInFlightRef.current))
+      setSessions((current) => current.filter((item) => item.id !== session.id))
+      if (activeSessionIdRef.current === session.id) {
+        finishTaskResume("chat", "abandoned")
+        setInput("")
+        resetSession()
+      }
+      toast.success(t.chat.deleteConversationSuccess)
+    } catch (error) {
+      toast.error(t.chat.deleteConversationFailed, {
+        description: error instanceof Error ? error.message : undefined,
+      })
+    } finally {
+      setDeletingSessionId(null)
+    }
+  }
+
   useEffect(() => {
     if (loadingSessions || resumeAttemptedRef.current) return
     resumeAttemptedRef.current = true
@@ -771,37 +802,46 @@ export default function ChatPage() {
               {sessions.map((s) => (
                 <Card
                   key={s.id}
-                  className="relative transition-colors hover:bg-muted/50"
+                  className="transition-colors hover:bg-muted/50"
                 >
-                  <button
-                    type="button"
-                    aria-label={`${s.topic || s.summary || t.chat.freeChat}: ${s.messageCount} ${t.chat.messages}`}
-                    title={`${s.topic || s.summary || t.chat.freeChat}: ${s.messageCount} ${t.chat.messages}`}
-                    className="absolute inset-0 z-0 cursor-pointer rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                    onClick={() => handleSelectSession(s)}
-                  />
-                  <CardContent className="pointer-events-none relative z-10 flex items-center justify-between py-3">
-                    <div className="flex items-center gap-3">
+                  <CardContent className="flex items-center gap-2 py-3">
+                    <button
+                      type="button"
+                      aria-label={`${s.topic || s.summary || t.chat.freeChat}: ${s.messageCount} ${t.chat.messages}`}
+                      title={`${s.topic || s.summary || t.chat.freeChat}: ${s.messageCount} ${t.chat.messages}`}
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                      onClick={() => handleSelectSession(s)}
+                    >
                       <MessageCircle className="size-4 text-muted-foreground" />
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium">
+                      <span className="flex min-w-0 flex-col">
+                        <span className="truncate text-sm font-medium">
                           {s.topic || s.summary || t.chat.freeChat}
                         </span>
                         <span className="text-xs text-muted-foreground">
                           {s.messageCount} {t.chat.messages}
                         </span>
-                      </div>
-                    </div>
+                      </span>
+                    </button>
                     {analyzingSessionIds.has(s.id) ? (
-                      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
                         <Spinner className="size-3.5" />
                         {t.chat.analyzing}
                       </span>
                     ) : (
-                      <span className="text-xs text-muted-foreground">
+                      <span className="shrink-0 text-xs text-muted-foreground">
                         {new Date(s.createdAt).toLocaleDateString()}
                       </span>
                     )}
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`${t.chat.deleteConversation}: ${s.topic || s.summary || t.chat.freeChat}`}
+                      title={t.chat.deleteConversation}
+                      disabled={Boolean(deletingSessionId) || analyzingSessionIds.has(s.id)}
+                      onClick={() => void handleDeleteSession(s)}
+                    >
+                      {deletingSessionId === s.id ? <Spinner className="size-4" /> : <Trash2 className="size-4" />}
+                    </Button>
                   </CardContent>
                 </Card>
               ))}
@@ -884,6 +924,16 @@ export default function ChatPage() {
               {t.chat.continueChat}
             </Button>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void handleDeleteSession(activeSession)}
+            disabled={Boolean(deletingSessionId) || voiceNavigationLocked || sending || analyzingSessionIds.has(activeSession.id)}
+            title={voiceNavigationLocked ? t.chat.voicePanel.finishBeforeLeaving : t.chat.deleteConversation}
+          >
+            {deletingSessionId === activeSession.id ? <Spinner className="size-4" /> : <Trash2 className="size-4" />}
+            <span className="hidden sm:inline">{t.chat.deleteConversation}</span>
+          </Button>
           <Button
             variant="outline"
             size="sm"
