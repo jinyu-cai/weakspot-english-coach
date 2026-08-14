@@ -263,6 +263,7 @@ def main() -> int:
         partial_pack = get_study_pack_for_user(user_id, pack["id"])
         assert partial_pack and partial_pack["status"] == "processing"
         assert [page["pageNumber"] for page in partial_pack["pages"]] == [1]
+        assert partial_pack["completedPageCount"] == 1
         partial_unit = partial_pack["pages"][0]["units"][0]
         partial_annotation = create_on_demand_annotation(
             user_id,
