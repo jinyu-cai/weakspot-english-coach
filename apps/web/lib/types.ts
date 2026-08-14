@@ -864,6 +864,7 @@ export interface InputLearningAnalyzeResponse {
 
 export type EbookComparisonLanguage = "zh-CN" | "en"
 export type EbookComparisonMode = "translation" | "plain_english"
+export type EbookModelTier = "fast" | "deep"
 export type EbookStatus = "processing" | "ready" | "failed"
 export type EbookAnnotationKind = "word" | "phrase" | "collocation" | "grammar_pattern" | "complex_sentence"
 export type EbookLearningTargetStatus = "provisional" | "confirmed" | "learning" | "mastered" | "archived"
@@ -880,7 +881,7 @@ export interface Ebook {
   pageCount: number
   wordCount: number
   lastStudiedPage?: number | null
-  lastStudyRange?: { startPage: number; endPage: number } | null
+  lastStudyRange?: { startPage: number; endPage: number; modelTier?: EbookModelTier } | null
   error?: string | null
   createdAt: string
   updatedAt: string
@@ -933,6 +934,7 @@ export interface EbookAnnotation {
   examples: string[]
   transferPrompt: string
   skillCode: string
+  modelTier?: EbookModelTier
   createdAt: string
 }
 
@@ -944,6 +946,7 @@ export interface EbookStudyPage {
   chapterTitle?: string | null
   comparisonLanguage: EbookComparisonLanguage
   comparisonMode: EbookComparisonMode
+  modelTier: EbookModelTier
   units: EbookSentenceUnit[]
   annotations: EbookAnnotation[]
 }
@@ -956,6 +959,7 @@ export interface EbookStudyPack {
   endPage: number
   comparisonLanguage: EbookComparisonLanguage
   comparisonMode: EbookComparisonMode
+  modelTier: EbookModelTier
   status: EbookStatus
   totalPageCount: number
   completedPageCount: number

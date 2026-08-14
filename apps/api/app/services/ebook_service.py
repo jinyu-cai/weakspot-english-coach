@@ -59,6 +59,7 @@ from app.models.ebook import (
     CreateStudyPackRequest,
     EbookAIAnnotation,
     EbookAIUnit,
+    EbookModelTier,
     EbookOnDemandAnnotationAIResult,
     EbookPageAIResult,
     SubmitEbookPracticeAttemptRequest,
@@ -642,6 +643,7 @@ def _deterministic_page_result(units: list[dict], language: str) -> EbookPageAIR
 def _call_page_model(
     units: list[dict],
     comparison_language: str,
+    model_tier: EbookModelTier,
     provider: Optional[LLMProviderConfig],
     max_output_tokens: Optional[int],
     trace_id: str,
@@ -658,16 +660,17 @@ def _call_page_model(
         ],
         response_model=EbookPageAIResult,
         provider=provider,
-        model=select_text_model("deep", provider),
+        model=select_text_model(model_tier, provider),
         max_tokens=max_output_tokens,
         trace_id=trace_id,
-        reasoning_effort=reasoning_effort_for_tier("deep"),
+        reasoning_effort=reasoning_effort_for_tier(model_tier),
     )
 
 
 def _generate_page_result(
     units: list[dict],
     comparison_language: str,
+    model_tier: EbookModelTier,
     provider: Optional[LLMProviderConfig],
     max_output_tokens: Optional[int],
     trace_id: str,
@@ -688,6 +691,7 @@ def _generate_page_result(
                     else _call_page_model(
                         chunk,
                         comparison_language,
+                        model_tier,
                         provider,
                         max_output_tokens,
                         f"{trace_id}:chunk-{chunk_index // 60}:attempt-{attempt}",
@@ -712,15 +716,24 @@ def _generate_page_result(
     return EbookPageAIResult(units=all_units, annotations=all_annotations[:5])
 
 
-def _analysis_cache_id(book_id: str, page: dict, language: str) -> str:
-    return _stable_id(
-        "ecache",
+def _analysis_cache_id(
+    book_id: str,
+    page: dict,
+    language: str,
+    model_tier: EbookModelTier = "deep",
+) -> str:
+    parts: list[object] = [
         book_id,
         page.get("pageNumber"),
         page.get("textHash"),
         language,
         ANALYSIS_VERSION,
-    )
+    ]
+    # Keep existing Deep cache IDs stable while giving Fast results their own
+    # cache and annotation rows.
+    if model_tier != "deep":
+        parts.append(model_tier)
+    return _stable_id("ecache", *parts)
 
 
 def _normalized_analysis(
@@ -728,6 +741,7 @@ def _normalized_analysis(
     book_id: str,
     page: dict,
     language: str,
+    model_tier: EbookModelTier,
     result: EbookPageAIResult,
 ) -> tuple[dict, list[dict]]:
     units = sentence_units(str(page.get("text") or ""), int(page["pageNumber"]))
@@ -764,15 +778,17 @@ def _normalized_analysis(
         if (raw.unitId, selected) in seen:
             raise EbookProcessingError("The model returned a duplicate annotation.")
         seen.add((raw.unitId, selected))
-        annotation_id = _stable_id(
-            "eann",
+        annotation_parts: list[object] = [
             book_id,
             page["pageNumber"],
             raw.unitId,
             start,
             start + len(selected),
             ANALYSIS_VERSION,
-        )
+        ]
+        if model_tier != "deep":
+            annotation_parts.append(model_tier)
+        annotation_id = _stable_id("eann", *annotation_parts)
         row = {
             "id": annotation_id,
             "userId": user_id,
@@ -784,6 +800,7 @@ def _normalized_analysis(
             "startOffset": start,
             "endOffset": start + len(selected),
             **raw.model_dump(exclude={"unitId", "selectedText"}),
+            "modelTier": model_tier,
             "analysisVersion": ANALYSIS_VERSION,
             "createdAt": now_iso(),
         }
@@ -792,7 +809,7 @@ def _normalized_analysis(
     minimum_annotations = min(2, len(units)) if len(_english_words(str(page.get("text") or ""))) >= 8 else 0
     if len(annotations) < minimum_annotations:
         raise EbookProcessingError("The model did not return enough source-grounded teaching annotations.")
-    cache_id = _analysis_cache_id(book_id, page, language)
+    cache_id = _analysis_cache_id(book_id, page, language, model_tier)
     analysis = {
         "id": cache_id,
         "cacheId": cache_id,
@@ -802,6 +819,7 @@ def _normalized_analysis(
         "chapterTitle": page.get("chapterTitle"),
         "comparisonLanguage": language,
         "comparisonMode": "translation" if language == "zh-CN" else "plain_english",
+        "modelTier": model_tier,
         "analysisVersion": ANALYSIS_VERSION,
         "status": "ready",
         "units": unit_rows,
@@ -819,15 +837,30 @@ def create_study_pack(user_id: str, book_id: str, req: CreateStudyPackRequest) -
     if req.endPage > int(book.get("pageCount", 0)):
         raise ValueError("The requested page range is outside this ebook.")
     language = str(book.get("comparisonLanguage") or "zh-CN")
-    pack_id = _stable_id("epack", user_id, book_id, req.startPage, req.endPage, language, ANALYSIS_VERSION)
+    pack_parts: list[object] = [
+        user_id,
+        book_id,
+        req.startPage,
+        req.endPage,
+        language,
+        ANALYSIS_VERSION,
+    ]
+    if req.modelTier != "deep":
+        pack_parts.append(req.modelTier)
+    pack_id = _stable_id("epack", *pack_parts)
     existing = get_ebook_study_pack(user_id, pack_id)
     if existing and existing.get("status") == "ready":
         return {**(get_study_pack_for_user(user_id, pack_id) or _public(existing)), "_dispatch": False}
-    if existing and existing.get("status") == "processing":
+    if existing and existing.get("status") == "processing" and not req.forceRetry:
         updated = _parse_iso(existing.get("updatedAt"))
         if updated and updated > _utc_now() - timedelta(minutes=15):
-            return {**_public(existing), "_dispatch": False}
+            return {
+                **_public(existing),
+                "modelTier": existing.get("modelTier") or req.modelTier,
+                "_dispatch": False,
+            }
     now = now_iso()
+    claim_id = uuid4().hex
     pack = {
         "id": pack_id,
         "userId": user_id,
@@ -837,17 +870,34 @@ def create_study_pack(user_id: str, book_id: str, req: CreateStudyPackRequest) -
         "endPage": req.endPage,
         "comparisonLanguage": language,
         "comparisonMode": "translation" if language == "zh-CN" else "plain_english",
+        "modelTier": req.modelTier,
         "analysisVersion": ANALYSIS_VERSION,
         "status": "processing",
         "totalPageCount": req.endPage - req.startPage + 1,
-        "completedPageCount": 0,
+        "completedPageCount": int((existing or {}).get("completedPageCount", 0)),
         "failedPages": [],
         "error": None,
+        "processingClaimId": claim_id,
         "createdAt": existing.get("createdAt", now) if existing else now,
         "updatedAt": now,
     }
     save_ebook_study_pack(pack)
-    return {**_public(pack), "_dispatch": True}
+    return {**_public(pack), "_dispatch": True, "_claimId": claim_id}
+
+
+def _study_pack_claim_is_current(
+    user_id: str,
+    pack_id: str,
+    claim_id: Optional[str],
+) -> bool:
+    if not claim_id:
+        return True
+    current = get_ebook_study_pack(user_id, pack_id)
+    return bool(
+        current
+        and current.get("status") == "processing"
+        and current.get("processingClaimId") == claim_id
+    )
 
 
 def process_study_pack(
@@ -855,22 +905,31 @@ def process_study_pack(
     pack_id: str,
     provider: Optional[LLMProviderConfig],
     max_output_tokens: Optional[int],
+    claim_id: Optional[str] = None,
 ) -> None:
     pack = get_ebook_study_pack(user_id, pack_id)
-    if not pack:
+    if not pack or not _study_pack_claim_is_current(user_id, pack_id, claim_id):
         return
     book = get_ebook(user_id, pack["bookId"])
     if not book:
         return
+    model_tier: EbookModelTier = "fast" if pack.get("modelTier") == "fast" else "deep"
     failed: list[int] = []
     completed = 0
     try:
         for page_number in range(int(pack["startPage"]), int(pack["endPage"]) + 1):
+            if not _study_pack_claim_is_current(user_id, pack_id, claim_id):
+                return
             try:
                 page = get_ebook_page(user_id, pack["bookId"], page_number)
                 if not page:
                     raise EbookProcessingError("The extracted page is missing.")
-                cache_id = _analysis_cache_id(pack["bookId"], page, pack["comparisonLanguage"])
+                cache_id = _analysis_cache_id(
+                    pack["bookId"],
+                    page,
+                    pack["comparisonLanguage"],
+                    model_tier,
+                )
                 cached = get_ebook_analysis_page(user_id, cache_id)
                 if not cached or cached.get("status") != "ready":
                     units = sentence_units(str(page.get("text") or ""), page_number)
@@ -878,12 +937,18 @@ def process_study_pack(
                         result = _generate_page_result(
                             units,
                             pack["comparisonLanguage"],
+                            model_tier,
                             provider,
                             max_output_tokens,
                             f"{pack_id}:{page_number}",
                         )
                         analysis, _ = _normalized_analysis(
-                            user_id, pack["bookId"], page, pack["comparisonLanguage"], result
+                            user_id,
+                            pack["bookId"],
+                            page,
+                            pack["comparisonLanguage"],
+                            model_tier,
+                            result,
                         )
                     else:
                         analysis = {
@@ -895,6 +960,7 @@ def process_study_pack(
                             "chapterTitle": page.get("chapterTitle"),
                             "comparisonLanguage": pack["comparisonLanguage"],
                             "comparisonMode": pack["comparisonMode"],
+                            "modelTier": model_tier,
                             "analysisVersion": ANALYSIS_VERSION,
                             "status": "ready",
                             "units": [],
@@ -906,6 +972,12 @@ def process_study_pack(
                 completed += 1
             except Exception:
                 failed.append(page_number)
+            if not _study_pack_claim_is_current(user_id, pack_id, claim_id):
+                return
+            current = get_ebook_study_pack(user_id, pack_id)
+            if not current:
+                return
+            pack = current
             pack.update({
                 "completedPageCount": completed,
                 "failedPages": failed,
@@ -914,23 +986,32 @@ def process_study_pack(
             save_ebook_study_pack(pack)
         if failed:
             raise EbookProcessingError(f"Could not read pages: {', '.join(map(str, failed))}")
+        if not _study_pack_claim_is_current(user_id, pack_id, claim_id):
+            return
         pack.update({"status": "ready", "failedPages": [], "error": None, "updatedAt": now_iso()})
         save_ebook_study_pack(pack)
         book.update({
             "lastStudiedPage": pack["endPage"],
-            "lastStudyRange": {"startPage": pack["startPage"], "endPage": pack["endPage"]},
+            "lastStudyRange": {
+                "startPage": pack["startPage"],
+                "endPage": pack["endPage"],
+                "modelTier": model_tier,
+            },
             "updatedAt": now_iso(),
         })
         save_ebook(book)
     except Exception as exc:
+        if not _study_pack_claim_is_current(user_id, pack_id, claim_id):
+            return
         logger.warning("ebook_pack failed pack=%s error=%s", pack_id, type(exc).__name__)
-        pack.update({
+        current = get_ebook_study_pack(user_id, pack_id) or pack
+        current.update({
             "status": "failed",
             "failedPages": failed,
             "error": str(exc)[:500],
             "updatedAt": now_iso(),
         })
-        save_ebook_study_pack(pack)
+        save_ebook_study_pack(current)
 
 
 def get_study_pack_for_user(user_id: str, pack_id: str) -> Optional[dict]:
@@ -938,6 +1019,8 @@ def get_study_pack_for_user(user_id: str, pack_id: str) -> Optional[dict]:
     if not pack:
         return None
     public = _public(pack)
+    model_tier: EbookModelTier = "fast" if pack.get("modelTier") == "fast" else "deep"
+    public["modelTier"] = model_tier
     if pack.get("status") != "ready":
         return public
     pages: list[dict] = []
@@ -945,7 +1028,12 @@ def get_study_pack_for_user(user_id: str, pack_id: str) -> Optional[dict]:
         page = get_ebook_page(user_id, pack["bookId"], page_number)
         if not page:
             continue
-        cache_id = _analysis_cache_id(pack["bookId"], page, pack["comparisonLanguage"])
+        cache_id = _analysis_cache_id(
+            pack["bookId"],
+            page,
+            pack["comparisonLanguage"],
+            model_tier,
+        )
         analysis = get_ebook_analysis_page(user_id, cache_id)
         if not analysis:
             continue
@@ -962,6 +1050,7 @@ def _call_on_demand_model(
     unit: dict,
     selected: str,
     language: str,
+    model_tier: EbookModelTier,
     provider: Optional[LLMProviderConfig],
     max_output_tokens: Optional[int],
     trace_id: str,
@@ -984,10 +1073,10 @@ def _call_on_demand_model(
         ],
         response_model=EbookOnDemandAnnotationAIResult,
         provider=provider,
-        model=select_text_model("deep", provider),
+        model=select_text_model(model_tier, provider),
         max_tokens=max_output_tokens,
         trace_id=trace_id,
-        reasoning_effort=reasoning_effort_for_tier("deep"),
+        reasoning_effort=reasoning_effort_for_tier(model_tier),
     )
     return result.annotation
 
@@ -1019,9 +1108,18 @@ def create_on_demand_annotation(
     selected = source[req.startOffset:req.endOffset]
     if not selected.strip():
         raise ValueError("Select visible text from the source sentence.")
-    annotation_id = _stable_id(
-        "eann", pack["bookId"], unit["pageNumber"], unit["unitId"], req.startOffset, req.endOffset, ANALYSIS_VERSION
-    )
+    model_tier: EbookModelTier = "fast" if pack.get("modelTier") == "fast" else "deep"
+    annotation_parts: list[object] = [
+        pack["bookId"],
+        unit["pageNumber"],
+        unit["unitId"],
+        req.startOffset,
+        req.endOffset,
+        ANALYSIS_VERSION,
+    ]
+    if model_tier != "deep":
+        annotation_parts.append(model_tier)
+    annotation_id = _stable_id("eann", *annotation_parts)
     existing = get_ebook_annotation(user_id, annotation_id)
     if existing:
         return _public(existing)
@@ -1029,6 +1127,7 @@ def create_on_demand_annotation(
         unit,
         selected,
         pack["comparisonLanguage"],
+        model_tier,
         provider,
         max_output_tokens,
         annotation_id,
@@ -1047,6 +1146,7 @@ def create_on_demand_annotation(
         "startOffset": req.startOffset,
         "endOffset": req.endOffset,
         **raw.model_dump(exclude={"unitId", "selectedText"}),
+        "modelTier": model_tier,
         "analysisVersion": ANALYSIS_VERSION,
         "createdAt": now_iso(),
     }

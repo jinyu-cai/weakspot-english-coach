@@ -229,6 +229,11 @@ def main() -> int:
             raise AssertionError("reverse range should be rejected")
         except ValueError:
             pass
+        try:
+            CreateStudyPackRequest(startPage=1, endPage=1, modelTier="turbo")
+            raise AssertionError("unknown model tiers should be rejected")
+        except ValueError:
+            pass
 
         # Both the lower and upper supported study-range bounds complete, and
         # the overlapping second pack reuses the already-persisted page cache.
@@ -237,7 +242,8 @@ def main() -> int:
             ready["id"],
             CreateStudyPackRequest(startPage=1, endPage=1),
         )
-        process_study_pack(user_id, one_page_pack["id"], None, 8192)
+        one_page_claim = one_page_pack.pop("_claimId")
+        process_study_pack(user_id, one_page_pack["id"], None, 8192, one_page_claim)
         assert get_study_pack_for_user(user_id, one_page_pack["id"])["status"] == "ready"
 
         end_page = 15
@@ -247,7 +253,8 @@ def main() -> int:
             CreateStudyPackRequest(startPage=1, endPage=end_page),
         )
         assert pack.pop("_dispatch") is True
-        process_study_pack(user_id, pack["id"], None, 8192)
+        pack_claim = pack.pop("_claimId")
+        process_study_pack(user_id, pack["id"], None, 8192, pack_claim)
         complete_pack = get_study_pack_for_user(user_id, pack["id"])
         assert complete_pack and complete_pack["status"] == "ready"
         assert len(complete_pack["pages"]) == end_page
@@ -264,9 +271,38 @@ def main() -> int:
             ready["id"],
             CreateStudyPackRequest(startPage=1, endPage=2),
         )
-        process_study_pack(user_id, overlapping_pack["id"], None, 8192)
+        overlapping_claim = overlapping_pack.pop("_claimId")
+        process_study_pack(user_id, overlapping_pack["id"], None, 8192, overlapping_claim)
         overlap_complete = get_study_pack_for_user(user_id, overlapping_pack["id"])
         assert overlap_complete["pages"][0]["units"] == complete_pack["pages"][0]["units"]
+
+        # Fast and Deep use separate caches. A forced retry replaces the
+        # processing claim, so a stale worker cannot overwrite resumed progress.
+        fast_pack = create_study_pack(
+            user_id,
+            ready["id"],
+            CreateStudyPackRequest(startPage=1, endPage=2, modelTier="fast"),
+        )
+        stale_claim = fast_pack.pop("_claimId")
+        retried_fast_pack = create_study_pack(
+            user_id,
+            ready["id"],
+            CreateStudyPackRequest(
+                startPage=1,
+                endPage=2,
+                modelTier="fast",
+                forceRetry=True,
+            ),
+        )
+        active_claim = retried_fast_pack.pop("_claimId")
+        assert retried_fast_pack["id"] == fast_pack["id"]
+        assert active_claim != stale_claim
+        process_study_pack(user_id, fast_pack["id"], None, 8192, stale_claim)
+        assert get_study_pack_for_user(user_id, fast_pack["id"])["status"] == "processing"
+        process_study_pack(user_id, fast_pack["id"], None, 8192, active_claim)
+        fast_complete = get_study_pack_for_user(user_id, fast_pack["id"])
+        assert fast_complete["status"] == "ready" and fast_complete["modelTier"] == "fast"
+        assert fast_complete["pages"][0]["cacheId"] != complete_pack["pages"][0]["cacheId"]
 
         # Self-report writes one note + one provisional weakness but no mastery penalty.
         assert get_skill(user_id, annotation["skillCode"]) is None

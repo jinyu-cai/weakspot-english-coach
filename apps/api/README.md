@@ -112,7 +112,7 @@ POST /ebooks/import                    # multipart file, language, rights confir
 GET  /ebooks                           # signed-in learner's private library
 GET/PATCH/DELETE /ebooks/{book_id}
 GET  /ebooks/{book_id}/pages           # startPage/endPage, at most 15 pages
-POST /ebooks/{book_id}/study-packs     # consecutive 1-15 page range
+POST /ebooks/{book_id}/study-packs     # 1-15 pages, Fast/Deep, safe retry
 GET  /ebook-study-packs/{pack_id}      # page progress and grounded study pack
 POST /ebook-study-packs/{pack_id}/annotations
 PUT  /ebook-annotations/{annotation_id}/learning-target
@@ -155,10 +155,11 @@ numbers. The upload exists only in a controlled temporary file and is removed
 after parsing succeeds or fails. Extracted pages are separate DynamoDB items.
 
 Study packs retain their original comparison mode (`translation` or
-`plain_english`) even if the book default changes later. Analysis is cached by
-book, page text hash, comparison language, and analysis version. Model output
-must cover the server-created sentence IDs exactly and annotations must quote
-continuous source text. Marking an item unfamiliar creates one idempotent
+`plain_english`) and selected model tier (`fast` or `deep`) even if the book
+default changes later. Fast and Deep results use separate page caches. Analysis
+is cached by book, page text hash, comparison language, and analysis version.
+Model output must cover the server-created sentence IDs exactly and annotations
+must quote continuous source text. Marking an item unfamiliar creates one idempotent
 Notebook note, provisional weakness, and review target without reducing
 mastery. Three-step practice moves an independent immediate success to
 `learning`; a cold success in a different context after at least 24 hours moves

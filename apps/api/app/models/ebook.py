@@ -7,6 +7,7 @@ from app.core.taxonomy import ERROR_TAXONOMY
 
 ComparisonLanguage = Literal["zh-CN", "en"]
 ComparisonMode = Literal["translation", "plain_english"]
+EbookModelTier = Literal["fast", "deep"]
 EbookFormat = Literal["epub", "pdf"]
 EbookStatus = Literal["processing", "ready", "failed"]
 EbookAnnotationKind = Literal[
@@ -98,6 +99,7 @@ class EbookAnnotation(BaseModel):
     examples: list[str] = Field(default_factory=list)
     transferPrompt: str
     skillCode: str
+    modelTier: EbookModelTier = "deep"
     createdAt: str
 
 
@@ -111,6 +113,7 @@ class EbookStudyPage(BaseModel):
     chapterTitle: Optional[str] = None
     comparisonLanguage: ComparisonLanguage
     comparisonMode: ComparisonMode
+    modelTier: EbookModelTier = "deep"
     units: list[EbookSentenceUnit] = Field(default_factory=list)
     annotations: list[EbookAnnotation] = Field(default_factory=list)
 
@@ -125,6 +128,7 @@ class EbookStudyPack(BaseModel):
     endPage: int = Field(ge=1)
     comparisonLanguage: ComparisonLanguage
     comparisonMode: ComparisonMode
+    modelTier: EbookModelTier = "deep"
     status: EbookStatus
     totalPageCount: int = Field(ge=1, le=15)
     completedPageCount: int = Field(ge=0, le=15)
@@ -250,6 +254,8 @@ class UpdateEbookRequest(BaseModel):
 class CreateStudyPackRequest(BaseModel):
     startPage: int = Field(ge=1)
     endPage: int = Field(ge=1)
+    modelTier: EbookModelTier = "deep"
+    forceRetry: bool = False
 
     @model_validator(mode="after")
     def validate_range(self):

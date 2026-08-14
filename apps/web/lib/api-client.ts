@@ -44,6 +44,7 @@ import type {
   Ebook,
   EbookAnnotation,
   EbookComparisonLanguage,
+  EbookModelTier,
   EbookLearningTarget,
   EbookPracticeAttempt,
   EbookPracticeSession,
@@ -1360,6 +1361,8 @@ export async function createEbookStudyPack(
   bookId: string,
   startPage: number,
   endPage: number,
+  modelTier: EbookModelTier,
+  forceRetry = false,
 ): Promise<EbookStudyPack> {
   if (USE_MOCK) {
     await delay(600)
@@ -1374,6 +1377,7 @@ export async function createEbookStudyPack(
       endPage,
       comparisonLanguage: book.comparisonLanguage,
       comparisonMode: book.comparisonMode,
+      modelTier,
       status: "ready",
       totalPageCount: pageNumbers.length,
       completedPageCount: pageNumbers.length,
@@ -1390,6 +1394,7 @@ export async function createEbookStudyPack(
           chapterTitle: "Sample chapter",
           comparisonLanguage: book.comparisonLanguage,
           comparisonMode: book.comparisonMode,
+          modelTier,
           units: [{
             id: unitId,
             unitId,
@@ -1438,7 +1443,7 @@ export async function createEbookStudyPack(
   }
   const { studyPack } = await apiFetch<{ studyPack: EbookStudyPack }>(`/ebooks/${bookId}/study-packs`, {
     method: "POST",
-    body: JSON.stringify({ startPage, endPage }),
+    body: JSON.stringify({ startPage, endPage, modelTier, forceRetry }),
   }, LLM_OPERATION_TIMEOUT_MS)
   return studyPack
 }
@@ -1456,9 +1461,17 @@ export async function getEbookStudyPack(packId: string): Promise<EbookStudyPack>
 export async function waitForEbookStudyPack(initial: EbookStudyPack): Promise<EbookStudyPack> {
   if (initial.status !== "processing") return initial
   let current = initial
+  let consecutiveRequestFailures = 0
   for (let attempt = 0; attempt < 120; attempt += 1) {
     await delay(2_500)
-    current = await getEbookStudyPack(initial.id)
+    try {
+      current = await getEbookStudyPack(initial.id)
+      consecutiveRequestFailures = 0
+    } catch (error) {
+      consecutiveRequestFailures += 1
+      if (consecutiveRequestFailures >= 12) throw error
+      continue
+    }
     if (current.status !== "processing") return current
   }
   throw new Error("The ebook study pack is still processing. Open it again shortly.")
