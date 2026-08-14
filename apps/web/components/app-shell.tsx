@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Menu } from "lucide-react"
+import { Menu, PanelLeftClose, PanelLeftOpen } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -12,6 +12,7 @@ import { NavSidebar } from "@/components/nav-sidebar"
 import { AppPreferences } from "@/components/app-preferences"
 import { useLanguage } from "@/components/language-provider"
 import { NAV_ITEMS } from "@/lib/nav"
+import { cn } from "@/lib/utils"
 import { updateTaskResume, useTaskResume } from "@/lib/task-resume"
 import {
   isVoiceNavigationLocked,
@@ -19,6 +20,7 @@ import {
 } from "@/lib/voice-navigation-guard"
 
 const HISTORY_POSITION_KEY = "__weakspotHistoryPosition"
+const SIDEBAR_COLLAPSED_KEY = "weakspot-sidebar-collapsed"
 
 interface VoiceHistoryGuard {
   url: string
@@ -72,8 +74,9 @@ function navigationIndex(): number | null {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const pathname = usePathname()
-  const { t } = useLanguage()
+  const { language, t } = useLanguage()
   const resume = useTaskResume()
   const resumeFeature = resume?.feature
   const resumeHref = resume?.href
@@ -86,6 +89,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const historyTrackerRef = useRef({ initialized: false, position: 0 })
   const restoringHistoryRef = useRef(false)
   const lastResumePathRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    let frame: number | null = null
+    try {
+      const savedCollapsed = window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1"
+      frame = window.requestAnimationFrame(() => setSidebarCollapsed(savedCollapsed))
+    } catch {
+      // Private browsing can disable storage; collapsing still works for this visit.
+    }
+    return () => {
+      if (frame !== null) window.cancelAnimationFrame(frame)
+    }
+  }, [])
+
+  function toggleSidebar() {
+    setSidebarCollapsed((collapsed) => {
+      const next = !collapsed
+      try {
+        window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0")
+      } catch {
+        // Keep the in-memory preference when storage is unavailable.
+      }
+      return next
+    })
+  }
 
   // Tag each in-app history entry with a relative position. replaceState keeps
   // the browser's Back/Forward stack intact; the URL guards against Next.js
@@ -271,14 +299,38 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen w-full">
       {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 left-0 hidden w-[17rem] overflow-y-auto border-r border-sidebar-border bg-sidebar/95 lg:block">
-        <NavSidebar />
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-40 hidden overflow-y-auto border-r border-sidebar-border bg-sidebar/95 transition-[width] duration-200 lg:block",
+          sidebarCollapsed ? "w-20" : "w-[17rem]",
+        )}
+      >
+        <NavSidebar collapsed={sidebarCollapsed} />
       </aside>
 
-      <div className="flex min-w-0 w-full flex-col lg:pl-[17rem]">
+      <div
+        className={cn(
+          "flex min-w-0 w-full flex-col transition-[padding] duration-200",
+          sidebarCollapsed ? "lg:pl-20" : "lg:pl-[17rem]",
+        )}
+      >
         {/* Top bar */}
         <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-3 border-b border-border/80 bg-background/88 px-3 py-2 backdrop-blur-xl sm:px-5 lg:px-7">
           <div className="flex min-w-0 items-center gap-2.5">
+            <Button
+              variant="outline"
+              size="icon"
+              className="hidden lg:inline-flex"
+              onClick={toggleSidebar}
+              aria-label={sidebarCollapsed
+                ? (language === "zh-CN" ? "展开左侧栏" : "Expand sidebar")
+                : (language === "zh-CN" ? "收起左侧栏" : "Collapse sidebar")}
+              title={sidebarCollapsed
+                ? (language === "zh-CN" ? "展开左侧栏" : "Expand sidebar")
+                : (language === "zh-CN" ? "收起左侧栏" : "Collapse sidebar")}
+            >
+              {sidebarCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
+            </Button>
             <Sheet open={open} onOpenChange={setOpen}>
               <SheetTrigger
                 render={
