@@ -43,12 +43,23 @@ def _validated_audio_url(value: object) -> str:
     url = value.strip()
     parsed = urlparse(url)
     hostname = (parsed.hostname or "").lower()
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise TTSProviderError("Qwen speech returned an untrusted audio URL.") from exc
     if (
-        parsed.scheme != "https"
+        parsed.scheme not in {"http", "https"}
         or not any(hostname.endswith(suffix) for suffix in ALLOWED_AUDIO_HOST_SUFFIXES)
+        or parsed.username is not None
+        or parsed.password is not None
+        or port is not None
     ):
         raise TTSProviderError("Qwen speech returned an untrusted audio URL.")
-    return url
+    # DashScope currently returns signed OSS links with an http scheme even
+    # though the same signed resource is available over HTTPS. Never download
+    # generated audio over cleartext; canonicalize only already-allowlisted
+    # Alibaba Cloud hosts and preserve the signed path and query string.
+    return parsed._replace(scheme="https", netloc=hostname).geturl()
 
 
 def generate_speech(
