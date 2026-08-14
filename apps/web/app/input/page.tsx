@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import Link from "next/link"
 import useSWR, { mutate } from "swr"
 import { toast } from "sonner"
 import {
@@ -14,6 +15,7 @@ import {
   History,
   Lightbulb,
   ListChecks,
+  Library,
   Radio,
   ShieldCheck,
   Sparkles,
@@ -259,6 +261,31 @@ export default function InputLearningPage() {
           </p>
         </div>
       </header>
+
+      <Link
+        href="/input/ebooks"
+        className="group flex flex-col gap-4 rounded-2xl border border-amber-500/25 bg-gradient-to-r from-amber-500/10 via-background to-primary/8 p-5 transition hover:-translate-y-0.5 hover:border-amber-500/40 hover:shadow-sm sm:flex-row sm:items-center sm:justify-between"
+      >
+        <span className="flex min-w-0 items-start gap-4">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-300">
+            <Library className="size-5" />
+          </span>
+          <span>
+            <span className="block font-heading text-lg font-semibold">
+              {language === "zh-CN" ? "导入电子书学习" : "Learn from an ebook"}
+            </span>
+            <span className="mt-1 block text-sm leading-relaxed text-muted-foreground">
+              {language === "zh-CN"
+                ? "上传 EPUB 或带文字层的 PDF，每次精读 1–15 页，逐句对照并把不熟悉内容练会。"
+                : "Upload an EPUB or text-based PDF, study 1–15 pages, and turn unfamiliar language into independent use."}
+            </span>
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2 text-sm font-medium text-primary">
+          {language === "zh-CN" ? "打开私人书架" : "Open private library"}
+          <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
+        </span>
+      </Link>
 
       <section className="grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.7fr)]">
         <Card>

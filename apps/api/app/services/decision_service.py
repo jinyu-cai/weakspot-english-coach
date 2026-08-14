@@ -11,6 +11,7 @@ from app.core.mastery import DEFAULT_MASTERY
 from app.core.taxonomy import ERROR_TAXONOMY
 from app.db.repositories import (
     list_recent_errors,
+    list_ebook_learning_targets,
     list_recent_practice_attempts,
     list_skills,
 )
@@ -261,9 +262,20 @@ def _session_progression(
     else:
         stage = rotated if session_slot > 0 or rotated != "replay" else base_stage
 
-    # Only the first slot keeps a tight error fingerprint. Later slots teach the
-    # same skill pattern with new surface material (or a different skill).
-    fingerprint = base.get("errorFingerprint") if stage == "replay" and session_slot == 0 else None
+    # Ebook reviews are scoped by a compact target fingerprint rather than a
+    # whole page. Preserve that target for the generated review item even when
+    # its evidence supports transfer; ordinary skill sessions still loosen the
+    # original-error fingerprint after their first slot.
+    base_fingerprint = base.get("errorFingerprint")
+    is_ebook_target = (
+        isinstance(base_fingerprint, dict)
+        and base_fingerprint.get("source") == "ebook"
+    )
+    fingerprint = (
+        base_fingerprint
+        if is_ebook_target or (stage == "replay" and session_slot == 0)
+        else None
+    )
     reason = (
         f"Session slot {session_slot + 1} uses {stage} so practice diversifies "
         f"instead of replaying one proper-noun or one sentence form."
@@ -291,9 +303,35 @@ def recommend_next_action(
     size = max(1, int(session_size or 1))
     slot = None if session_slot is None else max(0, int(session_slot))
 
+    due_ebook_target = None
+    # A mixed global session admits a due ebook item as its first candidate,
+    # then returns to the normal diversified skill policy for later slots.
+    if not requested_skill_code and (slot is None or slot == 0):
+        now = datetime.now(timezone.utc)
+        candidates = []
+        for row in list_ebook_learning_targets(user_id):
+            try:
+                due_at = datetime.fromisoformat(str(row.get("dueAt") or "").replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if (
+                row.get("status") in {"provisional", "confirmed", "learning"}
+                and due_at <= now
+                and row.get("skillCode") in ERROR_TAXONOMY
+            ):
+                candidates.append(row)
+        candidates.sort(key=lambda row: (row.get("dueAt", ""), row.get("updatedAt", "")))
+        due_ebook_target = candidates[0] if candidates else None
+
     if requested_skill_code:
         target = requested_skill_code
         skill_reason = f"You explicitly selected {target}."
+    elif due_ebook_target:
+        target = str(due_ebook_target["skillCode"])
+        skill_reason = (
+            f"A delayed ebook target for {target} is due: "
+            f"{str(due_ebook_target.get('expression') or '')[:120]}."
+        )
     elif slot is not None:
         target, skill_reason = _pick_session_skill(
             skills,
@@ -310,8 +348,23 @@ def recommend_next_action(
     # behind a learner-scoped MemoryAgent writer lease.
     memories = snapshot_active_memory_records(user_id)
     type_scores, memory_ids = _type_scores(target, memories)
+    base_progression = _progression_context(target, memories)
+    if due_ebook_target:
+        base_progression = {
+            "stage": "transfer" if due_ebook_target.get("status") == "learning" else "replay",
+            "reason": "Review the ebook target without sending the surrounding page or book.",
+            "memoryId": due_ebook_target.get("memoryId"),
+            "errorFingerprint": {
+                "skillCode": target,
+                "originalExamples": [str(due_ebook_target.get("sourceText") or "")[:400]],
+                "description": str(due_ebook_target.get("meaningInContext") or "")[:400],
+                "targetExpression": str(due_ebook_target.get("expression") or "")[:180],
+                "patternTemplate": str(due_ebook_target.get("patternTemplate") or "")[:400],
+                "source": "ebook",
+            },
+        }
     progression = _session_progression(
-        _progression_context(target, memories),
+        base_progression,
         session_slot=slot,
         requested_skill_code=requested_skill_code,
     )
@@ -362,6 +415,17 @@ def recommend_next_action(
         "progressionStage": progression["stage"],
         "progressionReason": progression_reason,
         "errorFingerprint": progression.get("errorFingerprint"),
+        "learningTarget": (
+            {
+                "id": due_ebook_target.get("id"),
+                "expression": str(due_ebook_target.get("expression") or "")[:180],
+                "bookTitle": str(due_ebook_target.get("bookTitle") or "")[:240],
+                "pageNumber": due_ebook_target.get("pageNumber"),
+                "dueAt": due_ebook_target.get("dueAt"),
+            }
+            if due_ebook_target
+            else None
+        ),
         "sessionSlot": slot,
         "sessionSize": size if slot is not None else None,
         "skillScores": skills[:8],

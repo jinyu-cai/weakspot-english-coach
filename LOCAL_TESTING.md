@@ -127,6 +127,7 @@ uv run python -m scripts.integration_test
 uv run python -m scripts.dedup_test
 DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_agent_test
 DYNAMODB_ENDPOINT_URL= uv run python -m scripts.stealth_input_test
+DYNAMODB_ENDPOINT_URL= uv run python -m scripts.ebook_test
 DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
 ```
 
@@ -139,6 +140,12 @@ History deletion; it verifies associated Notebook notes are removed from the
 backend together with the submission and errors. The dedicated
 MemoryAgent test covers merge, conflict replacement, expiry, bounded recall,
 source retraction, adaptive decisions, and Memory APIs.
+
+`ebook_test` builds fixed EPUB/PDF fixtures offline and verifies archive safety,
+stable logical pagination, upload cleanup, import idempotency, 1–15 page range
+validation, sentence/annotation grounding, provisional weakness semantics,
+three-step and delayed review transitions, cross-user isolation, encrypted PDF
+rejection, and source-data cascade deletion.
 
 `stealth_input_test` is the focused release gate for personalized learning. It
 uses moto and fake AI, so it needs no AWS or model key. It verifies retention
@@ -179,6 +186,9 @@ matches the active deployment (Oracle currently DeepSeek, Alibaba Qwen), and
 mixed Qwen/DeepSeek choices appear only when both providers are configured
 Input Learning `/input` saves grounded material, creates an attention mission
 without pasted material, opens a saved capture, and deletes it
+Input Lab ebook library imports an EPUB/text PDF after the rights confirmation,
+selects 1 and 15-page ranges, renders Chinese and Plain English study packs on
+desktop/mobile, adds an unfamiliar annotation to Notebook, and completes practice
 Chat quietly exercises a due weakness and reveals the result only in the
 post-session learning summary; no-opportunity exchanges do not lower mastery
 Daily Wins shows real backend stats

@@ -1386,6 +1386,179 @@ def delete_input_learning_source(user_id: str, source_id: str) -> None:
     _delete(user_pk(user_id), _input_learning_source_sk(source_id))
 
 
+# ----- Private ebook library, analysis, and practice -----
+
+def _ebook_sk(book_id: str) -> str:
+    return f"EBOOK#{book_id}"
+
+
+def _ebook_page_sk(book_id: str, page_number: int) -> str:
+    return f"EBOOK_PAGE#{book_id}#{page_number:06d}"
+
+
+def _ebook_analysis_sk(cache_id: str) -> str:
+    return f"EBOOK_ANALYSIS#{cache_id}"
+
+
+def _ebook_pack_sk(pack_id: str) -> str:
+    return f"EBOOK_PACK#{pack_id}"
+
+
+def _ebook_annotation_sk(annotation_id: str) -> str:
+    return f"EBOOK_ANNOTATION#{annotation_id}"
+
+
+def _ebook_target_sk(target_id: str) -> str:
+    return f"EBOOK_TARGET#{target_id}"
+
+
+def _ebook_practice_sk(session_id: str) -> str:
+    return f"EBOOK_PRACTICE#{session_id}"
+
+
+def _ebook_row(entity: dict, sk: str, entity_type: str) -> dict:
+    return {
+        **entity,
+        "PK": user_pk(entity["userId"]),
+        "SK": sk,
+        "entityType": entity_type,
+    }
+
+
+def _get_ebook_entity(user_id: str, sk: str) -> Optional[dict]:
+    result = table.get_item(Key={"PK": user_pk(user_id), "SK": sk})
+    item = result.get("Item")
+    return clean(item) if item else None
+
+
+def _list_ebook_entities(user_id: str, sk_prefix: str) -> list[dict]:
+    rows: list[dict] = []
+    query_kwargs = {
+        "KeyConditionExpression": Key("PK").eq(user_pk(user_id))
+        & Key("SK").begins_with(sk_prefix),
+    }
+    while True:
+        result = table.query(**query_kwargs)
+        rows.extend(clean(item) for item in result.get("Items", []))
+        last_key = result.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_kwargs["ExclusiveStartKey"] = last_key
+    return rows
+
+
+def save_ebook(book: dict) -> None:
+    _put(_ebook_row(book, _ebook_sk(book["id"]), "EBOOK"))
+
+
+def get_ebook(user_id: str, book_id: str) -> Optional[dict]:
+    return _get_ebook_entity(user_id, _ebook_sk(book_id))
+
+
+def list_ebooks(user_id: str) -> list[dict]:
+    books = _list_ebook_entities(user_id, "EBOOK#")
+    books.sort(key=lambda row: row.get("updatedAt", row.get("createdAt", "")), reverse=True)
+    return books
+
+
+def save_ebook_page(page: dict) -> None:
+    _put(_ebook_row(
+        page,
+        _ebook_page_sk(page["bookId"], int(page["pageNumber"])),
+        "EBOOK_PAGE",
+    ))
+
+
+def get_ebook_page(user_id: str, book_id: str, page_number: int) -> Optional[dict]:
+    return _get_ebook_entity(user_id, _ebook_page_sk(book_id, page_number))
+
+
+def list_ebook_pages(user_id: str, book_id: str) -> list[dict]:
+    pages = _list_ebook_entities(user_id, f"EBOOK_PAGE#{book_id}#")
+    pages.sort(key=lambda row: int(row.get("pageNumber", 0)))
+    return pages
+
+
+def save_ebook_analysis_page(page: dict) -> None:
+    _put(_ebook_row(page, _ebook_analysis_sk(page["cacheId"]), "EBOOK_ANALYSIS_PAGE"))
+
+
+def get_ebook_analysis_page(user_id: str, cache_id: str) -> Optional[dict]:
+    return _get_ebook_entity(user_id, _ebook_analysis_sk(cache_id))
+
+
+def save_ebook_study_pack(pack: dict) -> None:
+    _put(_ebook_row(pack, _ebook_pack_sk(pack["id"]), "EBOOK_STUDY_PACK"))
+
+
+def get_ebook_study_pack(user_id: str, pack_id: str) -> Optional[dict]:
+    return _get_ebook_entity(user_id, _ebook_pack_sk(pack_id))
+
+
+def save_ebook_annotation(annotation: dict) -> None:
+    _put(_ebook_row(
+        annotation,
+        _ebook_annotation_sk(annotation["id"]),
+        "EBOOK_ANNOTATION",
+    ))
+
+
+def get_ebook_annotation(user_id: str, annotation_id: str) -> Optional[dict]:
+    return _get_ebook_entity(user_id, _ebook_annotation_sk(annotation_id))
+
+
+def save_ebook_learning_target(target: dict) -> None:
+    _put(_ebook_row(target, _ebook_target_sk(target["id"]), "EBOOK_LEARNING_TARGET"))
+
+
+def get_ebook_learning_target(user_id: str, target_id: str) -> Optional[dict]:
+    return _get_ebook_entity(user_id, _ebook_target_sk(target_id))
+
+
+def list_ebook_learning_targets(user_id: str) -> list[dict]:
+    targets = _list_ebook_entities(user_id, "EBOOK_TARGET#")
+    targets.sort(key=lambda row: (row.get("dueAt", ""), row.get("createdAt", "")))
+    return targets
+
+
+def delete_ebook_learning_target(user_id: str, target_id: str) -> None:
+    _delete(user_pk(user_id), _ebook_target_sk(target_id))
+
+
+def save_ebook_practice_session(session: dict) -> None:
+    _put(_ebook_row(
+        session,
+        _ebook_practice_sk(session["id"]),
+        "EBOOK_PRACTICE_SESSION",
+    ))
+
+
+def get_ebook_practice_session(user_id: str, session_id: str) -> Optional[dict]:
+    return _get_ebook_entity(user_id, _ebook_practice_sk(session_id))
+
+
+def delete_ebook_rows(user_id: str, book_id: str) -> dict[str, int]:
+    """Delete every ebook derivative in this learner partition for one book."""
+    counts: dict[str, int] = {}
+    prefixes = (
+        "EBOOK_PAGE#",
+        "EBOOK_ANALYSIS#",
+        "EBOOK_PACK#",
+        "EBOOK_ANNOTATION#",
+        "EBOOK_TARGET#",
+        "EBOOK_PRACTICE#",
+    )
+    for prefix in prefixes:
+        rows = _list_ebook_entities(user_id, prefix)
+        matching = [row for row in rows if row.get("bookId") == book_id]
+        for row in matching:
+            _delete(user_pk(user_id), row["SK"])
+        counts[prefix.rstrip("#")] = len(matching)
+    _delete(user_pk(user_id), _ebook_sk(book_id))
+    counts["EBOOK"] = 1
+    return counts
+
+
 # ----- Plan -----
 
 def save_active_plan(plan: dict, *, expected_version: Optional[int] = None) -> None:

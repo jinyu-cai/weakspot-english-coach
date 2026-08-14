@@ -17,7 +17,8 @@ server {
     # The diagnosis call can take 10-30s (DeepSeek). Don't cut it off.
     proxy_read_timeout 120s;
     proxy_send_timeout 120s;
-    client_max_body_size 1m;
+    # Private ebook uploads are capped again in the application at 25 MB.
+    client_max_body_size 30m;
 
     location / {
         proxy_pass http://127.0.0.1:8000;

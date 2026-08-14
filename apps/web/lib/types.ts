@@ -450,6 +450,13 @@ export interface PracticeExercise {
     progressionStage?: string
     sessionPolicy?: string
     sequenceIndex?: number
+    learningTarget?: {
+      id: string
+      expression: string
+      bookTitle: string
+      pageNumber: number
+      dueAt?: string | null
+    } | null
   }
   createdAt: string
 }
@@ -694,6 +701,13 @@ export interface NextActionDecision {
   supportingMemoryIds: string[]
   policy: string
   generatedAt: string
+  learningTarget?: {
+    id: string
+    expression: string
+    bookTitle: string
+    pageNumber: number
+    dueAt?: string | null
+  } | null
   skillScores: Array<{
     skillCode: string
     score: number
@@ -846,6 +860,168 @@ export interface InputLearningSourcesResponse {
 
 export interface InputLearningAnalyzeResponse {
   source: InputLearningSource
+}
+
+export type EbookComparisonLanguage = "zh-CN" | "en"
+export type EbookComparisonMode = "translation" | "plain_english"
+export type EbookStatus = "processing" | "ready" | "failed"
+export type EbookAnnotationKind = "word" | "phrase" | "collocation" | "grammar_pattern" | "complex_sentence"
+export type EbookLearningTargetStatus = "provisional" | "confirmed" | "learning" | "mastered" | "archived"
+
+export interface Ebook {
+  id: string
+  title: string
+  author?: string | null
+  format: "epub" | "pdf"
+  status: EbookStatus
+  comparisonLanguage: EbookComparisonLanguage
+  comparisonMode: EbookComparisonMode
+  fileSizeBytes: number
+  pageCount: number
+  wordCount: number
+  lastStudiedPage?: number | null
+  lastStudyRange?: { startPage: number; endPage: number } | null
+  error?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface EbookPage {
+  id: string
+  bookId: string
+  pageNumber: number
+  physicalPageNumber?: number | null
+  chapterTitle?: string | null
+  text: string
+  wordCount: number
+  createdAt: string
+}
+
+export interface EbookSentenceUnit {
+  id: string
+  unitId: string
+  pageNumber: number
+  position: number
+  paragraphIndex: number
+  sentenceIndex: number
+  unitType: "sentence" | "fragment"
+  sourceText: string
+  counterpartText: string
+}
+
+export interface EbookAnnotation {
+  id: string
+  bookId: string
+  studyPackId?: string
+  pageNumber: number
+  unitId: string
+  sourceText: string
+  selectedText: string
+  startOffset: number
+  endOffset: number
+  kind: EbookAnnotationKind
+  title: string
+  meaningInContext: string
+  structure: string
+  usage: string
+  collocations: string[]
+  usageRegister: string
+  commonPitfalls: string[]
+  patternTemplate: string
+  clauseBreakdown: string[]
+  simplifiedParaphrase: string
+  examples: string[]
+  transferPrompt: string
+  skillCode: string
+  createdAt: string
+}
+
+export interface EbookStudyPage {
+  id: string
+  cacheId: string
+  bookId: string
+  pageNumber: number
+  chapterTitle?: string | null
+  comparisonLanguage: EbookComparisonLanguage
+  comparisonMode: EbookComparisonMode
+  units: EbookSentenceUnit[]
+  annotations: EbookAnnotation[]
+}
+
+export interface EbookStudyPack {
+  id: string
+  bookId: string
+  bookTitle: string
+  startPage: number
+  endPage: number
+  comparisonLanguage: EbookComparisonLanguage
+  comparisonMode: EbookComparisonMode
+  status: EbookStatus
+  totalPageCount: number
+  completedPageCount: number
+  failedPages: number[]
+  error?: string | null
+  pages?: EbookStudyPage[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface EbookLearningTarget {
+  id: string
+  bookId: string
+  bookTitle: string
+  pageNumber: number
+  annotationId: string
+  kind: EbookAnnotationKind
+  expression: string
+  sourceText: string
+  meaningInContext: string
+  patternTemplate: string
+  transferPrompt: string
+  comparisonLanguage: EbookComparisonLanguage
+  skillCode: string
+  status: EbookLearningTargetStatus
+  attemptCount: number
+  dueAt?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface EbookPracticeExercise {
+  step: 1 | 2 | 3
+  title: string
+  question: string
+  targetExpression: string
+  requiresTarget: boolean
+  sourceSentenceVisible: boolean
+  sourceText?: string | null
+}
+
+export interface EbookPracticeSession {
+  id: string
+  bookId: string
+  targetId: string
+  status: "active" | "complete"
+  currentStep: 1 | 2 | 3
+  delayedReview: boolean
+  assistanceUsed?: boolean
+  exercise?: EbookPracticeExercise | null
+  attempts: EbookPracticeAttempt[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface EbookPracticeAttempt {
+  id: string
+  clientAttemptId: string
+  step: 1 | 2 | 3
+  responseText: string
+  hintUsed: boolean
+  passed: boolean
+  score: number
+  feedback: string
+  correctedAnswer: string
+  createdAt: string
 }
 
 /* ---- Chat types ---- */

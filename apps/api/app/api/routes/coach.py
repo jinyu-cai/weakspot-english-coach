@@ -75,6 +75,7 @@ def create_coach_mission(
                 f"Goals: {decision['goalContext']}\n"
                 f"Preferences: {decision['preferenceContext']}\n"
                 f"Strategies: {decision['strategyContext']}\n"
+                f"Due ebook learning target (bounded source context only): {decision.get('learningTarget')}\n"
                 f"Selection reason: {decision['reason']}"
             ),
             llm_provider=llm_provider,
@@ -114,6 +115,7 @@ def create_coach_mission(
             "skillScores": decision["skillScores"][:8],
             "missionTypeScores": decision["missionTypeScores"],
             "policy": decision["policy"],
+            "learningTarget": decision.get("learningTarget"),
             "generatedAt": decision["generatedAt"],
         }
         return CoachMissionResponse.model_validate(payload)

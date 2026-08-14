@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
-import { CheckCircle2, XCircle, Lightbulb } from "lucide-react"
+import { BookOpen, CheckCircle2, XCircle, Lightbulb } from "lucide-react"
 import { useLanguage } from "@/components/language-provider"
 import type { NextExerciseStatus } from "@/lib/use-next-exercise"
 
@@ -91,6 +91,20 @@ export function PracticeCard({
           </span>
         </div>
         <CardTitle className="text-pretty text-base leading-relaxed">{exercise.promptZh}</CardTitle>
+        {exercise.decision?.learningTarget ? (
+          <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/25 bg-amber-500/8 px-3 py-2 text-xs text-muted-foreground">
+            <BookOpen className="size-3.5 text-amber-600" />
+            <span className="font-medium text-foreground">{exercise.decision.learningTarget.expression}</span>
+            <span>·</span>
+            <span>{exercise.decision.learningTarget.bookTitle}</span>
+            <span>·</span>
+            <span>p. {exercise.decision.learningTarget.pageNumber}</span>
+            {exercise.decision.learningTarget.dueAt ? <>
+              <span>·</span>
+              <span>{language === "zh-CN" ? "复习到期" : "Review due"} {new Date(exercise.decision.learningTarget.dueAt).toLocaleString()}</span>
+            </> : null}
+          </div>
+        ) : null}
       </CardHeader>
 
       <CardContent className="flex flex-col gap-4">

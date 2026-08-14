@@ -299,7 +299,7 @@ def _select_session_decision(req: GeneratePracticeRequest) -> dict:
             if row.get("skillCode") not in ranked_skills
         )
         unused = [code for code in ranked_skills if code not in prior_skills]
-        if unused:
+        if unused and not base.get("learningTarget"):
             base = recommend_next_action(
                 req.userId,
                 requested_skill_code=unused[0],
@@ -311,6 +311,8 @@ def _select_session_decision(req: GeneratePracticeRequest) -> dict:
             "reason": learning_decision.get("reason"),
             "rankedSkills": ranked_skills[:8],
         }
+        if base.get("learningTarget") is None and session_slot == 0:
+            base["learningTarget"] = learning_decision.get("learningTarget")
 
     if not req.practiceType:
         ranked_types = [
