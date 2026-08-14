@@ -1041,6 +1041,10 @@ def get_study_pack_for_user(user_id: str, pack_id: str) -> Optional[dict]:
             if (annotation := get_ebook_annotation(user_id, annotation_id)) is not None
         ]
         pages.append({**_public(analysis), "annotations": annotations})
+    # A resumed worker may recount cached pages from the beginning. Derive the
+    # public progress from durable ready-page caches so the client never sees
+    # completed work disappear or the count move backwards during a retry.
+    public["completedPageCount"] = len(pages)
     return {**public, "pages": pages}
 
 
