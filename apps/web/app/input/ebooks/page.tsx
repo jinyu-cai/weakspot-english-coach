@@ -217,10 +217,12 @@ export default function EbookLearningPage() {
     setExtraAnnotations([])
     try {
       const selectedTier = forceRetry && studyPack ? studyPack.modelTier : studyTier
+      const selectedStartPage = forceRetry && studyPack ? studyPack.startPage : startPage
+      const selectedEndPage = forceRetry && studyPack ? studyPack.endPage : endPage
       const started = await createEbookStudyPack(
         activeBook.id,
-        startPage,
-        endPage,
+        selectedStartPage,
+        selectedEndPage,
         selectedTier,
         forceRetry,
       )
