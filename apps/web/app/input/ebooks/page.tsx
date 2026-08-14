@@ -148,10 +148,6 @@ export default function EbookLearningPage() {
       toast.error(zh ? "请选择 EPUB 或带文字层的 PDF。" : "Choose an EPUB or a text-based PDF.")
       return
     }
-    if (file.size > 25 * 1024 * 1024) {
-      toast.error(zh ? "电子书不能超过 25 MB。" : "The ebook must be 25 MB or smaller.")
-      return
-    }
     setUploading(true)
     try {
       const book = await importEbook(file, uploadLanguage)
@@ -353,7 +349,7 @@ export default function EbookLearningPage() {
       <div className="grid gap-5 lg:grid-cols-[340px_minmax(0,1fr)]">
         <aside className="flex flex-col gap-4">
           <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2"><FileUp className="size-5 text-primary" />{zh ? "导入电子书" : "Import ebook"}</CardTitle><CardDescription>{zh ? "支持 EPUB 和带可选择文字的 PDF，最大 25 MB。" : "EPUB and selectable-text PDF, up to 25 MB."}</CardDescription></CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-2"><FileUp className="size-5 text-primary" />{zh ? "导入电子书" : "Import ebook"}</CardTitle><CardDescription>{zh ? "支持 EPUB 和带可选择文字的 PDF，不设置文件大小上限。" : "EPUB and selectable-text PDF, with no file-size cap."}</CardDescription></CardHeader>
             <CardContent className="flex flex-col gap-4">
               <label className="flex flex-col gap-1.5 text-sm font-medium">
                 {zh ? "每本书的对照语言" : "Counterpart language"}

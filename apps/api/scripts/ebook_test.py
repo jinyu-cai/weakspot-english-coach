@@ -122,7 +122,6 @@ def main() -> int:
             store_upload,
             submit_practice_attempt,
         )
-        from app.config import settings
         from app.services.notebook_service import list_notebook_notes
         from app.services.decision_service import recommend_next_action
         from scripts.create_table import create_table
@@ -143,8 +142,8 @@ def main() -> int:
         finally:
             Path(unsafe_path).unlink(missing_ok=True)
 
-        # Compression-ratio bombs, forged extensions, and oversize streams fail
-        # before any extracted content is persisted.
+        # Compression-ratio bombs and forged extensions fail before any
+        # extracted content is persisted.
         with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as handle:
             handle.write(_epub_bytes(bomb=True))
             bomb_path = handle.name
@@ -161,16 +160,20 @@ def main() -> int:
             raise AssertionError("forged EPUB extension should be rejected")
         except EbookImportError as exc:
             assert "signature" in str(exc).lower()
-        original_upload_limit = settings.ebook_max_upload_mb
-        settings.ebook_max_upload_mb = 1
+        # Raw uploads larger than the legacy 25 MB cap remain accepted. EPUB
+        # expansion and extracted-text limits are tested separately as safety
+        # controls rather than upload-size limits.
+        large_upload_path = None
         try:
-            try:
-                store_upload(io.BytesIO(b"%PDF-" + b"x" * (1024 * 1024)), "large.pdf")
-                raise AssertionError("oversize upload should be rejected")
-            except EbookImportError as exc:
-                assert "larger" in str(exc).lower()
+            large_upload_path, large_format, _, large_size = store_upload(
+                io.BytesIO(b"%PDF-" + b"x" * (26 * 1024 * 1024)),
+                "large.pdf",
+            )
+            assert large_format == "pdf"
+            assert large_size > 25 * 1024 * 1024
         finally:
-            settings.ebook_max_upload_mb = original_upload_limit
+            if large_upload_path:
+                Path(large_upload_path).unlink(missing_ok=True)
         assert _normalize_text("An inter-\nnational example.\n\nA second paragraph.") == (
             "An international example.\n\nA second paragraph."
         )

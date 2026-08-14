@@ -146,9 +146,10 @@ Run the backend and open `http://localhost:8000/docs` for exact request schemas.
 ## Private ebook learning
 
 Only signed-in learners can use the ebook routes. Imports accept EPUB or PDFs
-with an extractable text layer, up to 25 MB. Password-protected, scanned,
-non-English, structurally invalid, or suspiciously compressed files fail with
-an explicit error; the service does not run OCR. EPUB chapters receive stable
+with an extractable text layer without an application-level upload size cap.
+Password-protected, scanned, non-English, structurally invalid, or suspiciously
+compressed files fail with an explicit error; the service does not run OCR.
+EPUB chapters receive stable
 approximately 300-word logical pages, while PDFs keep their physical page
 numbers. The upload exists only in a controlled temporary file and is removed
 after parsing succeeds or fails. Extracted pages are separate DynamoDB items.
