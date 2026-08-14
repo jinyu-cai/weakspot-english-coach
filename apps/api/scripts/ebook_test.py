@@ -104,13 +104,18 @@ def main() -> int:
             save_ebook_learning_target,
         )
         from app.main import app
-        from app.models.ebook import CreateStudyPackRequest, SubmitEbookPracticeAttemptRequest
+        from app.models.ebook import (
+            CreateOnDemandAnnotationRequest,
+            CreateStudyPackRequest,
+            SubmitEbookPracticeAttemptRequest,
+        )
         from app.services.ebook_service import (
             EbookImportError,
             _epub_pages,
             _normalize_text,
             _pdf_pages,
             begin_ebook_import,
+            create_on_demand_annotation,
             create_study_pack,
             delete_book_for_user,
             get_book_for_user,
@@ -179,7 +184,8 @@ def main() -> int:
         )
 
         # Import is deterministic, paginated by chapter, and removes the upload.
-        uploaded = io.BytesIO(_epub_bytes(long_chapter=True))
+        long_epub_bytes = _epub_bytes(long_chapter=True)
+        uploaded = io.BytesIO(long_epub_bytes)
         book, temporary_path = begin_ebook_import(
             user_id,
             filename="learning.epub",
@@ -190,7 +196,7 @@ def main() -> int:
         inflight, inflight_path = begin_ebook_import(
             user_id,
             filename="learning-copy.epub",
-            file_object=io.BytesIO(_epub_bytes(long_chapter=True)),
+            file_object=io.BytesIO(long_epub_bytes),
             comparison_language="en",
         )
         assert inflight["id"] == book["id"] and inflight_path is None
@@ -211,7 +217,7 @@ def main() -> int:
         duplicate, duplicate_path = begin_ebook_import(
             user_id,
             filename="renamed.epub",
-            file_object=io.BytesIO(_epub_bytes(long_chapter=True)),
+            file_object=io.BytesIO(long_epub_bytes),
             comparison_language="en",
         )
         assert duplicate["id"] == ready["id"]
@@ -254,6 +260,22 @@ def main() -> int:
         )
         assert pack.pop("_dispatch") is True
         pack_claim = pack.pop("_claimId")
+        partial_pack = get_study_pack_for_user(user_id, pack["id"])
+        assert partial_pack and partial_pack["status"] == "processing"
+        assert [page["pageNumber"] for page in partial_pack["pages"]] == [1]
+        partial_unit = partial_pack["pages"][0]["units"][0]
+        partial_annotation = create_on_demand_annotation(
+            user_id,
+            pack["id"],
+            CreateOnDemandAnnotationRequest(
+                unitId=partial_unit["unitId"],
+                startOffset=0,
+                endOffset=min(8, len(partial_unit["sourceText"])),
+            ),
+            None,
+            8192,
+        )
+        assert partial_annotation["selectedText"] == partial_unit["sourceText"][:8]
         process_study_pack(user_id, pack["id"], None, 8192, pack_claim)
         complete_pack = get_study_pack_for_user(user_id, pack["id"])
         assert complete_pack and complete_pack["status"] == "ready"
@@ -396,14 +418,14 @@ def main() -> int:
         rights_response = client.post(
             "/api/v1/ebooks/import",
             data={"comparisonLanguage": "zh-CN", "rightsConfirmed": "false"},
-            files={"file": ("learning.epub", _epub_bytes(long_chapter=True), "application/epub+zip")},
+            files={"file": ("learning.epub", long_epub_bytes, "application/epub+zip")},
             cookies={"session": owner_token},
         )
         assert rights_response.status_code == 400
         route_duplicate = client.post(
             "/api/v1/ebooks/import",
             data={"comparisonLanguage": "zh-CN", "rightsConfirmed": "true"},
-            files={"file": ("learning.epub", _epub_bytes(long_chapter=True), "application/epub+zip")},
+            files={"file": ("learning.epub", long_epub_bytes, "application/epub+zip")},
             cookies={"session": owner_token},
         )
         assert route_duplicate.status_code == 200, (

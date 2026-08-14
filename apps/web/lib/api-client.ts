@@ -1458,15 +1458,21 @@ export async function getEbookStudyPack(packId: string): Promise<EbookStudyPack>
   return studyPack
 }
 
-export async function waitForEbookStudyPack(initial: EbookStudyPack): Promise<EbookStudyPack> {
+export async function waitForEbookStudyPack(
+  initial: EbookStudyPack,
+  onProgress?: (studyPack: EbookStudyPack) => void,
+): Promise<EbookStudyPack> {
   if (initial.status !== "processing") return initial
   let current = initial
   let consecutiveRequestFailures = 0
-  for (let attempt = 0; attempt < 120; attempt += 1) {
-    await delay(2_500)
+  // Deep analysis may take several minutes per page. Keep the lightweight
+  // progress poll alive for up to two hours while the tab remains open.
+  for (let attempt = 0; attempt < 1_440; attempt += 1) {
+    await delay(5_000)
     try {
       current = await getEbookStudyPack(initial.id)
       consecutiveRequestFailures = 0
+      onProgress?.(current)
     } catch (error) {
       consecutiveRequestFailures += 1
       if (consecutiveRequestFailures >= 12) throw error
