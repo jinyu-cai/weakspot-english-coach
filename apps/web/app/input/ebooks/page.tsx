@@ -400,8 +400,8 @@ export default function EbookLearningPage() {
         </div>
       </header>
 
-      <div className="grid gap-5 lg:grid-cols-[340px_minmax(0,1fr)]">
-        <aside className="flex flex-col gap-4">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[340px_minmax(0,1fr)]">
+        <aside className="flex min-w-0 flex-col gap-4">
           <Card>
             <CardHeader><CardTitle className="flex items-center gap-2"><FileUp className="size-5 text-primary" />{zh ? "导入电子书" : "Import ebook"}</CardTitle><CardDescription>{zh ? "支持 EPUB 和带可选择文字的 PDF，不设置文件大小上限。" : "EPUB and selectable-text PDF, with no file-size cap."}</CardDescription></CardHeader>
             <CardContent className="flex flex-col gap-4">
