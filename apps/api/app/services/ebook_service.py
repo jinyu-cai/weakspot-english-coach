@@ -73,7 +73,6 @@ from app.services.practice_service import grade_practice
 
 logger = logging.getLogger("uvicorn.error")
 ANALYSIS_VERSION = "ebook-v1"
-MAX_UPLOAD_BYTES = lambda: max(1, settings.ebook_max_upload_mb) * 1024 * 1024
 MAX_EXPANDED_BYTES = lambda: max(1, settings.ebook_max_expanded_mb) * 1024 * 1024
 MAX_BOOK_TEXT_CHARS = 10_000_000
 MAX_PAGE_TEXT_CHARS = 120_000
@@ -390,10 +389,6 @@ def store_upload(file_object: BinaryIO, filename: str) -> tuple[str, str, str, i
             if not chunk:
                 break
             total += len(chunk)
-            if total > MAX_UPLOAD_BYTES():
-                raise EbookImportError(
-                    f"The ebook is larger than {settings.ebook_max_upload_mb} MB."
-                )
             digest.update(chunk)
             handle.write(chunk)
         handle.flush()

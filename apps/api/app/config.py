@@ -88,7 +88,6 @@ class Settings(BaseSettings):
 
     # --- Private ebook learning ---
     ebook_import_enabled: bool = True
-    ebook_max_upload_mb: int = 25
     ebook_max_expanded_mb: int = 100
     ebook_max_pages: int = 5000
     ebook_logical_page_words: int = 300

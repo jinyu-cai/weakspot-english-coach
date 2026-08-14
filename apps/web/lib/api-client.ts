@@ -270,21 +270,22 @@ function nextPageCursor(nextCursor: string | null | undefined, seen: Set<string>
   return nextCursor
 }
 
-async function apiUpload<T>(path: string, body: FormData, timeoutMs = DEFAULT_API_TIMEOUT_MS): Promise<T> {
-  return fetchWithTotalTimeout(
-    `${API_BASE_URL}/api/v1${path}`,
-    {
-      method: "POST",
-      body,
-      credentials: "include",
-      headers: getLLMProviderHeaders(),
-    },
-    timeoutMs,
-    async (res) => {
-      if (!res.ok) throw new Error(await getErrorMessage(res, path))
-      return (await res.json()) as T
-    },
-  )
+async function apiUpload<T>(path: string, body: FormData, timeoutMs: number | null = DEFAULT_API_TIMEOUT_MS): Promise<T> {
+  const input = `${API_BASE_URL}/api/v1${path}`
+  const init: RequestInit = {
+    method: "POST",
+    body,
+    credentials: "include",
+    headers: getLLMProviderHeaders(),
+  }
+  const consume = async (res: Response) => {
+    if (!res.ok) throw new Error(await getErrorMessage(res, path))
+    return (await res.json()) as T
+  }
+  if (timeoutMs === null) {
+    return consume(await fetch(input, init))
+  }
+  return fetchWithTotalTimeout(input, init, timeoutMs, consume)
 }
 
 export async function getServerLLMModels(): Promise<ServerLLMModel[]> {
@@ -1302,7 +1303,7 @@ export async function importEbook(
   body.set("file", file)
   body.set("comparisonLanguage", comparisonLanguage)
   body.set("rightsConfirmed", "true")
-  const { book } = await apiUpload<{ book: Ebook }>("/ebooks/import", body, 120_000)
+  const { book } = await apiUpload<{ book: Ebook }>("/ebooks/import", body, null)
   return book
 }
 
