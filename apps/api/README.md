@@ -158,6 +158,9 @@ Study packs retain their original comparison mode (`translation` or
 `plain_english`) and selected model tier (`fast` or `deep`) even if the book
 default changes later. Fast and Deep results use separate page caches. Analysis
 is cached by book, page text hash, comparison language, and analysis version.
+While a pack is still processing, every poll includes all pages completed so
+far; the reader can display and interact with those pages immediately while
+the remaining translation and annotation work continues in the background.
 Model output must cover the server-created sentence IDs exactly and annotations
 must quote continuous source text. Marking an item unfamiliar creates one idempotent
 Notebook note, provisional weakness, and review target without reducing

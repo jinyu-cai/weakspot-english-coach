@@ -1021,8 +1021,6 @@ def get_study_pack_for_user(user_id: str, pack_id: str) -> Optional[dict]:
     public = _public(pack)
     model_tier: EbookModelTier = "fast" if pack.get("modelTier") == "fast" else "deep"
     public["modelTier"] = model_tier
-    if pack.get("status") != "ready":
-        return public
     pages: list[dict] = []
     for page_number in range(int(pack["startPage"]), int(pack["endPage"]) + 1):
         page = get_ebook_page(user_id, pack["bookId"], page_number)
@@ -1089,8 +1087,8 @@ def create_on_demand_annotation(
     max_output_tokens: Optional[int],
 ) -> dict:
     pack = get_study_pack_for_user(user_id, pack_id)
-    if not pack or pack.get("status") != "ready":
-        raise LookupError("Study pack not found or not ready.")
+    if not pack:
+        raise LookupError("Study pack not found.")
     unit = next(
         (
             unit
@@ -1101,7 +1099,7 @@ def create_on_demand_annotation(
         None,
     )
     if not unit:
-        raise LookupError("Source sentence not found in this study pack.")
+        raise LookupError("Source sentence not found or its page is not ready yet.")
     source = str(unit["sourceText"])
     if req.endOffset > len(source):
         raise ValueError("The selected offsets are outside the source sentence.")

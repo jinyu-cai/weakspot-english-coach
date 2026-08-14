@@ -228,7 +228,7 @@ export default function EbookLearningPage() {
       )
       setStudyPack(started)
       setStudyTier(started.modelTier)
-      const completed = await waitForEbookStudyPack(started)
+      const completed = await waitForEbookStudyPack(started, setStudyPack)
       setStudyPack(completed)
       await refreshBooks()
       if (completed.status === "failed") {
@@ -425,14 +425,14 @@ export default function EbookLearningPage() {
                     <label className="text-sm font-medium">{zh ? "分析速度" : "Analysis mode"}<select className="mt-1.5 h-10 w-full rounded-lg border border-input bg-background px-3 text-sm" value={studyTier} onChange={(event) => setStudyTier(event.target.value as EbookModelTier)}><option value="fast">{zh ? "Fast · 更快" : "Fast · quicker"}</option><option value="deep">{zh ? "Deep · 更详细" : "Deep · more detailed"}</option></select></label>
                     <Button size="lg" disabled={studying} onClick={() => void beginStudy()}>{studying ? <LoaderCircle className="animate-spin" data-icon="inline-start" /> : <Sparkles data-icon="inline-start" />}{studying ? (zh ? "生成中…" : "Preparing…") : (zh ? `学习 ${endPage - startPage + 1} 页` : `Study ${endPage - startPage + 1} pages`)}</Button>
                   </div>
-                  {studyPack?.status === "processing" ? <div className="space-y-2"><div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span>{zh ? "逐页翻译和批注" : "Translating and annotating pages"} · {studyPack.modelTier === "fast" ? "Fast" : "Deep"}</span><div className="flex items-center gap-2"><span>{studyPack.completedPageCount}/{studyPack.totalPageCount}</span>{!studying ? <Button variant="outline" size="sm" onClick={() => void beginStudy(true)}>{zh ? "继续处理" : "Resume"}</Button> : null}</div></div><Progress value={(studyPack.completedPageCount / studyPack.totalPageCount) * 100} /></div> : null}
+                  {studyPack?.status === "processing" ? <div className="space-y-2"><div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span>{zh ? "逐页翻译和批注" : "Translating and annotating pages"} · {studyPack.modelTier === "fast" ? "Fast" : "Deep"}</span><div className="flex items-center gap-2"><span>{studyPack.completedPageCount}/{studyPack.totalPageCount}</span>{!studying ? <Button variant="outline" size="sm" onClick={() => void beginStudy(true)}>{zh ? "继续处理" : "Resume"}</Button> : null}</div></div><Progress value={(studyPack.completedPageCount / studyPack.totalPageCount) * 100} /><p className="text-xs text-muted-foreground">{zh ? "每完成一页就会显示在下方，其余页面继续在后台生成。" : "Each completed page appears below while the remaining pages continue in the background."}</p></div> : null}
                   {studyPack?.status === "failed" ? <div className="flex flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">{zh ? "部分页面没有生成成功" : "Some pages were not prepared"}</p><p className="text-xs text-muted-foreground">{studyPack.failedPages.length ? `${zh ? "失败页" : "Failed pages"}: ${studyPack.failedPages.join(", ")}` : studyPack.error}</p></div><Button variant="outline" size="sm" onClick={() => void beginStudy(true)}>{zh ? "安全重试" : "Retry safely"}</Button></div> : null}
                 </CardContent>
               </Card>
 
-              {studyPack?.status === "ready" ? (
+              {studyPack && studyPack.pages && studyPack.pages.length > 0 ? (
                 <section className="flex flex-col gap-6">
-                  {studyPack.pages?.map((page) => (
+                  {studyPack.pages.map((page) => (
                     <Card key={page.pageNumber} className="overflow-hidden">
                       <CardHeader className="border-b bg-muted/15"><div className="flex items-center justify-between gap-3"><div><CardTitle>{zh ? `第 ${page.pageNumber} 页` : `Page ${page.pageNumber}`}</CardTitle>{page.chapterTitle ? <CardDescription>{page.chapterTitle}</CardDescription> : null}</div><div className="flex items-center gap-2"><Badge variant="secondary">{studyPack.modelTier === "fast" ? "Fast" : "Deep"}</Badge><Badge variant="outline">{studyPack.comparisonMode === "translation" ? (zh ? "中文对照" : "Chinese translation") : "Plain English"}</Badge></div></div></CardHeader>
                       <CardContent className="divide-y p-0">
