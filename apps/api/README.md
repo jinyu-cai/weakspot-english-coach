@@ -161,6 +161,8 @@ is cached by book, page text hash, comparison language, and analysis version.
 While a pack is still processing, every poll includes all pages completed so
 far; the reader can display and interact with those pages immediately while
 the remaining translation and annotation work continues in the background.
+Books retain their latest study-pack ID and range, so reopening a book restores
+the saved translation and annotations instead of discarding the finished view.
 Model output must cover the server-created sentence IDs exactly and annotations
 must quote continuous source text. Marking an item unfamiliar creates one idempotent
 Notebook note, provisional weakness, and review target without reducing

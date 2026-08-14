@@ -37,6 +37,7 @@ import {
   createEbookStudyPack,
   deleteEbook,
   getEbook,
+  getEbookStudyPack,
   getEbooks,
   importEbook,
   markEbookAnnotationUnfamiliar,
@@ -117,17 +118,51 @@ export default function EbookLearningPage() {
 
   useEffect(() => {
     if (!activeBook) return
-    const initial = activeBook.lastStudiedPage
+    let cancelled = false
+    const controller = new AbortController()
+    const savedRange = activeBook.lastStudyRange
+    const initial = savedRange?.startPage ?? (activeBook.lastStudiedPage
       ? Math.min(activeBook.pageCount, activeBook.lastStudiedPage + 1)
-      : 1
+      : 1)
     const timer = window.setTimeout(() => {
       setStartPage(Math.max(1, initial))
-      setEndPage(Math.max(1, initial))
+      setEndPage(Math.max(1, savedRange?.endPage ?? initial))
+      setStudyTier(savedRange?.modelTier ?? "deep")
       setStudyPack(null)
       setExtraAnnotations([])
       setSelection(null)
+      if (!activeBook.lastStudyPackId) return
+      setStudying(true)
+      void (async () => {
+        try {
+          const restored = await getEbookStudyPack(activeBook.lastStudyPackId!)
+          if (cancelled) return
+          setStudyPack(restored)
+          setStudyTier(restored.modelTier)
+          if (restored.status === "processing") {
+            const completed = await waitForEbookStudyPack(
+              restored,
+              (progress) => { if (!cancelled) setStudyPack(progress) },
+              controller.signal,
+            )
+            if (!cancelled) setStudyPack(completed)
+          }
+        } catch (error) {
+          if (!cancelled) {
+            toast.error(zh ? "无法恢复上次学习内容" : "Could not restore the previous study pack", {
+              description: error instanceof Error ? error.message : undefined,
+            })
+          }
+        } finally {
+          if (!cancelled) setStudying(false)
+        }
+      })()
     }, 0)
-    return () => window.clearTimeout(timer)
+    return () => {
+      cancelled = true
+      controller.abort()
+      window.clearTimeout(timer)
+    }
   }, [activeBook?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const allAnnotations = useMemo(() => Array.from(new Map([

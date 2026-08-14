@@ -260,6 +260,13 @@ def main() -> int:
         )
         assert pack.pop("_dispatch") is True
         pack_claim = pack.pop("_claimId")
+        remembered_book = get_book_for_user(user_id, ready["id"])
+        assert remembered_book["lastStudyPackId"] == pack["id"]
+        assert remembered_book["lastStudyRange"] == {
+            "startPage": 1,
+            "endPage": end_page,
+            "modelTier": "deep",
+        }
         partial_pack = get_study_pack_for_user(user_id, pack["id"])
         assert partial_pack and partial_pack["status"] == "processing"
         assert [page["pageNumber"] for page in partial_pack["pages"]] == [1]
