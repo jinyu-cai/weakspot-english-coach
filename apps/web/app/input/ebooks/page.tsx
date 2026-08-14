@@ -37,6 +37,7 @@ import {
   createEbookAnnotation,
   createEbookStudyPack,
   deleteEbook,
+  deleteEbookStudyPack,
   getEbook,
   getEbookStudyPack,
   getEbookStudyPacks,
@@ -87,6 +88,7 @@ export default function EbookLearningPage() {
   const [studyTier, setStudyTier] = useState<EbookModelTier>("deep")
   const [studyPack, setStudyPack] = useState<EbookStudyPack | null>(null)
   const [studying, setStudying] = useState(false)
+  const [deletingStudyPackId, setDeletingStudyPackId] = useState<string | null>(null)
   const [readerView, setReaderView] = useState<EbookReaderView>("reading")
   const [showCounterpart, setShowCounterpart] = useState(true)
   const [showReaderAnnotations, setShowReaderAnnotations] = useState(true)
@@ -356,6 +358,46 @@ export default function EbookLearningPage() {
     }
   }
 
+  async function removeStudyPack(pack: EbookStudyPack) {
+    if (deletingStudyPackId) return
+    const rangeLabel = zh
+      ? `第 ${pack.startPage}–${pack.endPage} 页（${pack.modelTier === "fast" ? "Fast" : "Deep"}）`
+      : `pages ${pack.startPage}–${pack.endPage} (${pack.modelTier === "fast" ? "Fast" : "Deep"})`
+    const confirmed = window.confirm(zh
+      ? `从已分析范围中删除${rangeLabel}？正在处理的任务会停止；逐页缓存、笔记和练习记录会保留。`
+      : `Remove ${rangeLabel} from analyzed ranges? Processing will stop; reusable page analysis, notes, and practice history will remain.`)
+    if (!confirmed) return
+    setDeletingStudyPackId(pack.id)
+    try {
+      const result = await deleteEbookStudyPack(pack.id)
+      const wasSelected = studyPack?.id === pack.id
+      if (wasSelected) {
+        studyPackAbortRef.current?.abort()
+        studyPackSelectionRef.current += 1
+        setStudyPack(null)
+        setStudying(false)
+        setExtraAnnotations([])
+        setSelection(null)
+      }
+      const remaining = studyPackHistory.filter((candidate) => candidate.id !== pack.id)
+      await refreshStudyPackHistory(remaining, { revalidate: false })
+      void refreshStudyPackHistory()
+      void refreshBooks()
+      if (wasSelected) {
+        const replacement = remaining.find((candidate) => candidate.id === result.nextStudyPackId)
+          ?? remaining[0]
+        if (replacement) void openStoredStudyPack(replacement)
+      }
+      toast.success(zh ? "已删除这段阅读范围。" : "Analyzed range deleted.")
+    } catch (error) {
+      toast.error(zh ? "无法删除这段阅读范围" : "Could not delete this analyzed range", {
+        description: error instanceof Error ? error.message : undefined,
+      })
+    } finally {
+      setDeletingStudyPackId(null)
+    }
+  }
+
   const captureSelection = useCallback((unit: EbookSentenceUnit, container: HTMLElement) => {
     const selected = window.getSelection()
     if (!selected || selected.rangeCount === 0 || selected.isCollapsed) return
@@ -564,28 +606,46 @@ export default function EbookLearningPage() {
                             ? (zh ? "中文" : "Chinese")
                             : (zh ? "简明英文" : "Plain English")
                           return (
-                            <button
+                            <div
                               key={pack.id}
-                              type="button"
-                              aria-pressed={selected}
-                              onClick={() => void openStoredStudyPack(pack)}
                               className={cn(
-                                "flex min-w-fit items-center gap-2 rounded-xl border px-3 py-2 text-left outline-none transition hover:border-primary/40 hover:bg-primary/5 focus-visible:ring-3 focus-visible:ring-ring/40",
+                                "flex min-w-fit items-stretch rounded-xl border outline-none transition hover:border-primary/40 hover:bg-primary/5",
                                 selected && "border-primary/50 bg-primary/8",
                               )}
                             >
-                              {pack.status === "processing"
-                                ? <LoaderCircle className="size-4 animate-spin text-primary" />
-                                : pack.status === "ready"
-                                  ? <CheckCircle2 className="size-4 text-primary" />
-                                  : <span className="size-2 rounded-full bg-amber-500" />}
-                              <span>
-                                <span className="block text-sm font-medium">{rangeLabel}</span>
-                                <span className="block text-[11px] text-muted-foreground">
-                                  {pack.modelTier === "fast" ? "Fast" : "Deep"} · {modeLabel} · {pack.completedPageCount}/{pack.totalPageCount}
+                              <button
+                                type="button"
+                                aria-pressed={selected}
+                                onClick={() => void openStoredStudyPack(pack)}
+                                className="flex items-center gap-2 rounded-l-xl px-3 py-2 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
+                              >
+                                {pack.status === "processing"
+                                  ? <LoaderCircle className="size-4 animate-spin text-primary" />
+                                  : pack.status === "ready"
+                                    ? <CheckCircle2 className="size-4 text-primary" />
+                                    : <span className="size-2 rounded-full bg-amber-500" />}
+                                <span>
+                                  <span className="block text-sm font-medium">{rangeLabel}</span>
+                                  <span className="block text-[11px] text-muted-foreground">
+                                    {pack.modelTier === "fast" ? "Fast" : "Deep"} · {modeLabel} · {pack.completedPageCount}/{pack.totalPageCount}
+                                  </span>
                                 </span>
-                              </span>
-                            </button>
+                              </button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-sm"
+                                disabled={deletingStudyPackId !== null}
+                                aria-label={zh ? `删除${rangeLabel}` : `Delete ${rangeLabel}`}
+                                title={zh ? "删除这段阅读范围" : "Delete this analyzed range"}
+                                onClick={() => void removeStudyPack(pack)}
+                                className="my-1 mr-1 self-start text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                              >
+                                {deletingStudyPackId === pack.id
+                                  ? <LoaderCircle className="animate-spin" />
+                                  : <Trash2 />}
+                              </Button>
+                            </div>
                           )
                         })}
                       </div>

@@ -96,6 +96,7 @@ def main() -> int:
         from app.api.deps import make_session_jwt
         from app.db.repositories import (
             ensure_dynamodb_item_fits,
+            get_ebook_analysis_page,
             get_ebook_learning_target,
             get_memory,
             get_skill,
@@ -118,6 +119,7 @@ def main() -> int:
             create_on_demand_annotation,
             create_study_pack,
             delete_book_for_user,
+            delete_study_pack_for_user,
             get_book_for_user,
             get_study_pack_for_user,
             list_study_packs_for_user,
@@ -306,6 +308,26 @@ def main() -> int:
         process_study_pack(user_id, overlapping_pack["id"], None, 8192, overlapping_claim)
         overlap_complete = get_study_pack_for_user(user_id, overlapping_pack["id"])
         assert overlap_complete["pages"][0]["units"] == complete_pack["pages"][0]["units"]
+        overlap_cache_id = overlap_complete["pages"][0]["cacheId"]
+        deleted_overlap = delete_study_pack_for_user(user_id, overlapping_pack["id"])
+        assert deleted_overlap["deleted"] is True
+        assert get_study_pack_for_user(user_id, overlapping_pack["id"]) is None
+        assert get_ebook_analysis_page(user_id, overlap_cache_id) is not None
+        assert overlapping_pack["id"] not in {
+            saved["id"] for saved in list_study_packs_for_user(user_id, ready["id"])
+        }
+
+        # Deleting a processing range cancels its claim. A stale worker cannot
+        # recreate the history card, while its already-built page cache remains reusable.
+        cancelled_pack = create_study_pack(
+            user_id,
+            ready["id"],
+            CreateStudyPackRequest(startPage=2, endPage=2, modelTier="fast"),
+        )
+        cancelled_claim = cancelled_pack.pop("_claimId")
+        delete_study_pack_for_user(user_id, cancelled_pack["id"])
+        process_study_pack(user_id, cancelled_pack["id"], None, 8192, cancelled_claim)
+        assert get_study_pack_for_user(user_id, cancelled_pack["id"]) is None
 
         # Fast and Deep use separate caches. A forced retry replaces the
         # processing claim, so a stale worker cannot overwrite resumed progress.
@@ -460,6 +482,32 @@ def main() -> int:
             cookies={"session": other_token},
         )
         assert other_pack_history.status_code == 404
+        route_delete_pack = create_study_pack(
+            user_id,
+            ready["id"],
+            CreateStudyPackRequest(startPage=3, endPage=3, modelTier="fast"),
+        )
+        cross_user_delete = client.delete(
+            f"/api/v1/ebook-study-packs/{route_delete_pack['id']}",
+            cookies={"session": other_token},
+        )
+        assert cross_user_delete.status_code == 404
+        owner_delete = client.delete(
+            f"/api/v1/ebook-study-packs/{route_delete_pack['id']}",
+            cookies={"session": owner_token},
+        )
+        assert owner_delete.status_code == 200, owner_delete.text
+        assert owner_delete.json()["deleted"] is True
+        deleted_pack_read = client.get(
+            f"/api/v1/ebook-study-packs/{route_delete_pack['id']}",
+            cookies={"session": owner_token},
+        )
+        assert deleted_pack_read.status_code == 404
+        duplicate_delete = client.delete(
+            f"/api/v1/ebook-study-packs/{route_delete_pack['id']}",
+            cookies={"session": owner_token},
+        )
+        assert duplicate_delete.status_code == 404
 
         # Text PDFs retain physical pages, including a blank page; the blank
         # page remains studyable without triggering OCR.

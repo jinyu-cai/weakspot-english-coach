@@ -1495,6 +1495,29 @@ def save_ebook_study_pack(pack: dict) -> None:
     _put(_ebook_row(pack, _ebook_pack_sk(pack["id"]), "EBOOK_STUDY_PACK"))
 
 
+def save_ebook_study_pack_if_processing(pack: dict, claim_id: Optional[str]) -> bool:
+    """Persist worker progress without reviving a deleted or superseded pack."""
+    row = _ebook_row(pack, _ebook_pack_sk(pack["id"]), "EBOOK_STUDY_PACK")
+    ensure_dynamodb_item_fits(row)
+    condition = "attribute_exists(PK) AND #status = :processing"
+    values: dict[str, object] = {":processing": "processing"}
+    if claim_id:
+        condition += " AND processingClaimId = :claim"
+        values[":claim"] = claim_id
+    try:
+        table.put_item(
+            Item=to_dynamo(row),
+            ConditionExpression=condition,
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues=values,
+        )
+        return True
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            raise
+        return False
+
+
 def get_ebook_study_pack(user_id: str, pack_id: str) -> Optional[dict]:
     return _get_ebook_entity(user_id, _ebook_pack_sk(pack_id))
 
@@ -1503,13 +1526,112 @@ def list_ebook_study_packs(user_id: str, book_id: str) -> list[dict]:
     packs = [
         row
         for row in _list_ebook_entities(user_id, "EBOOK_PACK#")
-        if row.get("bookId") == book_id
+        if row.get("bookId") == book_id and not row.get("deletedAt")
     ]
     packs.sort(
         key=lambda row: (str(row.get("createdAt") or ""), str(row.get("id") or "")),
         reverse=True,
     )
     return packs
+
+
+def delete_ebook_study_pack(user_id: str, pack_id: str, deleted_at: str) -> bool:
+    """Hide a pack and cancel its worker while keeping shared page caches reusable."""
+    try:
+        table.update_item(
+            Key={"PK": user_pk(user_id), "SK": _ebook_pack_sk(pack_id)},
+            UpdateExpression=(
+                "SET #status = :deleted, deletedAt = :deletedAt, updatedAt = :deletedAt "
+                "REMOVE processingClaimId"
+            ),
+            ConditionExpression="attribute_exists(PK) AND attribute_not_exists(deletedAt)",
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={
+                ":deleted": "archived",
+                ":deletedAt": deleted_at,
+            },
+        )
+        return True
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            raise
+        return False
+
+
+def replace_ebook_last_study_pack(
+    user_id: str,
+    book_id: str,
+    expected_pack_id: str,
+    replacement: Optional[dict],
+    updated_at: str,
+) -> bool:
+    """Move the resume pointer only when it still references the removed pack."""
+    names = {"#updatedAt": "updatedAt"}
+    values: dict[str, object] = {
+        ":expected": expected_pack_id,
+        ":updatedAt": updated_at,
+    }
+    if replacement:
+        update_expression = (
+            "SET lastStudyPackId = :replacement, lastStudyRange = :studyRange, "
+            "#updatedAt = :updatedAt"
+        )
+        values.update({
+            ":replacement": replacement["id"],
+            ":studyRange": {
+                "startPage": replacement["startPage"],
+                "endPage": replacement["endPage"],
+                "modelTier": replacement.get("modelTier") or "deep",
+            },
+        })
+    else:
+        update_expression = (
+            "SET #updatedAt = :updatedAt REMOVE lastStudyPackId, lastStudyRange"
+        )
+    try:
+        table.update_item(
+            Key={"PK": user_pk(user_id), "SK": _ebook_sk(book_id)},
+            UpdateExpression=update_expression,
+            ConditionExpression="lastStudyPackId = :expected",
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=values,
+        )
+        return True
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            raise
+        return False
+
+
+def update_ebook_last_studied_if_current(
+    user_id: str,
+    book_id: str,
+    pack_id: str,
+    end_page: int,
+    study_range: dict,
+    updated_at: str,
+) -> bool:
+    """Record completion only while this pack remains the book's resume target."""
+    try:
+        table.update_item(
+            Key={"PK": user_pk(user_id), "SK": _ebook_sk(book_id)},
+            UpdateExpression=(
+                "SET lastStudiedPage = :endPage, lastStudyRange = :studyRange, "
+                "updatedAt = :updatedAt"
+            ),
+            ConditionExpression="lastStudyPackId = :packId",
+            ExpressionAttributeValues={
+                ":packId": pack_id,
+                ":endPage": end_page,
+                ":studyRange": study_range,
+                ":updatedAt": updated_at,
+            },
+        )
+        return True
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            raise
+        return False
 
 
 def save_ebook_annotation(annotation: dict) -> None:

@@ -28,6 +28,7 @@ from app.services.ebook_service import (
     create_on_demand_annotation,
     create_study_pack,
     delete_book_for_user,
+    delete_study_pack_for_user,
     get_book_for_user,
     get_study_pack_for_user,
     list_books_for_user,
@@ -212,6 +213,15 @@ def get_study_pack(pack_id: str, identity: Identity = Depends(resolve_identity))
     if not pack:
         raise HTTPException(status_code=404, detail="Ebook study pack not found.")
     return {"studyPack": pack}
+
+
+@router.delete("/ebook-study-packs/{pack_id}")
+def delete_study_pack(pack_id: str, identity: Identity = Depends(resolve_identity)):
+    _signed_in(identity)
+    try:
+        return delete_study_pack_for_user(identity.user_id, pack_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/ebook-study-packs/{pack_id}/annotations", response_model=EbookAnnotationResponse)

@@ -1477,6 +1477,43 @@ export async function getEbookStudyPacks(bookId: string): Promise<EbookStudyPack
   return studyPacks
 }
 
+export async function deleteEbookStudyPack(
+  packId: string,
+): Promise<{ deleted: boolean; id: string; bookId: string; nextStudyPackId: string | null }> {
+  if (USE_MOCK) {
+    await delay(250)
+    const pack = mockStudyPacks.find((row) => row.id === packId)
+    if (!pack) throw new Error("Study pack not found")
+    mockStudyPacks = mockStudyPacks.filter((row) => row.id !== packId)
+    const remaining = mockStudyPacks.filter((row) => row.bookId === pack.bookId).sort(newestFirst)
+    const replacement = remaining[0] ?? null
+    mockEbooks = mockEbooks.map((book) => book.id === pack.bookId && book.lastStudyPackId === packId
+      ? {
+          ...book,
+          lastStudyPackId: replacement?.id ?? null,
+          lastStudyRange: replacement
+            ? {
+                startPage: replacement.startPage,
+                endPage: replacement.endPage,
+                modelTier: replacement.modelTier,
+              }
+            : null,
+          updatedAt: new Date().toISOString(),
+        }
+      : book)
+    return {
+      deleted: true,
+      id: packId,
+      bookId: pack.bookId,
+      nextStudyPackId: replacement?.id ?? null,
+    }
+  }
+  return apiFetch<{ deleted: boolean; id: string; bookId: string; nextStudyPackId: string | null }>(
+    `/ebook-study-packs/${packId}`,
+    { method: "DELETE" },
+  )
+}
+
 export async function waitForEbookStudyPack(
   initial: EbookStudyPack,
   onProgress?: (studyPack: EbookStudyPack) => void,
