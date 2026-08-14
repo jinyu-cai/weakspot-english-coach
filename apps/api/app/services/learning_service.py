@@ -17,6 +17,7 @@ from app.db.repositories import (
     get_skill,
     list_activity_runs,
     list_evidence_events,
+    list_ebook_learning_targets,
     list_learning_states,
     list_memories,
     list_skills,
@@ -547,6 +548,18 @@ def recommend_coach_mission(
     """Choose a mission from learning need, review timing, uncertainty, and fatigue."""
 
     now = _utc_now()
+    due_ebook_targets = []
+    for target in list_ebook_learning_targets(user_id):
+        due_at = _parse_iso(target.get("dueAt"))
+        if (
+            target.get("status") in {"provisional", "confirmed", "learning"}
+            and due_at is not None
+            and due_at <= now
+            and target.get("skillCode") in ERROR_TAXONOMY
+        ):
+            due_ebook_targets.append(target)
+    due_ebook_targets.sort(key=lambda row: (row.get("dueAt", ""), row.get("updatedAt", "")))
+    due_ebook_target = due_ebook_targets[0] if due_ebook_targets else None
     persisted = {row["skillCode"]: row for row in list_learning_states(user_id)}
     legacy = {row["skillCode"]: row for row in list_skills(user_id)}
     memories = list_memories(user_id, limit=250)
@@ -647,6 +660,12 @@ def recommend_coach_mission(
             },
         })
     scored.sort(key=lambda item: item["score"], reverse=True)
+    if due_ebook_target:
+        ebook_skill = str(due_ebook_target["skillCode"])
+        ebook_score = next(item for item in scored if item["skillCode"] == ebook_skill)
+        ebook_score["score"] = round(max(float(ebook_score["score"]), 1.05), 4)
+        ebook_score["breakdown"]["ebookReviewDue"] = 1.0
+        scored.sort(key=lambda item: item["score"], reverse=True)
     targets = [item["skillCode"] for item in scored[:3]]
 
     format_fit = {
@@ -701,6 +720,21 @@ def recommend_coach_mission(
         "goalContext": [str(row.get("content") or "")[:300] for row in goals[:4]],
         "preferenceContext": [str(row.get("content") or "")[:300] for row in preferences[:4]],
         "strategyContext": [str(row.get("content") or "")[:300] for row in strategies[:4]],
-        "policy": "need-due-information-goal-delayed-gain-v1",
+        "learningTarget": (
+            {
+                "id": due_ebook_target.get("id"),
+                "expression": str(due_ebook_target.get("expression") or "")[:180],
+                "sourceText": str(due_ebook_target.get("sourceText") or "")[:600],
+                "meaningInContext": str(due_ebook_target.get("meaningInContext") or "")[:600],
+                "patternTemplate": str(due_ebook_target.get("patternTemplate") or "")[:400],
+                "skillCode": due_ebook_target.get("skillCode"),
+                "bookTitle": str(due_ebook_target.get("bookTitle") or "")[:240],
+                "pageNumber": due_ebook_target.get("pageNumber"),
+                "dueAt": due_ebook_target.get("dueAt"),
+            }
+            if due_ebook_target
+            else None
+        ),
+        "policy": "need-due-information-goal-delayed-gain-ebook-v2",
         "generatedAt": now_iso(),
     }

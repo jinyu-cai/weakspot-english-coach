@@ -32,6 +32,7 @@ uv run python -m scripts.smoke_test          # imports + schemas + validation
 uv run python -m scripts.integration_test    # full loop end-to-end (moto + fake AI)
 uv run python -m scripts.memory_agent_test   # lifecycle/graduation/relapse/API/decision
 uv run python -m scripts.stealth_input_test  # stealth retention + grounded input + identity
+uv run python -m scripts.ebook_test          # private import, grounding, review, cleanup
 uv run python -m scripts.memory_benchmark    # recall, stale suppression, context budget
 ```
 
@@ -107,6 +108,19 @@ GET  /input-learning/{source_id}   # capture, grounded items, and optional missi
 POST /input-learning/{source_id}/attempts # delayed/retell production evidence
 DELETE /input-learning/{source_id} # remove the learner-owned capture and derivatives
 
+POST /ebooks/import                    # multipart file, language, rights confirmation
+GET  /ebooks                           # signed-in learner's private library
+GET/PATCH/DELETE /ebooks/{book_id}
+GET  /ebooks/{book_id}/pages           # startPage/endPage, at most 15 pages
+POST /ebooks/{book_id}/study-packs     # consecutive 1-15 page range
+GET  /ebook-study-packs/{pack_id}      # page progress and grounded study pack
+POST /ebook-study-packs/{pack_id}/annotations
+PUT  /ebook-annotations/{annotation_id}/learning-target
+GET  /ebook-learning-targets             # optionally dueOnly=true
+DELETE /ebook-learning-targets/{target_id}
+POST /ebook-learning-targets/{target_id}/practice-sessions
+POST /ebook-practice-sessions/{session_id}/attempts
+
 POST  /learning/runs                # create one ActivityRun
 GET   /learning/runs/{run_id}
 PATCH /learning/runs/{run_id}       # advance its guarded state machine
@@ -128,6 +142,27 @@ DELETE /admin/access-roles/{identifier}    # owner only
 
 Treat this as a route index, not a substitute for the generated OpenAPI docs.
 Run the backend and open `http://localhost:8000/docs` for exact request schemas.
+
+## Private ebook learning
+
+Only signed-in learners can use the ebook routes. Imports accept EPUB or PDFs
+with an extractable text layer, up to 25 MB. Password-protected, scanned,
+non-English, structurally invalid, or suspiciously compressed files fail with
+an explicit error; the service does not run OCR. EPUB chapters receive stable
+approximately 300-word logical pages, while PDFs keep their physical page
+numbers. The upload exists only in a controlled temporary file and is removed
+after parsing succeeds or fails. Extracted pages are separate DynamoDB items.
+
+Study packs retain their original comparison mode (`translation` or
+`plain_english`) even if the book default changes later. Analysis is cached by
+book, page text hash, comparison language, and analysis version. Model output
+must cover the server-created sentence IDs exactly and annotations must quote
+continuous source text. Marking an item unfamiliar creates one idempotent
+Notebook note, provisional weakness, and review target without reducing
+mastery. Three-step practice moves an independent immediate success to
+`learning`; a cold success in a different context after at least 24 hours moves
+it to `mastered`. Deleting a book removes its text and source-linked learning
+artifacts while retaining anonymous aggregate skill totals.
 
 ## History API
 

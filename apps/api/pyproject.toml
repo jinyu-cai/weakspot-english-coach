@@ -13,6 +13,8 @@ dependencies = [
     "boto3>=1.34",
     "httpx>=0.28.1",
     "pyjwt>=2.13.0",
+    "python-multipart>=0.0.20",
+    "pypdf>=5.0,<7.0",
 ]
 
 # This is an application, not a library — uv manages the environment but does

@@ -41,6 +41,13 @@ import type {
   DiagnoseResponse,
   DiagnoseLearningContext,
   DiagnosisMode,
+  Ebook,
+  EbookAnnotation,
+  EbookComparisonLanguage,
+  EbookLearningTarget,
+  EbookPracticeAttempt,
+  EbookPracticeSession,
+  EbookStudyPack,
   EvidenceEvent,
   HistoryResponse,
   InputAttentionMission,
@@ -261,6 +268,23 @@ function nextPageCursor(nextCursor: string | null | undefined, seen: Set<string>
   if (seen.has(nextCursor)) throw new Error("The server returned a repeated history cursor.")
   seen.add(nextCursor)
   return nextCursor
+}
+
+async function apiUpload<T>(path: string, body: FormData, timeoutMs = DEFAULT_API_TIMEOUT_MS): Promise<T> {
+  return fetchWithTotalTimeout(
+    `${API_BASE_URL}/api/v1${path}`,
+    {
+      method: "POST",
+      body,
+      credentials: "include",
+      headers: getLLMProviderHeaders(),
+    },
+    timeoutMs,
+    async (res) => {
+      if (!res.ok) throw new Error(await getErrorMessage(res, path))
+      return (await res.json()) as T
+    },
+  )
 }
 
 export async function getServerLLMModels(): Promise<ServerLLMModel[]> {
@@ -1238,6 +1262,377 @@ export async function deleteInputLearningSource(sourceId: string): Promise<{ del
     return { deleted: true, id: sourceId }
   }
   return apiFetch<{ deleted: boolean; id: string }>(`/input-learning/${sourceId}`, { method: "DELETE" })
+}
+
+/* ---- Private ebook learning ---- */
+
+let mockEbooks: Ebook[] = []
+let mockStudyPacks: EbookStudyPack[] = []
+let mockEbookTargets: EbookLearningTarget[] = []
+const mockEbookPracticeSessions = new Map<string, EbookPracticeSession>()
+
+export async function importEbook(
+  file: File,
+  comparisonLanguage: EbookComparisonLanguage,
+): Promise<Ebook> {
+  if (USE_MOCK) {
+    await delay(450)
+    const id = `book_${Date.now()}`
+    const now = new Date().toISOString()
+    const book: Ebook = {
+      id,
+      title: file.name.replace(/\.(epub|pdf)$/i, ""),
+      author: null,
+      format: file.name.toLowerCase().endsWith(".pdf") ? "pdf" : "epub",
+      status: "ready",
+      comparisonLanguage,
+      comparisonMode: comparisonLanguage === "zh-CN" ? "translation" : "plain_english",
+      fileSizeBytes: file.size,
+      pageCount: 24,
+      wordCount: 7200,
+      lastStudiedPage: null,
+      lastStudyRange: null,
+      createdAt: now,
+      updatedAt: now,
+    }
+    mockEbooks = [book, ...mockEbooks]
+    return book
+  }
+  const body = new FormData()
+  body.set("file", file)
+  body.set("comparisonLanguage", comparisonLanguage)
+  body.set("rightsConfirmed", "true")
+  const { book } = await apiUpload<{ book: Ebook }>("/ebooks/import", body, 120_000)
+  return book
+}
+
+export async function getEbooks(): Promise<Ebook[]> {
+  if (USE_MOCK) return mockEbooks
+  const { books } = await apiFetch<{ books: Ebook[]; count: number }>("/ebooks")
+  return books
+}
+
+export async function getEbook(bookId: string): Promise<Ebook> {
+  if (USE_MOCK) {
+    const book = mockEbooks.find((row) => row.id === bookId)
+    if (!book) throw new Error("Ebook not found")
+    return book
+  }
+  const { book } = await apiFetch<{ book: Ebook }>(`/ebooks/${bookId}`)
+  return book
+}
+
+export async function updateEbookLanguage(
+  bookId: string,
+  comparisonLanguage: EbookComparisonLanguage,
+): Promise<Ebook> {
+  if (USE_MOCK) {
+    const book = await getEbook(bookId)
+    Object.assign(book, {
+      comparisonLanguage,
+      comparisonMode: comparisonLanguage === "zh-CN" ? "translation" : "plain_english",
+    })
+    return book
+  }
+  const { book } = await apiFetch<{ book: Ebook }>(`/ebooks/${bookId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ comparisonLanguage }),
+  })
+  return book
+}
+
+export async function deleteEbook(bookId: string): Promise<void> {
+  if (USE_MOCK) {
+    mockEbooks = mockEbooks.filter((row) => row.id !== bookId)
+    mockStudyPacks = mockStudyPacks.filter((row) => row.bookId !== bookId)
+    const removedTargetIds = new Set(mockEbookTargets.filter((row) => row.bookId === bookId).map((row) => row.id))
+    mockEbookTargets = mockEbookTargets.filter((row) => row.bookId !== bookId)
+    for (const [sessionId, session] of mockEbookPracticeSessions) {
+      if (removedTargetIds.has(session.targetId)) mockEbookPracticeSessions.delete(sessionId)
+    }
+    return
+  }
+  await apiFetch(`/ebooks/${bookId}`, { method: "DELETE" })
+}
+
+export async function createEbookStudyPack(
+  bookId: string,
+  startPage: number,
+  endPage: number,
+): Promise<EbookStudyPack> {
+  if (USE_MOCK) {
+    await delay(600)
+    const book = await getEbook(bookId)
+    const now = new Date().toISOString()
+    const pageNumbers = Array.from({ length: endPage - startPage + 1 }, (_, index) => startPage + index)
+    const pack: EbookStudyPack = {
+      id: `epack_${Date.now()}`,
+      bookId,
+      bookTitle: book.title,
+      startPage,
+      endPage,
+      comparisonLanguage: book.comparisonLanguage,
+      comparisonMode: book.comparisonMode,
+      status: "ready",
+      totalPageCount: pageNumbers.length,
+      completedPageCount: pageNumbers.length,
+      failedPages: [],
+      pages: pageNumbers.map((pageNumber) => {
+        const unitId = `p${pageNumber}_u0`
+        const sourceText = "Although the plan looked simple at first, it turned out to require more patience than anyone expected."
+        const annotationId = `eann_${bookId}_${pageNumber}`
+        return {
+          id: `ecache_${bookId}_${pageNumber}`,
+          cacheId: `ecache_${bookId}_${pageNumber}`,
+          bookId,
+          pageNumber,
+          chapterTitle: "Sample chapter",
+          comparisonLanguage: book.comparisonLanguage,
+          comparisonMode: book.comparisonMode,
+          units: [{
+            id: unitId,
+            unitId,
+            pageNumber,
+            position: 0,
+            paragraphIndex: 0,
+            sentenceIndex: 0,
+            unitType: "sentence",
+            sourceText,
+            counterpartText: book.comparisonLanguage === "zh-CN"
+              ? "虽然这个计划起初看起来很简单，但事实证明它需要比任何人预想的更多耐心。"
+              : "The plan seemed easy, but it actually needed much more patience than expected.",
+          }],
+          annotations: [{
+            id: annotationId,
+            bookId,
+            pageNumber,
+            unitId,
+            sourceText,
+            selectedText: "it turned out to require",
+            startOffset: sourceText.indexOf("it turned out to require"),
+            endOffset: sourceText.indexOf("it turned out to require") + "it turned out to require".length,
+            kind: "grammar_pattern",
+            title: "it turned out to require",
+            meaningInContext: "结果发现确实需要……",
+            structure: "turn out to + verb 表示最终发现的结果。",
+            usage: "用来对比最初判断和后来发现的事实。",
+            collocations: ["turn out to be", "turn out to need"],
+            usageRegister: "neutral",
+            commonPitfalls: ["Do not use an -ing form directly after to."],
+            patternTemplate: "It turned out to + verb",
+            clauseBreakdown: [],
+            simplifiedParaphrase: "",
+            examples: ["The task turned out to be easier than expected."],
+            transferPrompt: "Describe something whose real difficulty surprised you.",
+            skillCode: "grammar.verb_form",
+            createdAt: now,
+          }],
+        }
+      }),
+      createdAt: now,
+      updatedAt: now,
+    }
+    mockStudyPacks = [pack, ...mockStudyPacks]
+    return pack
+  }
+  const { studyPack } = await apiFetch<{ studyPack: EbookStudyPack }>(`/ebooks/${bookId}/study-packs`, {
+    method: "POST",
+    body: JSON.stringify({ startPage, endPage }),
+  }, LLM_OPERATION_TIMEOUT_MS)
+  return studyPack
+}
+
+export async function getEbookStudyPack(packId: string): Promise<EbookStudyPack> {
+  if (USE_MOCK) {
+    const pack = mockStudyPacks.find((row) => row.id === packId)
+    if (!pack) throw new Error("Study pack not found")
+    return pack
+  }
+  const { studyPack } = await apiFetch<{ studyPack: EbookStudyPack }>(`/ebook-study-packs/${packId}`)
+  return studyPack
+}
+
+export async function waitForEbookStudyPack(initial: EbookStudyPack): Promise<EbookStudyPack> {
+  if (initial.status !== "processing") return initial
+  let current = initial
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    await delay(2_500)
+    current = await getEbookStudyPack(initial.id)
+    if (current.status !== "processing") return current
+  }
+  throw new Error("The ebook study pack is still processing. Open it again shortly.")
+}
+
+export async function createEbookAnnotation(
+  packId: string,
+  input: { unitId: string; startOffset: number; endOffset: number },
+): Promise<EbookAnnotation> {
+  if (USE_MOCK) {
+    const pack = await getEbookStudyPack(packId)
+    const page = pack.pages?.find((row) => row.units.some((unit) => unit.unitId === input.unitId))
+    const unit = page?.units.find((row) => row.unitId === input.unitId)
+    if (!page || !unit) throw new Error("Sentence not found")
+    const selectedText = unit.sourceText.slice(input.startOffset, input.endOffset)
+    const annotation: EbookAnnotation = {
+      id: `eann_${Date.now()}`,
+      bookId: pack.bookId,
+      studyPackId: packId,
+      pageNumber: unit.pageNumber,
+      unitId: unit.unitId,
+      sourceText: unit.sourceText,
+      selectedText,
+      startOffset: input.startOffset,
+      endOffset: input.endOffset,
+      kind: selectedText.split(/\s+/).length > 8 ? "complex_sentence" : "phrase",
+      title: selectedText,
+      meaningInContext: "Meaning in this exact sentence.",
+      structure: "Notice the reusable structure and its fixed word order.",
+      usage: "Use it when the same relationship between ideas is needed.",
+      collocations: [],
+      usageRegister: "neutral",
+      commonPitfalls: [],
+      patternTemplate: selectedText,
+      clauseBreakdown: [],
+      simplifiedParaphrase: "",
+      examples: [],
+      transferPrompt: "Use this in a new situation.",
+      skillCode: "sentence.structure",
+      createdAt: new Date().toISOString(),
+    }
+    page.annotations.push(annotation)
+    return annotation
+  }
+  const { annotation } = await apiFetch<{ annotation: EbookAnnotation }>(`/ebook-study-packs/${packId}/annotations`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  }, LLM_OPERATION_TIMEOUT_MS)
+  return annotation
+}
+
+export async function markEbookAnnotationUnfamiliar(annotationId: string): Promise<EbookLearningTarget> {
+  if (USE_MOCK) {
+    const annotation = mockStudyPacks.flatMap((pack) => pack.pages ?? []).flatMap((page) => page.annotations).find((row) => row.id === annotationId)
+    if (!annotation) throw new Error("Annotation not found")
+    const existing = mockEbookTargets.find((row) => row.annotationId === annotationId)
+    if (existing) return existing
+    const book = await getEbook(annotation.bookId)
+    const now = new Date().toISOString()
+    const target: EbookLearningTarget = {
+      id: `etarget_${Date.now()}`,
+      bookId: book.id,
+      bookTitle: book.title,
+      pageNumber: annotation.pageNumber,
+      annotationId,
+      kind: annotation.kind,
+      expression: annotation.selectedText,
+      sourceText: annotation.sourceText,
+      meaningInContext: annotation.meaningInContext,
+      patternTemplate: annotation.patternTemplate,
+      transferPrompt: annotation.transferPrompt,
+      comparisonLanguage: book.comparisonLanguage,
+      skillCode: annotation.skillCode,
+      status: "provisional",
+      attemptCount: 0,
+      dueAt: now,
+      createdAt: now,
+      updatedAt: now,
+    }
+    mockEbookTargets = [target, ...mockEbookTargets]
+    return target
+  }
+  const { target } = await apiFetch<{ target: EbookLearningTarget }>(`/ebook-annotations/${annotationId}/learning-target`, { method: "PUT" })
+  return target
+}
+
+export async function getEbookLearningTargets(dueOnly = false): Promise<EbookLearningTarget[]> {
+  if (USE_MOCK) return mockEbookTargets.filter((row) => !dueOnly || (row.status !== "mastered" && row.status !== "archived"))
+  const { targets } = await apiFetch<{ targets: EbookLearningTarget[] }>(`/ebook-learning-targets?dueOnly=${dueOnly}`)
+  return targets
+}
+
+export async function startEbookPractice(targetId: string): Promise<EbookPracticeSession> {
+  if (USE_MOCK) {
+    const target = mockEbookTargets.find((row) => row.id === targetId)
+    if (!target) throw new Error("Learning target not found")
+    const now = new Date().toISOString()
+    const session: EbookPracticeSession = {
+      id: `epractice_${Date.now()}`,
+      bookId: target.bookId,
+      targetId,
+      status: "active",
+      currentStep: 1,
+      delayedReview: false,
+      attempts: [],
+      exercise: {
+        step: 1,
+        title: "Understand",
+        question: `Explain what “${target.expression}” means here and when it is appropriate.`,
+        targetExpression: target.expression,
+        requiresTarget: false,
+        sourceSentenceVisible: true,
+        sourceText: target.sourceText,
+      },
+      createdAt: now,
+      updatedAt: now,
+    }
+    mockEbookPracticeSessions.set(session.id, session)
+    return session
+  }
+  const { session } = await apiFetch<{ session: EbookPracticeSession }>(`/ebook-learning-targets/${targetId}/practice-sessions`, { method: "POST" })
+  return session
+}
+
+export async function submitEbookPractice(
+  sessionId: string,
+  input: { responseText: string; clientAttemptId: string; hintUsed: boolean },
+): Promise<{ attempt: EbookPracticeAttempt; session: EbookPracticeSession; target: EbookLearningTarget }> {
+  if (USE_MOCK) {
+    const current = mockEbookPracticeSessions.get(sessionId)
+    const target = mockEbookTargets.find((row) => row.id === current?.targetId)
+    if (!target) throw new Error("Learning target not found")
+    const now = new Date().toISOString()
+    const passed = input.responseText.trim().length >= 8
+    const attempt: EbookPracticeAttempt = {
+      id: `eattempt_${Date.now()}`,
+      clientAttemptId: input.clientAttemptId,
+      step: current?.currentStep ?? 1,
+      responseText: input.responseText,
+      hintUsed: input.hintUsed,
+      passed,
+      score: passed ? 88 : 45,
+      feedback: passed ? "This step meets the requirement." : "Add a fuller explanation.",
+      correctedAnswer: input.responseText,
+      createdAt: now,
+    }
+    if (!current) throw new Error("Practice session not found")
+    const session = { ...current, attempts: [...current.attempts, attempt], updatedAt: now }
+    if (passed && current.currentStep < 3) {
+      const next = (current.currentStep + 1) as 2 | 3
+      session.currentStep = next
+      session.exercise = {
+        step: next,
+        title: next === 2 ? "Guided use" : "Independent transfer",
+        question: next === 2
+          ? `Write a new sentence using “${target.expression}” naturally.`
+          : `Use “${target.expression}” independently in 2–4 sentences for a new situation.`,
+        targetExpression: target.expression,
+        requiresTarget: true,
+        sourceSentenceVisible: next < 3,
+        sourceText: next < 3 ? target.sourceText : null,
+      }
+    } else if (passed && current.currentStep === 3) {
+      session.status = "complete"
+      session.exercise = null
+      target.status = "learning"
+      target.dueAt = new Date(Date.now() + 86400000).toISOString()
+    }
+    mockEbookPracticeSessions.set(sessionId, session)
+    return { attempt, session, target }
+  }
+  return apiFetch(`/ebook-practice-sessions/${sessionId}/attempts`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  }, LLM_OPERATION_TIMEOUT_MS)
 }
 
 /* ---- Coach missions ---- */

@@ -86,6 +86,13 @@ class Settings(BaseSettings):
     # response snippets that may contain user text.
     llm_debug_log_content: bool = False
 
+    # --- Private ebook learning ---
+    ebook_import_enabled: bool = True
+    ebook_max_upload_mb: int = 25
+    ebook_max_expanded_mb: int = 100
+    ebook_max_pages: int = 5000
+    ebook_logical_page_words: int = 300
+
     # --- MemoryAgent ---
     memory_enabled: bool = True
     memory_context_token_budget: int = 700
