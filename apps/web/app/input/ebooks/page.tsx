@@ -10,6 +10,7 @@ import {
   BookOpen,
   CheckCircle2,
   ChevronDown,
+  Clock3,
   FileUp,
   GraduationCap,
   Languages,
@@ -38,6 +39,7 @@ import {
   deleteEbook,
   getEbook,
   getEbookStudyPack,
+  getEbookStudyPacks,
   getEbooks,
   importEbook,
   markEbookAnnotationUnfamiliar,
@@ -100,6 +102,8 @@ export default function EbookLearningPage() {
   const [practiceSubmitting, setPracticeSubmitting] = useState(false)
   const [lastAttempt, setLastAttempt] = useState<EbookPracticeAttempt | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+  const studyPackAbortRef = useRef<AbortController | null>(null)
+  const studyPackSelectionRef = useRef(0)
 
   useEffect(() => {
     if (!isAuthConfigured()) return
@@ -115,6 +119,18 @@ export default function EbookLearningPage() {
     { refreshInterval: (rows) => rows?.some((book) => book.status === "processing") ? 2500 : 0 },
   )
 
+  const {
+    data: studyPackHistory = [],
+    isLoading: loadingStudyPackHistory,
+    mutate: refreshStudyPackHistory,
+  } = useSWR(
+    activeBook?.status === "ready" ? `ebooks:${activeBook.id}:study-packs` : null,
+    () => getEbookStudyPacks(activeBook!.id),
+    {
+      refreshInterval: (rows) => rows?.some((pack) => pack.status === "processing") ? 5000 : 0,
+    },
+  )
+
   useEffect(() => {
     if (!activeBook) return
     const next = books.find((book) => book.id === activeBook.id)
@@ -127,6 +143,9 @@ export default function EbookLearningPage() {
     if (!activeBook) return
     let cancelled = false
     const controller = new AbortController()
+    studyPackAbortRef.current?.abort()
+    studyPackAbortRef.current = controller
+    const selectionId = ++studyPackSelectionRef.current
     const savedRange = activeBook.lastStudyRange
     const initial = savedRange?.startPage ?? (activeBook.lastStudiedPage
       ? Math.min(activeBook.pageCount, activeBook.lastStudiedPage + 1)
@@ -143,16 +162,18 @@ export default function EbookLearningPage() {
       void (async () => {
         try {
           const restored = await getEbookStudyPack(activeBook.lastStudyPackId!)
-          if (cancelled) return
+          if (cancelled || studyPackSelectionRef.current !== selectionId) return
           setStudyPack(restored)
           setStudyTier(restored.modelTier)
           if (restored.status === "processing") {
             const completed = await waitForEbookStudyPack(
               restored,
-              (progress) => { if (!cancelled) setStudyPack(progress) },
+              (progress) => {
+                if (!cancelled && studyPackSelectionRef.current === selectionId) setStudyPack(progress)
+              },
               controller.signal,
             )
-            if (!cancelled) setStudyPack(completed)
+            if (!cancelled && studyPackSelectionRef.current === selectionId) setStudyPack(completed)
           }
         } catch (error) {
           if (!cancelled) {
@@ -161,7 +182,7 @@ export default function EbookLearningPage() {
             })
           }
         } finally {
-          if (!cancelled) setStudying(false)
+          if (!cancelled && studyPackSelectionRef.current === selectionId) setStudying(false)
         }
       })()
     }, 0)
@@ -222,6 +243,7 @@ export default function EbookLearningPage() {
       setActiveBook(updated)
       setStudyPack(null)
       await refreshBooks()
+      await refreshStudyPackHistory()
       toast.success(zh ? "之后生成的学习页将使用新语言。" : "New study pages will use the updated language.")
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
@@ -254,6 +276,10 @@ export default function EbookLearningPage() {
 
   async function beginStudy(forceRetry = false) {
     if (!activeBook || activeBook.status !== "ready") return
+    studyPackAbortRef.current?.abort()
+    const controller = new AbortController()
+    studyPackAbortRef.current = controller
+    const selectionId = ++studyPackSelectionRef.current
     setStudying(true)
     if (!forceRetry) setStudyPack(null)
     setExtraAnnotations([])
@@ -268,11 +294,20 @@ export default function EbookLearningPage() {
         selectedTier,
         forceRetry,
       )
+      await refreshStudyPackHistory()
+      if (studyPackSelectionRef.current !== selectionId) return
       setStudyPack(started)
       setStudyTier(started.modelTier)
-      const completed = await waitForEbookStudyPack(started, setStudyPack)
+      const completed = await waitForEbookStudyPack(
+        started,
+        (progress) => {
+          if (studyPackSelectionRef.current === selectionId) setStudyPack(progress)
+        },
+        controller.signal,
+      )
+      if (studyPackSelectionRef.current !== selectionId) return
       setStudyPack(completed)
-      await refreshBooks()
+      await Promise.all([refreshBooks(), refreshStudyPackHistory()])
       if (completed.status === "failed") {
         toast.error(zh ? "部分学习页生成失败" : "Some study pages failed", { description: completed.error ?? undefined })
       } else {
@@ -281,7 +316,43 @@ export default function EbookLearningPage() {
     } catch (error) {
       toast.error(zh ? "生成学习页失败" : "Could not prepare study pages", { description: error instanceof Error ? error.message : undefined })
     } finally {
-      setStudying(false)
+      if (studyPackSelectionRef.current === selectionId) setStudying(false)
+    }
+  }
+
+  async function openStoredStudyPack(summary: EbookStudyPack) {
+    studyPackAbortRef.current?.abort()
+    const controller = new AbortController()
+    studyPackAbortRef.current = controller
+    const selectionId = ++studyPackSelectionRef.current
+    setStartPage(summary.startPage)
+    setEndPage(summary.endPage)
+    setStudyTier(summary.modelTier)
+    setExtraAnnotations([])
+    setSelection(null)
+    setStudying(summary.status === "processing")
+    try {
+      const restored = await getEbookStudyPack(summary.id)
+      if (studyPackSelectionRef.current !== selectionId) return
+      setStudyPack(restored)
+      if (restored.status === "processing") {
+        const completed = await waitForEbookStudyPack(
+          restored,
+          (progress) => {
+            if (studyPackSelectionRef.current === selectionId) setStudyPack(progress)
+          },
+          controller.signal,
+        )
+        if (studyPackSelectionRef.current === selectionId) setStudyPack(completed)
+      }
+    } catch (error) {
+      if (studyPackSelectionRef.current === selectionId) {
+        toast.error(zh ? "无法打开这段已分析内容" : "Could not open this analyzed range", {
+          description: error instanceof Error ? error.message : undefined,
+        })
+      }
+    } finally {
+      if (studyPackSelectionRef.current === selectionId) setStudying(false)
     }
   }
 
@@ -467,6 +538,59 @@ export default function EbookLearningPage() {
                     <label className="text-sm font-medium">{zh ? "分析速度" : "Analysis mode"}<select className="mt-1.5 h-10 w-full rounded-lg border border-input bg-background px-3 text-sm" value={studyTier} onChange={(event) => setStudyTier(event.target.value as EbookModelTier)}><option value="fast">{zh ? "Fast · 更快" : "Fast · quicker"}</option><option value="deep">{zh ? "Deep · 更详细" : "Deep · more detailed"}</option></select></label>
                     <Button size="lg" disabled={studying} onClick={() => void beginStudy()}>{studying ? <LoaderCircle className="animate-spin" data-icon="inline-start" /> : <Sparkles data-icon="inline-start" />}{studying ? (zh ? "生成中…" : "Preparing…") : (zh ? `学习 ${endPage - startPage + 1} 页` : `Study ${endPage - startPage + 1} pages`)}</Button>
                   </div>
+                  {(loadingStudyPackHistory || studyPackHistory.length > 0) ? (
+                    <section className="rounded-2xl border bg-background p-3" aria-labelledby="ebook-analyzed-ranges">
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 id="ebook-analyzed-ranges" className="flex items-center gap-2 text-sm font-medium">
+                          <Clock3 className="size-4 text-primary" />
+                          {zh ? "已分析的阅读范围" : "Analyzed reading ranges"}
+                        </h3>
+                        <span className="text-xs text-muted-foreground">
+                          {zh ? "可以随时切换，不会覆盖" : "Switch anytime; nothing is overwritten"}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                        {loadingStudyPackHistory && studyPackHistory.length === 0 ? (
+                          <span className="flex min-h-10 items-center gap-2 px-2 text-xs text-muted-foreground">
+                            <LoaderCircle className="size-3.5 animate-spin" />
+                            {zh ? "正在读取…" : "Loading…"}
+                          </span>
+                        ) : studyPackHistory.map((pack) => {
+                          const selected = studyPack?.id === pack.id
+                          const rangeLabel = zh
+                            ? `第 ${pack.startPage}–${pack.endPage} 页`
+                            : `Pages ${pack.startPage}–${pack.endPage}`
+                          const modeLabel = pack.comparisonMode === "translation"
+                            ? (zh ? "中文" : "Chinese")
+                            : (zh ? "简明英文" : "Plain English")
+                          return (
+                            <button
+                              key={pack.id}
+                              type="button"
+                              aria-pressed={selected}
+                              onClick={() => void openStoredStudyPack(pack)}
+                              className={cn(
+                                "flex min-w-fit items-center gap-2 rounded-xl border px-3 py-2 text-left outline-none transition hover:border-primary/40 hover:bg-primary/5 focus-visible:ring-3 focus-visible:ring-ring/40",
+                                selected && "border-primary/50 bg-primary/8",
+                              )}
+                            >
+                              {pack.status === "processing"
+                                ? <LoaderCircle className="size-4 animate-spin text-primary" />
+                                : pack.status === "ready"
+                                  ? <CheckCircle2 className="size-4 text-primary" />
+                                  : <span className="size-2 rounded-full bg-amber-500" />}
+                              <span>
+                                <span className="block text-sm font-medium">{rangeLabel}</span>
+                                <span className="block text-[11px] text-muted-foreground">
+                                  {pack.modelTier === "fast" ? "Fast" : "Deep"} · {modeLabel} · {pack.completedPageCount}/{pack.totalPageCount}
+                                </span>
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </section>
+                  ) : null}
                   {studyPack?.status === "processing" ? <div className="space-y-2"><div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span>{zh ? "逐页翻译和批注" : "Translating and annotating pages"} · {studyPack.modelTier === "fast" ? "Fast" : "Deep"}</span><div className="flex items-center gap-2"><span>{studyPack.completedPageCount}/{studyPack.totalPageCount}</span>{!studying ? <Button variant="outline" size="sm" onClick={() => void beginStudy(true)}>{zh ? "继续处理" : "Resume"}</Button> : null}</div></div><Progress value={(studyPack.completedPageCount / studyPack.totalPageCount) * 100} /><p className="text-xs text-muted-foreground">{zh ? "每完成一页就会显示在下方，其余页面继续在后台生成。" : "Each completed page appears below while the remaining pages continue in the background."}</p></div> : null}
                   {studyPack?.status === "failed" ? <div className="flex flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">{zh ? "部分页面没有生成成功" : "Some pages were not prepared"}</p><p className="text-xs text-muted-foreground">{studyPack.failedPages.length ? `${zh ? "失败页" : "Failed pages"}: ${studyPack.failedPages.join(", ")}` : studyPack.error}</p></div><Button variant="outline" size="sm" onClick={() => void beginStudy(true)}>{zh ? "安全重试" : "Retry safely"}</Button></div> : null}
                 </CardContent>

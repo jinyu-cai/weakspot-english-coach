@@ -120,6 +120,7 @@ def main() -> int:
             delete_book_for_user,
             get_book_for_user,
             get_study_pack_for_user,
+            list_study_packs_for_user,
             mark_annotation_unfamiliar,
             process_ebook_import,
             process_study_pack,
@@ -333,6 +334,10 @@ def main() -> int:
         fast_complete = get_study_pack_for_user(user_id, fast_pack["id"])
         assert fast_complete["status"] == "ready" and fast_complete["modelTier"] == "fast"
         assert fast_complete["pages"][0]["cacheId"] != complete_pack["pages"][0]["cacheId"]
+        saved_pack_history = list_study_packs_for_user(user_id, ready["id"])
+        saved_pack_ids = {saved["id"] for saved in saved_pack_history}
+        assert {pack["id"], fast_pack["id"], one_page_pack["id"]} <= saved_pack_ids
+        assert all("pages" not in saved for saved in saved_pack_history)
 
         # Self-report writes one note + one provisional weakness but no mastery penalty.
         assert get_skill(user_id, annotation["skillCode"]) is None
@@ -441,6 +446,20 @@ def main() -> int:
             route_duplicate.text,
         )
         assert route_duplicate.json()["book"]["id"] == ready["id"]
+        pack_history_response = client.get(
+            f"/api/v1/ebooks/{ready['id']}/study-packs",
+            cookies={"session": owner_token},
+        )
+        assert pack_history_response.status_code == 200, pack_history_response.text
+        assert {row["id"] for row in pack_history_response.json()["studyPacks"]} >= {
+            pack["id"],
+            fast_pack["id"],
+        }
+        other_pack_history = client.get(
+            f"/api/v1/ebooks/{ready['id']}/study-packs",
+            cookies={"session": other_token},
+        )
+        assert other_pack_history.status_code == 404
 
         # Text PDFs retain physical pages, including a blank page; the blank
         # page remains studyable without triggering OCR.

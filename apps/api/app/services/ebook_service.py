@@ -39,6 +39,7 @@ from app.db.repositories import (
     get_skill,
     list_ebook_learning_targets,
     list_ebook_pages,
+    list_ebook_study_packs,
     list_ebooks,
     list_memories,
     list_notes,
@@ -1062,6 +1063,18 @@ def get_study_pack_for_user(user_id: str, pack_id: str) -> Optional[dict]:
     # completed work disappear or the count move backwards during a retry.
     public["completedPageCount"] = len(pages)
     return {**public, "pages": pages}
+
+
+def list_study_packs_for_user(user_id: str, book_id: str) -> list[dict]:
+    if not get_ebook(user_id, book_id):
+        raise LookupError("Ebook not found.")
+    summaries: list[dict] = []
+    for pack in list_ebook_study_packs(user_id, book_id):
+        public = _public(pack)
+        public["modelTier"] = "fast" if pack.get("modelTier") == "fast" else "deep"
+        public.pop("pages", None)
+        summaries.append(public)
+    return summaries
 
 
 def _call_on_demand_model(

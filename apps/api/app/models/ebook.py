@@ -224,6 +224,11 @@ class EbookStudyPackResponse(BaseModel):
     studyPack: EbookStudyPack
 
 
+class EbookStudyPackListResponse(BaseModel):
+    studyPacks: list[EbookStudyPack]
+    count: int
+
+
 class EbookAnnotationResponse(BaseModel):
     annotation: EbookAnnotation
 

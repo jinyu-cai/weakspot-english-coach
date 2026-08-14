@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { ChevronDown, PlayCircle } from "lucide-react"
+import { ChevronDown, PanelLeftClose, PanelLeftOpen, PlayCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { NAV_GROUPS, NAV_ITEMS } from "@/lib/nav"
 import { getMe } from "@/lib/auth"
@@ -13,9 +13,11 @@ import { useTaskResume } from "@/lib/task-resume"
 export function NavSidebar({
   collapsed = false,
   onNavigate,
+  onToggleCollapsed,
 }: {
   collapsed?: boolean
   onNavigate?: () => void
+  onToggleCollapsed?: () => void
 }) {
   const pathname = usePathname()
   const [isOwner, setIsOwner] = useState(false)
@@ -89,30 +91,47 @@ export function NavSidebar({
 
   return (
     <div className={cn("flex min-h-full flex-col gap-5 p-3.5", collapsed && "gap-3 px-3")}>
-      <Link
-        href="/"
-        onClick={onNavigate}
-        aria-label={collapsed ? "WeakSpot English Coach" : undefined}
-        title={collapsed ? "WeakSpot English Coach" : undefined}
-        className={cn(
-          "group flex items-center gap-3 rounded-2xl px-2 py-1.5 outline-none transition focus-visible:ring-3 focus-visible:ring-ring/40",
-          collapsed && "justify-center px-0",
-        )}
-      >
-        <span className="flex size-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm transition-transform group-hover:-rotate-3">
-          <span className="text-xl" aria-hidden="true">
-            🦉
-          </span>
-        </span>
-        {!collapsed ? (
-          <span className="flex min-w-0 flex-col leading-tight">
-            <span className="font-heading text-lg font-semibold tracking-tight text-sidebar-foreground">
-              WeakSpot
+      <div className={cn("flex items-center gap-1", collapsed && "flex-col gap-2")}>
+        <Link
+          href="/"
+          onClick={onNavigate}
+          aria-label={collapsed ? "WeakSpot English Coach" : undefined}
+          title={collapsed ? "WeakSpot English Coach" : undefined}
+          className={cn(
+            "group flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-2 py-1.5 outline-none transition focus-visible:ring-3 focus-visible:ring-ring/40",
+            collapsed && "justify-center px-0",
+          )}
+        >
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm transition-transform group-hover:-rotate-3">
+            <span className="text-xl" aria-hidden="true">
+              🦉
             </span>
-            <span className="text-[11px] text-muted-foreground">English Coach</span>
           </span>
+          {!collapsed ? (
+            <span className="flex min-w-0 flex-col leading-tight">
+              <span className="font-heading text-lg font-semibold tracking-tight text-sidebar-foreground">
+                WeakSpot
+              </span>
+              <span className="text-[11px] text-muted-foreground">English Coach</span>
+            </span>
+          ) : null}
+        </Link>
+        {onToggleCollapsed ? (
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            aria-label={collapsed
+              ? (language === "zh-CN" ? "展开左侧栏" : "Expand sidebar")
+              : (language === "zh-CN" ? "收起左侧栏" : "Collapse sidebar")}
+            title={collapsed
+              ? (language === "zh-CN" ? "展开左侧栏" : "Expand sidebar")
+              : (language === "zh-CN" ? "收起左侧栏" : "Collapse sidebar")}
+            className="flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground outline-none transition hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-3 focus-visible:ring-sidebar-ring/35"
+          >
+            {collapsed ? <PanelLeftOpen className="size-[18px]" /> : <PanelLeftClose className="size-[18px]" />}
+          </button>
         ) : null}
-      </Link>
+      </div>
 
       {resume ? (
         <Link

@@ -44,6 +44,7 @@ def main() -> int:
         get_chat_session,
         get_submission,
         list_chat_messages,
+        save_chat_message,
         save_chat_session,
         save_submission,
     )
@@ -124,6 +125,45 @@ def main() -> int:
         },
     )
     assert rejected_response.status_code == 422, rejected_response.text
+    deleted_response = client.delete("/api/v1/chat/sessions/cs_capacity_api")
+    assert deleted_response.status_code == 200, deleted_response.text
+    assert deleted_response.json()["removed"]["transcriptStages"] > 0
+    assert get_chat_session("owner", "cs_capacity_api") is None
+    assert list_chat_messages("owner", "cs_capacity_api", limit=None) == []
+    assert client.delete("/api/v1/chat/sessions/cs_capacity_api").status_code == 404
+    text_session = {
+        "id": "cs_delete_text",
+        "userId": "owner",
+        "mode": "text",
+        "messageCount": 1,
+        "messageKeyVersion": 2,
+        "createdAt": "2026-07-29T03:07:00Z",
+        "updatedAt": "2026-07-29T03:07:00Z",
+    }
+    save_chat_session(text_session)
+    save_chat_message({
+        "id": "cm_delete_text",
+        "userId": "owner",
+        "sessionId": text_session["id"],
+        "role": "user",
+        "content": "Delete this conversation.",
+        "createdAt": "2026-07-29T03:07:01Z",
+    })
+    text_deleted = client.delete(f"/api/v1/chat/sessions/{text_session['id']}")
+    assert text_deleted.status_code == 200, text_deleted.text
+    assert text_deleted.json()["removed"]["messages"] == 1
+    assert list_chat_messages("owner", text_session["id"], limit=None) == []
+    busy_session = {
+        **text_session,
+        "id": "cs_delete_busy",
+        "messageCount": 0,
+        "turnClaimId": "active-turn",
+        "turnClaimedAtEpoch": 9_999_999_999,
+    }
+    save_chat_session(busy_session)
+    busy_delete = client.delete(f"/api/v1/chat/sessions/{busy_session['id']}")
+    assert busy_delete.status_code == 409, busy_delete.text
+    assert get_chat_session("owner", busy_session["id"]) is not None
     _expect_validation_error(
         lambda: TranscriptMessage(
             role="user",

@@ -56,6 +56,10 @@ class TranscriptCapacityError(RuntimeError):
     """A transcript cannot fit in the bounded atomic storage protocol."""
 
 
+class ChatSessionBusyError(RuntimeError):
+    """A chat session has an active turn or analysis that cannot be deleted yet."""
+
+
 class PlanProgressConflictError(RuntimeError):
     """The active Plan or its ActivityRun changed during a progress update."""
 
@@ -1495,6 +1499,19 @@ def get_ebook_study_pack(user_id: str, pack_id: str) -> Optional[dict]:
     return _get_ebook_entity(user_id, _ebook_pack_sk(pack_id))
 
 
+def list_ebook_study_packs(user_id: str, book_id: str) -> list[dict]:
+    packs = [
+        row
+        for row in _list_ebook_entities(user_id, "EBOOK_PACK#")
+        if row.get("bookId") == book_id
+    ]
+    packs.sort(
+        key=lambda row: (str(row.get("createdAt") or ""), str(row.get("id") or "")),
+        reverse=True,
+    )
+    return packs
+
+
 def save_ebook_annotation(annotation: dict) -> None:
     _put(_ebook_row(
         annotation,
@@ -2007,6 +2024,88 @@ def get_chat_session(user_id: str, session_id: str) -> Optional[dict]:
     return clean(item) if item else None
 
 
+def _delete_chat_rows_with_prefix(user_id: str, sk_prefix: str) -> int:
+    deleted = 0
+    query_kwargs = {
+        "KeyConditionExpression": Key("PK").eq(user_pk(user_id))
+        & Key("SK").begins_with(sk_prefix),
+        "ConsistentRead": True,
+    }
+    while True:
+        result = table.query(**query_kwargs)
+        for item in result.get("Items", []):
+            table.delete_item(Key={"PK": item["PK"], "SK": item["SK"]})
+            deleted += 1
+        last_key = result.get("LastEvaluatedKey")
+        if not last_key:
+            return deleted
+        query_kwargs["ExclusiveStartKey"] = last_key
+
+
+def delete_chat_session_rows(user_id: str, session_id: str) -> Optional[dict[str, int]]:
+    """Delete a private conversation and every raw transcript row it owns.
+
+    A deletion marker first blocks new turns and analyses. The session row is
+    removed last so a partial cleanup can be retried safely.
+    Previously derived learning evidence and explicitly saved Notebook notes
+    remain independent learner records.
+    """
+    session = get_chat_session(user_id, session_id)
+    if not session:
+        return None
+    now = datetime.now(timezone.utc)
+    now_text = now.isoformat().replace("+00:00", "Z")
+    try:
+        table.update_item(
+            Key={"PK": user_pk(user_id), "SK": chat_session_sk(session_id)},
+            UpdateExpression=(
+                "SET deletingAt = :now, updatedAt = :now "
+                "REMOVE turnClaimId, turnClaimedAt, turnClaimedAtEpoch, "
+                "analysisClaimId, analysisClaimedAt, analysisClaimedAtEpoch"
+            ),
+            ConditionExpression=(
+                "attribute_exists(PK) AND "
+                "(attribute_not_exists(turnClaimId) OR turnClaimedAtEpoch < :stale) AND "
+                "(attribute_not_exists(analysisClaimId) OR analysisClaimedAtEpoch < :stale)"
+            ),
+            ExpressionAttributeValues={
+                ":now": now_text,
+                ":stale": int(now.timestamp()) - 900,
+            },
+        )
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            raise ChatSessionBusyError(
+                "Finish the active message or analysis before deleting this conversation."
+            ) from exc
+        raise
+    counts = {
+        "messages": _delete_chat_rows_with_prefix(user_id, f"CHATMSG#{session_id}#"),
+        "transcriptBatches": _delete_chat_rows_with_prefix(user_id, f"CHATBATCH#{session_id}#"),
+        "transcriptStages": _delete_chat_rows_with_prefix(user_id, f"CHATSTAGE#{session_id}#"),
+    }
+    if int(session.get("messageKeyVersion", 1)) < 2:
+        legacy_kwargs = {
+            "KeyConditionExpression": Key("PK").eq(user_pk(user_id))
+            & Key("SK").begins_with("CHATMSG#"),
+            "ConsistentRead": True,
+        }
+        while True:
+            result = table.query(**legacy_kwargs)
+            for item in result.get("Items", []):
+                if item.get("sessionId") != session_id:
+                    continue
+                table.delete_item(Key={"PK": item["PK"], "SK": item["SK"]})
+                counts["messages"] += 1
+            last_key = result.get("LastEvaluatedKey")
+            if not last_key:
+                break
+            legacy_kwargs["ExclusiveStartKey"] = last_key
+    _delete(user_pk(user_id), chat_session_sk(session_id))
+    counts["sessions"] = 1
+    return counts
+
+
 def update_chat_session_fields(user_id: str, session_id: str, fields: dict) -> None:
     clean_fields = {k: v for k, v in fields.items() if k not in {"PK", "SK"}}
     if not clean_fields:
@@ -2046,7 +2145,7 @@ def claim_chat_session_analysis(
                 "REMOVE turnClaimId, turnClaimedAt, turnClaimedAtEpoch"
             ),
             ConditionExpression=(
-                "attribute_not_exists(analysis) AND "
+                "attribute_not_exists(deletingAt) AND attribute_not_exists(analysis) AND "
                 "(attribute_not_exists(analysisClaimId) OR analysisClaimedAtEpoch < :stale) AND "
                 "(attribute_not_exists(turnClaimId) OR turnClaimedAtEpoch < :stale)"
             ),
@@ -2082,7 +2181,8 @@ def claim_chat_session_turn(
                 "turnClaimedAtEpoch = :epoch, updatedAt = :at"
             ),
             ConditionExpression=(
-                "attribute_exists(PK) AND attribute_not_exists(analysis) AND "
+                "attribute_exists(PK) AND attribute_not_exists(deletingAt) AND "
+                "attribute_not_exists(analysis) AND "
                 "attribute_not_exists(analysisDraft) AND "
                 "attribute_not_exists(analysisClaimId) AND "
                 "(attribute_not_exists(turnClaimId) OR turnClaimedAtEpoch < :stale)"
