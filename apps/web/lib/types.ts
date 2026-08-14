@@ -882,6 +882,7 @@ export interface Ebook {
   wordCount: number
   lastStudiedPage?: number | null
   lastStudyRange?: { startPage: number; endPage: number; modelTier?: EbookModelTier } | null
+  lastStudyPackId?: string | null
   error?: string | null
   createdAt: string
   updatedAt: string

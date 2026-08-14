@@ -453,6 +453,7 @@ def begin_ebook_import(
         "wordCount": 0,
         "lastStudiedPage": None,
         "lastStudyRange": None,
+        "lastStudyPackId": None,
         "error": None,
         "createdAt": existing.get("createdAt", now) if existing else now,
         "updatedAt": now,
@@ -848,6 +849,21 @@ def create_study_pack(user_id: str, book_id: str, req: CreateStudyPackRequest) -
     if req.modelTier != "deep":
         pack_parts.append(req.modelTier)
     pack_id = _stable_id("epack", *pack_parts)
+    last_study_range = {
+        "startPage": req.startPage,
+        "endPage": req.endPage,
+        "modelTier": req.modelTier,
+    }
+    if (
+        book.get("lastStudyPackId") != pack_id
+        or book.get("lastStudyRange") != last_study_range
+    ):
+        book.update({
+            "lastStudyPackId": pack_id,
+            "lastStudyRange": last_study_range,
+            "updatedAt": now_iso(),
+        })
+        save_ebook(book)
     existing = get_ebook_study_pack(user_id, pack_id)
     if existing and existing.get("status") == "ready":
         return {**(get_study_pack_for_user(user_id, pack_id) or _public(existing)), "_dispatch": False}

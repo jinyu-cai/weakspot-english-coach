@@ -41,6 +41,7 @@ class Ebook(BaseModel):
     wordCount: int = Field(ge=0)
     lastStudiedPage: Optional[int] = None
     lastStudyRange: Optional[dict] = None
+    lastStudyPackId: Optional[str] = None
     error: Optional[str] = None
     createdAt: str
     updatedAt: str

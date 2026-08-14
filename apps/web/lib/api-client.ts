@@ -1294,6 +1294,7 @@ export async function importEbook(
       wordCount: 7200,
       lastStudiedPage: null,
       lastStudyRange: null,
+      lastStudyPackId: null,
       createdAt: now,
       updatedAt: now,
     }
@@ -1439,6 +1440,12 @@ export async function createEbookStudyPack(
       updatedAt: now,
     }
     mockStudyPacks = [pack, ...mockStudyPacks]
+    mockEbooks = mockEbooks.map((row) => row.id === bookId ? {
+      ...row,
+      lastStudyPackId: pack.id,
+      lastStudyRange: { startPage, endPage, modelTier },
+      updatedAt: now,
+    } : row)
     return pack
   }
   const { studyPack } = await apiFetch<{ studyPack: EbookStudyPack }>(`/ebooks/${bookId}/study-packs`, {
@@ -1461,6 +1468,7 @@ export async function getEbookStudyPack(packId: string): Promise<EbookStudyPack>
 export async function waitForEbookStudyPack(
   initial: EbookStudyPack,
   onProgress?: (studyPack: EbookStudyPack) => void,
+  signal?: AbortSignal,
 ): Promise<EbookStudyPack> {
   if (initial.status !== "processing") return initial
   let current = initial
@@ -1468,7 +1476,9 @@ export async function waitForEbookStudyPack(
   // Deep analysis may take several minutes per page. Keep the lightweight
   // progress poll alive for up to two hours while the tab remains open.
   for (let attempt = 0; attempt < 1_440; attempt += 1) {
+    if (signal?.aborted) return current
     await delay(5_000)
+    if (signal?.aborted) return current
     try {
       current = await getEbookStudyPack(initial.id)
       consecutiveRequestFailures = 0
