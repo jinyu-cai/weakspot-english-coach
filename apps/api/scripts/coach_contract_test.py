@@ -406,7 +406,7 @@ def main() -> None:
                 "status_code": 200,
                 "output": {
                     "audio": {
-                        "url": "https://dashscope-result-sg.oss-ap-southeast-1.aliyuncs.com/audio.wav",
+                        "url": "http://dashscope-result-sgp.oss-ap-southeast-1.aliyuncs.com/audio.wav?signature=test",
                     },
                 },
             }
@@ -488,11 +488,13 @@ def main() -> None:
                 },
             },
             "audio_url": (
-                "https://dashscope-result-sg.oss-ap-southeast-1.aliyuncs.com/audio.wav"
+                "https://dashscope-result-sgp.oss-ap-southeast-1.aliyuncs.com/audio.wav?signature=test"
             ),
         }
         for untrusted_url in (
-            "http://dashscope-result-sg.oss-ap-southeast-1.aliyuncs.com/audio.wav",
+            "ftp://dashscope-result-sgp.oss-ap-southeast-1.aliyuncs.com/audio.wav",
+            "https://user@dashscope-result-sgp.oss-ap-southeast-1.aliyuncs.com/audio.wav",
+            "https://dashscope-result-sgp.oss-ap-southeast-1.aliyuncs.com:8443/audio.wav",
             "https://dashscope-result-sg.oss-ap-southeast-1.aliyuncs.com.evil.test/audio.wav",
             "https://evilaliyuncs.com/audio.wav",
         ):
