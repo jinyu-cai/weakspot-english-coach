@@ -208,6 +208,7 @@ def diagnose_english_text(
         trace_id=trace_id,
         reasoning_effort=DIAGNOSIS_REASONING_EFFORT,
         retry_reasoning_effort=DIAGNOSIS_RETRY_REASONING_EFFORT,
+        openrouter_routing_mode="nitro" if diagnosis_mode == "fast" else "balanced",
         openrouter_completion_token_budget=effective_max_tokens,
         use_native_structured_output=True,
     )

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import json
 import logging
 import time
-from typing import Optional, Type, TypeVar
+from typing import Literal, Optional, Type, TypeVar
 from urllib.parse import urlparse
 
 from openai import OpenAI, OpenAIError
@@ -20,6 +20,7 @@ from pydantic import BaseModel, ValidationError
 from app.config import settings
 
 T = TypeVar("T", bound=BaseModel)
+OpenRouterRoutingMode = Literal["balanced", "nitro"]
 
 _client: Optional[OpenAI] = None
 logger = logging.getLogger("uvicorn.error")
@@ -90,6 +91,25 @@ def _provider_request_model(
     if hostname == "api.deepseek.com":
         return DEEPSEEK_FLASH_API_MODEL
     return selected_model
+
+
+def _openrouter_routed_model(
+    model: str,
+    base_url: str,
+    routing_mode: OpenRouterRoutingMode,
+) -> str:
+    """Apply an operation-scoped OpenRouter route without changing stored IDs."""
+
+    normalized_model = model.strip().lower()
+    model_slug = normalized_model.rsplit("/", 1)[-1]
+    if (
+        routing_mode == "nitro"
+        and _uses_openrouter_api(base_url)
+        and normalized_model.startswith("deepseek/")
+        and ":" not in model_slug
+    ):
+        return f"{model}:nitro"
+    return model
 
 
 def get_client(
@@ -201,6 +221,7 @@ def parse_with_model(
     native_structured_output_strict: bool = True,
     max_attempts: int = 2,
     retry_reasoning_effort: Optional[str] = None,
+    openrouter_routing_mode: OpenRouterRoutingMode = "balanced",
 ) -> T:
     # Local testing: return canned results without calling an external model.
     if settings.use_fake_ai:
@@ -217,7 +238,11 @@ def parse_with_model(
         base_url = settings.default_llm_fast_base_url
     else:
         base_url = settings.default_llm_base_url
-    request_model = _provider_request_model(provider, selected_model, base_url)
+    request_model = _openrouter_routed_model(
+        _provider_request_model(provider, selected_model, base_url),
+        base_url,
+        openrouter_routing_mode,
+    )
     uses_model_studio_qwen = _uses_model_studio_qwen(request_model, base_url)
     uses_openrouter = _uses_openrouter_api(base_url)
     uses_openrouter_openai = _uses_openrouter_openai_provider(request_model, base_url)
@@ -245,7 +270,7 @@ def parse_with_model(
     trace = trace_id or "-"
     logger.info(
         "llm[%s] start model=%s request_model=%s response_model=%s schema_bytes=%d max_tokens=%s "
-        "completion_token_budget=%s reasoning_effort=%s retry_reasoning_effort=%s qwen_json_mode=%s "
+        "completion_token_budget=%s reasoning_effort=%s retry_reasoning_effort=%s openrouter_routing=%s qwen_json_mode=%s "
         "openrouter_openai_only=%s native_structured_output=%s native_structured_strict=%s max_attempts=%d",
         trace,
         selected_model,
@@ -258,6 +283,7 @@ def parse_with_model(
         else "provider_default",
         reasoning_effort or "disabled",
         retry_reasoning_effort or "unchanged",
+        openrouter_routing_mode,
         uses_model_studio_qwen,
         uses_openrouter_openai,
         native_structured_output,

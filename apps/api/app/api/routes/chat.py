@@ -71,7 +71,7 @@ from app.services.stealth_practice_service import (
 router = APIRouter(prefix="/chat")
 logger = logging.getLogger("uvicorn.error")
 
-FALLBACK_DEFAULT_TEXT_CHAT_MODEL = "ds-v4-flash-0731"
+FALLBACK_DEFAULT_TEXT_CHAT_MODEL = "deepseek/deepseek-v4-flash"
 MAX_TEXT_STEALTH_PROBES = 3
 MAX_TEXT_STEALTH_PROBE_HISTORY = 12
 
@@ -798,6 +798,9 @@ def send_message(
             hidden_practice_instruction=build_stealth_probe_instruction(candidate_stealth_probe),
             reasoning_effort=reasoning_effort_for_tier(
                 "deep" if session.get("textModelMode") == "deep" else "fast"
+            ),
+            openrouter_routing_mode=(
+                "balanced" if session.get("textModelMode") == "deep" else "nitro"
             ),
         )
 

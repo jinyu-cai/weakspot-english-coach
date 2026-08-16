@@ -22,18 +22,22 @@ class Settings(BaseSettings):
     openai_compat_base_url: str = ""
     openai_compat_model: str = ""
     openai_compat_fast_model: str = ""
-    # OpenRouter supplies the selectable Luna Pro/Luna pair. When an official
-    # DeepSeek key is also configured, DS Flash becomes the default Fast slot.
+    # OpenRouter supplies the selectable Luna Pro/Luna pair and the DeepSeek
+    # models used by the default Diagnose/Chat pair. Fast Diagnose/Chat calls
+    # add OpenRouter's ``:nitro`` route at request time; stored model IDs remain
+    # the ordinary balanced variants.
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_model: str = "openai/gpt-5.6-luna-pro"
     openrouter_fast_model: str = "openai/gpt-5.6-luna"
+    openrouter_deepseek_model: str = "deepseek/deepseek-v4-pro"
+    openrouter_deepseek_fast_model: str = "deepseek/deepseek-v4-flash"
     qwen_model_studio_api_key: str = ""
     qwen_model_studio_base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
     qwen_model_studio_model: str = "qwen3.7-max"
     qwen_model_studio_fast_model: str = "qwen3.7-plus"
     # Embeddings may use a Qwen key without changing the server's default text
-    # provider. This keeps Oracle on DeepSeek while enabling Model Studio
+    # provider. This keeps text routing unchanged while enabling Model Studio
     # semantic retrieval and stealth-practice topic matching.
     qwen_embedding_api_key: str = ""
     qwen_embedding_base_url: str = ""
@@ -183,18 +187,14 @@ class Settings(BaseSettings):
 
     @property
     def default_llm_fast_model(self) -> str:
-        if self.uses_openrouter and self.uses_deepseek:
-            return self.llm_model_fast
         if self.uses_openrouter:
-            return self.openrouter_fast_model
+            return self.openrouter_deepseek_fast_model or self.openrouter_fast_model
         if self.uses_qwen_model_studio:
             return self.qwen_model_studio_fast_model
         return self.openai_compat_fast_model or self.llm_model_fast
 
     @property
     def default_llm_fast_api_key(self) -> str:
-        if self.uses_openrouter and self.uses_deepseek:
-            return self.deepseek_api_key
         if self.uses_openrouter:
             return self.openrouter_api_key
         if self.uses_qwen_model_studio:
@@ -203,8 +203,6 @@ class Settings(BaseSettings):
 
     @property
     def default_llm_fast_base_url(self) -> str:
-        if self.uses_openrouter and self.uses_deepseek:
-            return self.deepseek_base_url
         if self.uses_openrouter:
             return self.openrouter_base_url
         if self.uses_qwen_model_studio:

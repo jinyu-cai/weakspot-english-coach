@@ -159,6 +159,7 @@ def main() -> None:
         _provider_connection,
         _provider_extra_body,
         _provider_request_model,
+        _openrouter_routed_model,
         _response_format_schema,
         _uses_model_studio_qwen,
         _uses_openrouter_api,
@@ -183,15 +184,15 @@ def main() -> None:
     assert openrouter_settings.default_llm_api_key == "test-openrouter-key"
     assert openrouter_settings.default_llm_base_url == "https://openrouter.ai/api/v1"
     assert openrouter_settings.default_llm_model == "openai/gpt-5.6-luna-pro"
-    assert openrouter_settings.default_llm_fast_model == "ds-v4-flash-0731"
-    assert openrouter_settings.default_llm_fast_api_key == "test-deepseek-key"
-    assert openrouter_settings.default_llm_fast_base_url == "https://api.deepseek.com"
+    assert openrouter_settings.default_llm_fast_model == "deepseek/deepseek-v4-flash"
+    assert openrouter_settings.default_llm_fast_api_key == "test-openrouter-key"
+    assert openrouter_settings.default_llm_fast_base_url == "https://openrouter.ai/api/v1"
     assert default_server_model_ids(openrouter_settings) == (
         "openrouter-deep",
         "deepseek-fast",
     )
     openrouter_catalog = catalog_payload(openrouter_settings)
-    assert openrouter_catalog["models"][0]["fastModel"] == "ds-v4-flash-0731"
+    assert openrouter_catalog["models"][0]["fastModel"] == "deepseek/deepseek-v4-flash"
     assert [entry["id"] for entry in openrouter_catalog["models"][:3]] == [
         "default",
         "openrouter-deep",
@@ -202,7 +203,10 @@ def main() -> None:
         entry["id"]: entry for entry in openrouter_catalog["models"]
     }
     assert openrouter_catalog_by_id["openrouter-fast"]["model"] == "openai/gpt-5.6-luna"
-    assert openrouter_catalog_by_id["deepseek-fast"]["model"] == "ds-v4-flash-0731"
+    assert openrouter_catalog_by_id["deepseek-deep"]["model"] == "deepseek/deepseek-v4-pro"
+    assert openrouter_catalog_by_id["deepseek-deep"]["provider"] == "OpenRouter"
+    assert openrouter_catalog_by_id["deepseek-fast"]["model"] == "deepseek/deepseek-v4-flash"
+    assert openrouter_catalog_by_id["deepseek-fast"]["provider"] == "OpenRouter"
     selected_openrouter_pair = server_model_pair(
         "openrouter-deep",
         "openrouter-fast",
@@ -246,24 +250,29 @@ def main() -> None:
     default_provider = default_text_provider(openrouter_settings)
     assert default_provider is not None
     assert default_provider.model == "openai/gpt-5.6-luna-pro"
-    assert default_provider.fast_model == "ds-v4-flash-0731"
+    assert default_provider.fast_model == "deepseek/deepseek-v4-flash"
     assert default_provider.server_deep_model_id == "openrouter-deep"
     assert default_provider.server_fast_model_id == "deepseek-fast"
     assert default_provider.is_default is True
     assert _provider_connection(
         default_provider,
         default_provider.fast_model,
-    ) == ("test-deepseek-key", "https://api.deepseek.com")
-    assert _provider_request_model(
-        default_provider,
+    ) == ("test-openrouter-key", "https://openrouter.ai/api/v1")
+    assert _openrouter_routed_model(
         default_provider.fast_model,
-        "https://api.deepseek.com",
-    ) == "deepseek-v4-flash"
-    assert _provider_request_model(
-        default_provider,
+        default_provider.fast_base_url or default_provider.base_url,
+        "nitro",
+    ) == "deepseek/deepseek-v4-flash:nitro"
+    assert _openrouter_routed_model(
         default_provider.fast_model,
-        "https://api.deepseek.com.attacker.example",
-    ) == "ds-v4-flash-0731"
+        default_provider.fast_base_url or default_provider.base_url,
+        "balanced",
+    ) == "deepseek/deepseek-v4-flash"
+    assert _openrouter_routed_model(
+        default_provider.fast_model,
+        "https://openrouter.ai.attacker.example/api/v1",
+        "nitro",
+    ) == "deepseek/deepseek-v4-flash"
     assert _provider_request_model(
         LLMProviderConfig(
             api_key="custom-key",
@@ -283,11 +292,23 @@ def main() -> None:
     )
     assert default_server_model_ids(openrouter_only_settings) == (
         "openrouter-deep",
-        "openrouter-fast",
+        "deepseek-fast",
     )
     openrouter_only_provider = default_text_provider(openrouter_only_settings)
     assert openrouter_only_provider is not None
-    assert openrouter_only_provider.fast_model == "openai/gpt-5.6-luna"
+    assert openrouter_only_provider.fast_model == "deepseek/deepseek-v4-flash"
+    openrouter_without_ds_fast = Settings(
+        openrouter_api_key="test-openrouter-key",
+        openrouter_deepseek_fast_model="",
+        deepseek_api_key="",
+        qwen_model_studio_api_key="",
+        openai_compat_api_key="",
+    )
+    assert default_server_model_ids(openrouter_without_ds_fast) == (
+        "openrouter-deep",
+        "openrouter-fast",
+    )
+    assert openrouter_without_ds_fast.default_llm_fast_model == "openai/gpt-5.6-luna"
     assert _uses_openrouter_api(fixed_openrouter_provider.base_url)
     assert not _uses_openrouter_api("https://openrouter.ai.attacker.example/api/v1")
     assert _uses_openrouter_openai_provider(
@@ -383,10 +404,31 @@ def main() -> None:
             reasoning_effort="medium",
         )
     assert parsed_openrouter_fast.value == "ok"
-    assert openrouter_create_kwargs["model"] == "deepseek-v4-flash"
-    assert "extra_body" not in openrouter_create_kwargs
+    assert openrouter_create_kwargs["model"] == "deepseek/deepseek-v4-flash"
+    assert openrouter_create_kwargs["extra_body"] == {
+        "reasoning": {"effort": "medium"},
+    }
     assert openrouter_create_kwargs["temperature"] == 0.2
-    assert openrouter_create_kwargs["reasoning_effort"] == "medium"
+    assert "reasoning_effort" not in openrouter_create_kwargs
+
+    openrouter_create_kwargs.clear()
+    with (
+        patch.object(ai_client_module.settings, "use_fake_ai", False),
+        patch.object(ai_client_module, "get_client", return_value=openrouter_client),
+    ):
+        parsed_openrouter_nitro = ai_client_module.parse_with_model(
+            messages=[
+                {"role": "system", "content": "Return a result."},
+                {"role": "user", "content": "Test."},
+            ],
+            response_model=OpenRouterSmokeResult,
+            model=default_provider.fast_model,
+            provider=default_provider,
+            reasoning_effort="medium",
+            openrouter_routing_mode="nitro",
+        )
+    assert parsed_openrouter_nitro.value == "ok"
+    assert openrouter_create_kwargs["model"] == "deepseek/deepseek-v4-flash:nitro"
 
     openrouter_retry_calls = []
 
@@ -532,7 +574,7 @@ def main() -> None:
     assert select_input_learning_model(routing_provider) == "deep-model"
     assert select_diagnose_model("fast", routing_provider) == "fast-model"
     assert select_diagnose_model("deep", routing_provider) == "deep-model"
-    assert select_diagnose_model("fast", default_provider) == "ds-v4-flash-0731"
+    assert select_diagnose_model("fast", default_provider) == "deepseek/deepseek-v4-flash"
     assert select_diagnose_model("fast", fixed_openrouter_provider) == "openai/gpt-5.6-luna"
     assert select_diagnose_model("deep", fixed_openrouter_provider) == "openai/gpt-5.6-luna-pro"
     assert select_chat_import_model("fast", routing_provider) == "fast-model"
@@ -566,6 +608,12 @@ def main() -> None:
             llm_provider=fixed_openrouter_provider,
             max_output_tokens=None,
         )
+        diagnose_english_text(
+            "Yesterday I go to the store and buy two apple.",
+            diagnosis_mode="fast",
+            llm_provider=default_provider,
+            max_output_tokens=4_096,
+        )
     finally:
         diagnose_service.parse_with_model = original_diagnose_parse
 
@@ -574,6 +622,7 @@ def main() -> None:
     assert diagnose_calls[0]["openrouter_completion_token_budget"] == 8_192
     assert diagnose_calls[0]["reasoning_effort"] == "medium"
     assert diagnose_calls[0]["retry_reasoning_effort"] == "minimal"
+    assert diagnose_calls[0]["openrouter_routing_mode"] == "balanced"
     assert diagnose_calls[0]["use_native_structured_output"] is True
     assert "Think step by step" not in diagnose_calls[0]["messages"][0]["content"]
     assert diagnose_calls[1]["max_tokens"] == DIAGNOSIS_MAX_OUTPUT_TOKENS
@@ -581,6 +630,8 @@ def main() -> None:
         diagnose_calls[1]["openrouter_completion_token_budget"]
         == DIAGNOSIS_MAX_OUTPUT_TOKENS
     )
+    assert diagnose_calls[2]["model"] == "deepseek/deepseek-v4-flash"
+    assert diagnose_calls[2]["openrouter_routing_mode"] == "nitro"
     print("Diagnose completion budget + strict structured-output retry policy OK.")
 
     practice_calls = []

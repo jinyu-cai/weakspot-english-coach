@@ -605,6 +605,7 @@ def main() -> int:
         selected_text_models = []
         selected_text_max_tokens = []
         selected_text_reasoning_efforts = []
+        selected_text_openrouter_routing_modes = []
 
         def fake_chat_reply(
             *,
@@ -612,11 +613,13 @@ def main() -> int:
             llm_provider=None,
             max_tokens=None,
             reasoning_effort=None,
+            openrouter_routing_mode="balanced",
             **kwargs,
         ):
             selected_text_models.append(model or (llm_provider.model if llm_provider else None))
             selected_text_max_tokens.append(max_tokens)
             selected_text_reasoning_efforts.append(reasoning_effort)
+            selected_text_openrouter_routing_modes.append(openrouter_routing_mode)
             return ChatReplyAI(
                 reply="Model routing test reply.",
                 corrections=[],
@@ -632,6 +635,8 @@ def main() -> int:
             "openrouter_base_url",
             "openrouter_model",
             "openrouter_fast_model",
+            "openrouter_deepseek_model",
+            "openrouter_deepseek_fast_model",
             "qwen_model_studio_api_key",
             "qwen_model_studio_base_url",
             "qwen_model_studio_model",
@@ -743,20 +748,30 @@ def main() -> int:
             assert r.status_code == 200, r.text
             assert selected_text_models[-1] == "qwen3.7-max", selected_text_models
 
-            # Enable DeepSeek too, then verify each slot can independently use
-            # a different server provider without exposing either API key.
-            settings.deepseek_api_key = "test-deepseek-key"
+            # Enable OpenRouter too, then verify DeepSeek catalog IDs resolve
+            # through OpenRouter while the browser still receives no API key.
+            settings.openrouter_api_key = "test-openrouter-key"
+            settings.openrouter_base_url = "https://openrouter.ai/api/v1"
+            settings.openrouter_model = "openai/gpt-5.6-luna-pro"
+            settings.openrouter_fast_model = "openai/gpt-5.6-luna"
+            settings.openrouter_deepseek_model = "deepseek/deepseek-v4-pro"
+            settings.openrouter_deepseek_fast_model = "deepseek/deepseek-v4-flash"
             r = client.get("/api/v1/llm/models")
             assert r.status_code == 200, r.text
             mixed_catalog = r.json()["models"]
             assert [entry["id"] for entry in mixed_catalog] == [
                 "default",
+                "openrouter-deep",
+                "openrouter-fast",
                 "deepseek-deep",
                 "deepseek-fast",
                 "qwen-deep",
                 "qwen-fast",
             ], mixed_catalog
             assert {entry.get("mode") for entry in mixed_catalog[1:]} == {"deep", "fast"}, mixed_catalog
+            assert next(
+                entry for entry in mixed_catalog if entry["id"] == "deepseek-fast"
+            )["provider"] == "OpenRouter", mixed_catalog
 
             pair_headers = {
                 "X-LLM-Server-Deep-Model": "qwen-deep",
@@ -769,7 +784,7 @@ def main() -> int:
             )
             assert r.status_code == 200, r.text
             mixed_session = r.json()["session"]
-            assert mixed_session["textModel"] == "ds-v4-flash-0731", mixed_session
+            assert mixed_session["textModel"] == "deepseek/deepseek-v4-flash", mixed_session
             assert mixed_session["textModelMode"] == "fast", mixed_session
             assert mixed_session["llmServerDeepModelId"] == "qwen-deep", mixed_session
             assert mixed_session["llmServerFastModelId"] == "deepseek-fast", mixed_session
@@ -783,7 +798,8 @@ def main() -> int:
                 json={"userId": user, "sessionId": mixed_session["id"], "text": "Hello from mixed routing."},
             )
             assert r.status_code == 200, r.text
-            assert selected_text_models[-1] == "ds-v4-flash-0731", selected_text_models
+            assert selected_text_models[-1] == "deepseek/deepseek-v4-flash", selected_text_models
+            assert selected_text_openrouter_routing_modes[-1] == "nitro", selected_text_openrouter_routing_modes
 
             r = client.post(
                 "/api/v1/chat/sessions",
@@ -815,6 +831,7 @@ def main() -> int:
             )
             assert r.status_code == 200, r.text
             assert selected_text_models[-1] == "qwen3.7-max", selected_text_models
+            assert selected_text_openrouter_routing_modes[-1] == "balanced", selected_text_openrouter_routing_modes
 
             r = client.post(
                 "/api/v1/chat/sessions",
@@ -822,7 +839,7 @@ def main() -> int:
                 json={"userId": user, "topic": "Incomplete pair"},
             )
             assert r.status_code == 400, r.text
-            settings.deepseek_api_key = ""
+            settings.openrouter_api_key = ""
 
             r = client.post(
                 "/api/v1/chat/sessions",

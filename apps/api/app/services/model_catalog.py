@@ -96,26 +96,50 @@ def configured_server_models(config: Settings = settings) -> list[ServerModelOpt
         model=config.openrouter_fast_model,
         mode="fast",
     )
-    _add_option(
-        options,
-        option_id="deepseek-deep",
-        label="DeepSeek · Deep",
-        provider_label="DeepSeek",
-        api_key=config.deepseek_api_key,
-        base_url=config.deepseek_base_url,
-        model=config.llm_model,
-        mode="deep",
-    )
-    _add_option(
-        options,
-        option_id="deepseek-fast",
-        label="DS V4 Flash 0731",
-        provider_label="DeepSeek Official",
-        api_key=config.deepseek_api_key,
-        base_url=config.deepseek_base_url,
-        model=config.llm_model_fast,
-        mode="fast",
-    )
+    if config.uses_openrouter:
+        _add_option(
+            options,
+            option_id="deepseek-deep",
+            label="DeepSeek V4 Pro · Balanced",
+            provider_label="OpenRouter",
+            api_key=config.openrouter_api_key,
+            base_url=config.openrouter_base_url,
+            model=config.openrouter_deepseek_model,
+            mode="deep",
+        )
+        _add_option(
+            options,
+            option_id="deepseek-fast",
+            label="DeepSeek V4 Flash · Nitro in Fast mode",
+            provider_label="OpenRouter",
+            api_key=config.openrouter_api_key,
+            base_url=config.openrouter_base_url,
+            model=config.openrouter_deepseek_fast_model,
+            mode="fast",
+        )
+    else:
+        # Preserve old single-provider deployments. As soon as OpenRouter is
+        # configured, the stable DeepSeek catalog IDs above resolve through it.
+        _add_option(
+            options,
+            option_id="deepseek-deep",
+            label="DeepSeek · Deep",
+            provider_label="DeepSeek Official (legacy)",
+            api_key=config.deepseek_api_key,
+            base_url=config.deepseek_base_url,
+            model=config.llm_model,
+            mode="deep",
+        )
+        _add_option(
+            options,
+            option_id="deepseek-fast",
+            label="DS V4 Flash 0731",
+            provider_label="DeepSeek Official (legacy)",
+            api_key=config.deepseek_api_key,
+            base_url=config.deepseek_base_url,
+            model=config.llm_model_fast,
+            mode="fast",
+        )
     _add_option(
         options,
         option_id="qwen-deep",
@@ -246,8 +270,13 @@ def server_model_pair(
 def default_server_model_ids(config: Settings = settings) -> tuple[str, str] | None:
     """Return the preferred Deep/Fast IDs for this deployment's configured keys."""
     if config.uses_openrouter:
-        fast_id = "deepseek-fast" if config.uses_deepseek else "openrouter-fast"
-        return "openrouter-deep", fast_id
+        deep_id = "openrouter-deep" if config.openrouter_model.strip() else "deepseek-deep"
+        fast_id = (
+            "deepseek-fast"
+            if config.openrouter_deepseek_fast_model.strip()
+            else "openrouter-fast"
+        )
+        return deep_id, fast_id
     if config.uses_qwen_model_studio:
         return "qwen-deep", "qwen-fast"
     if config.openai_compat_api_key.strip():

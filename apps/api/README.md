@@ -413,6 +413,19 @@ OPENAI_COMPAT_MODEL=your_chat_model
 OPENAI_COMPAT_FAST_MODEL=your_fast_chat_model
 ```
 
+For the hosted Diagnose and text Chat profile, configure OpenRouter. The base
+DeepSeek slug uses OpenRouter Balanced routing; Fast Diagnose/Chat requests add
+the official `:nitro` variant at request time:
+
+```bash
+OPENROUTER_API_KEY=...
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_MODEL=openai/gpt-5.6-luna-pro
+OPENROUTER_FAST_MODEL=openai/gpt-5.6-luna
+OPENROUTER_DEEPSEEK_MODEL=deepseek/deepseek-v4-pro
+OPENROUTER_DEEPSEEK_FAST_MODEL=deepseek/deepseek-v4-flash
+```
+
 For Alibaba Cloud Model Studio, set the Qwen 3.7 profile instead. The backend
 uses `qwen3.7-max` for deep analysis and `qwen3.7-plus` for fast paths:
 
@@ -448,20 +461,21 @@ X-LLM-Server-Fast-Model: deepseek-fast
 ```
 
 The server resolves that ID to its matching key, endpoint, and exact model. No
-provider credentials or base URLs are returned to the browser. When both
-OpenRouter and DeepSeek are configured, “Server default” resolves to Luna Pro
-Deep plus official DS V4 Flash 0731 Fast. OpenRouter Luna remains a selectable
-Fast alternative. Other deployments can default to their configured Qwen or
-DeepSeek pair. An explicitly selected slot can use any matching configured
-model, including mixed-provider combinations.
+provider credentials or base URLs are returned to the browser. With OpenRouter
+configured, “Server default” resolves to Luna Pro Deep plus DeepSeek V4 Flash
+Fast through OpenRouter. Fast Diagnose/Chat requests use Nitro; other calls use
+Balanced routing. OpenRouter Luna remains a selectable Fast alternative. Other
+deployments can default to their configured Qwen or legacy DeepSeek pair. An
+explicitly selected slot can use any matching configured model, including
+mixed-provider combinations.
 The built-in selector applies to text features (diagnosis, plans, practice,
 imports, and new text chats). Text-chat sessions retain their chosen pair so a
 later browser selection does not change an existing session. The legacy
 `X-LLM-Server-Model` single-model header remains supported for older clients.
 
-With both DeepSeek and Qwen configured, the catalog exposes each configured
-model. Removing a provider removes its choices; old chat sessions safely fall
-back to the current server default instead of sending a model name to the wrong
+With OpenRouter and Qwen configured, the catalog exposes each configured model.
+Removing a provider removes its choices; old chat sessions safely fall back to
+the current server default instead of sending a model name to the wrong
 provider.
 
 The app also supports per-request BYOK for OpenAI-compatible providers. Send:
