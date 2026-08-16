@@ -71,7 +71,7 @@ from app.services.stealth_practice_service import (
 router = APIRouter(prefix="/chat")
 logger = logging.getLogger("uvicorn.error")
 
-FALLBACK_DEFAULT_TEXT_CHAT_MODEL = "deepseek/deepseek-v4-flash"
+FALLBACK_DEFAULT_TEXT_CHAT_MODEL = "deepseek-v4-flash"
 MAX_TEXT_STEALTH_PROBES = 3
 MAX_TEXT_STEALTH_PROBE_HISTORY = 12
 

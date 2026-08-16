@@ -90,9 +90,6 @@ export default function EbookLearningPage() {
   const [studying, setStudying] = useState(false)
   const [deletingStudyPackId, setDeletingStudyPackId] = useState<string | null>(null)
   const [readerView, setReaderView] = useState<EbookReaderView>("reading")
-  const [showCounterpart, setShowCounterpart] = useState(true)
-  const [showReaderAnnotations, setShowReaderAnnotations] = useState(true)
-  const [readerFontStep, setReaderFontStep] = useState(1)
   const [selection, setSelection] = useState<SelectionDraft | null>(null)
   const [addingSelection, setAddingSelection] = useState(false)
   const [extraAnnotations, setExtraAnnotations] = useState<EbookAnnotation[]>([])
@@ -114,6 +111,23 @@ export default function EbookLearningPage() {
       setAuthChecked(true)
     })
   }, [])
+
+  const readingFocusActive = readerView === "reading"
+    && Boolean(studyPack?.pages?.length)
+
+  useEffect(() => {
+    if (!readingFocusActive) return
+    const previousOverflow = document.body.style.overflow
+    const leaveReadingFocus = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setReaderView("study")
+    }
+    document.body.style.overflow = "hidden"
+    window.addEventListener("keydown", leaveReadingFocus)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener("keydown", leaveReadingFocus)
+    }
+  }, [readingFocusActive])
 
   const { data: books = [], mutate: refreshBooks } = useSWR(
     authenticated ? "ebooks:library" : null,
@@ -451,6 +465,7 @@ export default function EbookLearningPage() {
       const session = await startEbookPractice(target.id)
       setPracticeTarget(target)
       setPractice(session)
+      setReaderView("study")
       setPracticeAnswer("")
       setPracticeHint(false)
       setLastAttempt(null)
@@ -497,6 +512,17 @@ export default function EbookLearningPage() {
         <CardContent><Link className={cn(buttonVariants(), "w-full")} href={loginPageUrl("/input/ebooks")}>{zh ? "登录并继续" : "Sign in and continue"}</Link></CardContent>
       </Card>
     )
+  }
+
+  if (readingFocusActive && studyPack?.pages) {
+    return <EbookReadingView
+      pages={studyPack.pages}
+      annotationsByUnit={annotationsByUnit}
+      targetsByAnnotation={targetsByAnnotation}
+      zh={zh}
+      onUnfamiliar={markUnfamiliar}
+      onPractice={beginPractice}
+    />
   }
 
   return (
@@ -663,38 +689,10 @@ export default function EbookLearningPage() {
                       <Button size="sm" variant={readerView === "reading" ? "default" : "ghost"} role="tab" aria-selected={readerView === "reading"} onClick={() => setReaderView("reading")}><BookOpen />{zh ? "阅读模式" : "Reading"}</Button>
                       <Button size="sm" variant={readerView === "study" ? "default" : "ghost"} role="tab" aria-selected={readerView === "study"} onClick={() => setReaderView("study")}><GraduationCap />{zh ? "学习模式" : "Study"}</Button>
                     </div>
-                    {readerView === "reading" ? <div className="flex flex-wrap items-center gap-2">
-                      <Button size="sm" variant={showCounterpart ? "secondary" : "outline"} aria-pressed={showCounterpart} onClick={() => setShowCounterpart((value) => !value)}><Languages />{zh ? "译文" : "Counterpart"}</Button>
-                      <Button size="sm" variant={showReaderAnnotations ? "secondary" : "outline"} aria-pressed={showReaderAnnotations} onClick={() => setShowReaderAnnotations((value) => !value)}><NotebookPen />{zh ? "批注" : "Annotations"}</Button>
-                      <div className="flex items-center rounded-lg border bg-background" aria-label={zh ? "阅读字号" : "Reading font size"}>
-                        <Button variant="ghost" size="icon-sm" aria-label={zh ? "减小字号" : "Decrease font size"} disabled={readerFontStep === 0} onClick={() => setReaderFontStep((value) => Math.max(0, value - 1))}>A−</Button>
-                        <span className="min-w-8 text-center text-xs text-muted-foreground">{readerFontStep + 1}/3</span>
-                        <Button variant="ghost" size="icon-sm" aria-label={zh ? "增大字号" : "Increase font size"} disabled={readerFontStep === 2} onClick={() => setReaderFontStep((value) => Math.min(2, value + 1))}>A+</Button>
-                      </div>
-                    </div> : null}
                   </CardContent>
                 </Card>
 
-                {readerView === "reading" ? <EbookReadingView
-                  pages={studyPack.pages}
-                  bookTitle={studyPack.bookTitle}
-                  modelTier={studyPack.modelTier}
-                  comparisonMode={studyPack.comparisonMode}
-                  completedPageCount={studyPack.completedPageCount}
-                  totalPageCount={studyPack.totalPageCount}
-                  annotationsByUnit={annotationsByUnit}
-                  targetsByAnnotation={targetsByAnnotation}
-                  selection={selection}
-                  addingSelection={addingSelection}
-                  showCounterpart={showCounterpart}
-                  showAnnotations={showReaderAnnotations}
-                  fontStep={readerFontStep}
-                  zh={zh}
-                  onCaptureSelection={captureSelection}
-                  onAnalyzeSelection={analyzeSelection}
-                  onUnfamiliar={markUnfamiliar}
-                  onPractice={beginPractice}
-                /> : <section className="flex flex-col gap-6">
+                <section className="flex flex-col gap-6">
                   {studyPack.pages.map((page) => (
                     <Card key={page.pageNumber} className="overflow-hidden">
                       <CardHeader className="border-b bg-muted/15"><div className="flex items-center justify-between gap-3"><div><CardTitle>{zh ? `第 ${page.pageNumber} 页` : `Page ${page.pageNumber}`}</CardTitle>{page.chapterTitle ? <CardDescription>{page.chapterTitle}</CardDescription> : null}</div><div className="flex items-center gap-2"><Badge variant="secondary">{studyPack.modelTier === "fast" ? "Fast" : "Deep"}</Badge><Badge variant="outline">{studyPack.comparisonMode === "translation" ? (zh ? "中文对照" : "Chinese translation") : "Plain English"}</Badge></div></div></CardHeader>
@@ -712,7 +710,7 @@ export default function EbookLearningPage() {
                       </CardContent>
                     </Card>
                   ))}
-                </section>}
+                </section>
               </> : null}
 
               {practice ? <EbookPracticePanel id="ebook-practice" session={practice} target={practiceTarget} answer={practiceAnswer} setAnswer={setPracticeAnswer} hint={practiceHint} setHint={setPracticeHint} submitting={practiceSubmitting} lastAttempt={lastAttempt} zh={zh} onSubmit={submitPracticeAnswer} onClose={() => { setPractice(null); setPracticeTarget(null); setLastAttempt(null) }} /> : null}
@@ -726,98 +724,46 @@ export default function EbookLearningPage() {
 
 function EbookReadingView({
   pages,
-  bookTitle,
-  modelTier,
-  comparisonMode,
-  completedPageCount,
-  totalPageCount,
   annotationsByUnit,
   targetsByAnnotation,
-  selection,
-  addingSelection,
-  showCounterpart,
-  showAnnotations,
-  fontStep,
   zh,
-  onCaptureSelection,
-  onAnalyzeSelection,
   onUnfamiliar,
   onPractice,
 }: {
   pages: EbookStudyPage[]
-  bookTitle: string
-  modelTier: EbookModelTier
-  comparisonMode: EbookStudyPack["comparisonMode"]
-  completedPageCount: number
-  totalPageCount: number
   annotationsByUnit: Record<string, EbookAnnotation[]>
   targetsByAnnotation: Record<string, EbookLearningTarget>
-  selection: SelectionDraft | null
-  addingSelection: boolean
-  showCounterpart: boolean
-  showAnnotations: boolean
-  fontStep: number
   zh: boolean
-  onCaptureSelection: (unit: EbookSentenceUnit, container: HTMLElement) => void
-  onAnalyzeSelection: () => Promise<void>
   onUnfamiliar: (annotation: EbookAnnotation) => Promise<void>
   onPractice: (annotation: EbookAnnotation) => Promise<void>
 }) {
-  const sourceSize = ["text-[17px] sm:text-[18px]", "text-[19px] sm:text-[20px]", "text-[21px] sm:text-[22px]"][fontStep]
-  const counterpartSize = ["text-[14px] sm:text-[15px]", "text-[15px] sm:text-[16px]", "text-[16px] sm:text-[17px]"][fontStep]
-
   return (
-    <section className="mx-auto w-full max-w-4xl overflow-hidden rounded-[2rem] border bg-card shadow-sm">
-      <header className="border-b bg-gradient-to-br from-primary/8 via-background to-amber-500/8 px-5 py-7 sm:px-10 sm:py-9">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">{modelTier === "fast" ? "Fast" : "Deep"}</Badge>
-          <Badge variant="outline">{comparisonMode === "translation" ? (zh ? "中文对照" : "Chinese translation") : "Plain English"}</Badge>
-          <span className="text-xs text-muted-foreground">{completedPageCount}/{totalPageCount} {zh ? "页已完成" : "pages ready"}</span>
-        </div>
-        <h2 className="mt-4 font-heading text-2xl font-semibold tracking-tight sm:text-3xl">{bookTitle}</h2>
-        <p className="mt-2 text-sm text-muted-foreground">{zh ? "选择英文句子或片段，可以随时请求详细解析。" : "Select any English sentence or phrase whenever you want a detailed explanation."}</p>
-        <nav className="mt-5 flex items-center gap-2 overflow-x-auto pb-1" aria-label={zh ? "跳转页面" : "Jump to page"}>
-          <span className="shrink-0 text-xs text-muted-foreground">{zh ? "跳转" : "Jump"}</span>
-          {pages.map((page) => <a key={page.pageNumber} href={`#ebook-page-${page.pageNumber}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "size-8 shrink-0 rounded-full p-0")}>{page.pageNumber}</a>)}
-        </nav>
-      </header>
-
-      <div className="divide-y">
-        {pages.map((page) => (
-          <section key={page.pageNumber} id={`ebook-page-${page.pageNumber}`} className="scroll-mt-24 px-5 py-8 sm:px-10 sm:py-10">
-            <div className="mb-7 flex flex-wrap items-end justify-between gap-2 border-b pb-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">{zh ? `第 ${page.pageNumber} 页` : `Page ${page.pageNumber}`}</p>
-                {page.chapterTitle ? <h3 className="mt-1 font-heading text-lg font-semibold">{page.chapterTitle}</h3> : null}
-              </div>
-              <span className="text-xs text-muted-foreground">{page.units.length} {zh ? "个阅读单元" : "reading units"}</span>
-            </div>
-
-            {page.units.length === 0 ? <p className="text-sm text-muted-foreground">{zh ? "本页没有可识别文字。" : "No readable text on this page."}</p> : <div className="mx-auto max-w-[72ch]">
-              {page.units.map((unit, unitIndex) => {
-                const unitAnnotations = annotationsByUnit[unit.unitId] ?? []
-                const startsParagraph = unitIndex === 0 || page.units[unitIndex - 1]?.paragraphIndex !== unit.paragraphIndex
-                return <article key={unit.unitId} className={cn(startsParagraph ? "mt-9 first:mt-0" : "mt-4")}>
-                  <div className="group" onMouseUp={(event) => onCaptureSelection(unit, event.currentTarget)}>
-                    <p data-ebook-source className={cn("select-text font-serif leading-[1.9] text-foreground", sourceSize)}>
-                      <HighlightedSource text={unit.sourceText} annotations={showAnnotations ? unitAnnotations : []} />
-                    </p>
-                    {selection?.unit.unitId === unit.unitId ? <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 p-2 text-xs"><span className="line-clamp-2 flex-1">“{selection.text}”</span><Button size="sm" onClick={() => void onAnalyzeSelection()} disabled={addingSelection}>{addingSelection ? <LoaderCircle className="animate-spin" /> : <Sparkles />}{zh ? "详细解析" : "Explain selection"}</Button></div> : null}
-                  </div>
-
-                  {showCounterpart ? <div className="mt-3 border-l-2 border-primary/25 pl-4">
-                    <p className={cn("leading-[1.75] text-muted-foreground", counterpartSize)}>{unit.counterpartText}</p>
-                  </div> : null}
-
-                  {showAnnotations && unitAnnotations.length > 0 ? <details className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/[0.04] open:bg-muted/20">
-                    <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground marker:hidden">{unitAnnotations.length} {zh ? "条重点批注" : unitAnnotations.length === 1 ? "annotation" : "annotations"}<span className="ml-2 text-xs font-normal text-muted-foreground">{zh ? "点击展开" : "Open"}</span></summary>
-                    <div className="flex flex-col gap-3 border-t p-3">{unitAnnotations.map((annotation) => <AnnotationCard key={annotation.id} annotation={annotation} target={targetsByAnnotation[annotation.id]} zh={zh} onUnfamiliar={onUnfamiliar} onPractice={onPractice} />)}</div>
-                  </details> : null}
-                </article>
-              })}
-            </div>}
-          </section>
-        ))}
+    <section
+      data-testid="ebook-reading-focus"
+      aria-label={zh ? "译文和批注阅读模式" : "Translation and annotations reading mode"}
+      aria-keyshortcuts="Escape"
+      className="fixed inset-0 z-[60] overflow-y-auto overscroll-contain bg-background px-4 py-12 sm:px-8 sm:py-16"
+    >
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-12">
+        {pages.flatMap((page) => page.units.map((unit) => {
+          const unitAnnotations = annotationsByUnit[unit.unitId] ?? []
+          return <article key={`${page.pageNumber}-${unit.unitId}`} className="mx-auto flex w-full flex-col gap-5">
+            <p className="mx-auto max-w-2xl text-center text-base leading-8 text-muted-foreground sm:text-lg">
+              {unit.counterpartText}
+            </p>
+            {unitAnnotations.length > 0 ? <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
+              {unitAnnotations.map((annotation) => <AnnotationCard
+                key={annotation.id}
+                annotation={annotation}
+                target={targetsByAnnotation[annotation.id]}
+                zh={zh}
+                initiallyOpen
+                onUnfamiliar={onUnfamiliar}
+                onPractice={onPractice}
+              />)}
+            </div> : null}
+          </article>
+        }))}
       </div>
     </section>
   )
@@ -851,8 +797,8 @@ function HighlightedSource({ text, annotations }: { text: string; annotations: E
   })
 }
 
-function AnnotationCard({ annotation, target, zh, onUnfamiliar, onPractice }: { annotation: EbookAnnotation; target?: EbookLearningTarget; zh: boolean; onUnfamiliar: (annotation: EbookAnnotation) => Promise<void>; onPractice: (annotation: EbookAnnotation) => Promise<void> }) {
-  const [open, setOpen] = useState(false)
+function AnnotationCard({ annotation, target, zh, initiallyOpen = false, onUnfamiliar, onPractice }: { annotation: EbookAnnotation; target?: EbookLearningTarget; zh: boolean; initiallyOpen?: boolean; onUnfamiliar: (annotation: EbookAnnotation) => Promise<void>; onPractice: (annotation: EbookAnnotation) => Promise<void> }) {
+  const [open, setOpen] = useState(initiallyOpen)
   return (
     <div className="rounded-xl border bg-background p-4">
       <button className="flex w-full items-start justify-between gap-3 text-left" onClick={() => setOpen((value) => !value)}><div><div className="flex flex-wrap items-center gap-2"><Badge variant="secondary">{annotation.kind.replace("_", " ")}</Badge>{target ? <Badge variant="outline"><NotebookPen data-icon="inline-start" />{target.status}</Badge> : null}</div><h4 className="mt-2 font-heading text-lg font-semibold">{annotation.selectedText}</h4><p className="mt-1 text-sm text-muted-foreground">{annotation.meaningInContext}</p></div><ChevronDown className={cn("mt-1 size-5 shrink-0 transition-transform", open && "rotate-180")} /></button>

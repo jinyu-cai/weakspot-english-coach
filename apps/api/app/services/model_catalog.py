@@ -96,30 +96,30 @@ def configured_server_models(config: Settings = settings) -> list[ServerModelOpt
         model=config.openrouter_fast_model,
         mode="fast",
     )
-    if config.uses_openrouter:
+    if config.uses_opencode_go:
         _add_option(
             options,
             option_id="deepseek-deep",
-            label="DeepSeek V4 Pro · Balanced",
-            provider_label="OpenRouter",
-            api_key=config.openrouter_api_key,
-            base_url=config.openrouter_base_url,
-            model=config.openrouter_deepseek_model,
+            label="DeepSeek V4 Pro",
+            provider_label="OpenCode Go",
+            api_key=config.opencode_go_api_key,
+            base_url=config.opencode_go_base_url,
+            model=config.opencode_go_deepseek_model,
             mode="deep",
         )
         _add_option(
             options,
             option_id="deepseek-fast",
-            label="DeepSeek V4 Flash · Nitro in Fast mode",
-            provider_label="OpenRouter",
-            api_key=config.openrouter_api_key,
-            base_url=config.openrouter_base_url,
-            model=config.openrouter_deepseek_fast_model,
+            label="DeepSeek V4 Flash",
+            provider_label="OpenCode Go",
+            api_key=config.opencode_go_api_key,
+            base_url=config.opencode_go_base_url,
+            model=config.opencode_go_deepseek_fast_model,
             mode="fast",
         )
     else:
-        # Preserve old single-provider deployments. As soon as OpenRouter is
-        # configured, the stable DeepSeek catalog IDs above resolve through it.
+        # Preserve old single-provider deployments until an OpenCode Go key is
+        # configured. The stable DeepSeek catalog IDs then resolve through Go.
         _add_option(
             options,
             option_id="deepseek-deep",
@@ -269,21 +269,36 @@ def server_model_pair(
 
 def default_server_model_ids(config: Settings = settings) -> tuple[str, str] | None:
     """Return the preferred Deep/Fast IDs for this deployment's configured keys."""
+    available_ids = {option.id for option in configured_server_models(config)}
+
+    deep_priority: list[str] = []
+    fast_priority: list[str] = []
     if config.uses_openrouter:
-        deep_id = "openrouter-deep" if config.openrouter_model.strip() else "deepseek-deep"
-        fast_id = (
-            "deepseek-fast"
-            if config.openrouter_deepseek_fast_model.strip()
-            else "openrouter-fast"
-        )
-        return deep_id, fast_id
+        deep_priority.append("openrouter-deep")
+    if config.uses_opencode_go:
+        deep_priority.append("deepseek-deep")
+        fast_priority.append("deepseek-fast")
+    if config.uses_openrouter:
+        fast_priority.append("openrouter-fast")
     if config.uses_qwen_model_studio:
-        return "qwen-deep", "qwen-fast"
+        deep_priority.append("qwen-deep")
+        fast_priority.append("qwen-fast")
     if config.openai_compat_api_key.strip():
-        return "openai-compatible-deep", "openai-compatible-fast"
-    if config.uses_deepseek:
-        return "deepseek-deep", "deepseek-fast"
-    return None
+        deep_priority.append("openai-compatible-deep")
+        fast_priority.append("openai-compatible-fast")
+    if config.uses_deepseek and not config.uses_opencode_go:
+        deep_priority.append("deepseek-deep")
+        fast_priority.append("deepseek-fast")
+
+    deep_id = next(
+        (model_id for model_id in deep_priority if model_id in available_ids),
+        None,
+    )
+    fast_id = next(
+        (model_id for model_id in fast_priority if model_id in available_ids),
+        None,
+    )
+    return (deep_id, fast_id) if deep_id and fast_id else None
 
 
 def default_text_provider(config: Settings = settings) -> Optional[LLMProviderConfig]:

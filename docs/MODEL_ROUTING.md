@@ -7,11 +7,11 @@ routes provider-neutral work to a `Deep` or `Fast` slot.
 Target text-chat routing:
 
 - Deep slot: `openai/gpt-5.6-luna-pro` through OpenRouter
-- Default Fast slot: `deepseek/deepseek-v4-flash` through OpenRouter
+- Default Fast slot: `deepseek-v4-flash` through OpenCode Go
 - Alternate Fast slot: `openai/gpt-5.6-luna` through OpenRouter
 - Reasoning: Deep uses `max`; Fast uses `medium`
-- Diagnose and text Chat Fast requests append `:nitro`; other OpenRouter
-  requests keep the base slug and use normal Balanced routing
+- OpenCode Go receives its documented bare DeepSeek model IDs; OpenRouter-only
+  routing suffixes such as `:nitro` are never sent to the Go endpoint
 - Luna Pro provider routing: only `openai`, with provider fallbacks disabled
 - Adaptive mission planner: `gpt-5.6-sol` through the OpenAI Responses API
 - Realtime voice: the configured OpenAI Realtime model
@@ -24,16 +24,15 @@ Users may select another available Deep/Fast pair or provide BYOK models. A BYOK
 request without a separate Fast model necessarily falls back to its primary
 model.
 
-The stable `deepseek-fast` catalog ID resolves to OpenRouter's
-`deepseek/deepseek-v4-flash` slug. Nitro is applied only while constructing a
-Fast Diagnose or text Chat request, so stored sessions retain the base model
-and durable/non-interactive work continues to use Balanced routing.
+The stable `deepseek-fast` catalog ID resolves to OpenCode Go's
+`deepseek-v4-flash` model. Stored sessions retain that bare model ID, while the
+server-managed catalog keeps the Go API key and base URL out of the browser.
 
 ## Product routing matrix
 
 | Product operation | Route | Reason |
 | --- | --- | --- |
-| Diagnose writing | Selectable Fast/Deep pair; DeepSeek V4 Flash Nitro / Luna Pro Deep by default | Fast supports interactive checks; Deep remains available for a thorough report. The selected safe pair is honored for Diagnose. |
+| Diagnose writing | Selectable Fast/Deep pair; DeepSeek V4 Flash through OpenCode Go / Luna Pro Deep by default | Fast supports interactive checks; Deep remains available for a thorough report. The selected safe pair is honored for Diagnose. |
 | Import ChatGPT history | User-selected Fast/Deep; Fast default | The learner controls the tradeoff for potentially large imports. |
 | Chat reply | Fast default; Deep optional per session | A conversation turn is latency-sensitive; the chosen model is pinned to the session. |
 | Chat completion suggestions | Fast | Small, bounded prediction used while typing. |
@@ -63,6 +62,8 @@ and durable/non-interactive work continues to use Balanced routing.
   attempt drops to `minimal` reasoning instead of repeating the same
   output-starved request.
 - OpenRouter calls send the provider-neutral `reasoning.effort` object.
+- OpenCode Go calls use the OpenAI-compatible `reasoning_effort` parameter and
+  automatically retry without it if the endpoint reports it as unsupported.
 - Luna Pro dynamic scenes keep `max` reasoning but request a compact scene plan
   through native JSON Schema. The server expands that bounded plan into the
   full learner task and facilitator prompt. OpenRouter receives an explicit
