@@ -89,7 +89,7 @@ export default function EbookLearningPage() {
   const [studyPack, setStudyPack] = useState<EbookStudyPack | null>(null)
   const [studying, setStudying] = useState(false)
   const [deletingStudyPackId, setDeletingStudyPackId] = useState<string | null>(null)
-  const [readerView, setReaderView] = useState<EbookReaderView>("reading")
+  const [readerView, setReaderView] = useState<EbookReaderView>("study")
   const [selection, setSelection] = useState<SelectionDraft | null>(null)
   const [addingSelection, setAddingSelection] = useState(false)
   const [extraAnnotations, setExtraAnnotations] = useState<EbookAnnotation[]>([])
