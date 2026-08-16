@@ -19,6 +19,50 @@ Next step:
 ```
 
 
+## 2026-08-16 — Ebook step 1 (Understand) passes above score 60
+
+Date: 2026-08-16 PDT
+
+Branch: `codex/ebook-step1-pass-over-60` → `main`
+
+GitHub status: PR [#135](https://github.com/jinyu-cai/weakspot-english-coach/pull/135)
+merged at `c804b5dbbca4ec61892d196fe76c499a617764d0`. Vercel Preview
+passed before merge, and merged-commit Production deployment
+`5936771710` succeeded.
+
+Deploy status: **frontend and backend LIVE**. Vercel Production deployment for
+the merged commit succeeded. The exact merged `apps/api` archive with SHA-256
+`90bbfc3eebf50ba7061b0f2f37630ab0419ca795c40b61bb3746436aa323d3f0`
+was deployed to `oracle-us-sj`. The production `.env` SHA-256 remained
+`33d1d3089e5487773878181bc14dac73abb647efe627a7590d8d2615a547aea3`;
+the immediate rollback directory is
+`/home/ubuntu/weakspot-backend.rollback-c339f8e-20260816T235447Z`.
+
+Summary:
+
+- Ebook practice step 1 (Understand) is a confirmation step: its pass bar
+  dropped from 70 to "score over 60", so a basically-correct response lets
+  the learner continue to guided use.
+- Steps 2 (Guided use, 70) and 3 (Independent transfer, 80) keep the stricter
+  bars.
+- Added a boundary regression test in `scripts/ebook_test.py` that stubs
+  `grade_practice` and verifies: score 60 stays on step 1, 61 advances to
+  step 2, step 2 needs at least 70, step 3 needs at least 80.
+
+Tests run:
+
+- `uv run python -m scripts.ebook_test` — ALL EBOOK TESTS PASSED.
+- `python -m py_compile` and `git diff --check` — pass.
+- Vercel Preview and merged-commit Production deployments — pass.
+- Oracle archive SHA-256 verified before deploy; Compose config validation,
+  image rebuild, internal health endpoint, and `.env` hash preservation — pass.
+  The replacement container is healthy and returns HTTP 200.
+
+Known issues: None.
+
+Next step: Complete ebook practice step 1 with a score between 61 and 69 and
+confirm the session advances to step 2.
+
 ## 2026-08-16 — Show original text in focused ebook reading
 
 Date: 2026-08-16 PDT
