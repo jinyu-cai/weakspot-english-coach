@@ -5,7 +5,7 @@
 >
 > Last source audit: 2026-07-30.
 >
-> Chinese edition: [`development.md`](development.md). Both editions use the same 0–24 chapter structure and the same
+> Chinese edition: [`development.md`](development.md). Both editions use the same 0–25 chapter structure and the same
 > source paths, commands, and implementation boundaries.
 
 ## 0. How to use this guide
@@ -110,7 +110,11 @@ Pydantic, and the layer at which failure occurs.
 
 ## 1. The project in one sentence
 
-WeakSpot turns authentic learner output into a long-lived, explainable learning state:
+Put simply: a learner writes, speaks, or imports English; the app checks it with AI, records the
+actual mistakes and successes with evidence, and later uses that record to decide what to practice
+next. Decisions come from accumulated history, not from one session.
+
+More formally, WeakSpot turns authentic learner output into a long-lived, explainable learning state:
 
 ```text
 writing / conversation / imported history / practice / Coach mission
@@ -182,7 +186,22 @@ https://enapi.jinxxx.de
 
 Middleware is shared processing around routes. `CORSMiddleware` in `apps/api/app/main.py` allows approved browser
 origins and credentials. CORS is a browser read policy, not authentication, and curl does not enforce it.
-Authentication comes from the signed HttpOnly `session` cookie or the guest identity created by the backend.
+Authentication comes from the signed HttpOnly `session` cookie or the guest identity created by the backend. The
+actual registration (`apps/api/app/main.py`):
+
+```py
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origin_list,
+    allow_origin_regex=r"https://weakspot-english-coach.*\.vercel\.app",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+`cors_origin_list` is the explicit allowlist; the regex additionally permits Vercel preview deployments so each PR
+preview can call the API without reconfiguring the backend.
 
 ### 2.4 Terminal, path, process, and port
 
@@ -326,8 +345,16 @@ def clamp(value: float, low: float = 0, high: float = 100) -> float:
     return min(value, high)
 ```
 
-Indentation is syntax. Type hints help editors, tests, and validation, but plain Python does not compile them like Java
-types.
+That is the simplified form. `apps/api/app/core/mastery.py` has a real `clamp` with the same name and a shorter body:
+
+```py
+def clamp(value: float, min_value: float = 0, max_value: float = 100) -> float:
+    return max(min_value, min(max_value, value))
+```
+
+`update_skill_from_error` calls it to keep `mastery` (each skill's 0–100 score) in range after a penalty, as in `clamp(old_mastery + severity_penalty(severity))` — subtract the severity penalty, then clamp back into 0–100.
+
+Indentation is syntax. Type hints help editors, tests, and validation, but plain Python does not compile them like Java types.
 
 Common project types:
 
@@ -353,8 +380,7 @@ def display_name(nickname: str | None = None) -> str:
 ```
 
 `Literal` narrows an arbitrary string to a fixed set. `str | None` means the value may be a string or `None`.
-It does **not** make a parameter optional by itself; the `= None` default is what lets the caller omit it. Python
-does not reject a bad `Literal` at runtime by itself, so external JSON still needs Pydantic validation.
+It does **not** make a parameter optional by itself; the `= None` default is what lets the caller omit it. Python does not reject a bad `Literal` at runtime by itself, so external JSON still needs Pydantic validation.
 
 #### 4.2.1 Assignment, comparison, loops, and return
 
@@ -369,6 +395,19 @@ if score >= 80:
 else:
     status = "practice"
 ```
+
+The same "several `if` + a final fallback `return`" shape is `apps/api/app/core/mastery.py`'s `severity_penalty`, which returns a different penalty by error severity:
+
+```py
+def severity_penalty(severity: str) -> float:
+    if severity == "low":
+        return -3.0
+    if severity == "medium":
+        return -7.0
+    return -12.0
+```
+
+It returns numbers rather than strings, but the skeleton is identical to `status` above.
 
 `False`, `None`, zero, and empty strings/lists/dicts are false-like. A `for` loop visits each item:
 
@@ -392,8 +431,15 @@ required = profile["level"]
 optional = profile.get("nickname")
 ```
 
-An out-of-range list index raises `IndexError`. A missing `dict[key]` raises `KeyError`; `.get()` returns `None` or a
-provided default. Do not use `.get()` for every required field merely to hide errors.
+An out-of-range list index raises `IndexError`. A missing `dict[key]` raises `KeyError`; `.get()` returns `None` or a provided default. Do not use `.get()` for every required field merely to hide errors.
+
+The textbook `.get(key, default)` is at `apps/api/app/core/mastery.py:34`:
+
+```py
+old_mastery = float(existing.get("mastery", DEFAULT_MASTERY)) if existing else DEFAULT_MASTERY
+```
+
+`DEFAULT_MASTERY = 70.0` sits at the top of the same file. A skill record with no `mastery` yet starts at 70 — a genuinely optional field with a safe default, not a hidden bug.
 
 ```py
 request.text          # attribute
@@ -483,6 +529,19 @@ selected = {**defaults, "mode": "deep"}
 
 The later `mode` wins, while `defaults` remains unchanged.
 
+`apps/api/app/core/mastery.py`'s `reverse_skill_from_error` is a real "keep most fields, change a few" merge. It undoes an error penalty when a submission is deleted:
+
+```py
+return {
+    **existing,
+    "mastery": clamp(old_mastery - severity_penalty(severity)),
+    "errorCount": max(0, old_error_count - 1),
+    "updatedAt": now,
+}
+```
+
+`**existing` spreads the old skill record (`userId`, `skillCode`, `label`, `correctCount`, …) as-is; only `mastery`, `errorCount`, and `updatedAt` are overwritten. `update_skill_from_practice` uses the same pattern.
+
 ### 4.4 Pydantic models
 
 ```py
@@ -495,8 +554,7 @@ class CoachMissionRequest(BaseModel):
     outputLanguage: Literal["en", "zh-CN"] = "en"
 ```
 
-Pydantic rejects invalid JSON before business logic runs and generates OpenAPI schemas. It validates structure, not
-factual truth.
+Pydantic rejects invalid JSON before business logic runs and generates OpenAPI schemas. It validates structure, not factual truth.
 
 For example, this body is rejected with 422 before Coach generation:
 
@@ -519,13 +577,11 @@ class LLMProviderConfig:
     model: str
 ```
 
-This object organizes data inside the process; it is not an HTTP schema and must never be serialized back to a browser.
+This object organizes data inside the process; it is not an HTTP schema and must never be serialized back to a browser. This is a security rule, not just a dataclass convention.
 
 ### 4.5 Synchronous and asynchronous work
 
-`def` is synchronous. `async def` can `await` non-blocking work. A synchronous boto3 or model SDK call does not become
-non-blocking merely because its route is `async`; the project uses worker threads for long blocking operations where
-needed.
+`def` is synchronous. `async def` can `await` non-blocking work. A synchronous boto3 or model SDK call does not become non-blocking merely because its route is `async`; the project uses worker threads for long blocking operations where needed.
 
 ```py
 try:
@@ -543,16 +599,39 @@ async def bad_route():
     time.sleep(5)  # blocks the event-loop thread
 ```
 
-The diagnosis route isolates synchronous provider/database work:
+The diagnosis route isolates synchronous provider/database work in exactly this way
+(`apps/api/app/api/routes/diagnose.py`; there is no function named `blocking_diagnose` — the real code passes lambdas
+into `run_in_executor`):
 
 ```py
 loop = asyncio.get_running_loop()
-result = await loop.run_in_executor(None, blocking_diagnose)
+
+# --- Fast pre-checks (profile + dedup) run in threadpool ---
+pre = await loop.run_in_executor(
+    None,
+    lambda: _pre_check(
+        req.userId, req.text, req.outputLanguage, request_id,
+        req.analysisContext,
+        req.learningContext.model_dump(mode="json") if req.learningContext else None,
+    ),
+)
+
+# Start the worker before returning the StreamingResponse...
+future = loop.run_in_executor(
+    None,
+    lambda: _run_diagnosis_job(
+        req, profile, text_hash, request_id, started,
+        diagnosis_mode, identity, llm_provider, pre["claim"],
+    ),
+)
 ```
 
+`_pre_check` and `_run_diagnosis_job` are ordinary synchronous functions. Their boto3/provider calls would block the
+event loop, so the route hands each of them to a worker thread with `run_in_executor(None, ...)` and either `await`s
+the result or polls `future.done()`.
+
 `await` does not make the provider faster. It lets the event loop serve another request while a worker thread waits.
-As an experiment, send a slow diagnosis and a health request at the same time. If health also freezes, a blocking call
-probably escaped worker isolation.
+As an experiment, send a slow diagnosis and a health request at the same time. If health also freezes, a blocking call probably escaped worker isolation.
 
 ### 4.6 Mutation, copies, and side effects
 
@@ -579,29 +658,104 @@ def health() -> dict:
     return {"status": "ok"}
 ```
 
-The decorator registers or wraps the function. It is not a comment; HTTP reachability still requires the router to be
-included by `main.py`.
+The decorator registers or wraps the function. It is not a comment; HTTP reachability still requires the router to be included by `main.py`.
 
 ```py
 with open("example.txt", encoding="utf-8") as file:
     content = file.read()
 ```
 
-A context manager performs paired enter/exit work and closes the resource even after an exception. You need not
-implement one yet, but you must recognize the shape.
+A context manager performs paired enter/exit work and closes the resource even after an exception. You need not implement one yet, but you must recognize the shape.
 
 ## 5. FastAPI from zero
 
-### 5.1 FastAPI and Uvicorn
+### 5.1 FastAPI and Uvicorn: the app and the server that runs it
 
-FastAPI declares routes, validation, dependencies, and OpenAPI. Uvicorn is the ASGI server that listens on a port.
+Two different programs work together to serve the API. Keep them separate in your head:
+
+- **FastAPI** is the Python library you *write against*. It turns a decorated function such as
+  `@router.get("/health")` into an endpoint, validates request/response JSON with Pydantic models,
+  resolves dependencies, and auto-generates the OpenAPI/Swagger page at `/docs` (Section 5.4).
+  FastAPI itself never listens on a port and never touches the network.
+- **Uvicorn** is a *different* program, installed separately as `uvicorn[standard]` in
+  `apps/api/pyproject.toml`. It is the web server: it waits on a port (8000), reads the raw HTTP
+  request, hands it to your FastAPI app, and writes the response back to the browser.
+
+Think of a restaurant. FastAPI is the menu and the kitchen: it knows every dish (route) and how to
+prepare it (the Python function). Uvicorn is the front-door waiter: it stands at the door (the port),
+takes the customer's order (an HTTP request), calls the kitchen, and carries the finished dish out.
+Neither is useful alone. A menu without a waiter never receives an order; a waiter without a kitchen
+has nothing to serve.
+
+You can prove that. `app/main.py` only *creates* the FastAPI object and registers routers; it contains no code that listens on a port. Try to run it as an ordinary script:
+
+```bash
+cd apps/api
+uv run python app/main.py
+```
+
+It fails immediately with `ModuleNotFoundError: No module named 'app'`. The reason is instructive:
+when Python runs a *file* as a script, it puts that file's folder on the import path, so
+`from app.config import settings` cannot find the `app` package. The file is designed to be loaded as
+the *module* `app.main` — exactly the left half of the `app.main:app` string that Uvicorn uses. Even
+if it imported cleanly, all it would do is create the `app` object and exit; no process listens on a
+port, so no browser can reach it. The API becomes reachable only when Uvicorn runs that object:
 
 ```bash
 cd apps/api
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
-`app.main:app` means “import `app/main.py` and use the object named `app`.”
+Read the command piece by piece:
+
+| Piece          | Meaning                                                                                                                                                                                                       |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cd apps/api`  | Move into the backend folder so Python can find the `app` package (Section 4.1).                                                                                                                              |
+| `uv`           | The tool that manages this project's Python environment (Section 14.1).                                                                                                                                       |
+| `run`          | “Run the next command inside the project's virtualenv,” with every dependency from `pyproject.toml` available. Uvicorn is not installed globally, so `uv run` is what makes the bare word `uvicorn` work.     |
+| `uvicorn`      | The web server program described above.                                                                                                                                                                       |
+| `app.main:app` | *What* to run: import the module `app.main` (the file `app/main.py`) and use the object named `app` — the `FastAPI(...)` instance created in that file. The colon separates “module path” from “object name.” |
+| `--reload`     | Watch source files and restart the server automatically after each edit. Convenient while learning, never for production.                                                                                     |
+| `--port 8000`  | Which port to listen on. The frontend uses 3000, so the backend uses 8000 to stay separate (Section 2.4).                                                                                                     |
+
+**When do you use which command?**
+
+- `uv run uvicorn app.main:app ...` runs the real backend with whatever configuration your `.env` provides. The mini project in Chapter 23.9 uses exactly this command.
+- The no-key environment in Section 14.2 instead runs `uv run python -m scripts.dev_server`. That script does extra setup first — it starts an in-process fake AWS (moto), creates a temporary DynamoDB table, and turns on fake AI — and only then starts Uvicorn internally (`scripts/dev_server.py` calls `uvicorn.run("app.main:app", ...)`). Use this when you want a backend that works without any API keys. The whole extra setup is:
+
+```py
+os.environ.setdefault("USE_FAKE_AI", "true")
+os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
+mock = moto.mock_aws()
+mock.start()
+try:
+    create_table()                      # scripts/create_table.py
+    # reload=False is REQUIRED: reload spawns a subprocess where moto is not active.
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=False, log_level="info")
+finally:
+    mock.stop()
+```
+
+**Verify it yourself.** With the server running:
+
+```bash
+curl -i http://localhost:8000/api/v1/health
+```
+
+Expect `HTTP/1.1 200` and a JSON body beginning `{"status":"ok", ...}`. Now stop the server with `Ctrl+C` and repeat the curl: the connection is refused. The route function still exists, but nothing listens on the port — that is the proof that Uvicorn is the process making the API reachable.
+
+**Failure counterexamples.** Type the object name wrong on purpose:
+
+```bash
+cd apps/api
+uv run uvicorn app.main:does_not_exist --reload --port 8000
+```
+
+Uvicorn fails to start with an `AttributeError: module 'app.main' has no attribute 'does_not_exist'`:
+it refuses to serve an API that was never defined. Run the same command from the repository root
+instead of `apps/api`, and you get `ModuleNotFoundError: No module named 'app'` — Python cannot find
+the package at all. Both errors point back to the same rule: the colon string is “find this module,
+then find this object inside it.”
 
 ### 5.2 Application startup and routers
 
@@ -614,7 +768,9 @@ app.include_router(coach.router, prefix="/api/v1", tags=["coach"])
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 ```
 
-A router can add its own prefix:
+A router is a group of related endpoints, usually one per file (`diagnose.py`, `chat.py`,
+`memory.py`). That is why `main.py` stays short: it attaches whole routers rather than listing every
+endpoint. A router can add its own prefix:
 
 ```py
 router = APIRouter(prefix="/memory")
@@ -639,26 +795,60 @@ Writing a module and registering an HTTP route are separate actions.
 
 ### 5.3 Validation and dependency injection
 
+Dependency injection is FastAPI's name for “run some setup for me before my route body runs.” Here FastAPI calls `rate_limited("memory")` first — it checks the caller's quota and returns the signed-in identity — and only then calls `retrieve` with the resolved `identity`.
+
 ```py
 @router.post("/retrieve")
-def retrieve(
-    req: RetrieveMemoryRequest,
-    identity: Identity = Depends(rate_limited("memory")),
-):
-    req.userId = identity.user_id
+def retrieve(req: RetrieveMemoryRequest, identity: Identity = Depends(rate_limited("memory"))):
+    pack = retrieve_memory_pack(
+        identity.user_id,
+        req.query,
+        token_budget=req.tokenBudget,
+        limit=req.limit,
+        purpose="preview",
+    )
+    return {"memoryPack": pack}
 ```
 
 FastAPI first parses JSON, validates `RetrieveMemoryRequest`, resolves identity, checks quota, and then calls the route.
-The server overwrites body `userId`; a client is never allowed to impersonate another user by editing JSON.
+This is `apps/api/app/api/routes/memory.py` verbatim, and it is worth reading closely: the route never reads
+`req.userId` and never writes `identity.user_id` into the body — it simply uses the server-resolved `identity.user_id`
+directly. (`RetrieveMemoryRequest` carries an optional `userId` field for client compatibility, and the route ignores
+it.) A client is never allowed to impersonate another user by editing JSON, because the server never consults
+body-supplied identity. Routes that *do* need the resolved ID further downstream, like Diagnose, assign it explicitly
+with `req.userId = identity.user_id` (Section 7.2).
 
 ### 5.4 Streaming and generated docs
 
-Deep diagnosis can stream whitespace keepalives while a worker performs the long model/database path. The final bytes
-still form valid JSON. When replacing a dependency-created response with `StreamingResponse`, guest cookies must be
-copied to the actual response.
+Streaming means the server sends the first bytes of the response before the whole result is ready, so the connection stays open while a slow model call finishes. A keepalive is a tiny harmless byte sent on schedule so an idle connection is not killed by a proxy or timeout.
 
-Open `http://localhost:8000/docs` after startup. Swagger shows every path, schema, and response and is the best first
-debugging client.
+Deep diagnosis can stream whitespace keepalives while a worker performs the long model/database path. The final bytes still form valid JSON. When replacing a dependency-created response with `StreamingResponse`, guest cookies must be copied to the actual response. The whole mechanism is one small block in `apps/api/app/api/routes/diagnose.py`:
+
+```py
+future = loop.run_in_executor(None, lambda: _run_diagnosis_job(...))
+
+async def generate():
+    # Immediate keepalive flushes HTTP headers through Cloudflare.
+    yield b" "
+    while not future.done():
+        await asyncio.sleep(10)
+        if not future.done():
+            yield b" "
+    try:
+        result = future.result()
+    except ValueError as e:
+        result = {"error": True, "detail": f"AI error [{request_id}]: {e}"}
+    yield json.dumps(result, ensure_ascii=False, default=_json_default).encode()
+
+stream = StreamingResponse(generate(), media_type="application/json", headers=resp_headers)
+# Dependencies attach a first-visit guest cookie to FastAPI's injected
+# Response. Copy it to the explicit streaming response...
+for name, value in response.raw_headers:
+    if name.lower() == b"set-cookie":
+        stream.raw_headers.append((name, value))
+```
+
+Open `http://localhost:8000/docs` after startup. Swagger shows every path, schema, and response and is the best first debugging client.
 
 The wire body of a long diagnosis is approximately:
 
@@ -669,12 +859,9 @@ second 20 -> " "
 finish    -> {"submissionId":"sub_123", ...}
 ```
 
-Combined, the leading spaces plus JSON are still valid. Sending a word such as `processing` would corrupt the final
-JSON body. The streaming response must also copy a guest cookie created by a dependency; otherwise the next request
-would appear to come from a different guest.
+Combined, the leading spaces plus JSON are still valid. Sending a word such as `processing` would corrupt the final JSON body. The streaming response must also copy a guest cookie created by a dependency; otherwise the next request would appear to come from a different guest.
 
-Once 200 headers have been flushed, a later model/storage failure cannot change the HTTP status. Diagnose/Import then
-finish with an HTTP 200 body such as `{"error":true,"code":"...","detail":"..."}`. `apiFetch` therefore checks both
+Once 200 headers have been flushed, a later model/storage failure cannot change the HTTP status. Diagnose/Import then finish with an HTTP 200 body such as `{"error":true,"code":"...","detail":"..."}`. `apiFetch` therefore checks both
 `response.ok` and `payload.error`:
 
 ```text
@@ -683,22 +870,25 @@ failure after stream headers  -> HTTP 200 + error body
 success                       -> HTTP 200 + normal typed body
 ```
 
-Keepalive prevents an idle proxy timeout; it does not reset the browser's 20/110-second total deadline.
+Keepalive prevents an idle proxy timeout; it does not reset the browser's 20/110/610-second total deadline (ordinary
+API work 20 s, most model work 110 s, streaming Diagnose 610 s — Section 13.2).
 
 ## 6. Why the code is layered
 
-| Layer | Owns | Must not own |
-| --- | --- | --- |
-| `models/` | Input/output shape and validation | Database calls |
-| `api/routes/` | HTTP, auth, status codes, orchestration | All algorithms |
-| `services/` | Prompts, memory, decisions, business rules | UI rendering |
-| `db/repositories.py` | DynamoDB reads, writes, conditions, pages | Mission design |
-| `core/` | Pure mastery/taxonomy rules | Network calls |
-| `config.py` | Environment-backed configuration | Real committed secrets |
+| Layer                | Owns                                       | Must not own           |
+| -------------------- | ------------------------------------------ | ---------------------- |
+| `models/`            | Input/output shape and validation          | Database calls         |
+| `api/routes/`        | HTTP, auth, status codes, orchestration    | All algorithms         |
+| `services/`          | Prompts, memory, decisions, business rules | UI rendering           |
+| `db/repositories.py` | DynamoDB reads, writes, conditions, pages  | Mission design         |
+| `core/`              | Pure mastery/taxonomy rules                | Network calls          |
+| `config.py`          | Environment-backed configuration           | Real committed secrets |
 
 This separation lets tests replace AI and DynamoDB without rewriting routes.
 
 ## 7. Diagnose: a complete request trace
+
+This chapter follows one Diagnose button click from the browser to the database and back, giving every layer from Chapter 6 a concrete job.
 
 Use one example throughout this chapter:
 
@@ -711,8 +901,7 @@ Unsupported quote: "at school" does not occur in the learner text.
 
 ### 7.1 Frontend and request
 
-`apps/web/app/page.tsx` gathers text. `apps/web/lib/api-client.ts` adds the base URL, cookies, language, model-selection
-headers, timeout, and error parsing:
+`apps/web/app/page.tsx` gathers text. `apps/web/lib/api-client.ts` adds the base URL, cookies, language, model-selection headers, timeout, and error parsing:
 
 ```ts
 return apiFetch<DiagnoseResponse>("/diagnose", {
@@ -730,17 +919,155 @@ return apiFetch<DiagnoseResponse>("/diagnose", {
 
 `apps/api/app/api/routes/diagnose.py`:
 
-1. resolves model configuration and identity;
-2. replaces `req.userId`;
-3. hashes normalized text, language, context, and learning metadata;
-4. claims a diagnosis request so concurrent retries do not double-write;
-5. returns a completed draft for a duplicate;
-6. retrieves a bounded Memory Pack;
-7. calls the structured diagnosis service;
-8. persists the submission, errors, notes, evidence, profile, and memories.
+1. **resolves model configuration and identity** — FastAPI runs the two `Depends(...)` before the function body:
 
-The central lesson is that HTTP retries are normal. A request ID/hash plus conditional repository claim makes expensive
-side effects idempotent.
+```py
+@router.post("/diagnose")
+async def diagnose(
+    req: DiagnoseRequest,
+    response: Response,
+    llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
+    identity: Identity = Depends(rate_limited("diagnose")),
+):
+```
+
+`get_llm_provider` (in `app/api/deps.py`) parses the `X-LLM-*` headers into a provider choice; `rate_limited("diagnose")` resolves the cookie/header identity and raises 429 before any model call once the daily quota is spent.
+
+2. **replaces `req.userId`** — the first line of the body:
+
+```py
+    req.userId = identity.user_id
+```
+
+The client-sent `userId` is a compatibility field, not authorization. A guest cookie resolves to e.g. `guest_abc`; whatever the body claimed is overwritten before anything else reads it.
+
+3. **hashes normalized text, language, context, and learning metadata** — `_pre_check` calls `_language_text_hash`:
+
+```py
+def _language_text_hash(text, output_language, analysis_context=None, learning_context=None) -> str:
+    context_hash = (
+        f":context:{normalized_text_hash(analysis_context)}"
+        if analysis_context
+        else ""
+    )
+    learning_hash = (
+        f":learning:{normalized_text_hash(json.dumps(learning_context, sort_keys=True))}"
+        if learning_context
+        else ""
+    )
+    return f"{output_language}:{normalized_text_hash(text)}{context_hash}{learning_hash}"
+```
+
+`normalized_text_hash` (`app/core/text_hash.py`) lowercases the text and collapses whitespace, so "Yesterday I went to library." and "yesterday  i  went to library" share one hash — but two different sentences that merely contain the same grammar mistake hash differently, which is what lets a recurring weakness be counted twice.
+
+4. **claims a diagnosis request so concurrent retries do not double-write** — `_pre_check` asks the repository for a conditional claim keyed by user + hash:
+
+```py
+request_id = uuid4().hex[:10]
+...
+claim = claim_diagnosis_request(user_id, text_hash, request_id)
+if claim.get("claimState") == "complete":
+    return _pre_check(user_id, text, output_language, request_id, analysis_context, learning_context)
+if claim.get("claimState") != "acquired":
+    raise DiagnosisInProgressError("This identical diagnosis is already being processed.")
+```
+
+Inside `db/repositories.py`, the first acquire is an atomic `put_item` guarded by `ConditionExpression="attribute_not_exists(PK)"`, so two concurrent identical requests cannot both win. `"complete"` means someone else finished while we were checking — `_pre_check` re-runs and now returns their saved result as a duplicate. Anything else (`"busy"`) becomes the 409:
+
+```py
+except DiagnosisInProgressError as e:
+    raise HTTPException(
+        status_code=409,
+        detail={"code": "diagnosis_in_progress", "message": str(e)},
+    ) from e
+```
+
+The takeover path uses a conditional update that only succeeds when `#status = :failed OR attribute_not_exists(processingClaimId) OR processingClaimedAtEpoch < :stale` (stale defaults to 900 s) — that is the "failed, ownerless, or stale" rule in code.
+
+5. **returns a completed draft for a duplicate** — before claiming, `_pre_check` reads the saved hash row:
+
+```py
+existing_hash = get_submission_hash(user_id, text_hash)
+if existing_hash and (
+    existing_hash.get("status") == "complete"
+    or not existing_hash.get("status")
+):
+    prior = get_submission(
+        user_id,
+        existing_hash.get("submissionCreatedAt", ""),
+        existing_hash.get("submissionId", ""),
+    )
+    if prior:
+        prior_errors = list_errors_for_submission(
+            user_id,
+            existing_hash.get("submissionCreatedAt", ""),
+            existing_hash.get("submissionId", ""),
+        )
+        ...
+        return {"duplicate": True, "response": {"submission": prior, ...}}
+```
+
+and the route returns that reconstructed response without any model call:
+
+```py
+if pre.get("duplicate"):
+    return pre["response"]
+```
+
+6. **retrieves a bounded Memory Pack** — in the worker (`_llm_and_persist`), before the model call:
+
+```py
+memory_pack = retrieve_memory_pack(
+    req.userId,
+    f"Diagnose this learner's writing and personalize useful feedback: {req.text[:1200]}",
+    purpose="diagnosis",
+)
+```
+
+A retrieval failure only logs and continues with an empty pack — Memory is an enhancement, not a reason to fail the diagnose:
+
+```py
+except Exception:
+    logger.exception("diagnose[%s] memory_retrieval_error", request_id)
+    memory_pack = {"text": "", "items": [], "estimatedTokens": 0, "traceId": None}
+```
+
+7. **calls the structured diagnosis service** — reuse a draft saved by a previous attempt of the same claim, or pay for the model call and save the draft:
+
+```py
+if isinstance(claim.get("diagnosticDraft"), dict):
+    diagnostic = DiagnosticAIResult.model_validate(claim["diagnosticDraft"])
+else:
+    diagnostic = diagnose_english_text(
+        req.text,
+        diagnosis_mode=diagnosis_mode,
+        output_language=req.outputLanguage,
+        llm_provider=llm_provider,
+        max_output_tokens=None if identity.has_unlimited_llm_quota else identity.max_output_tokens,
+        trace_id=request_id,
+        memory_context=memory_pack.get("text"),
+        analysis_context=req.analysisContext,
+        learning_context=req.learningContext,
+    )
+    save_diagnosis_draft(req.userId, text_hash, request_id, diagnostic.model_dump(mode="json"))
+```
+
+8. **persists the submission, errors, notes, evidence, profile, and memories** — each artifact is written in turn, and only at the very end does the hash row flip to `complete`:
+
+```py
+save_submission(submission)                                              # original/corrected text, score, CEFR
+save_error(error)                                                        # one row per grounded error
+put_skill(skill)                                                         # mastery moved down by severity
+save_note(note)                                                          # micro-lessons
+save_profile(profile)                                                    # totalSubmissions, estimatedLevel
+saved_memories = remember_candidates(req.userId, memory_candidates, ...)  # MemoryAgent
+learning_evidence.append(record_evidence(req.userId, ...))                # EvidenceEvent
+put_submission_hash(req.userId, text_hash, submission_id, now, request_id)
+```
+
+`put_submission_hash` is itself a conditional update guarded by `processingClaimId = :claim AND #status = :processing` — it is the write that marks the claim complete. If the worker dies mid-way instead, `_run_diagnosis_job` catches the failure and calls `release_diagnosis_request`, which sets `status = "failed"` so a later retry can take the claim over instead of being 409'd forever.
+
+The central lesson is that HTTP retries are normal. A request ID/hash plus conditional repository claim makes expensive side effects idempotent.
 
 For example:
 
@@ -750,10 +1077,8 @@ concurrent active retry  -> 409 diagnosis_in_progress
 later identical request  -> duplicate=true, no second mastery update
 ```
 
-The hash includes normalized learner text, output language, analysis context, and learning metadata. The same sentence
-under a different audience/register context may therefore produce a new transfer observation.
-Only a failed, ownerless, or stale claim can be acquired by another request; an already saved diagnostic draft can then
-avoid a second model call.
+The hash includes normalized learner text, output language, analysis context, and learning metadata. The same sentence under a different audience/register context may therefore produce a new transfer observation.
+Only a failed, ownerless, or stale claim can be acquired by another request; an already saved diagnostic draft can then avoid a second model call.
 
 ### 7.3 Structured AI boundary
 
@@ -768,7 +1093,15 @@ Pydantic JSON schema
 ```
 
 The server then checks evidence grounding. An error quote or positive-evidence quote must come from learner text.
-Absence of an error is not automatically a success.
+Absence of an error is not automatically a success. The check itself is deliberately strict substring matching after
+case/normalization (`_grounded_quote` in `apps/api/app/api/routes/diagnose.py`):
+
+```py
+def _grounded_quote(student_text: str, quote: str) -> bool:
+    normalized_text = " ".join(student_text.casefold().split())
+    normalized_quote = " ".join((quote or "").casefold().split())
+    return bool(normalized_quote and normalized_quote in normalized_text)
+```
 
 Two failures illustrate the two validation layers:
 
@@ -781,7 +1114,22 @@ originalText = "at school" with an otherwise valid object
   -> grounding check fails because the quote is absent
 ```
 
-Structured output constrains shape. Grounding constrains whether a claim has observable support.
+Structured output constrains shape. Grounding constrains whether a claim has observable support. The one-repair-retry
+step from the diagram above is literal — `ai_client.py` appends the validation error to the messages and asks for
+valid JSON only once:
+
+```py
+try:
+    parsed = response_model.model_validate_json(content)
+    return parsed
+except ValidationError as e:
+    messages.append({
+        "role": "user",
+        "content": f"Your previous json was invalid: {e}. "
+        "Return corrected valid json only.",
+    })
+    # ... one retry, then the error propagates as an AI error
+```
 
 ### 7.4 Persistence and learning evidence
 
@@ -842,7 +1190,33 @@ Weakness verification follows a conservative policy:
 | Learner creates it manually | immediately `confirmed` |
 
 Sources are deduplicated by `(sourceType, sourceId)`. Repeating the same claim three times inside one submission does
-not make three independent observations.
+not make three independent observations. The table is computed, not hand-maintained — `_verification_snapshot` in
+`apps/api/app/services/memory_service.py`:
+
+```py
+refs = list(source_refs)
+independent_sources = {
+    (str(ref.get("sourceType") or ""), str(ref.get("sourceId") or ""))
+    for ref in refs
+    if ref.get("sourceId")
+}
+independent_days = {
+    str(ref.get("createdAt") or "")[:10]
+    for ref in refs
+    if str(ref.get("createdAt") or "")[:10]
+}
+if source_type == "manual":
+    state, reason = "confirmed", "learner_confirmed"
+elif memory_kind == "weakness":
+    if (len(independent_sources) >= 3 and len(independent_days) >= 2
+            and confidence >= 0.7):
+        state, reason = "confirmed", "repeated_across_days"
+    elif len(independent_sources) >= 2 and confidence >= 0.7:
+        state, reason = "observed", "repeated_independent_observations"
+    else:
+        state, reason = "candidate", "needs_repeated_weakness_evidence"
+# non-weakness memories: 2+ sources -> confirmed, 1 strong -> observed, else candidate
+```
 
 Skill state keeps lifetime counters and a bounded recent window. If 25 opportunities contain five failures, while the
 last 20 contain four:
@@ -890,6 +1264,9 @@ final mastery number would lose which activity, learner quote, and hint level ca
 
 #### ActivityRun is a constrained state machine
 
+A state machine is a value allowed to move only through a fixed set of states. A run may move forward,
+never backward:
+
 ```text
 assigned -> started / completed / abandoned / skipped
 started  -> completed / abandoned / skipped
@@ -912,7 +1289,14 @@ requests based on stale state from silently overwriting each other.
 
 Even if a caller sends `success`, `supportLevel > 0` normalizes it to `hinted_success`; assisted work cannot masquerade
 as independent mastery. `no_opportunity` requires `opportunityPresent=false`; the other outcomes require `true`.
-Invalid combinations return 422 at the Pydantic boundary.
+Invalid combinations return 422 at the Pydantic boundary. The normalization is explicit in `_apply_evidence`
+(`apps/api/app/services/learning_service.py`):
+
+```py
+outcome = request.outcome
+if outcome == "success" and request.supportLevel > 0:
+    outcome = "hinted_success"
+```
 
 #### How one event changes the numbers
 
@@ -934,7 +1318,31 @@ abilityMean = alpha / (alpha + beta) * 100
 For a new state at `alpha=1, beta=1`, an ordinary-difficulty `.5`, confidence `1`, immediate independent success has
 weight `1`. The result is `alpha=2.2`, `beta=1`, and `abilityMean=68.75`. This is a current projection, not proof of
 68.75% “true ability.” Uncertainty falls as weighted evidence accumulates. A legacy learner may start with a bounded
-prior derived from old Skill evidence rather than 1/1.
+prior derived from old Skill evidence rather than 1/1. The two functions behind the formula
+(`apps/api/app/services/learning_service.py`):
+
+```py
+def _evidence_weight(request: RecordEvidenceRequest) -> float:
+    weight = request.evaluatorConfidence * (0.75 + 0.5 * request.taskDifficulty)
+    if request.delayed:
+        weight *= 1.25
+    if request.novelContext:
+        weight *= 1.15
+    return _clamp(weight, 0.05, 1.75)
+
+
+def _update_beta_state(alpha: float, beta: float, outcome: str, weight: float):
+    if outcome == "success":
+        alpha += 1.2 * weight
+    elif outcome == "hinted_success":
+        alpha += 0.45 * weight
+        beta += 0.15 * weight
+    elif outcome == "failure":
+        beta += weight
+    elif outcome == "avoided":
+        beta += 0.35 * weight
+    return alpha, beta
+```
 
 `LearningState` retains lifetime counters plus only the latest 20 `recentEvidence` items for current rates. Coverage
 moves from `unassessed`, to `exploring`, to `enough_evidence` after at least five opportunities with variety across
@@ -948,7 +1356,31 @@ becoming speaking mastery.
 The event ID is a hash of `userId + clientEventId`. An exact retry returns the original event with `duplicate=true`
 and does not increment state again. The first write conditionally commits EvidenceEvent and LearningState together.
 If another request changed the state version first, the service rereads and recomputes up to six times. This prevents
-both a half-written “event without state” and a lost update.
+both a half-written “event without state” and a lost update. The whole loop is `record_evidence`
+(`apps/api/app/services/learning_service.py`):
+
+```py
+event_id = "ev_" + hashlib.sha256(
+    f"{user_id}\0{request.clientEventId}".encode("utf-8")
+).hexdigest()[:24]
+existing_event = get_evidence_event(user_id, event_id)
+if existing_event:
+    return {"event": existing_event, "state": ..., "duplicate": True}
+
+for _attempt in range(6):
+    state = get_learning_state(user_id, request.skillCode)      # reread
+    ...
+    try:
+        created = save_evidence_with_learning_state(
+            event, updated_state, expected_state_version=expected_version,
+        )
+        if created:
+            return {"event": event, "state": updated_state, "duplicate": False}
+        ...
+    except LearningStateConflictError:
+        continue   # someone else changed the version first: reread and recompute
+raise RuntimeError("Learning state remained busy; retry this evidence event.")
+```
 
 #### Runnable Swagger lab
 
@@ -1052,8 +1484,28 @@ X-LLM-Server-Deep-Model: openrouter-deep
 X-LLM-Server-Fast-Model: deepseek-fast
 ```
 
-`get_llm_provider` resolves them against the server catalog. BYOK is a separate path that requires a browser-provided
-API key and model and cannot be mixed with server selection.
+`get_llm_provider` (`apps/api/app/api/deps.py`) resolves them against the server catalog. BYOK is a separate path that
+requires a browser-provided API key and model and cannot be mixed with server selection — mixing is a 400, not a silent
+preference:
+
+```py
+if requested_server_deep_model or requested_server_fast_model:
+    if has_byok_values or requested_server_model:
+        raise HTTPException(status_code=400,
+            detail="Choose either a server model pair, a legacy server model, or a custom LLM provider.")
+```
+
+The deployment's default pair is resolved in `apps/api/app/services/model_catalog.py`:
+
+```py
+def default_server_model_ids(config: Settings = settings) -> tuple[str, str] | None:
+    if config.uses_openrouter:
+        fast_id = "deepseek-fast" if config.uses_deepseek else "openrouter-fast"
+        return "openrouter-deep", fast_id
+    if config.uses_qwen_model_studio:
+        return "qwen-deep", "qwen-fast"
+    ...
+```
 
 For example, a session created with `openrouter-deep` keeps its stored provider/model even if the global selector changes
 tomorrow. New sessions use the new choice. Mixing server-selection headers with BYOK is rejected rather than choosing
@@ -1124,8 +1576,9 @@ else:
     )
 ```
 
-The Responses path uses `store=False`, a hashed safety identifier, a server-only key, and fails closed when enabled
-without a key or with a model not beginning with `gpt-5.6`. The UI shows the evidence panel only when the response
+The Responses path uses `store=False`, a hashed safety identifier, a server-only key, and fails closed
+when enabled without a key or with a model not beginning with `gpt-5.6` — it refuses to run rather
+than risk running without the right setup. The UI shows the evidence panel only when the response
 itself reports OpenAI generation metadata.
 
 For example, `runtimeMode="selected_provider"` may generate a valid guided scene, but the UI must not label its
@@ -1195,8 +1648,26 @@ save_memory(memory)
 get_chat_session(user_id, session_id)
 ```
 
-`db/serialization.py` converts Python floats to DynamoDB `Decimal` and converts them back on reads. List functions must
-follow `LastEvaluatedKey` when the user-facing result is unbounded.
+`db/serialization.py` converts Python floats to DynamoDB `Decimal` and converts them back on reads. The two functions
+(`apps/api/app/db/serialization.py`) are the whole boundary:
+
+```py
+def to_dynamo(value):
+    if isinstance(value, float):
+        return Decimal(str(value))   # str() avoids binary-float drift in Decimal
+    if isinstance(value, list):
+        return [to_dynamo(v) for v in value]
+    if isinstance(value, dict):
+        return {k: to_dynamo(v) for k, v in value.items()}
+    return value
+
+def clean(value):
+    if isinstance(value, Decimal):
+        return int(value) if value % 1 == 0 else float(value)
+    ...
+```
+
+List functions must follow `LastEvaluatedKey` when the user-facing result is unbounded.
 
 For example:
 
@@ -1247,7 +1718,25 @@ replay/variation/transfer stages so four parallel questions do not collapse into
 
 Submission uses `clientAttemptId`. The browser keeps the ID after a failed response and changes it only when the learner
 changes the answer or exercise. Repository claims and immutable grade drafts prevent a retry from grading or updating
-mastery twice.
+mastery twice — `_claim_practice_request` in `apps/api/app/api/routes/practice.py`:
+
+```py
+stable_client_id = client_attempt_id or f"server_{uuid4().hex}"
+claim = claim_practice_attempt_request(
+    user_id, stable_client_id,
+    _practice_request_hash(endpoint, payload),   # endpoint + answer + exercise ID
+    claim_id,
+)
+if claim.get("claimState") == "complete":
+    return stable_client_id, claim_id, claim     # replay: stored result, no new grade
+if claim.get("claimState") != "acquired":
+    raise HTTPException(status_code=409, detail={
+        "code": "practice_attempt_in_progress",
+        "message": "This practice attempt is already being processed."})
+```
+
+Reusing the same ID with a **different** answer fails the payload-hash check instead of silently regrading; the saved
+`gradeDraft` lets a retried worker skip a second model call.
 
 A plan request can say:
 
@@ -1259,8 +1748,28 @@ A plan request can say:
 }
 ```
 
-`weekly` bounds generation context; it does not delete older errors. The validated output has exactly seven days,
-two tasks per day, three exercises per task, and 15 minutes per task.
+`weekly` bounds generation context; it does not delete older errors — `create_plan` in
+`apps/api/app/api/routes/plan.py` picks the window explicitly:
+
+```py
+if req.errorScope == "weekly":
+    recent_errors = list_weekly_errors(req.userId)
+else:
+    recent_errors = list_recent_errors(req.userId, limit=50)
+skills = sorted(..., key=lambda skill: float(skill.get("mastery", 50)))[:20]
+```
+
+The validated output has exactly seven days, two tasks per day, three exercises per task, and 15 minutes per task —
+enforced by `apps/api/app/models/plan.py`, not by asking the model nicely:
+
+```py
+PLAN_TASKS_PER_DAY = 2
+PLAN_EXERCISES_PER_TASK = 3
+# LearningPlanAIResult:
+days: List[LearningPlanDayAI] = Field(min_length=7, max_length=7)
+# LearningPlanDayAI.tasks:
+Field(min_length=PLAN_TASKS_PER_DAY, max_length=PLAN_TASKS_PER_DAY)
+```
 
 A four-question mixed session sends a shared session plus distinct slots:
 
@@ -1283,6 +1792,23 @@ Manual History deletion removes the submission, errors, source notes, hash, and 
 mastery/Memory. It does **not yet** retract the newer `RUN#`, `EVIDENCE#`, and recomputed `LEARNING#` records, so
 Learning Overview may retain that source until a concurrency-safe evidence-rebuild path is implemented. Automatic
 weakness resolution does not delete Notebook notes; it changes their reversible Current/Previous classification.
+The cascade is explicit in `delete_history_entry` (`apps/api/app/api/routes/history.py`):
+
+```py
+for err in errors:
+    reverted = reverse_skill_from_error(skill, err.get("severity", "medium"), now)
+    if int(reverted.get("errorCount", 0)) <= 0 and int(reverted.get("correctCount", 0)) <= 0:
+        delete_skill(user_id, code)          # skill is back to pristine: drop the row
+    else:
+        put_skill(reverted)
+    delete_error(user_id, err.get("createdAt", createdAt), err["id"])
+for note in notes:
+    delete_note(user_id, note.get("createdAt", createdAt), note["id"])
+delete_submission(user_id, createdAt, submission_id)
+delete_submission_hash(user_id, submission.get("textHash") or ...)
+updated_memories = forget_memories_from_source(user_id, submission_id)
+profile["totalSubmissions"] = max(0, int(profile.get("totalSubmissions", 0)) - 1)
+```
 
 Daily Wins aggregates server events by the learner's timezone. Session Win is different: it is a frontend-only,
 per-completion card stored in localStorage for a welcome-back hint.
@@ -1301,7 +1827,17 @@ sub_123 has 2 errors and 1 note
 Deleting only the submission row would leave a weakness pointing to a nonexistent source.
 
 Timezone example: `2026-07-29 23:30 PDT` is already `2026-07-30 06:30Z`. A Los Angeles learner's event belongs
-to July 29. Slicing the UTC date would move the streak to the wrong day.
+to July 29. Slicing the UTC date would move the streak to the wrong day. The rule is one function in
+`apps/api/app/services/stats_service.py`:
+
+```py
+def local_date_for(created_at: str, tz_name: str | None) -> str:
+    tz = resolve_timezone(tz_name)
+    return parse_iso_datetime(created_at).astimezone(tz).date().isoformat()
+```
+
+An unknown timezone name falls back to UTC (`resolve_timezone`), so a typo in a stored timezone degrades to UTC
+counting rather than crashing the stats page.
 
 ### 10.3 Text chat and imported history
 
@@ -1311,13 +1847,35 @@ bounded before analysis.
 
 For example, when a session contains 80 stored messages and `memory_chat_recent_messages=12`, the 81st reply prompt
 uses the latest 12 plus bounded Memory. DynamoDB still keeps all 80. Bounded model context is not deletion of the
-learner's archive.
+learner's archive — `apps/api/app/services/chat_service.py` slices only the model-facing list:
+
+```py
+for msg in history[-settings.memory_chat_recent_messages:]:
+    role = msg.get("role", "user")
+    content = msg.get("content", "")
+    if role in ("user", "assistant") and content:
+        messages.append({"role": role, "content": content})
+```
 
 Chat Import batching belongs to the **frontend**, not one backend service call. `selectImportConversations` ranks
 conversations for English-learning relevance and keeps the latest 80 messages from each selected conversation.
 `chunkChatImportConversations` then keeps every conversation segment at or below the ordinary backend tier's
-120-message limit, every request at or below 20 conversations, and the serialized UTF-8 payload near 200 KB. The Import
-page sends those requests sequentially and merges their responses; the backend analyzes only the batch it receives.
+120-message limit, every request at or below 20 conversations, and the serialized UTF-8 payload near 200 KB. The
+limits live as named constants in `apps/web/lib/chatgpt-import.ts`:
+
+```ts
+const CHAT_IMPORT_BATCH_MAX_BYTES = 200_000
+const CHAT_IMPORT_BATCH_MAX_CONVERSATIONS = 20
+const CHAT_IMPORT_CONVERSATION_MAX_MESSAGES = 120
+// selectImportConversations keeps the latest 80 per conversation:
+messages: conversation.messages.slice(-80)
+// conversationSegments enforces the message boundary independently:
+if (segmentMessages.length >= CHAT_IMPORT_CONVERSATION_MAX_MESSAGES
+    || conversationPayloadBytes([candidate]) > maxBytes - 512)
+```
+
+The Import page sends those requests sequentially and merges their responses; the backend analyzes only the batch it
+receives.
 
 Therefore a file containing 300 messages is not one 300-message prompt. Messages spread across selected conversations
 may produce several bounded requests; if all 300 belong to one conversation, the current product selection layer
@@ -1333,10 +1891,40 @@ owner -> member -> signed-in user -> guest
 ```
 
 GitHub/Google OAuth creates an HttpOnly session cookie. A guest receives a long-lived guest cookie. The backend derives
-the identity and quota and always ignores a body-supplied user ID for authorization.
+the identity and quota and always ignores a body-supplied user ID for authorization. In `apps/api/app/api/deps.py`,
+`resolve_identity` builds the guest identity — note that the rate key is the **IP**, not the spoofable guest cookie:
+
+```py
+guest_id = request.cookies.get(GUEST_COOKIE)
+if not guest_id:
+    guest_id = uuid.uuid4().hex
+    response.set_cookie(GUEST_COOKIE, guest_id, max_age=365 * 86400, **cookie_kwargs())
+return Identity(
+    user_id=f"guest_{guest_id}",
+    kind="guest",
+    rate_key=f"ip_{_client_ip(request)}",
+    daily_limit=settings.guest_daily_limit,   # config.py: guest_daily_limit = 3
+    ...
+)
+```
 
 If a guest edits JSON to `"userId":"owner"`, the route still replaces it with the guest identity. If the quota is
-already exhausted, the dependency returns 429 before the provider call or DynamoDB writes.
+already exhausted, the `rate_limited(feature)` dependency returns 429 before the provider call or DynamoDB writes:
+
+```py
+def rate_limited(feature: str):
+    def _dep(request: Request, response: Response) -> Identity:
+        identity = resolve_identity(request, response)
+        if identity.is_unlimited:
+            return identity
+        count = incr_rate_counter(identity.rate_key, feature, day, ttl)
+        if count > identity.daily_limit:
+            raise HTTPException(status_code=429, detail={
+                "code": "rate_limited", "feature": feature,
+                "limit": identity.daily_limit, "kind": identity.kind, ...})
+        return identity
+    return _dep
+```
 
 ### 10.5 Coach mission types
 
@@ -1350,8 +1938,26 @@ The five mission variants are a Pydantic discriminated union:
 | `decision_response` | Situation, audience, goal, constraints |
 | `vocabulary_in_action` | Word data, situation, concepts, audience, tone |
 
-Shared fields include title, briefing, target skills, task prompt, criteria, and progressive hints. The frontend state
-machine is:
+Shared fields include title, briefing, target skills, task prompt, criteria, and progressive hints. In code, the five
+variants select their schema through `_response_model_for_request` (`apps/api/app/services/coach_service.py`), so
+Pydantic only accepts output matching the chosen variant:
+
+```py
+def _response_model_for_request(req: CoachMissionRequest) -> Type[BaseModel]:
+    if req.preferredType == "guided_scene":
+        return GuidedSceneMissionAIResult
+    if req.preferredType == "picture_story":
+        return PictureStoryMissionAIResult
+    if req.preferredType == "listen_retell":
+        return ListenRetellMissionAIResult
+    if req.preferredType == "decision_response":
+        return DecisionResponseMissionAIResult
+    if req.preferredType == "vocabulary_in_action":
+        return VocabularyInActionMissionAIResult
+    return CoachMissionAIResult
+```
+
+The frontend state machine is:
 
 ```text
 setup -> briefing -> active -> feedback
@@ -1398,10 +2004,24 @@ const session = await createChatSession(
 ```
 
 Model output can exceed a downstream contract even when the upstream mission validates. `CoachScene` therefore bounds
-`scenarioPrompt` deterministically, preserving the role/setup head and behavioral-rules tail. A Chat request permits a
-300-character topic while ActivityRun title permits 240. Current Coach titles are already bounded to 160, but ordinary
-clients and future upstream contracts need the route's own protection. Session creation projects the topic into
-narrower metadata:
+`scenarioPrompt` deterministically, preserving the role/setup head and behavioral-rules tail
+(`apps/api/app/models/coach.py`):
+
+```py
+@field_validator("scenarioPrompt", mode="before")
+@classmethod
+def bound_scenario_prompt(cls, value: object) -> object:
+    normalized = value.strip()
+    if len(normalized) <= COACH_SCENARIO_PROMPT_MAX_CHARACTERS:
+        return normalized
+    # head + tail beat rejecting the whole mission and paying for another call
+    return (normalized[:head_characters].rstrip() + "\n\n"
+            + normalized[-800:].lstrip())
+```
+
+A Chat request permits a 300-character topic while ActivityRun title permits 240. Current Coach titles are already
+bounded to 160, but ordinary clients and future upstream contracts need the route's own protection. Session creation
+projects the topic into narrower metadata:
 
 ```py
 CreateActivityRunRequest(
@@ -1418,9 +2038,30 @@ Debug each Network request separately and correlate its trace ID with backend lo
 `/input` either extracts source-grounded language items from supplied material or creates an attention mission when
 material is absent. Source evidence must be an exact substring; pasted content is untrusted data.
 
-`/input/experimental` is owner-only in both UI and backend. It accepts an explicitly supplied transcript and rights
-basis, forbids extra URL fields, performs no URL fetching, bounds the excerpt by duration, and does not treat the rights
-assertion as an automated legal decision.
+The owner-only Input Lab 2 lives behind `POST /api/v1/coach/input-lab-2/transcript-missions`
+(`apps/api/app/api/routes/coach.py`). It accepts an explicitly supplied transcript and rights basis, forbids extra URL
+fields, performs no URL fetching, bounds the transcript deterministically, and does not treat the rights assertion as
+an automated legal decision:
+
+```py
+@router.post("/input-lab-2/transcript-missions", response_model=CoachMissionResponse)
+def create_input_lab_2_transcript_mission(
+    req: InputLab2TranscriptMissionRequest,
+    identity: Identity = Depends(require_owner),
+    llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
+):
+```
+
+The request model (`apps/api/app/models/coach.py`) has no URL field at all, and rejects any extra key:
+
+```py
+class InputLab2TranscriptMissionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=1, max_length=240)
+    transcript: str = Field(min_length=40, max_length=12000)
+    rightsBasis: str = Field(min_length=3, max_length=500)
+    ...
+```
 
 For example, a direct request from a non-owner must return 403 even if the person manually opens the hidden URL. Hiding
 navigation without `require_owner` on the endpoint would be a security bug.
@@ -1450,6 +2091,16 @@ The dedup hash includes context:
 ```text
 same answer + same context -> duplicate
 same answer + different audience/context -> new transfer observation is allowed
+```
+
+In `_language_text_hash` (`apps/api/app/api/routes/diagnose.py`) the context enters the hash as its own normalized
+segment, so it can never collide with learner text:
+
+```py
+context_hash = f":context:{normalized_text_hash(analysis_context)}" if analysis_context else ""
+learning_hash = f":learning:{normalized_text_hash(json.dumps(learning_context, sort_keys=True))}" \
+    if learning_context else ""
+return f"{output_language}:{normalized_text_hash(text)}{context_hash}{learning_hash}"
 ```
 
 ### 10.9 Contextual vocabulary stays provisional
@@ -1491,8 +2142,34 @@ preference  goal  strategy  weakness  episode
 ```
 
 A candidate passes through validation, canonical-key creation, merge/conflict handling, embedding, kind-specific
-expiry, capacity pruning, and only then a `MEMORY#` write. A memory-write lease protects the multi-step operation; a
-lost claim becomes retryable 409 instead of an invisible overwrite.
+expiry, capacity pruning, and only then a `MEMORY#` write. That pipeline is the body of `remember_candidates` in
+`apps/api/app/services/memory_service.py`, guarded by a memory-write lease:
+
+```py
+@memory_write_locked
+def remember_candidates(
+    user_id: str,
+    candidates: Iterable[MemoryCandidate | dict],
+    *,
+    source_type: str,
+    source_id: str,
+    ...
+) -> list[dict]:
+    validated = [...]          # drop sub-threshold confidence (non-manual sources)
+    coalesced = {...}          # one analyzer response -> one canonical fact
+    embeddings = embed_texts([...])   # batch embedding before the merge loop
+    for candidate in validated:       # merge, supersede (_mark_archived), or create
+        ...
+    _enforce_capacity(user_id)        # prune unpinned lowest-priority items
+```
+
+A memory-write lease protects the multi-step operation; a lost claim becomes retryable 409 instead of an invisible
+overwrite — `apps/api/app/main.py` maps `MemoryWriteBusyError`/`MemoryWriteClaimLostError` to one contract:
+
+```py
+return JSONResponse(status_code=409, content={
+    "detail": {"code": "memory_write_retry", "message": str(exc)}})
+```
 
 | Kind | Example | Default lifetime |
 | --- | --- | --- |
@@ -1545,7 +2222,25 @@ pinned score = .74 + .15 = .89
 ```
 
 Candidate weaknesses receive a lower verification factor. If embedding is unavailable, semantic uses lexical fallback
-instead of becoming zero, so core retrieval continues with reduced quality.
+instead of becoming zero, so core retrieval continues with reduced quality. The executable loop is in
+`retrieve_memory_pack` (`apps/api/app/services/memory_service.py`):
+
+```py
+lexical = lexical_similarity(query, searchable)
+semantic_value = cosine_similarity(query_vector, memory.get("embedding"))
+semantic = semantic_value if semantic_value is not None else lexical   # fallback, not zero
+...
+verification_factor = 0.75 if verification_state == "candidate" else 1.0
+score = (
+    0.50 * semantic + 0.15 * lexical + 0.15 * importance
+    + 0.10 * recency + 0.05 * frequency + 0.05 * critical
+) * verification_factor
+if memory.get("pinned"):
+    score += 0.15
+```
+
+The pinned `+0.15` is added after the verification factor, so pinning also protects a candidate from being starved by
+its own unverified state.
 
 ### 11.3 Critical slots and the bounded two-layer pack
 
@@ -1561,7 +2256,23 @@ compact overview of all active weaknesses
 ```
 
 The overview records whether it is complete. If the budget is too small even for every skill code, it emits an explicit
-`+N omitted` marker and `complete=false`; it must not silently imply complete coverage.
+`+N omitted` marker and `complete=false`; it must not silently imply complete coverage. `_build_weakness_overview` in
+`apps/api/app/services/memory_service.py` degrades through three formats — metrics, plain index, then partial index —
+instead of dropping weaknesses silently:
+
+```py
+partial_header = "Active weaknesses (compact index; ?=tentative; +N=omitted by context budget):"
+...
+suffix = f"; +{remaining_count} more" if remaining_count else ""
+proposed = f"{partial_header}\n- {'; '.join(proposed_entries)}{suffix}"
+if estimate_tokens(proposed) > token_budget:
+    break
+...
+metadata = {"includedCount": len(included_rows), "complete": not omitted, ...}
+```
+
+Even the all-omitted case writes an explicit “overview omitted by context budget” notice instead of pretending the
+learner has no weaknesses.
 
 For example, a learner may have 40 active weaknesses but only these detailed items:
 
@@ -1598,7 +2309,29 @@ Example trace:
 ```
 
 If a learner asks why IELTS appeared again, inspect whether `mem_goal` was selected through a critical slot. Do not
-guess from the final prompt alone.
+guess from the final prompt alone. The example above mirrors the real builder at the end of `retrieve_memory_pack`
+(`apps/api/app/services/memory_service.py`), which writes one `MEMTRACE#` row per recall:
+
+```py
+trace_id = f"mtr_{uuid4().hex[:12]}"
+trace = {
+    "id": trace_id,
+    "userId": user_id,
+    "purpose": purpose,
+    "selectedMemoryIds": [memory["id"] for memory in selected],
+    "selected": [
+        {"id": memory["id"], "kind": memory.get("kind"),
+         "content": str(memory.get("content") or "")[:200],
+         "score": memory.get("retrievalScore"),
+         "scoreBreakdown": memory.get("scoreBreakdown")}
+        for memory in selected
+    ],
+    "totalCandidates": len(memories),
+    "estimatedTokens": estimated,
+    "budgetCompliant": estimated <= effective_budget,
+}
+save_memory_trace(trace)
+```
 
 ### 11.5 Weakness verification is not weakness resolution
 
@@ -1614,7 +2347,22 @@ new grounded failure                   -> active/reopened
 ```
 
 A learner-created manual memory is immediately confirmed because the learner is the source of truth for that
-self-report. Model-generated weakness claims require corroboration.
+self-report. Model-generated weakness claims require corroboration. The executable state machine is
+`_verification_snapshot` in `apps/api/app/services/memory_service.py` (see Section 7.5 for the code). The
+“reopened” transition is also visible in `remember_candidates`:
+
+```py
+resolved_weakness = bool(
+    candidate.kind == "weakness"
+    and existing
+    and existing.get("status") == "resolved"
+)
+if existing and (resolved_weakness or (...):
+    memory = _reactivate_weakness(existing, now) if resolved_weakness else dict(existing)
+```
+
+A new grounded failure flips a `resolved` weakness back to `active` through `_reactivate_weakness` instead of creating
+a parallel duplicate memory.
 
 ### 11.6 Graduating a weakness requires spaced, varied evidence
 
@@ -1630,6 +2378,25 @@ Practice stores the most recent 20 evidence items for the same weakness. Resolut
 | skill mastery | at least 85 |
 | successful formats | at least 2 |
 | days since same-skill error | at least 14 |
+
+These rows come directly from `WEAKNESS_GRADUATION_THRESHOLDS` in `apps/api/app/services/memory_service.py`:
+
+```py
+WEAKNESS_GRADUATION_THRESHOLDS = {
+    "minAttempts": 5, "minDistinctDays": 3, "minSpanDays": 14,
+    "recentWindow": 5, "minRecentSuccessRate": 0.80,
+    "recentAverageWindow": 3, "minRecentAverageScore": 85,
+    "minMastery": 85, "minExerciseTypes": 2, "recurrenceFreeDays": 14,
+}
+```
+
+`_weakness_graduation_snapshot` is the executable form of the table. One success definition matters: a “successful”
+attempt is `isCorrect` **and** `score >= 80` — a correct answer with a low score does not count toward graduation:
+
+```py
+successful = [row for row in evidence
+              if bool(row.get("isCorrect")) and float(row.get("score", 0)) >= 80]
+```
 
 Example: five 90-point answers completed in one afternoon fail the day-count and 14-day-span gates. The learner did
 well, but the evidence cannot yet show retention. A new grounded failure after resolution reopens the weakness and
@@ -1694,7 +2461,30 @@ If the normalized components are `.80, .60, .50, .90`:
 ```
 
 All components must share the same 0–1 scale. Adding a 0–100 mastery number directly to a 0–1 recency number would
-make the weights meaningless.
+make the weights meaningless. The real computation is `_skill_scores` in
+`apps/api/app/services/decision_service.py`:
+
+```py
+mastery_need = max(0.0, min(1.0, 1 - mastery / 100))
+error_need = min(1.0, error_counts.get(code, 0) / 5)
+failure_need = max(0.0, min(1.0, 1 - average / 100)) if skill_attempts else 0.55
+staleness = min(1.0, _days_since(skill.get("lastPracticedAt")) / 21)
+score = 0.45 * mastery_need + 0.25 * error_need + 0.20 * failure_need + 0.10 * staleness
+```
+
+Note the cold-start `failure_need = 0.55` for a skill with no attempt history, and that staleness saturates after 21
+days. Format scores come from `_type_scores` in the same file:
+
+```py
+need = max(0.0, min(1.0, 1 - average / 100)) if attempts else 0.55
+productive_difficulty = max(0.0, 1 - abs(average - 75) / 75) if attempts else 0.7
+exploration = 1 / math.sqrt(attempts + 1)
+reliability = min(1.0, attempts / 5)
+score = 0.45 * need + 0.25 * productive_difficulty + 0.20 * exploration + 0.10 * reliability
+```
+
+Exploration starts at 1 with zero attempts and decays; reliability starts at 0 and reaches 1 after five attempts — an
+untried format is not punished as “unreliable,” and a heavily practiced one no longer earns novelty points.
 
 An example response can expose:
 
@@ -1764,6 +2554,25 @@ Prefer `const`; an object's contents can still mutate, but React state should be
 optional property and `|` is a union. TypeScript disappears at runtime, so unknown server JSON still needs a reliable
 contract.
 
+The teaching `Skill` above is not the real type. The frontend actually uses `SkillState` in `apps/web/lib/types.ts`:
+
+```ts
+export interface SkillState {
+  userId: string
+  skillCode: string
+  label: string
+  zhLabel: string
+  mastery: number
+  errorCount: number
+  correctCount: number
+  lastSeenAt?: string | null
+  lastPracticedAt?: string | null
+  updatedAt: string
+}
+```
+
+The real field is `skillCode` (not `code`), `mastery` is a 0–100 number, and optional fields use `?`. It mirrors the dict returned by `core/mastery.py`'s `update_skill_from_error` — `skillCode`, `mastery`, `errorCount`, `correctCount` are the same names. This frontend type is the "manual" for the backend's JSON.
+
 ### 13.2 Promises, async/await, and fetch
 
 ```ts
@@ -1782,11 +2591,21 @@ async function loadProfile() {
 A Promise eventually succeeds with a value or rejects with an error. `fetch` normally does not throw for HTTP 404/500,
 so check `response.ok`; connection/DNS failures reject directly.
 
-`lib/api-client.ts` centralizes base URL, cookies, language/model headers, 429 handling, and error parsing. Ordinary API
-calls use a 20-second total timeout. Model operations—including Diagnose after the timeout fix—use 110 seconds, below
-Nginx's 120-second read timeout. Ten-second StreamingResponse whitespace keepalives do not reset the browser's total
-deadline, and receiving headers does not clear it before the JSON/audio body is consumed. `pnpm test:timeouts` protects
-both the 20/110-second call sites and a runtime “headers now, body later” response.
+`lib/api-client.ts` centralizes base URL, cookies, language/model headers, 429 handling, and error parsing. The three
+total-timeout budgets are defined in one place (`apps/web/lib/api-client.ts`):
+
+```ts
+const DEFAULT_API_TIMEOUT_MS = 20_000
+const LLM_OPERATION_TIMEOUT_MS = 110_000
+const DIAGNOSE_OPERATION_TIMEOUT_MS = 610_000
+```
+
+Ordinary API calls use 20 seconds. Model operations use 110 seconds, below Nginx's 120-second read timeout. Diagnose is
+a separate streaming case: it uses 610 seconds so a healthy keepalive stream is not aborted at the 110-second deadline
+while the backend's 600-second upstream call is still running — `diagnose()` passes
+`DIAGNOSE_OPERATION_TIMEOUT_MS` to `apiFetch` at the call site. Ten-second StreamingResponse whitespace keepalives do
+not reset the browser's total deadline, and receiving headers does not clear it before the JSON/audio body is consumed.
+`pnpm test:timeouts` protects the call sites and a runtime “headers now, body later” response.
 
 ### 13.3 JSX, components, props, events, and state
 
@@ -1840,8 +2659,10 @@ be disguised as one fabricated default option.
 
 ### 13.5 App Router and the complete page map
 
-`app/<path>/page.tsx` maps to a URL. Components are server components by default. `"use client"` creates a client
-boundary required for state, effects, events, localStorage, and microphone APIs; everything in that bundle is public.
+`app/<path>/page.tsx` maps to a URL. Components are server components by default — they render on the
+server and cannot use browser features. `"use client"` marks a component (and its children) to run in
+the browser, which state, effects, events, localStorage, and microphone APIs require; everything in
+that bundle is public.
 
 | URL | Purpose |
 | --- | --- |
@@ -1863,7 +2684,19 @@ boundary required for state, effects, events, localStorage, and microphone APIs;
 `components/` holds reusable UI/business components. `lib/api-client.ts` is the HTTP boundary. `lib/types.ts` is the
 typed subset that the current UI consumes; it must stay compatible with the corresponding Pydantic fields but need not
 repeat unused response fields. `i18n.ts` contains copy, `llm-settings.ts` manages server IDs/BYOK, and `session-win.ts`
-derives browser-local completion feedback.
+derives browser-local completion feedback. Its only storage is one localStorage key
+(`apps/web/lib/session-win.ts`):
+
+```ts
+const LAST_WIN_KEY = "weakspot-last-session-win"
+
+export function markSessionWin(source: SessionWinSource) {
+  window.localStorage.setItem(LAST_WIN_KEY, JSON.stringify({ source, at: Date.now() }))
+}
+```
+
+A Session Win never writes a backend record; `getRecentSessionWin()`/`getWelcomeBackMessage()` read the same key for
+the welcome-back hint, so it is per-browser, not cross-device progress.
 
 Trace one completion:
 
@@ -1966,11 +2799,14 @@ Press `Ctrl+C` in both terminals to stop; moto data then disappears.
 
 ### 14.3 Swagger and a cookie-preserving curl lab
 
-In Swagger, predict then run health, model catalog, Diagnose, profile, and one Coach mission. Expand the Memory
-create/retrieve/traces/next-action schemas, but do not execute them yet: Section 14.3.1 needs the guest's three daily
-Memory operations for two creates and one retrieval.
+Swagger is the interactive API page at `http://localhost:8000/docs`. In Swagger, predict then run
+health, model catalog, Diagnose, profile, and one Coach mission. Expand the Memory
+create/retrieve/traces/next-action schemas, but do not execute them yet: Section 14.3.1 needs the
+guest's three daily Memory operations for two creates and one retrieval.
 
-curl does not persist cookies by default. Keep one guest identity:
+curl is a terminal program that sends one HTTP request and prints the response — a fast way to test
+the backend without a browser. Unlike a browser, curl does not persist cookies, so these commands use
+`-c` to write the guest cookie to a file and `-b` to read it back, keeping one guest identity:
 
 ```bash
 curl -i -sS \
@@ -2124,6 +2960,7 @@ immediate connection refused   -> service/URL/port
 4xx response                   -> contract, identity, permission, quota
 ordinary API abort near 20 s   -> default browser total timeout
 model API abort near 110 s     -> LLM browser total timeout
+Diagnose abort near 610 s      -> Diagnose streaming total timeout (600 s upstream + margin)
 earlier 502/503/504            -> backend/provider/proxy
 backend completed after abort  -> timeout budgets disagree
 ```
@@ -2239,9 +3076,22 @@ Nginx :443
   -> provider APIs and DynamoDB
 ```
 
-`deploy/start_backend.sh` builds the image, creates/configures the table idempotently, replaces the container, and
-checks health. Secrets live only in the backend environment. “Idempotent table setup” means re-running setup converges
-on the required table/index configuration instead of blindly creating duplicate resources.
+`apps/api/deploy/start_backend.sh` builds the image, creates/configures the table idempotently, replaces the container,
+and checks health:
+
+```bash
+set -euo pipefail
+cd "$(dirname "$0")/.."          # repo-relative: works from any working directory
+
+docker compose build
+docker compose run --rm api python -m scripts.create_table
+docker compose up -d
+# then poll http://127.0.0.1:8000/api/v1/health up to 30 times, 2 s apart,
+# and exit non-zero if the container never becomes healthy
+```
+
+Secrets live only in the backend environment. “Idempotent table setup” means re-running setup converges on the required
+table/index configuration instead of blindly creating duplicate resources.
 
 The stable API hostname is separate from its origin. Before switching traffic, both origins must run the intended Git
 SHA and compatible configuration. CORS and cookies care about the public origin (`scheme://host:port`), while Nginx
@@ -2439,6 +3289,9 @@ classmate without consulting the answer key. That is application; reading advanc
 | Dependency injection | FastAPI resolves prerequisites before a route |
 | Pydantic | Runtime validation and schema library |
 | Repository | Database-access boundary |
+| boto3 | Official Python library for AWS services such as DynamoDB |
+| moto | Library that simulates AWS/DynamoDB in-process for tests |
+| OpenAPI / Swagger | Machine-readable route description, shown as the interactive `/docs` page |
 | Structured Output | Model output constrained to a schema |
 | Embedding | Text represented as a numeric vector |
 | TTL | Timestamp for eventual database cleanup |
@@ -2885,7 +3738,8 @@ cd /replace/this/with/the/absolute/path/from-23.1/api
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
-Open `http://localhost:8000/docs`, then verify:
+This is the same command Section 5.1 decodes piece by piece. Open `http://localhost:8000/docs`, then
+verify:
 
 ```bash
 curl -i http://localhost:8000/health
@@ -2997,8 +3851,8 @@ Exercise format: write “prediction → reason → code entry point → verific
 18. After Analyze is clicked in Chapter 23, how should `loading/result/error` represent idle, loading, success, and
     error?
 19. How does “no Network request” differ from a 422 response, and what evidence should you record before debugging?
-20. Ordinary API work has 20 seconds and model work 110. Why is clearing the timer when `fetch()` returns headers still
-    a bug, and which test proves the body is covered?
+20. Ordinary API work has 20 seconds, most model work 110, and streaming Diagnose 610. Why is clearing the timer when
+    `fetch()` returns headers still a bug, and which test proves the body is covered?
 21. Evidence sends `outcome="success"` and `supportLevel=2`. What outcome is stored, and why must an exact
     `clientEventId` replay not increment state?
 22. The Chapter 23 frontend starts on 3001; health and curl work, but the browser reports CORS. Why, and what is the
@@ -3044,10 +3898,33 @@ The answers name observable boundaries; do not memorize only the final status co
     the request contract/body; inspect response `detail`. Record method/path, status, duration, payload, response, and
     whether a backend log exists.
 20. Native `fetch()` resolves when headers arrive while JSON/audio may still stream. Clearing then can wait forever on
-    the body. `pnpm test:timeouts` uses a fake response with immediate headers and delayed body, and also checks that
-    Diagnose/Speech use the 110-second call site.
+    the body. `pnpm test:timeouts` uses a fake response with immediate headers and delayed body, and also checks the
+    real call sites: Diagnose passes the 610-second budget, other model operations the 110-second one
+    (`apps/web/lib/api-client.ts`):
+
+```ts
+const DIAGNOSE_OPERATION_TIMEOUT_MS = 610_000   // 600 s backend upstream + margin
+
+return apiFetch<DiagnoseResponse>("/diagnose", { ... }, DIAGNOSE_OPERATION_TIMEOUT_MS)
+```
 21. It is normalized to `hinted_success`. The event ID derives from `userId + clientEventId`; an exact replay returns
     the event with `duplicate=true`, so the conditional transaction must not add alpha/beta, counters, or a version.
+    Both rules are visible in `apps/api/app/services/learning_service.py`:
+
+```py
+event_id = "ev_" + hashlib.sha256(
+    f"{user_id}\0{request.clientEventId}".encode("utf-8")
+).hexdigest()[:24]
+existing_event = get_evidence_event(user_id, event_id)
+if existing_event:
+    return {"event": existing_event, "state": ..., "duplicate": True}
+...
+normalized_outcome = (
+    "hinted_success"
+    if request.outcome == "success" and request.supportLevel > 0
+    else request.outcome
+)
+```
 22. Origin includes scheme, host, and port, so 3000 and 3001 differ; curl does not enforce browser CORS. Stop the old
     3000 process and bind to 3000, or intentionally update `allow_origins` and restart the API.
 23. These prove the mini contract, service, in-memory repository, React state, type/static rules, and local vertical
@@ -3056,3 +3933,333 @@ The answers name observable boundaries; do not memorize only the final status co
 
 If you can repeat an answer but cannot locate its code or verification entry point, retrace the corresponding chapter.
 If this guide and current code disagree, treat code plus contract tests as authoritative and update the guide.
+
+## 25. ChatGPT Q&A Notes: Pydantic, Coupling, and Dependency Injection
+
+> Source: ChatGPT shared conversation <https://chatgpt.com/share/6a823e83-4f94-83e8-9533-1ccbbfd8769c>
+>
+> Study notes from a tutoring Q&A, organized into three questions:
+> **Q1** What are Model, dict→Model, payload, `app = FastAPI()`, and metadata?
+> **Q2** What is the difference between coupling, tight coupling, decoupling, and dependency injection — and what are the advantages of DI?
+> **Q3** Does the `value: Any` annotation actually mean anything?
+>
+> Related chapters: 4.4 (Pydantic models), 5.3 (validation and dependency injection), 7.2 (dependencies in a request).
+
+### 25.1 Q1: Model, dict→Model, payload, app = FastAPI(), metadata
+
+#### 25.1.1 What is a Model in the Pydantic sense
+
+One-sentence answer: **A Model is not "any Python data type" — in the Pydantic context it specifically means a Python class that inherits from `pydantic.BaseModel`.**
+
+```python
+from pydantic import BaseModel
+
+class DiagnosisRequest(BaseModel):
+    user_id: str
+    text: str
+```
+
+- `DiagnosisRequest` is a **Pydantic model class**.
+- `request = DiagnosisRequest(user_id="123", text="hello")` creates a **model instance**.
+- `int` / `str` / `float` / `list` / `dict` are just Python **types**; they are not usually called models.
+- **A model describes its fields using Python types.**
+
+#### 25.1.2 Why we say dict → Model
+
+External data usually arrives as a plain dict; Pydantic validates it field by field with `model_validate()` and turns it into a model:
+
+```python
+data = {"user_id": "123", "text": "hello"}
+request = DiagnosisRequest.model_validate(data)
+```
+
+The process is roughly: plain dict → read `user_id` → check it is a `str` → read `text` → check it is a `str` → create `DiagnosisRequest`. (In default mode Pydantic may also apply reasonable coercion — see 25.1.6.)
+
+#### 25.1.3 What is payload
+
+- `payload` is **not a Python keyword and not a FastAPI keyword**. It is an ordinary variable name programmers use, roughly meaning "**the data this transfer actually carries**".
+- The formal HTTP term is **request body**; `payload` is more generic. JWT also uses the word in Header / Payload / Signature.
+- Conclusion: **read the context.** Do not treat `payload` as something special.
+
+#### 25.1.4 What app = FastAPI() does
+
+- `FastAPI` is a **class**; `FastAPI()` creates an instance (the application object); `app` is the variable pointing to that object.
+- `@app.get("/users")` registers a path operation on that application.
+- Analogy in plain Python: `class Dog: pass` → `dog = Dog()` — `Dog` is the class, `Dog()` creates the object, `dog` is the variable.
+
+Keep the two worlds separate:
+
+```
+FastAPI  → HTTP / API layer
+  app = FastAPI()
+  @app.get(...)  @app.post(...)
+
+Pydantic → data schema / validation layer
+  BaseModel  str / int  list[]  dict[]  Literal  Field()
+  model_validate()  model_dump()
+```
+
+**FastAPI uses Pydantic, but FastAPI and Pydantic are not the same thing.** This matters for understanding request body, dependency, and service/model layering.
+
+#### 25.1.5 What is metadata
+
+- In `metadata: dict[str, str] | None = None`, `metadata` has **no special Pydantic meaning**; it is just a field name you can rename to `extra_info` / `details`.
+- The English meaning is **data about data** — information that describes the primary data. For a photo, the primary data is pixels and the metadata is shot time, camera model, GPS; for a file, the primary data is content and the metadata is filename, creation time, type, size.
+
+#### 25.1.6 Does Pydantic validate every type hint?
+
+Precisely: **when a type annotation is used by Pydantic to build a model/schema, Pydantic validates according to the types and rules it supports.** Do not memorize "every type hint is validated".
+
+| Situation | Behavior |
+| --- | --- |
+| Plain Python `def f(age: int)` | Just a hint for programmers / IDE / mypy / pyright; not enforced at runtime — `f("abc")` does not fail |
+| Pydantic `age: int` | Reads the annotation to build a validation schema; `User(age="abc")` raises `ValidationError` |
+
+- `list[str]`: validates it is a list and that each element is a `str` (hints are hierarchical: container type + item type).
+- `dict[str, int]`: keys are `str`, values are `int`.
+- `Literal["fast", "deep"]`: only those two values are accepted.
+- `str | None`: either `str` or `None`.
+- `Field()`: adds extra constraints on top of the type hint, e.g. `ge=18, le=100`, `min_length=3, max_length=20`.
+
+Important exceptions:
+
+```python
+from typing import Any
+
+class Data(BaseModel):
+    value: Any       # any type; essentially no restriction
+```
+
+- Pydantic also provides `SkipValidation` to explicitly skip validation inside a field.
+- **Validation ≠ strict rejection**: default is lax mode, which performs **coercion / data conversion** — e.g. `User(age="24")` may convert `"24"` to `24`. Pydantic guarantees "the resulting model matches your schema", not that the input was already the perfect Python type.
+
+#### 25.1.7 Complete example tying Q1 together
+
+```python
+from typing import Literal
+from pydantic import BaseModel, Field
+
+class DiagnosisRequest(BaseModel):
+    text: str = Field(min_length=1)
+    mode: Literal["fast", "deep"]
+    metadata: dict[str, str] | None = None
+
+payload = {
+    "text": "Yesterday I go to school.",
+    "mode": "fast",
+    "metadata": {"language": "en"},
+}
+
+request = DiagnosisRequest.model_validate(payload)
+```
+
+Checks in order: is `text` a `str`? is its length ≥ 1? is `mode` fast/deep? is `metadata` a dict? are its keys and values `str`? All pass → you get a `DiagnosisRequest` object.
+
+### 25.2 Q2: coupling, tight coupling, decoupling, and dependency injection
+
+#### 25.2.1 What is coupling
+
+One-sentence answer: **coupling = how tightly two modules are bound to each other.** Coupling is not bad — modules are supposed to cooperate. The real question is **how strong the coupling is**.
+
+```python
+class UserService:
+    def get_user(self, user_id):
+        ...
+```
+
+`UserService` needs a database to look up users, so `UserService ↓ Database` — there is a dependency, hence coupling.
+
+#### 25.2.2 What is tight coupling
+
+```python
+class UserService:
+    def __init__(self):
+        self.db = DynamoDB()      # hard-coded implementation
+
+    def get_user(self, user_id):
+        return self.db.get_user(user_id)
+```
+
+`UserService` is not just saying "I need a database"; it is saying "**I must have DynamoDB, and I create it myself**". That is relatively strong coupling.
+
+Two typical problems:
+
+1. **Changing the implementation forces changes in business logic**: switching to PostgreSQL later means editing `UserService` itself (database changes → business logic changes).
+2. **Tests drag in the real dependency**: running `get_user()` actually creates DynamoDB → connects to AWS → needs credentials → may read a real database. You only wanted to test business logic, but you are pushed into connecting to a real database.
+
+#### 25.2.3 How dependency injection fixes it
+
+```python
+class UserService:
+    def __init__(self, db):
+        self.db = db              # no longer creates it; receives it
+
+    def get_user(self, user_id):
+        return self.db.get_user(user_id)
+
+db = DynamoDB()
+service = UserService(db)         # the dependency is "injected"
+```
+
+That is **Dependency Injection**.
+
+The real difference between the two styles (separation of concerns):
+
+| Creating the dependency yourself | Dependency Injection |
+| --- | --- |
+| `UserService` decides which database, creates it, and uses it | `UserService` only "uses" the database |
+| Many responsibilities | What it is, how to create it, when to close it → handled externally |
+
+#### 25.2.4 What decoupling means
+
+**Decoupling does not mean the two modules have nothing to do with each other; it means reducing their dependence on each other's concrete implementation.**
+
+After DI, `UserService` only asks for "something that can `get_user()`":
+
+```python
+service = UserService(DynamoDB())
+service = UserService(PostgreSQL())
+service = UserService(FakeDatabase())
+```
+
+`UserService` does not change at all — that is decoupling.
+
+Everyday analogy: a coffee machine with a built-in, welded "Brand A water bottle" is tight coupling — if Brand A is discontinued, the machine must change too. A "standard water inlet" accepts any compliant water source — that lowers coupling.
+
+#### 25.2.5 What DI is good for
+
+1. **Swapping implementations is easy**: `DynamoDBRepository` → `PostgreSQLRepository` → `FakeDB`, `UserService` does not change.
+
+```python
+class UserService:
+    def __init__(self, repository):
+        self.repository = repository
+```
+
+2. **Testing is easy**: replace the real database with a fake one; testing business logic requires no AWS.
+
+```python
+class FakeDatabase:
+    def get_user(self, user_id):
+        return User(age=24)
+
+service = UserService(FakeDatabase())
+result = service.can_buy_alcohol("123")   # touches no real database
+```
+
+3. **Lifecycle management**: if the route creates the DB itself and a line raises, `db.close()` never runs (unless you write try/finally), and writing that in 30 routes is painful. FastAPI's `Depends` + `yield` closes it for you:
+
+```python
+def get_db():
+    db = Database()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@app.get("/users")
+def get_users(db: Database = Depends(get_db)):
+    return db.get_users()
+```
+
+Flow: request starts → create Database → inject db → run route → route ends or raises → run `finally` → `db.close()`.
+
+4. **Cross-cutting logic is written once**: many routes need the "current user"; instead of repeating `get_token(request)` + `verify_token(token)` in every route:
+
+```python
+@app.get("/profile")
+def profile(user = Depends(get_current_user)):
+    return user
+```
+
+Authentication logic lives in one place and FastAPI injects it into each route.
+
+#### 25.2.6 When NOT to use DI
+
+**Not everything needs DI.** For a simple function, do not invent `TaxRateProvider` / `TaxService` / `TaxDependencyFactory` just for "decoupling" — that is overengineering.
+
+DI fits dependencies that **may change, have a lifecycle, should be replaceable in tests, or are shared across modules** — Database, Repository, Service, Authentication, HTTP client, Configuration, Cache, Logger, External API client.
+
+#### 25.2.7 Glossary
+
+| Term | Meaning |
+| --- | --- |
+| Dependency | Something else I need to get my work done (`UserService` needs `Database`; the database is the dependency) |
+| Coupling | How tightly bound I am to that thing |
+| Strong / tight coupling | I not only need you — I hard-code who you are and how you are created (`self.db = DynamoDB()`) |
+| Loose coupling | I need a capability but do not force a concrete implementation (`def __init__(self, db)`) |
+| Decoupling | Loosening two modules that were tightly bound |
+| Dependency Injection | The external side provides the dependency to the object/function that needs it (`UserService(db)`; in FastAPI, `Depends(get_db)` does the injection automatically) |
+
+#### 25.2.8 The comparison worth remembering
+
+Tight coupling:
+
+```python
+class UserService:
+    def __init__(self):
+        self.db = DynamoDB()
+```
+
+→ "I want DynamoDB, and I build it myself."
+
+Dependency Injection:
+
+```python
+class UserService:
+    def __init__(self, db):
+        self.db = db
+```
+
+→ "I need a DB; you provide it."
+
+The advantages of DI in one line: **easier to swap implementations, easier to test, less duplicated code, easier to manage resource lifetimes, and clearer module responsibilities.**
+
+### 25.3 Q3: Does the value: Any annotation actually mean anything
+
+#### 25.3.1 In plain Python: you can omit it
+
+If you do not care about types at all, `value: Any` in plain Python adds little:
+
+```python
+value = 123
+value = "hello"
+value = [1, 2, 3]
+value = {"a": 1}
+```
+
+Python does not stop you. `Any` itself means "do not let type checkers restrict this value".
+
+#### 25.3.2 Inside a Pydantic BaseModel it is different
+
+```python
+from typing import Any
+from pydantic import BaseModel
+
+class Data(BaseModel):
+    value: Any
+```
+
+Here `value: Any` is telling Pydantic:
+
+> `value` is a **model field** that can accept any type.
+
+So the colon is not only about restricting types — it also has another job: **declaring that this is a field of the Pydantic model.**
+
+```python
+Data(value=123)
+Data(value="hello")
+Data(value=[1, 2])
+Data(value={"name": "Jinyu"})     # all fine
+```
+
+- Removing `: Any` and writing just `value` is not even a normal field declaration in Python.
+- Writing `value = None` is yet another story: Pydantic v2 defines model fields through **annotated attributes**; an unannotated class attribute cannot simply be treated as a normal Pydantic field.
+
+#### 25.3.3 Conclusion
+
+**Plain Python: you may omit the annotation. In a Pydantic model, the annotation also serves as the "field declaration".** In plain words:
+
+> `value: Any` = "The Data model has a field named `value`, and I put no restriction on its concrete type."
+
+Not: "`Any` adds strong validation to `value`." Quite the opposite — `Any` essentially means **no concrete type restriction here**.
