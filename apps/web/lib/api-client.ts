@@ -98,7 +98,8 @@ import {
 } from "./mock-data"
 import {
   getLLMProviderHeaders,
-  DEEPSEEK_DS_V4_FLASH_0731_MODEL,
+  OPENROUTER_DEEPSEEK_V4_FLASH_MODEL,
+  OPENROUTER_DEEPSEEK_V4_PRO_MODEL,
   OPENROUTER_56_LUNA_MODEL,
   OPENROUTER_56_LUNA_PRO_MODEL,
   QWEN_37_MAX_MODEL,
@@ -297,7 +298,7 @@ export async function getServerLLMModels(): Promise<ServerLLMModel[]> {
         label: "Server default",
         provider: "Server",
         model: OPENROUTER_56_LUNA_PRO_MODEL,
-        fastModel: DEEPSEEK_DS_V4_FLASH_0731_MODEL,
+        fastModel: OPENROUTER_DEEPSEEK_V4_FLASH_MODEL,
         adaptive: true,
       },
       {
@@ -330,16 +331,16 @@ export async function getServerLLMModels(): Promise<ServerLLMModel[]> {
       },
       {
         id: "deepseek-deep",
-        label: "DeepSeek · Deep",
-        provider: "DeepSeek",
-        model: "deepseek-v4-pro",
+        label: "DeepSeek V4 Pro · Balanced",
+        provider: "OpenRouter",
+        model: OPENROUTER_DEEPSEEK_V4_PRO_MODEL,
         mode: "deep",
       },
       {
         id: "deepseek-fast",
-        label: "DS V4 Flash 0731",
-        provider: "DeepSeek Official",
-        model: DEEPSEEK_DS_V4_FLASH_0731_MODEL,
+        label: "DeepSeek V4 Flash · Nitro in Fast mode",
+        provider: "OpenRouter",
+        model: OPENROUTER_DEEPSEEK_V4_FLASH_MODEL,
         mode: "fast",
       },
     ]
@@ -2068,7 +2069,7 @@ export async function getChatMessages(
         topic: null,
         scenarioPrompt: null,
         starterMessage: null,
-        textModel: DEEPSEEK_DS_V4_FLASH_0731_MODEL,
+        textModel: OPENROUTER_DEEPSEEK_V4_FLASH_MODEL,
         messageCount: 0,
         summary: null,
         createdAt: new Date().toISOString(),

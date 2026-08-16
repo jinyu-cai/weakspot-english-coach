@@ -7,9 +7,11 @@ routes provider-neutral work to a `Deep` or `Fast` slot.
 Target text-chat routing:
 
 - Deep slot: `openai/gpt-5.6-luna-pro` through OpenRouter
-- Default Fast slot: `ds-v4-flash-0731` through the official DeepSeek API
+- Default Fast slot: `deepseek/deepseek-v4-flash` through OpenRouter
 - Alternate Fast slot: `openai/gpt-5.6-luna` through OpenRouter
 - Reasoning: Deep uses `max`; Fast uses `medium`
+- Diagnose and text Chat Fast requests append `:nitro`; other OpenRouter
+  requests keep the base slug and use normal Balanced routing
 - Luna Pro provider routing: only `openai`, with provider fallbacks disabled
 - Adaptive mission planner: `gpt-5.6-sol` through the OpenAI Responses API
 - Realtime voice: the configured OpenAI Realtime model
@@ -22,16 +24,16 @@ Users may select another available Deep/Fast pair or provide BYOK models. A BYOK
 request without a separate Fast model necessarily falls back to its primary
 model.
 
-`ds-v4-flash-0731` is the stable product/catalog alias. Calls to the official
-DeepSeek host translate it server-side to that endpoint's accepted API model
-name, `deepseek-v4-flash`; stored sessions and the public selector keep the
-product alias.
+The stable `deepseek-fast` catalog ID resolves to OpenRouter's
+`deepseek/deepseek-v4-flash` slug. Nitro is applied only while constructing a
+Fast Diagnose or text Chat request, so stored sessions retain the base model
+and durable/non-interactive work continues to use Balanced routing.
 
 ## Product routing matrix
 
 | Product operation | Route | Reason |
 | --- | --- | --- |
-| Diagnose writing | Selectable Fast/Deep pair; DS V4 Flash 0731 Fast / Luna Pro Deep by default | Fast supports interactive checks; Deep remains available for a thorough report. The selected safe pair is honored for Diagnose. |
+| Diagnose writing | Selectable Fast/Deep pair; DeepSeek V4 Flash Nitro / Luna Pro Deep by default | Fast supports interactive checks; Deep remains available for a thorough report. The selected safe pair is honored for Diagnose. |
 | Import ChatGPT history | User-selected Fast/Deep; Fast default | The learner controls the tradeoff for potentially large imports. |
 | Chat reply | Fast default; Deep optional per session | A conversation turn is latency-sensitive; the chosen model is pinned to the session. |
 | Chat completion suggestions | Fast | Small, bounded prediction used while typing. |
@@ -60,8 +62,7 @@ product alias.
   the caller's lower access-tier limit). If validation still fails, the second
   attempt drops to `minimal` reasoning instead of repeating the same
   output-starved request.
-- OpenRouter calls send the provider-neutral `reasoning.effort` object; the
-  official DeepSeek compatibility endpoint receives `reasoning_effort` when supported.
+- OpenRouter calls send the provider-neutral `reasoning.effort` object.
 - Luna Pro dynamic scenes keep `max` reasoning but request a compact scene plan
   through native JSON Schema. The server expands that bounded plan into the
   full learner task and facilitator prompt. OpenRouter receives an explicit

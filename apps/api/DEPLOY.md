@@ -74,12 +74,14 @@ MEMORY_RETRIEVAL_LIMIT=6
 MEMORY_MAX_ITEMS_PER_USER=200
 MEMORY_CHAT_RECENT_MESSAGES=12
 
-# Optional additional/standby provider. The safe model catalog exposes every
-# provider whose key, endpoint, and model are configured.
-DEEPSEEK_API_KEY=<deepseek-api-key>
-DEEPSEEK_BASE_URL=https://api.deepseek.com
-LLM_MODEL=deepseek-v4-pro
-LLM_MODEL_FAST=ds-v4-flash-0731
+# Hosted Diagnose/text Chat provider. DeepSeek Fast is sent through OpenRouter;
+# Diagnose/Chat Fast adds :nitro and other calls keep Balanced routing.
+OPENROUTER_API_KEY=<openrouter-api-key>
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_MODEL=openai/gpt-5.6-luna-pro
+OPENROUTER_FAST_MODEL=openai/gpt-5.6-luna
+OPENROUTER_DEEPSEEK_MODEL=deepseek/deepseek-v4-pro
+OPENROUTER_DEEPSEEK_FAST_MODEL=deepseek/deepseek-v4-flash
 
 # Realtime voice only; keep this server-side.
 OPENAI_API_KEY=<openai-api-key>

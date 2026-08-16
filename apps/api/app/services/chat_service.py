@@ -3,7 +3,12 @@ from typing import List, Optional
 
 from app.config import settings
 from app.models.chat import ChatPredictionAI, ChatReplyAI
-from app.services.ai_client import DEEP_REASONING_EFFORT, LLMProviderConfig, parse_with_model
+from app.services.ai_client import (
+    DEEP_REASONING_EFFORT,
+    LLMProviderConfig,
+    OpenRouterRoutingMode,
+    parse_with_model,
+)
 from app.services.memory_service import MEMORY_EXTRACTION_INSTRUCTION
 from app.services.model_routing import reasoning_effort_for_tier, select_text_model
 
@@ -106,6 +111,7 @@ def chat_reply(
     memory_context: Optional[str] = None,
     hidden_practice_instruction: Optional[str] = None,
     reasoning_effort: Optional[str] = DEEP_REASONING_EFFORT,
+    openrouter_routing_mode: OpenRouterRoutingMode = "balanced",
 ) -> ChatReplyAI:
     messages = build_chat_messages(
         history,
@@ -122,6 +128,7 @@ def chat_reply(
         provider=llm_provider,
         trace_id=trace_id,
         reasoning_effort=reasoning_effort,
+        openrouter_routing_mode=openrouter_routing_mode,
     )
 
 
@@ -172,4 +179,5 @@ def predict_completion(
         provider=llm_provider,
         trace_id=trace_id,
         reasoning_effort=reasoning_effort_for_tier("fast"),
+        openrouter_routing_mode="nitro",
     )
