@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type { ReactNode } from "react"
 import useSWR from "swr"
 import { toast } from "sonner"
 import {
@@ -466,11 +467,12 @@ export default function EbookLearningPage() {
       const session = await startEbookPractice(target.id)
       setPracticeTarget(target)
       setPractice(session)
-      setReaderView("study")
       setPracticeAnswer("")
       setPracticeHint(false)
       setLastAttempt(null)
-      window.setTimeout(() => document.getElementById("ebook-practice")?.scrollIntoView({ behavior: "smooth" }), 30)
+      if (!readingFocusActive) {
+        window.setTimeout(() => document.getElementById("ebook-practice")?.scrollIntoView({ behavior: "smooth" }), 30)
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     }
@@ -523,6 +525,20 @@ export default function EbookLearningPage() {
       zh={zh}
       onUnfamiliar={markUnfamiliar}
       onPractice={beginPractice}
+      practicePanel={practice ? <EbookPracticePanel
+        id="ebook-practice-focus"
+        session={practice}
+        target={practiceTarget}
+        answer={practiceAnswer}
+        setAnswer={setPracticeAnswer}
+        hint={practiceHint}
+        setHint={setPracticeHint}
+        submitting={practiceSubmitting}
+        lastAttempt={lastAttempt}
+        zh={zh}
+        onSubmit={submitPracticeAnswer}
+        onClose={() => { setPractice(null); setPracticeTarget(null); setLastAttempt(null) }}
+      /> : null}
       onExit={() => setReaderView("study")}
     />
   }
@@ -731,6 +747,7 @@ function EbookReadingView({
   zh,
   onUnfamiliar,
   onPractice,
+  practicePanel,
   onExit,
 }: {
   pages: EbookStudyPage[]
@@ -739,6 +756,7 @@ function EbookReadingView({
   zh: boolean
   onUnfamiliar: (annotation: EbookAnnotation) => Promise<void>
   onPractice: (annotation: EbookAnnotation) => Promise<void>
+  practicePanel: ReactNode
   onExit: () => void
 }) {
   const firstPage = pages[0]?.pageNumber
@@ -761,49 +779,59 @@ function EbookReadingView({
           {zh ? "退出阅读（Esc）" : "Exit (Esc)"}
         </Button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-4 py-8 sm:px-6 sm:py-10">
-          {pages.map((page) => (
-            <section key={page.pageNumber} aria-label={zh ? `第 ${page.pageNumber} 页` : `Page ${page.pageNumber}`}>
-              <div className="mb-6 flex items-center gap-3 text-xs text-muted-foreground" aria-hidden>
-                <span className="h-px flex-1 bg-border" />
-                <span className="shrink-0 font-medium uppercase tracking-wide">
-                  {zh ? `第 ${page.pageNumber} 页` : `Page ${page.pageNumber}`}
-                  {page.chapterTitle ? ` · ${page.chapterTitle}` : ""}
-                </span>
-                <span className="h-px flex-1 bg-border" />
-              </div>
-              <div className="flex flex-col gap-6">
-                {page.units.map((unit) => {
-                  const unitAnnotations = annotationsByUnit[unit.unitId] ?? []
-                  return (
-                    <article key={unit.unitId} className="flex flex-col gap-1.5">
-                      <p className="text-base leading-8 text-foreground sm:text-[17px]">
-                        <HighlightedSource text={unit.sourceText} annotations={unitAnnotations} />
-                      </p>
-                      <p className="border-l-2 border-primary/25 pl-3 text-[15px] leading-7 text-muted-foreground">
-                        {unit.counterpartText}
-                      </p>
-                      {unitAnnotations.length > 0 ? (
-                        <div className="mt-2.5 flex flex-col gap-3">
-                          {unitAnnotations.map((annotation) => <AnnotationCard
-                            key={annotation.id}
-                            annotation={annotation}
-                            target={targetsByAnnotation[annotation.id]}
-                            zh={zh}
-                            initiallyOpen
-                            onUnfamiliar={onUnfamiliar}
-                            onPractice={onPractice}
-                          />)}
-                        </div>
-                      ) : null}
-                    </article>
-                  )
-                })}
-              </div>
-            </section>
-          ))}
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        <div className="min-w-0 flex-1 overflow-y-auto">
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-4 py-8 sm:px-6 sm:py-10">
+            {pages.map((page) => (
+              <section key={page.pageNumber} aria-label={zh ? `第 ${page.pageNumber} 页` : `Page ${page.pageNumber}`}>
+                <div className="mb-6 flex items-center gap-3 text-xs text-muted-foreground" aria-hidden>
+                  <span className="h-px flex-1 bg-border" />
+                  <span className="shrink-0 font-medium uppercase tracking-wide">
+                    {zh ? `第 ${page.pageNumber} 页` : `Page ${page.pageNumber}`}
+                    {page.chapterTitle ? ` · ${page.chapterTitle}` : ""}
+                  </span>
+                  <span className="h-px flex-1 bg-border" />
+                </div>
+                <div className="flex flex-col gap-6">
+                  {page.units.map((unit) => {
+                    const unitAnnotations = annotationsByUnit[unit.unitId] ?? []
+                    return (
+                      <article key={unit.unitId} className="flex flex-col gap-1.5">
+                        <p className="text-base leading-8 text-foreground sm:text-[17px]">
+                          <HighlightedSource text={unit.sourceText} annotations={unitAnnotations} />
+                        </p>
+                        <p className="border-l-2 border-primary/25 pl-3 text-[15px] leading-7 text-muted-foreground">
+                          {unit.counterpartText}
+                        </p>
+                        {unitAnnotations.length > 0 ? (
+                          <div className="mt-2.5 flex flex-col gap-3">
+                            {unitAnnotations.map((annotation) => <AnnotationCard
+                              key={annotation.id}
+                              annotation={annotation}
+                              target={targetsByAnnotation[annotation.id]}
+                              zh={zh}
+                              initiallyOpen
+                              onUnfamiliar={onUnfamiliar}
+                              onPractice={onPractice}
+                            />)}
+                          </div>
+                        ) : null}
+                      </article>
+                    )
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
         </div>
+        {practicePanel ? (
+          <aside
+            aria-label={zh ? "专注阅读练习" : "Focused reading practice"}
+            className="absolute inset-0 z-10 overflow-y-auto bg-background p-3 sm:p-4 md:static md:w-[min(430px,42vw)] md:shrink-0 md:border-l"
+          >
+            {practicePanel}
+          </aside>
+        ) : null}
       </div>
     </section>
   )
