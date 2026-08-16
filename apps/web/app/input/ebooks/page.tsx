@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react"
 
 import { useLanguage } from "@/components/language-provider"
@@ -522,6 +523,7 @@ export default function EbookLearningPage() {
       zh={zh}
       onUnfamiliar={markUnfamiliar}
       onPractice={beginPractice}
+      onExit={() => setReaderView("study")}
     />
   }
 
@@ -729,6 +731,7 @@ function EbookReadingView({
   zh,
   onUnfamiliar,
   onPractice,
+  onExit,
 }: {
   pages: EbookStudyPage[]
   annotationsByUnit: Record<string, EbookAnnotation[]>
@@ -736,34 +739,71 @@ function EbookReadingView({
   zh: boolean
   onUnfamiliar: (annotation: EbookAnnotation) => Promise<void>
   onPractice: (annotation: EbookAnnotation) => Promise<void>
+  onExit: () => void
 }) {
+  const firstPage = pages[0]?.pageNumber
+  const lastPage = pages.at(-1)?.pageNumber
   return (
     <section
       data-testid="ebook-reading-focus"
-      aria-label={zh ? "译文和批注阅读模式" : "Translation and annotations reading mode"}
+      aria-label={zh ? "原文、译文和批注阅读模式" : "Original, translation and annotations reading mode"}
       aria-keyshortcuts="Escape"
-      className="fixed inset-0 z-[60] overflow-y-auto overscroll-contain bg-background px-4 py-12 sm:px-8 sm:py-16"
+      className="fixed inset-0 z-[60] flex flex-col overflow-hidden overscroll-contain bg-background"
     >
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-12">
-        {pages.flatMap((page) => page.units.map((unit) => {
-          const unitAnnotations = annotationsByUnit[unit.unitId] ?? []
-          return <article key={`${page.pageNumber}-${unit.unitId}`} className="mx-auto flex w-full flex-col gap-5">
-            <p className="mx-auto max-w-2xl text-center text-base leading-8 text-muted-foreground sm:text-lg">
-              {unit.counterpartText}
-            </p>
-            {unitAnnotations.length > 0 ? <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
-              {unitAnnotations.map((annotation) => <AnnotationCard
-                key={annotation.id}
-                annotation={annotation}
-                target={targetsByAnnotation[annotation.id]}
-                zh={zh}
-                initiallyOpen
-                onUnfamiliar={onUnfamiliar}
-                onPractice={onPractice}
-              />)}
-            </div> : null}
-          </article>
-        }))}
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b bg-background/90 px-4 py-2.5 backdrop-blur sm:px-6">
+        <span className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+          <BookOpen className="size-4 shrink-0 text-primary" />
+          <span className="truncate font-medium text-foreground">{zh ? "专注阅读" : "Focused reading"}</span>
+          {firstPage && lastPage ? <span className="shrink-0 text-xs">{zh ? `第 ${firstPage}–${lastPage} 页` : `Pages ${firstPage}–${lastPage}`}</span> : null}
+        </span>
+        <Button variant="outline" size="sm" onClick={onExit} className="shrink-0">
+          <X data-icon="inline-start" />
+          {zh ? "退出阅读（Esc）" : "Exit (Esc)"}
+        </Button>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-10 px-4 py-8 sm:px-6 sm:py-10">
+          {pages.map((page) => (
+            <section key={page.pageNumber} aria-label={zh ? `第 ${page.pageNumber} 页` : `Page ${page.pageNumber}`}>
+              <div className="mb-6 flex items-center gap-3 text-xs text-muted-foreground" aria-hidden>
+                <span className="h-px flex-1 bg-border" />
+                <span className="shrink-0 font-medium uppercase tracking-wide">
+                  {zh ? `第 ${page.pageNumber} 页` : `Page ${page.pageNumber}`}
+                  {page.chapterTitle ? ` · ${page.chapterTitle}` : ""}
+                </span>
+                <span className="h-px flex-1 bg-border" />
+              </div>
+              <div className="flex flex-col gap-6">
+                {page.units.map((unit) => {
+                  const unitAnnotations = annotationsByUnit[unit.unitId] ?? []
+                  return (
+                    <article key={unit.unitId} className="flex flex-col gap-1.5">
+                      <p className="text-base leading-8 text-foreground sm:text-[17px]">
+                        <HighlightedSource text={unit.sourceText} annotations={unitAnnotations} />
+                      </p>
+                      <p className="border-l-2 border-primary/25 pl-3 text-[15px] leading-7 text-muted-foreground">
+                        {unit.counterpartText}
+                      </p>
+                      {unitAnnotations.length > 0 ? (
+                        <div className="mt-2.5 flex flex-col gap-3">
+                          {unitAnnotations.map((annotation) => <AnnotationCard
+                            key={annotation.id}
+                            annotation={annotation}
+                            target={targetsByAnnotation[annotation.id]}
+                            zh={zh}
+                            initiallyOpen
+                            onUnfamiliar={onUnfamiliar}
+                            onPractice={onPractice}
+                          />)}
+                        </div>
+                      ) : null}
+                    </article>
+                  )
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
       </div>
     </section>
   )
