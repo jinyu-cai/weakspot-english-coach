@@ -258,7 +258,7 @@ export function LLMProviderSettings() {
             <input
               value={settings.fastModel}
               onChange={(event) => update("fastModel", event.target.value)}
-              placeholder="deepseek/deepseek-v4-flash"
+              placeholder="deepseek-v4-flash"
               className="h-9 rounded-lg border border-input bg-background px-3 text-sm font-normal outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             />
           </label>

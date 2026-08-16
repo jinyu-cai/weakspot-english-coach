@@ -635,8 +635,10 @@ def main() -> int:
             "openrouter_base_url",
             "openrouter_model",
             "openrouter_fast_model",
-            "openrouter_deepseek_model",
-            "openrouter_deepseek_fast_model",
+            "opencode_go_api_key",
+            "opencode_go_base_url",
+            "opencode_go_deepseek_model",
+            "opencode_go_deepseek_fast_model",
             "qwen_model_studio_api_key",
             "qwen_model_studio_base_url",
             "qwen_model_studio_model",
@@ -650,6 +652,7 @@ def main() -> int:
             settings.deepseek_api_key = ""
             settings.openai_compat_api_key = ""
             settings.openrouter_api_key = ""
+            settings.opencode_go_api_key = ""
             settings.qwen_model_studio_api_key = "test-qwen-key"
             settings.qwen_model_studio_base_url = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
             settings.qwen_model_studio_model = "qwen3.7-max"
@@ -748,14 +751,16 @@ def main() -> int:
             assert r.status_code == 200, r.text
             assert selected_text_models[-1] == "qwen3.7-max", selected_text_models
 
-            # Enable OpenRouter too, then verify DeepSeek catalog IDs resolve
-            # through OpenRouter while the browser still receives no API key.
+            # Enable OpenRouter and OpenCode Go, then verify DeepSeek catalog
+            # IDs resolve through Go while the browser receives no API key.
             settings.openrouter_api_key = "test-openrouter-key"
             settings.openrouter_base_url = "https://openrouter.ai/api/v1"
             settings.openrouter_model = "openai/gpt-5.6-luna-pro"
             settings.openrouter_fast_model = "openai/gpt-5.6-luna"
-            settings.openrouter_deepseek_model = "deepseek/deepseek-v4-pro"
-            settings.openrouter_deepseek_fast_model = "deepseek/deepseek-v4-flash"
+            settings.opencode_go_api_key = "test-opencode-go-key"
+            settings.opencode_go_base_url = "https://opencode.ai/zen/go/v1"
+            settings.opencode_go_deepseek_model = "deepseek-v4-pro"
+            settings.opencode_go_deepseek_fast_model = "deepseek-v4-flash"
             r = client.get("/api/v1/llm/models")
             assert r.status_code == 200, r.text
             mixed_catalog = r.json()["models"]
@@ -771,7 +776,7 @@ def main() -> int:
             assert {entry.get("mode") for entry in mixed_catalog[1:]} == {"deep", "fast"}, mixed_catalog
             assert next(
                 entry for entry in mixed_catalog if entry["id"] == "deepseek-fast"
-            )["provider"] == "OpenRouter", mixed_catalog
+            )["provider"] == "OpenCode Go", mixed_catalog
 
             pair_headers = {
                 "X-LLM-Server-Deep-Model": "qwen-deep",
@@ -784,7 +789,7 @@ def main() -> int:
             )
             assert r.status_code == 200, r.text
             mixed_session = r.json()["session"]
-            assert mixed_session["textModel"] == "deepseek/deepseek-v4-flash", mixed_session
+            assert mixed_session["textModel"] == "deepseek-v4-flash", mixed_session
             assert mixed_session["textModelMode"] == "fast", mixed_session
             assert mixed_session["llmServerDeepModelId"] == "qwen-deep", mixed_session
             assert mixed_session["llmServerFastModelId"] == "deepseek-fast", mixed_session
@@ -798,7 +803,7 @@ def main() -> int:
                 json={"userId": user, "sessionId": mixed_session["id"], "text": "Hello from mixed routing."},
             )
             assert r.status_code == 200, r.text
-            assert selected_text_models[-1] == "deepseek/deepseek-v4-flash", selected_text_models
+            assert selected_text_models[-1] == "deepseek-v4-flash", selected_text_models
             assert selected_text_openrouter_routing_modes[-1] == "nitro", selected_text_openrouter_routing_modes
 
             r = client.post(
@@ -843,12 +848,16 @@ def main() -> int:
 
             r = client.post(
                 "/api/v1/chat/sessions",
-                json={"userId": user, "topic": "Legacy unsupported model", "textModel": "deepseek-v4-pro"},
+                json={
+                    "userId": user,
+                    "topic": "Legacy unsupported model",
+                    "textModel": "deepseek/deepseek-v4-pro",
+                },
             )
             assert r.status_code == 400, r.text
             r = client.post(
                 "/api/v1/chat/send",
-                headers={"X-LLM-Server-Model": "deepseek-deep"},
+                headers={"X-LLM-Server-Model": "openrouter-deep"},
                 json={"userId": user, "sessionId": default_model_session["id"], "text": "Bad model header."},
             )
             assert r.status_code == 400, r.text

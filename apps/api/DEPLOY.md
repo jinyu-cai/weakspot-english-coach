@@ -74,14 +74,16 @@ MEMORY_RETRIEVAL_LIMIT=6
 MEMORY_MAX_ITEMS_PER_USER=200
 MEMORY_CHAT_RECENT_MESSAGES=12
 
-# Hosted Diagnose/text Chat provider. DeepSeek Fast is sent through OpenRouter;
-# Diagnose/Chat Fast adds :nitro and other calls keep Balanced routing.
+# Hosted Diagnose/text Chat providers. OpenRouter supplies Luna, while
+# OpenCode Go supplies the DeepSeek V4 pair.
 OPENROUTER_API_KEY=<openrouter-api-key>
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 OPENROUTER_MODEL=openai/gpt-5.6-luna-pro
 OPENROUTER_FAST_MODEL=openai/gpt-5.6-luna
-OPENROUTER_DEEPSEEK_MODEL=deepseek/deepseek-v4-pro
-OPENROUTER_DEEPSEEK_FAST_MODEL=deepseek/deepseek-v4-flash
+OPENCODE_GO_API_KEY=<opencode-go-api-key>
+OPENCODE_GO_BASE_URL=https://opencode.ai/zen/go/v1
+OPENCODE_GO_DEEPSEEK_MODEL=deepseek-v4-pro
+OPENCODE_GO_DEEPSEEK_FAST_MODEL=deepseek-v4-flash
 
 # Realtime voice only; keep this server-side.
 OPENAI_API_KEY=<openai-api-key>
