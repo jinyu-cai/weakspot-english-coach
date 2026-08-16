@@ -1617,6 +1617,12 @@ def _update_general_skill(user_id: str, skill_code: str, grade: PracticeGradeAIR
     ))
 
 
+# Minimum grades per practice step. Step 1 (Understand) is a confirmation step:
+# the learner advances once their response is basically correct (score over 60).
+# Guided use and independent transfer keep the stricter 70 / 80 bars.
+_PRACTICE_STEP_PASS_SCORES: dict[int, int] = {1: 60, 2: 70, 3: 80}
+
+
 def submit_practice_attempt(
     user_id: str,
     session_id: str,
@@ -1651,7 +1657,11 @@ def submit_practice_attempt(
             target.get("comparisonLanguage", "en"),
         )
     )
-    passed = bool(grade.isCorrect and grade.score >= (80 if step == 3 else 70))
+    min_score = _PRACTICE_STEP_PASS_SCORES.get(step, 70)
+    passed = bool(
+        grade.isCorrect
+        and (grade.score > min_score if step == 1 else grade.score >= min_score)
+    )
     now = now_iso()
     attempt = {
         "id": _stable_id("eattempt", session_id, req.clientAttemptId),

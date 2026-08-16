@@ -442,6 +442,124 @@ def main() -> int:
         assert reopened_memory["retention"]["observedErrors"] == 0
         assert get_skill(user_id, target["skillCode"])["mastery"] == mastery_before_recurrence
 
+        # Step 1 (Understand) is a confirmation step: the learner advances once
+        # their score is over 60, while guided use (70) and independent transfer
+        # (80) keep the stricter bars.
+        boundary_unit = complete_pack["pages"][1]["units"][0]
+        boundary_annotation = create_on_demand_annotation(
+            user_id,
+            pack["id"],
+            CreateOnDemandAnnotationRequest(
+                unitId=boundary_unit["unitId"],
+                startOffset=0,
+                endOffset=min(8, len(boundary_unit["sourceText"])),
+            ),
+            None,
+            8192,
+        )
+        boundary_target = mark_annotation_unfamiliar(user_id, boundary_annotation["id"])
+
+        from unittest.mock import patch as _patch
+
+        from app.config import settings as _settings
+        from app.models.practice import PracticeGradeAIResult as _GradeResult
+        from app.services import ebook_service as _ebook_service
+
+        def _fixed_grade(score: int):
+            def _stub(*args, **kwargs):
+                return _GradeResult(
+                    isCorrect=True,
+                    score=score,
+                    feedbackZh="boundary test",
+                    correctedAnswer="boundary",
+                    skillMasteryDelta=0,
+                )
+            return _stub
+
+        original_use_fake_ai = _settings.use_fake_ai
+        _settings.use_fake_ai = False
+        try:
+            # Score 60 is not "over 60": step 1 stays put so the learner retries.
+            boundary_session = start_practice_session(user_id, boundary_target["id"])
+            assert boundary_session["currentStep"] == 1
+            with _patch.object(_ebook_service, "grade_practice", side_effect=_fixed_grade(60)):
+                checked = submit_practice_attempt(
+                    user_id,
+                    boundary_session["id"],
+                    SubmitEbookPracticeAttemptRequest(
+                        responseText="a comprehension check that lands right on the boundary",
+                        clientAttemptId="ebook-boundary-step1-60",
+                    ),
+                    None,
+                )
+            assert checked["attempt"]["passed"] is False and checked["attempt"]["score"] == 60
+            assert checked["session"]["currentStep"] == 1
+
+            # Score 61 (> 60) on step 1 passes and advances to guided use.
+            with _patch.object(_ebook_service, "grade_practice", side_effect=_fixed_grade(61)):
+                checked = submit_practice_attempt(
+                    user_id,
+                    boundary_session["id"],
+                    SubmitEbookPracticeAttemptRequest(
+                        responseText="a basically correct comprehension response",
+                        clientAttemptId="ebook-boundary-step1-61",
+                    ),
+                    None,
+                )
+            assert checked["attempt"]["passed"] is True and checked["attempt"]["score"] == 61
+            assert checked["session"]["currentStep"] == 2
+
+            # Guided use still needs at least 70 and transfer at least 80.
+            boundary_session = start_practice_session(user_id, boundary_target["id"])
+            with _patch.object(_ebook_service, "grade_practice", side_effect=_fixed_grade(62)):
+                checked = submit_practice_attempt(
+                    user_id,
+                    boundary_session["id"],
+                    SubmitEbookPracticeAttemptRequest(
+                        responseText="a solid comprehension check",
+                        clientAttemptId="ebook-boundary-step1-62",
+                    ),
+                    None,
+                )
+            assert checked["session"]["currentStep"] == 2
+            boundary_session = checked["session"]
+            with _patch.object(_ebook_service, "grade_practice", side_effect=_fixed_grade(69)):
+                checked = submit_practice_attempt(
+                    user_id,
+                    boundary_session["id"],
+                    SubmitEbookPracticeAttemptRequest(
+                        responseText="guided use just below the required bar",
+                        clientAttemptId="ebook-boundary-step2-69",
+                    ),
+                    None,
+                )
+            assert checked["attempt"]["passed"] is False and checked["session"]["currentStep"] == 2
+            with _patch.object(_ebook_service, "grade_practice", side_effect=_fixed_grade(70)):
+                checked = submit_practice_attempt(
+                    user_id,
+                    boundary_session["id"],
+                    SubmitEbookPracticeAttemptRequest(
+                        responseText="guided use at the required bar",
+                        clientAttemptId="ebook-boundary-step2-70",
+                    ),
+                    None,
+                )
+            assert checked["attempt"]["passed"] is True and checked["session"]["currentStep"] == 3
+            boundary_session = checked["session"]
+            with _patch.object(_ebook_service, "grade_practice", side_effect=_fixed_grade(79)):
+                checked = submit_practice_attempt(
+                    user_id,
+                    boundary_session["id"],
+                    SubmitEbookPracticeAttemptRequest(
+                        responseText="independent transfer below 80",
+                        clientAttemptId="ebook-boundary-step3-79",
+                    ),
+                    None,
+                )
+            assert checked["attempt"]["passed"] is False
+        finally:
+            _settings.use_fake_ai = original_use_fake_ai
+
         # Cross-user reads are not possible even when a real book id is known.
         client = TestClient(app)
         other_token = make_session_jwt({"sub": "ebook-user-b", "login": "reader-b"})
