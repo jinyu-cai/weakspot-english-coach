@@ -18,6 +18,57 @@ Known issues:
 Next step:
 ```
 
+
+## 2026-08-16 — Show original text in focused ebook reading
+
+Date: 2026-08-16 PDT
+
+Branch: `codex/ebook-reading-bilingual-focus` → `main`
+
+GitHub status: PR [#133](https://github.com/jinyu-cai/weakspot-english-coach/pull/133)
+merged at `c339f8e71585fa15f381d2e93129e96a763dabd8`. Vercel Preview
+passed before merge, and merged-commit Production deployment
+`5936607789` succeeded.
+
+Deploy status: **frontend and backend LIVE**. Vercel Production deployment for
+the merged commit succeeded. The exact merged `apps/api` archive with SHA-256
+`6c2b6e84131d527624a0365ee51a9ab08a0455521d9cd121aa359b3129d7c375`
+was deployed to `oracle-us-sj`. The production `.env` SHA-256 remained
+`33d1d3089e5487773878181bc14dac73abb647efe627a7590d8d2615a547aea3`;
+the immediate rollback directory is
+`/home/ubuntu/weakspot-backend.rollback-454d689-20260816T233334Z`.
+
+Root cause:
+
+- The focused reading overlay rendered only each unit's counterpart
+  translation, so the original sentence disappeared in Reading mode.
+- Per-sentence `gap-12` centering and double-narrowed columns left most of the
+  viewport empty, and the only exit was an invisible Escape shortcut.
+
+Summary:
+
+- The focused reading view now shows the highlighted original sentence as the
+  primary line with the translation beneath it.
+- Units are grouped under per-page dividers with chapter titles in a single
+  left-aligned prose column with tightened spacing.
+- A header bar shows the page range and a visible Exit button; Escape still
+  closes the overlay.
+- Appended the ChatGPT Q&A study notes (Pydantic, coupling/DI, Any) as chapter
+  25 of both development guides.
+
+Tests run:
+
+- TypeScript `tsc --noEmit` and targeted ESLint — pass.
+- Vercel Preview and merged-commit Production deployments — pass.
+- Oracle archive SHA-256 verified before deploy; Compose config validation,
+  image rebuild, internal health endpoint, and `.env` hash preservation — pass.
+  The replacement container is healthy and returns HTTP 200.
+
+Known issues: None.
+
+Next step: Open an analyzed ebook range, switch to Reading mode, and confirm
+original sentences appear above translations with per-page dividers.
+
 ## 2026-08-12 — Preserve AI speech in Realtime chat transcripts
 
 Date: 2026-08-12 PDT
