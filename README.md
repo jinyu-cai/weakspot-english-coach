@@ -212,7 +212,15 @@ in [Coach Mode / Input Lab 2.0 P0](docs/COACH_MODE_P0.md).
 apps/api/   FastAPI, GPT-5.6/Qwen integrations, DynamoDB, MemoryAgent, tests, deploy
 apps/web/   Next.js application and Memory Center
 docs/       architecture, MemoryAgent design, submission, demo, deployment
+prompts/    personal prompt library (TOEFL learning, vocabulary, essay polishing)
+.pi/skills/ agent skills (programming-tutor, learn-new-topic)
 ```
+
+## Prompts and skills
+
+A personal library of learning prompts (TOEFL, vocabulary, writing) lives in
+[`prompts/`](prompts/README.md), alongside reusable agent skills in `.pi/skills/`
+(`programming-tutor` and `learn-new-topic`).
 
 ## Learn the codebase
 
