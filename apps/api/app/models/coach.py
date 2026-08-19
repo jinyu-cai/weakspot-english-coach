@@ -37,8 +37,6 @@ CoachPictureAssetKey = Literal[
     "rainy_bus_stop",
     "kitchen_surprise",
 ]
-
-# imcomplete skill code list, needs to be updated with all skill codes
 CoachSkillCode = Literal[
     "grammar.verb_tense",
     "grammar.article",
