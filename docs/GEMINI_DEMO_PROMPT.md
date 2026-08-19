@@ -1,5 +1,8 @@
 # Gemini / Veo Demo Video Prompt - WeakSpot English Coach
 
+> Historical video prompt. DynamoDB and Alibaba backend statements below are no
+> longer current; use `docs/ARCHITECTURE.md` for production facts.
+
 Use this prompt in **Google Gemini / Veo video generation** to create a fast, screen-recording-style hackathon demo for https://englearning.jinxxx.de.
 
 **Hard limit:** 2:30 target runtime, never exceed 3:00.  

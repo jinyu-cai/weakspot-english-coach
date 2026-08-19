@@ -1,5 +1,8 @@
 # Project Structure
 
+> Historical implementation plan. Current production uses only the Oracle
+> backend with RDS PostgreSQL; see `docs/ARCHITECTURE.md`.
+
 The GitHub repository uses a standard `apps/` monorepo layout:
 
 ```text

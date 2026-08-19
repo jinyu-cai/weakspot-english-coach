@@ -141,9 +141,6 @@ def _canonical_expression_key(expression: str) -> str:
 
 def _public_row(row: dict) -> dict:
     hidden = {
-        "PK",
-        "SK",
-        "entityType",
         "userId",
         "contentHash",
         "processingClaimId",

@@ -35,6 +35,7 @@ apps/api/__pycache__/
 apps/api/**/__pycache__/
 apps/api/**/*.pyc
 apps/api/.pytest_cache/
+apps/api/deploy/certs/*.pem
 
 # vercel
 .vercel/

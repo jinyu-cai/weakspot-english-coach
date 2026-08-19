@@ -8,11 +8,10 @@ from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import patch
 
-os.environ.setdefault("DYNAMODB_ENDPOINT_URL", "")
 os.environ.setdefault("USE_FAKE_AI", "true")
 os.environ.setdefault("OWNER_BYPASS_TOKEN", "diagnosis-claim-owner")
 
-from moto import mock_aws
+from scripts.postgres_test import mock_postgres
 
 
 TEXT = (
@@ -21,7 +20,7 @@ TEXT = (
 
 
 def main() -> int:
-    with mock_aws():
+    with mock_postgres():
         from fastapi.testclient import TestClient
 
         from app.api.routes import diagnose as diagnose_route

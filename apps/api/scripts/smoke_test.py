@@ -1,8 +1,7 @@
-"""Offline smoke test — NO network calls (no DeepSeek, no AWS).
+"""Offline smoke test — no external service calls.
 
 Verifies the whole backend imports, every AI response model produces a valid
-JSON schema, a realistic diagnostic payload validates, and the mastery +
-Decimal round-trip works.
+JSON schema, a realistic diagnostic payload validates, and mastery scoring works.
 
 Run from the apps/api directory:
 
@@ -10,7 +9,6 @@ Run from the apps/api directory:
 """
 
 import json
-from decimal import Decimal
 from types import SimpleNamespace
 
 from pydantic import BaseModel, ValidationError
@@ -682,9 +680,31 @@ def main() -> None:
     assert practice_calls[1]["max_tokens"] == 2_048
     print("Task-aware Deep/Fast routing + explicit max/medium reasoning policy OK.")
 
-    from app.core.mastery import update_skill_from_error
-    from app.db.serialization import clean, to_dynamo
+    from app.core.pagination import decode_cursor, encode_cursor
 
+    cursor = encode_cursor(
+        {"createdAt": "2026-08-17T00:00:00Z", "id": "row-1"},
+        user_id="cursor-user",
+        entity="chat_sessions",
+    )
+    assert decode_cursor(
+        cursor,
+        expected_user_id="cursor-user",
+        expected_entity="chat_sessions",
+    ) == {"createdAt": "2026-08-17T00:00:00Z", "id": "row-1"}
+    try:
+        decode_cursor(
+            cursor,
+            expected_user_id="other-user",
+            expected_entity="chat_sessions",
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("A cursor crossed learner identities.")
+    print("Signed PostgreSQL keyset cursor contract OK.")
+
+    from app.core.mastery import update_skill_from_error
     skill = update_skill_from_error(
         existing=None,
         user_id="u1",
@@ -695,10 +715,7 @@ def main() -> None:
         now="2026-06-16T00:00:00+00:00",
     )
     assert skill["mastery"] == 58, skill["mastery"]  # 70 - 12
-    dyn = to_dynamo(skill)
-    assert isinstance(dyn["mastery"], Decimal), type(dyn["mastery"])
-    assert clean(dyn)["mastery"] == 58
-    print("Mastery scoring + Decimal round-trip OK.")
+    print("Mastery scoring OK.")
 
     print("\nALL SMOKE CHECKS PASSED ✅")
 

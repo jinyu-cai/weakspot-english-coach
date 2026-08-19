@@ -76,8 +76,7 @@ def _exercise_for_storage(exercise: dict) -> dict:
 
     ``errorFingerprint`` can contain many learner examples and score breakdowns
     are reproducible from learner state. Neither is needed to grade the saved
-    exercise, and copying them can push an otherwise small exercise over
-    DynamoDB's 400 KB item limit.
+    exercise, and copying them needlessly increases database and response size.
     """
     stored = dict(exercise)
     decision = exercise.get("decision")

@@ -79,7 +79,7 @@ def traces(
     rows = list_memory_traces(identity.user_id, limit=limit)
     return {
         "traces": [
-            {key: value for key, value in row.items() if key not in {"PK", "SK", "entityType"}}
+            dict(row)
             for row in rows
         ]
     }

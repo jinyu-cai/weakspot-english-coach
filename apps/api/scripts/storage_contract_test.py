@@ -1,14 +1,13 @@
-"""Focused DynamoDB item and realtime transcript capacity contracts."""
+"""Focused payload and realtime transcript capacity contracts."""
 
 from __future__ import annotations
 
 import os
 
-os.environ.setdefault("DYNAMODB_ENDPOINT_URL", "")
 os.environ.setdefault("USE_FAKE_AI", "true")
 os.environ.setdefault("OWNER_BYPASS_TOKEN", "storage-contract-owner")
 
-from moto import mock_aws
+from scripts.postgres_test import mock_postgres
 from pydantic import ValidationError
 
 
@@ -20,7 +19,7 @@ def _expect_validation_error(factory) -> None:
     raise AssertionError("Expected request validation to reject the payload.")
 
 
-@mock_aws
+@mock_postgres()
 def main() -> int:
     from fastapi.testclient import TestClient
 
@@ -32,12 +31,10 @@ def main() -> int:
     )
     from app.db.repositories import (
         CHAT_TRANSCRIPT_MAX_MESSAGES,
-        DYNAMODB_SAFE_ITEM_BYTES,
+        DATABASE_SAFE_PAYLOAD_BYTES,
         ItemTooLargeError,
         TranscriptCapacityError,
-        _build_chat_transcript_stage_items,
-        _serialized_dynamo_item_size,
-        ensure_dynamodb_item_fits,
+        ensure_payload_fits,
     )
     from app.db.repositories import (
         finalize_chat_session_turn,
@@ -194,17 +191,14 @@ def main() -> int:
     )
     assert coach_realtime_request.missionTargetSkills == ["grammar.verb_tense"]
 
-    # At the repository capacity, 490 four-byte UTF-8 messages pack into
-    # exactly 98 chunks. The commit then uses the DynamoDB maximum of 100
-    # actions: 98 chunk updates, one marker, and one session update.
-    max_content = "😀" * 16_000
+    # The repository separately guards its internal transcript batch boundary.
     storage_messages = [
         {
             "id": f"cm_{index:012d}",
             "userId": "owner",
             "sessionId": "cs_capacity",
             "role": "assistant",
-            "content": max_content,
+            "content": "Repository transcript capacity.",
             "clientMessageId": f"voice-{index:04d}-" + ("x" * 149),
             "corrections": None,
             "betterExpression": None,
@@ -213,41 +207,35 @@ def main() -> int:
         }
         for index in range(CHAT_TRANSCRIPT_MAX_MESSAGES)
     ]
-    chunks = _build_chat_transcript_stage_items(
-        "owner",
-        "cs_capacity",
-        "tb_capacity",
-        storage_messages,
-    )
-    assert len(chunks) == 98, len(chunks)
-    assert all(
-        _serialized_dynamo_item_size(chunk) < DYNAMODB_SAFE_ITEM_BYTES
-        for chunk in chunks
-    )
     try:
-        _build_chat_transcript_stage_items(
+        from app.db.repositories import finalize_chat_session_transcript_batch
+
+        finalize_chat_session_transcript_batch(
             "owner",
             "cs_capacity",
+            "missing-claim",
             "tb_over_capacity",
             [*storage_messages, storage_messages[0]],
+            "too many",
+            len(storage_messages) + 1,
         )
     except TranscriptCapacityError:
         pass
     else:
         raise AssertionError("Repository accepted an over-capacity transcript batch.")
 
-    assert ensure_dynamodb_item_fits(
+    assert ensure_payload_fits(
         {"entityType": "SMALL_TEST", "payload": "safe"}
-    ) < DYNAMODB_SAFE_ITEM_BYTES
+    ) < DATABASE_SAFE_PAYLOAD_BYTES
     try:
-        ensure_dynamodb_item_fits(
+        ensure_payload_fits(
             {"entityType": "OVERSIZED_TEST", "payload": "😀" * 100_000}
         )
     except ItemTooLargeError as exc:
         assert exc.entity_type == "OVERSIZED_TEST"
-        assert exc.size_bytes >= DYNAMODB_SAFE_ITEM_BYTES
+        assert exc.size_bytes >= DATABASE_SAFE_PAYLOAD_BYTES
     else:
-        raise AssertionError("Oversized DynamoDB item passed the repository preflight.")
+        raise AssertionError("Oversized JSON payload passed the repository preflight.")
 
     try:
         finalize_chat_session_turn(
@@ -293,7 +281,7 @@ def main() -> int:
     except ItemTooLargeError:
         pass
     else:
-        raise AssertionError("Oversized Chat session reached DynamoDB.")
+        raise AssertionError("Oversized Chat session reached PostgreSQL.")
     assert get_chat_session("owner", "cs_oversized") is None
 
     oversized_submission = {
@@ -307,7 +295,7 @@ def main() -> int:
     except ItemTooLargeError:
         pass
     else:
-        raise AssertionError("Oversized diagnosis submission reached DynamoDB.")
+        raise AssertionError("Oversized diagnosis submission reached PostgreSQL.")
     assert get_submission(
         "owner",
         oversized_submission["createdAt"],

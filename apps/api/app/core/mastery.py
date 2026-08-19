@@ -2,7 +2,7 @@
 
 Mastery is a 0-100 score per skill. Errors push it down (by severity);
 correct practice pushes it up. All math here operates on floats — the
-DynamoDB layer is responsible for float<->Decimal conversion.
+The PostgreSQL repository boundary is responsible for numeric conversion.
 """
 
 from typing import Optional

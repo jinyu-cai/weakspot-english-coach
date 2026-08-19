@@ -2,7 +2,7 @@
 
 Run from ``apps/api``:
 
-    DYNAMODB_ENDPOINT_URL= UV_CACHE_DIR=.uv-cache uv run python -m scripts.ebook_test
+    uv run python -m scripts.ebook_test
 """
 
 from __future__ import annotations
@@ -76,18 +76,13 @@ def _text_pdf_bytes(*, include_blank_page: bool = True) -> bytes:
 
 
 def main() -> int:
-    os.environ["AWS_ACCESS_KEY_ID"] = "testing"
-    os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
-    os.environ["AWS_REGION"] = "us-east-1"
-    os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
-    os.environ["DYNAMODB_ENDPOINT_URL"] = ""
     os.environ["USE_FAKE_AI"] = "true"
     os.environ["SESSION_SECRET"] = "ebook-test-secret-at-least-32-bytes"
     os.environ["USER_DAILY_LIMIT"] = "100"
 
-    import moto
+    from scripts.postgres_test import mock_postgres
 
-    mock = moto.mock_aws()
+    mock = mock_postgres()
     mock.start()
     try:
         from fastapi.testclient import TestClient
@@ -95,7 +90,7 @@ def main() -> int:
 
         from app.api.deps import make_session_jwt
         from app.db.repositories import (
-            ensure_dynamodb_item_fits,
+            ensure_payload_fits,
             get_ebook_analysis_page,
             get_ebook_learning_target,
             get_memory,
@@ -214,7 +209,7 @@ def main() -> int:
         assert [page["pageNumber"] for page in pages] == list(range(1, len(pages) + 1))
         assert all(page["chapterTitle"] == "Learning Chapter" for page in pages)
         assert max(page["wordCount"] for page in pages) < 500
-        assert all(ensure_dynamodb_item_fits(page) < 400_000 for page in pages)
+        assert all(ensure_payload_fits(page) < 400_000 for page in pages)
 
         # A repeated identical upload reuses the ready book and deletes the new temp file.
         duplicate, duplicate_path = begin_ebook_import(

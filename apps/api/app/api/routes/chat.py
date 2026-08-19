@@ -9,9 +9,8 @@ from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Qu
 from app.api.deps import Identity, get_llm_provider, rate_limited, resolve_identity
 from app.config import settings
 from app.core.mastery import update_skill_from_error
-from app.core.pagination import decode_dynamo_cursor, encode_dynamo_cursor
+from app.core.pagination import decode_cursor, encode_cursor
 from app.core.taxonomy import ERROR_TAXONOMY
-from app.db.keys import user_pk
 from app.db.repositories import (
     ChatSessionBusyError,
     ItemTooLargeError,
@@ -589,10 +588,10 @@ def get_sessions(
     identity: Identity = Depends(resolve_identity),
 ):
     try:
-        start_key = decode_dynamo_cursor(
+        start_key = decode_cursor(
             cursor,
-            expected_pk=user_pk(identity.user_id),
-            expected_sk_prefix="CHAT#",
+            expected_user_id=identity.user_id,
+            expected_entity="chat_sessions",
         )
     except ValueError as exc:
         raise HTTPException(
@@ -607,7 +606,11 @@ def get_sessions(
     return {
         "sessions": [_public_session(session) for session in sessions],
         "count": len(sessions),
-        "nextCursor": encode_dynamo_cursor(next_key),
+        "nextCursor": encode_cursor(
+            next_key,
+            user_id=identity.user_id,
+            entity="chat_sessions",
+        ),
     }
 
 

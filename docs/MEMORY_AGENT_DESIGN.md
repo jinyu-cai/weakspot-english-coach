@@ -35,20 +35,22 @@ inside the existing structured diagnosis/chat response, so accumulation does
 not require an extra chat-completion call. Deterministic signals add weaknesses
 from diagnosed errors and aggregate practice outcomes.
 
-## DynamoDB layout
+## PostgreSQL layout
 
-The existing single-table partition remains `PK=USER#{userId}`:
+Stable lifecycle and query fields are typed columns; evolving evidence remains
+in JSONB:
 
 ```text
-SK=MEMORY#{memoryId}                 durable memory
-SK=MEMTRACE#{timestamp}#{traceId}    recall audit trail (30-day TTL)
-SK=INPUT_SOURCE#{sourceId}           Input Learning source metadata
-SK=INPUT_ITEM#{sourceId}#{itemId}    grounded or attention target
+memories                 durable memory and expiry columns + JSONB evidence
+memory_traces            bounded recall audit with expires_at
+input_sources            Input Learning source and processing claim
+input_items              grounded or attention targets
+memory_leases            one current writer claim per learner
 ```
 
-Active memory rows use `expiresAt` for synchronous filtering and `ttl` for
-eventual physical deletion. This makes expiration correct immediately even
-though DynamoDB TTL deletion is asynchronous.
+Active memory rows use `expires_at` for synchronous filtering and
+`delete_after` for physical cleanup by the scheduled maintenance command. This
+makes expiration correct immediately even if cleanup runs later.
 
 ## Consolidation and conflict handling
 
@@ -56,7 +58,7 @@ though DynamoDB TTL deletion is asynchronous.
 2. If the same key and semantically equivalent content already exists, merge
    the evidence, raise confidence, and increment `observationCount`.
 3. If the same key conflicts with the new statement, create the new memory and
-   mark the old row `superseded`, with `supersededBy` and a 30-day cleanup TTL.
+   mark the old row `superseded`, with `supersededBy` and a 30-day cleanup time.
 4. Keep pinned memory indefinitely. Expire other kinds using the lifetimes
    above.
 5. If a user exceeds the configured capacity (default 200 active memories),
@@ -236,7 +238,7 @@ utterance cannot become two mastery penalties.
 
 Analysis itself is retry-safe. The exact model output is saved as an internal
 draft before learning state changes. Errors, expression notes, skill rows, and
-the final public session result are then committed in one DynamoDB transaction.
+the final public session result are then committed in one PostgreSQL transaction.
 If finalization fails, the claim is released but the draft remains; a retry
 reuses it without another model call. Probe outcomes and memory source evidence
 are independently idempotent. A stealth or durable-memory persistence error
@@ -249,14 +251,13 @@ analysis use mutually exclusive claims; a complete user/assistant pair is
 committed atomically, and analysis takes its claim before reading messages.
 The browser also blocks app links, sign-out, history navigation, and local chat
 controls while a voice session is active or has an unsaved transcript.
-Voice transcript batches share the session turn claim and are published through
-a commit marker: staged chunks remain invisible to chat history and analysis,
-fit below DynamoDB item/transaction byte limits, and retain a cleanup TTL until
-the final publish transaction atomically makes the complete batch durable.
+Voice transcript batches share the session turn claim. The batch marker,
+message rows, session count, and released claim commit together; a failed
+transaction exposes no partial transcript.
 
 All canonical Memory read-modify-write paths use a learner-scoped, re-entrant
-write lease. A stale holder is fenced at the DynamoDB write itself, while two
-valid sources serialize and re-read the latest canonical row before merging.
+write lease. A stale holder is fenced inside the SQL transaction, while two
+valid sources serialize through row locks and re-read the latest canonical row before merging.
 This prevents concurrent input captures or chat analyses from losing source
 references, observation counts, verification, or retention state.
 
@@ -316,7 +317,7 @@ quietly targeting the learner's durable weak spots.
 
 ## Hybrid retrieval
 
-Production vectors come from Alibaba Cloud Model Studio
+Optional production vectors come from Alibaba Cloud Model Studio
 `text-embedding-v4` at 256 dimensions. If the embedding API is unavailable,
 the same path continues with lexical retrieval.
 
@@ -420,9 +421,10 @@ learner's memories by changing `userId`.
 
 ```bash
 cd apps/api
-DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_agent_test
-DYNAMODB_ENDPOINT_URL= uv run python -m scripts.stealth_input_test
-DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
+docker compose -f docker-compose.local.yml up -d postgres
+uv run python -m scripts.memory_agent_test
+uv run python -m scripts.stealth_input_test
+uv run python -m scripts.memory_benchmark
 ```
 
 The deterministic benchmark currently reports:

@@ -6,11 +6,10 @@ import math
 from typing import Optional
 from uuid import uuid4
 
-from botocore.exceptions import ClientError
-
 from app.core.taxonomy import ERROR_TAXONOMY
 from app.db.repositories import (
     LearningStateConflictError,
+    PlanProgressConflictError,
     get_activity_run,
     get_evidence_event,
     get_learning_state,
@@ -154,9 +153,8 @@ def update_activity_run(
         try:
             save_activity_run(updated, expected_version=prior_version)
             return updated
-        except ClientError as exc:
-            if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
-                raise
+        except PlanProgressConflictError:
+            continue
     raise RuntimeError("Activity run changed repeatedly; retry the update.")
 
 

@@ -174,8 +174,8 @@ class StealthProbeAssessmentAI(BaseModel):
 
 class SessionAnalysisAI(BaseModel):
     summaryZh: str
-    # Bounded collections keep the atomic DynamoDB finalization below its
-    # 100-item transaction limit even if a provider tries to over-generate.
+    # Bounded collections keep analysis storage and responses predictable even
+    # if a provider tries to over-generate.
     corrections: List[SessionCorrectionAI] = Field(default_factory=list, max_length=12)
     naturalExpressions: List[SessionNaturalExpressionAI] = Field(default_factory=list, max_length=8)
     weaknesses: List[SessionWeaknessAI] = Field(default_factory=list, max_length=6)

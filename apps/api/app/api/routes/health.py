@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.config import settings
+from app.db.database import database_ready
 
 router = APIRouter()
 
@@ -19,3 +20,10 @@ def health_check():
             }
         },
     }
+
+
+@router.get("/health/ready")
+def readiness_check():
+    if not database_ready():
+        raise HTTPException(status_code=503, detail="Database is unavailable.")
+    return {"status": "ready", "database": "postgresql"}

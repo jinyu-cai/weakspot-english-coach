@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.api.deps import Identity, get_llm_provider, rate_limited, resolve_identity
-from app.core.pagination import decode_dynamo_cursor, encode_dynamo_cursor
-from app.db.keys import user_pk
+from app.core.pagination import decode_cursor, encode_cursor
 from app.models.input_learning import AnalyzeInputLearningRequest, SubmitInputLearningAttemptRequest
 from app.services.ai_client import LLMProviderConfig
 from app.services.input_learning_service import (
@@ -79,10 +78,10 @@ def list_sources(
         return {"sources": sources, "count": len(sources), "nextCursor": None}
 
     try:
-        start_key = decode_dynamo_cursor(
+        start_key = decode_cursor(
             cursor,
-            expected_pk=user_pk(identity.user_id),
-            expected_sk_prefix="INPUT_SOURCE#",
+            expected_user_id=identity.user_id,
+            expected_entity="input_sources",
         )
     except ValueError as exc:
         raise HTTPException(
@@ -97,7 +96,11 @@ def list_sources(
     return {
         "sources": sources,
         "count": len(sources),
-        "nextCursor": encode_dynamo_cursor(next_key),
+        "nextCursor": encode_cursor(
+            next_key,
+            user_id=identity.user_id,
+            entity="input_sources",
+        ),
     }
 
 

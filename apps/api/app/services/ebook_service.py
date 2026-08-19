@@ -1,8 +1,7 @@
 """Private, source-grounded ebook learning.
 
 The original upload is used only while extracting text. Persisted rows contain
-small page-sized text units so no ebook or analysis result approaches the
-DynamoDB item limit.
+small page-sized text units so ebook analysis remains efficient to query.
 """
 
 from __future__ import annotations
@@ -82,7 +81,7 @@ ANALYSIS_VERSION = "ebook-v1"
 MAX_EXPANDED_BYTES = lambda: max(1, settings.ebook_max_expanded_mb) * 1024 * 1024
 MAX_BOOK_TEXT_CHARS = 10_000_000
 MAX_PAGE_TEXT_CHARS = 120_000
-_PUBLIC_HIDDEN = {"PK", "SK", "entityType", "userId", "fileHash", "processingClaimId"}
+_PUBLIC_HIDDEN = {"userId", "fileHash", "processingClaimId"}
 
 
 class EbookImportError(ValueError):

@@ -5,12 +5,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 
-os.environ.setdefault("DYNAMODB_ENDPOINT_URL", "")
-os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
-os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
-os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
-
-from moto import mock_aws
+from scripts.postgres_test import mock_postgres
 from pydantic import ValidationError
 
 from app.api.routes.diagnose import (
@@ -209,7 +204,7 @@ def main() -> int:
     assert manual["state"] == "confirmed"
     assert manual["policy"] == "learner-confirmed-v1"
 
-    with mock_aws():
+    with mock_postgres():
         create_table()
         user_id = "single-sentence-evidence"
         latest = None
