@@ -22,6 +22,10 @@ Next step:
 
 Date: 2026-08-17 PDT
 
+Branch: `codex/rds-postgresql-release` → `main`
+
+GitHub status: release PR pending.
+
 - Replaced the application persistence layer with PostgreSQL 16 using
   SQLAlchemy, psycopg, Alembic, typed relational columns, and JSONB payloads.
 - Added signed keyset pagination, PostgreSQL-backed leases and atomic writes,
