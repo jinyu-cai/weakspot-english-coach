@@ -1,5 +1,8 @@
 # WeakSpot Demo Video Production Pack
 
+> Historical Qwen hackathon production pack. Its Alibaba ECS and DynamoDB
+> evidence cards are archived and must not be used as current architecture.
+
 Target: a public, English-language hackathon demo video at **2:54**.
 
 ## Deliverables

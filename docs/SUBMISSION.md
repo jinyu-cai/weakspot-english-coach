@@ -1,5 +1,10 @@
 # Devpost Submission Draft — Qwen Cloud Hackathon
 
+> **Historical submission artifact.** It describes the July 2026 Alibaba ECS
+> and DynamoDB demo and is not the current production architecture. The active
+> backend is Oracle San Jose with RDS PostgreSQL; see
+> [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
 ## Quick information
 
 - **Project:** WeakSpot English Coach

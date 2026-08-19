@@ -2,9 +2,16 @@
 
 > 适合读者：真正从零开始的大一新生。你可以还没写过程序、没用过终端，也不知道 API、端口、数据库和部署是什么。
 >
-> 最后核对日期：2026-07-30。本文以真实代码为准，不再作为“让 AI 生成项目的规格”，而是作为读懂和重建项目的学习教程。
+> 最后核对日期：2026-08-17。本文以真实代码为准，不再作为“让 AI 生成项目的规格”，而是作为读懂和重建项目的学习教程。
 >
 > English edition: [`development.en.md`](development.en.md). 两个版本使用相同的 0–25 章结构；代码、命令和文件路径保持一致，方便双语对照。
+
+> **数据库说明（2026-08-17）：** 第 9、14、15、18 章已按当前 PostgreSQL runtime 更新；第 9.8 节保留
+> DynamoDB 旧实现，只用于理解一次性数据迁移。更集中的动手练习见
+> [`docs/POSTGRESQL_BEGINNER_GUIDE.md`](docs/POSTGRESQL_BEGINNER_GUIDE.md)，生产部署与 cutover 见
+> [`docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md`](docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md)。
+> PostgreSQL repository code 和 RDS infrastructure 已完成；截至该日期，production schema/data/application
+> maintenance cutover 尚未执行，实时状态以 [`docs/change-log.md`](docs/change-log.md) 为准。
 
 ## 0. 先说明：原来的笔记有什么问题
 
@@ -13,7 +20,7 @@
 - 大量示例仍使用 `pip`、`requirements.txt`、OpenAI 和旧目录，当前项目实际使用 `uv`、`pyproject.toml`、`apps/api` 和 Qwen/DeepSeek。
 - 只讲了最早的 Diagnose、Profile、Plan、Practice，没有覆盖登录、限流、文字/语音聊天、ChatGPT 导入、学习笔记、Daily Wins、服务端模型选择和 MemoryAgent。
 - 代码片段是“准备实现什么”，不一定等于仓库里“现在怎样实现”。
-- 它直接给出长代码，但没有先解释 HTTP、依赖注入、Pydantic、ASGI、线程池、DynamoDB 访问模式等概念。
+- 它直接给出长代码，但没有先解释 HTTP、依赖注入、Pydantic、ASGI、线程池、SQL transaction 等概念。
 - 新手很难区分 route、service、repository、model 各自负责什么。
 
 因此本文已经重写。旧内容仍可从 Git 历史查看，但不应继续作为实现依据。
@@ -28,7 +35,7 @@
 | 当前 Diagnose 完整链路 | 示例已与真实实现分叉 | 第 7 章 |
 | Qwen/DeepSeek/Auto/Deep/Fast/BYOK | 缺失 | 第 8 章 |
 | GPT-5.6 Responses API 自适应任务 | 缺失 | 第 8.9 节 |
-| DynamoDB Decimal/TTL/当前 key | 部分过时 | 第 9 章 |
+| PostgreSQL table/JSONB/transaction/分页 | 旧版仍写 DynamoDB | 第 9 章；旧实现移至 9.8 |
 | Chat、Import、Notes、Stats、OAuth | 缺失 | 第 10.1–10.9 节 |
 | Coach 五类任务、动态场景、情境词汇、Input Lab 2.0、Speech | 缺失 | 第 8.8、10.10–10.15 节 |
 | MemoryAgent | 完全缺失 | 第 11 章 |
@@ -54,9 +61,11 @@
 | `apps/web/README.md` | 前端运行和后端连接方式 | 实际启动或修改前端 |
 | `LOCAL_TESTING.md` | 分层测试与发布前检查 | 写完代码之后 |
 | `docs/ARCHITECTURE.md` | 当前生产架构和数据流 | 已理解基本代码分层后 |
+| `docs/POSTGRESQL_BEGINNER_GUIDE.md` | 当前 PostgreSQL schema、SQL 和本地实验 | 学习数据库时 |
+| `docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md` | RDS、TLS、迁移、备份和回滚 runbook | 准备生产变更时 |
 | `docs/MEMORY_AGENT_DESIGN.md` | MemoryAgent 算法设计 | 学习新功能时 |
 | `docs/COACH_MODE_P0.md` | Coach、情境词汇、字幕实验的产品与安全边界 | 跟读引导式学习闭环前 |
-| `docs/ALIBABA_QWEN_DEPLOYMENT.md` | Alibaba/Qwen 部署步骤 | 准备上线时 |
+| `docs/ALIBABA_QWEN_DEPLOYMENT.md` | 历史 Alibaba 后端说明；Qwen 仍可作外部模型 provider | 查旧部署记录时 |
 
 本文判断一个知识点“讲清楚了”，至少要同时回答四个问题：
 
@@ -84,7 +93,7 @@
 “读完”不是目标。完成本文后，你应该能够独立做出这些可观察的事情：
 
 1. 在自己的电脑上安装并检查 Git、Node.js、pnpm 和 uv。
-2. 说清楚浏览器、Next.js、FastAPI、模型服务和 DynamoDB 各自做什么。
+2. 说清楚浏览器、Next.js、FastAPI、模型服务和 PostgreSQL 各自做什么。
 3. 用两个终端启动无密钥本地环境，并知道怎样安全停止进程。
 4. 从一个页面按钮跟到 HTTP request、route、service、repository，再跟着 response 回到页面。
 5. 看懂项目里最常见的 Python、TypeScript 和 React 语法，而不是只会复制。
@@ -149,7 +158,7 @@ WeakSpot 不是“再做一个聊天机器人”，而是把用户每次真实�
   -> FastAPI 后端（身份、业务规则、AI、数据库）
   -> Qwen / DeepSeek（文字生成）+ OpenAI Realtime（双向语音）
   -> Qwen3-TTS-Flash（把现有文字合成音频）
-  -> DynamoDB
+  -> PostgreSQL（本地 Docker / 生产 Amazon RDS）
 ```
 
 浏览器永远不应该直接拿到服务器的 Qwen、DeepSeek、AWS 或 OAuth secret。
@@ -367,7 +376,7 @@ weakspot-english-coach/
 │   │   │   │   └── routes/  # HTTP endpoints
 │   │   │   ├── models/      # Pydantic 输入/输出结构
 │   │   │   ├── services/    # AI、Memory、计划、练习等业务逻辑
-│   │   │   ├── db/          # DynamoDB 与 repository
+│   │   │   ├── db/          # PostgreSQL schema、连接与 repository
 │   │   │   └── core/        # mastery、taxonomy 等纯规则
 │   │   ├── scripts/         # 建表、测试、benchmark、本地服务器
 │   │   ├── pyproject.toml    # Python 依赖定义
@@ -387,7 +396,7 @@ weakspot-english-coach/
 读后端代码时，建议一直记住这条链：
 
 ```text
-models -> routes -> services -> repositories -> DynamoDB
+models -> routes -> services -> repositories -> PostgreSQL
 ```
 
 它不是强制每次都经过所有层，而是各层职责的方向。
@@ -704,8 +713,8 @@ message = f"{name.upper()} has {count + 1} tasks"
 # 结果："JIN has 4 tasks"
 ```
 
-本项目用 `USER#abc` 这种字符串作为 DynamoDB key 的一部分。`USER#` 是固定前缀，
-`abc` 是具体用户 ID；前缀让人和程序都能快速看出这条数据属于用户。
+旧 DynamoDB migration 数据曾用 `USER#abc` 作为组合 key；当前 PostgreSQL schema 把同一个值直接保存到
+typed `user_id` column。这里保留该字符串只是为了练习 f-string，并不是新 repository 的 key 规则。
 
 ### 4.7 list/dict comprehension
 
@@ -902,7 +911,9 @@ Memory 是增强功能，所以失败时允许主诊断继续。相反，如果�
 - `async def`：协程函数，可以在等待网络或定时器时让事件循环处理其他请求。
 - `await`：等待另一个协程。
 
-本项目的 DynamoDB boto3 和普通 OpenAI client 是同步库。`diagnose.py` 用 `run_in_executor` 把耗时同步工作放入线程池，避免阻塞 FastAPI 的事件循环。不要机械地把所有函数都改成 `async def`；如果内部仍调用阻塞函数，反而可能拖慢整个服务。
+本项目的 psycopg/SQLAlchemy repository 和部分模型 client 使用同步调用。`diagnose.py` 用
+`run_in_executor` 把耗时同步工作放入线程池，避免阻塞 FastAPI 的事件循环。不要机械地把所有函数都改成
+`async def`；如果内部仍调用阻塞函数，反而可能拖慢整个服务。
 
 例如，下面的写法虽然函数前有 `async`，`time.sleep` 仍会卡住事件循环：
 
@@ -1020,9 +1031,9 @@ uv run uvicorn app.main:app --reload --port 8000
 **什么时候用哪条命令？**
 
 - `uv run uvicorn app.main:app ...` 跑真实后端，配置来自 `.env`。第 23.9 节的小项目用的就是这条。
-- 14.3 节的无密钥环境用 `uv run python -m scripts.dev_server`。这个脚本会先做额外准备——在进程内模拟
-  AWS（moto）、建临时 DynamoDB 表、打开假 AI——最后才在内部启动 Uvicorn（`scripts/dev_server.py` 里调用
-  `uvicorn.run("app.main:app", ...)`）。想不配任何 key 就有一个可用的后端，用这条。
+- 14.3 节的无密钥环境先启动本地 Docker PostgreSQL，再用 `uv run python -m scripts.dev_server`。脚本会
+  运行 Alembic、打开 fake AI，最后启动 Uvicorn（`scripts/dev_server.py` 调用
+  `uvicorn.run("app.main:app", ...)`）。想不配模型 key 就有一个可用后端，用这条。
 
 **自己验证一遍。** 服务器开着的时候：
 
@@ -1178,7 +1189,7 @@ http://localhost:8000/docs
 | `models/` | 定义输入输出结构和校验 | 不访问数据库 |
 | `api/routes/` | HTTP、依赖、状态码、组织流程 | 不堆放所有算法细节 |
 | `services/` | AI prompt、Memory、决策、业务计算 | 不关心页面长什么样 |
-| `db/repositories.py` | 封装 DynamoDB 读写和查询 | 不生成学习计划 |
+| `db/repositories.py` | 稳定数据库入口；PostgreSQL 实现在 `postgres_repositories.py` | 不生成学习计划 |
 | `core/` | taxonomy、mastery 等纯规则 | 不调用网络 |
 | `config.py` | 环境配置和默认值 | 不放真实 secret |
 
@@ -1251,7 +1262,7 @@ async def diagnose(
 req.userId = "guest_abc"
 ```
 
-若当天额度已用完，依赖会先返回 429，诊断模型不会被调用，也不会产生 DynamoDB 写入。
+若当天额度已用完，依赖会先返回 429，诊断模型不会被调用，也不会产生 PostgreSQL 写入。
 
 ### 7.3 快速预检查
 
@@ -1336,8 +1347,9 @@ if claim.get("claimState") != "acquired":
     raise DiagnosisInProgressError("This identical diagnosis is already being processed.")
 ```
 
-`claim_diagnosis_request`（`db/repositories.py`）第一次抢占用的是带
-`ConditionExpression="attribute_not_exists(PK)"` 的原子 `put_item`，两个并发请求不可能同时成功。
+`claim_diagnosis_request`（`db/postgres_repositories.py`）第一次抢占使用
+`INSERT ... ON CONFLICT DO NOTHING`；若 row 已存在，再用 `SELECT ... FOR UPDATE` 锁定并检查
+complete/busy/stale 状态，因此两个并发请求不能同时成为 owner。
 `"complete"` 表示在检查期间别人已经完成——重新跑一遍 `_pre_check`，这次就会命中上面的 duplicate 分支。
 其余情况（`"busy"`）抛出的 `DiagnosisInProgressError` 被 route 转成 409：
 
@@ -1349,8 +1361,8 @@ except DiagnosisInProgressError as e:
     ) from e
 ```
 
-接管 claim 的更新条件是 `#status = :failed OR attribute_not_exists(processingClaimId) OR processingClaimedAtEpoch < :stale`
-（stale 门槛默认 900 秒），这就是“只有 failed、失去 owner 或超过 stale 门槛时才能接管”的代码来源；
+接管 claim 前会在 row lock 内检查 `status`、`claim_id` 和 `claimed_at_epoch`（stale 门槛默认 900 秒），
+这就是“只有 failed、失去 owner 或超过 stale 门槛时才能接管”的代码来源；
 “避免再次调用模型”对应 `_llm_and_persist` 里的 draft 复用（见 7.5）。
 
 只改变 `analysisContext` 时 hash 会改变，因为同一句话在不同受众或任务目标下可能需要新的迁移观察。
@@ -1456,18 +1468,18 @@ learning_evidence.append(record_evidence(req.userId, ...))                # Evid
 put_submission_hash(req.userId, text_hash, submission_id, now, request_id)  # 最后一步：标记 claim 完成
 ```
 
-`put_submission_hash` 本身是带 `processingClaimId = :claim AND #status = :processing` 条件的更新——它就是
-把 claim 从 `processing` 翻成 `complete` 的那一步。若 worker 中途崩溃，`_run_diagnosis_job` 会调用
+`put_submission_hash` 在 transaction 中锁定 `diagnosis_requests` row、核对 `claim_id`，再把 status 从
+`processing` 翻成 `complete`。若 worker 中途崩溃，`_run_diagnosis_job` 会调用
 `release_diagnosis_request` 把 claim 置为 `failed`，后来的重试才能接管，而不是永远收到 409。
 
 贯穿示例成功后，逻辑上会出现：
 
 ```text
-SUBMISSION#...      保存原文、分数、rewrite
-ERROR#...           保存 grammar.article 与原文 quote "to library"
-NOTE#...            保存对应微课（若诊断返回）
-SKILL#grammar...    更新 evidence/mastery
-MEMORY#...          保存或合并保守 weakness candidate
+submissions row     保存原文、分数、rewrite
+errors row          保存 grammar.article 与原文 quote "to library"
+notes row           保存对应微课（若诊断返回）
+skills row          更新 evidence/mastery
+memories row        保存或合并保守 weakness candidate
 ```
 
 如果某一步失败，不能把 response 包装成“全部成功”；幂等 claim 让客户端可以安全重试而不重复计数。
@@ -1704,7 +1716,7 @@ event ID 由 `userId + clientEventId` 的 hash 产生。同一个客户端事件
 
 #### 可亲手完成的 Swagger 实验
 
-保持第 14 章的 moto/fake 后端运行，在 Swagger 使用同一浏览器 cookie：
+保持第 14 章的本地 PostgreSQL/fake-AI 后端运行，在 Swagger 使用同一浏览器 cookie：
 
 1. `POST /api/v1/learning/runs`：
 
@@ -2252,9 +2264,121 @@ def parse_gpt56_mission(
 
 前端只有同时看到 `mission.generation.provider === "OpenAI"` 和 `plannerInsight` 才显示证据面板。也就是说，UI 展示的是后端返回的运行时事实，不是写死的宣传文案。
 
-## 9. DynamoDB：不是把 SQL 表换个名字
+## 9. PostgreSQL：用 SQL 理解当前数据库
 
-### 9.1 先理解数据库、item、key、Query 和 Scan
+当前运行时使用 PostgreSQL 16：本地开发通过 Docker 运行，生产环境使用 Amazon RDS PostgreSQL。它对已经
+学过一点 SQL 的初学者很友好，因为可以直接观察 table、row、column、primary key、foreign key、index 和
+transaction。完整实验请配合 [`docs/POSTGRESQL_BEGINNER_GUIDE.md`](docs/POSTGRESQL_BEGINNER_GUIDE.md)。
+
+### 9.1 先理解 table、row、key、index 和 transaction
+
+| 通用概念 | PostgreSQL 名称 | 本项目例子 |
+| --- | --- | --- |
+| 一类记录 | table | `memories`、`chat_messages` |
+| 一份记录 | row | 某个用户的一条 memory |
+| 记录中的一个值 | column | `status='active'` |
+| 唯一定位规则 | primary key | `(user_id, memory_id)` |
+| 保护表之间的关系 | foreign key | chat message 必须属于已有 session |
+| 加速过滤和排序 | index | `(user_id, created_at, id)` |
+| 一起成功或回滚的一组操作 | transaction | 保存练习结果及相关学习证据 |
+
+数据库的职责不只是“进程停止后数据还在”，还包括约束错误数据、并发修改时保持一致，以及高效回答常见查询。
+例如，列出一个用户最近的 memory 可以写成：
+
+```sql
+SELECT memory_id, status, updated_at
+FROM memories
+WHERE user_id = 'demo-user-001'
+ORDER BY updated_at DESC, memory_id DESC
+LIMIT 20;
+```
+
+`WHERE` 负责筛选，`ORDER BY` 决定稳定顺序，`LIMIT` 控制一页大小；对应的复合 index 避免数据增长后每次扫描
+整张表。
+
+### 9.2 为什么同时使用普通 column 和 JSONB
+
+当前 schema 是混合设计：身份、关联、状态、时间和常用排序字段使用 typed column；变化较快的 AI 结果保存在
+`payload JSONB`。例如 `memories` 有 `user_id`、`memory_id`、`kind`、`status`、`created_at`、
+`updated_at`、`expires_at` 等普通列，而 explanation、evidence 和 verification history 等嵌套内容留在
+JSONB 中。
+
+这样做的平衡是：
+
+- 普通列容易写 SQL、建 index、加 unique/foreign-key/check constraint；
+- JSONB 能完整保留 API 形状，不必为每个 AI 嵌套字段建立一列；
+- repository 仍返回原来的 Python dict，因此 route 和 service 不需要知道底层表结构；
+- 未来若某个 JSONB 字段成为高频查询条件，可以通过 Alembic 把它提升为 typed column。
+
+真实定义在 `apps/api/app/db/schema.py`，首次建表 migration 在
+`apps/api/alembic/versions/20260817_0001_postgresql.py`。主要表包括 `users`、`profiles`、`skills`、
+`submissions`、`errors`、`notes`、`plans`、`practice_attempts`、`memories`、`input_sources`、
+`ebooks`、`chat_sessions` 和 `chat_messages`。
+
+### 9.3 SQLAlchemy、connection pool 和 repository
+
+`apps/api/app/db/database.py` 创建 SQLAlchemy engine 和连接池。`session_scope()` 给一次 repository 操作提供
+短 transaction：正常结束时 commit，抛异常时 rollback，最后归还连接。不要在 route/service 里散落 SQL；
+它们继续调用 `list_recent_errors(user_id)`、`save_memory(memory)`、
+`get_chat_session(user_id, session_id)` 这类 repository 函数。
+
+`apps/api/app/db/repositories.py` 是稳定 import 入口，当前实现位于
+`apps/api/app/db/postgres_repositories.py`。这个边界让 HTTP 和学习规则保持稳定，同时允许数据库实现独立演进。
+
+### 9.4 查询、index 和 signed keyset pagination
+
+Chat 与 Input Learning 的 HTTP 列表每次只读取有界的一页，并按 `(created_at, id)` 排序。next cursor 保存
+上一页最后一行的位置；下一页使用“小于上一位置”的条件继续，而不是随着数据增长越来越慢的巨大
+`OFFSET`。History/Notebook 的当前合同要返回完整 archive，因此使用没有 SQL `LIMIT` 的有序查询；给模型的
+Dashboard/Plan 摘要仍显式传入 limit。
+
+cursor 由服务端 HMAC 签名，并绑定 user 和 entity type。修改 cursor、把自己的 cursor 给另一个用户，或把
+chat cursor 用到 input-learning endpoint 都会被拒绝。`apps/api/app/core/pagination.py` 实现这个合同。
+
+### 9.5 transaction、row lock 和 idempotent upsert
+
+“先读 4，再写 5”不是天然安全：两个请求可能同时读到 4，最后丢掉一次更新。当前 PostgreSQL repository 在
+claim、lease 和学习状态等竞争路径使用 `SELECT ... FOR UPDATE` 锁定相关 row；相关副作用放在同一个
+transaction，任一步失败就整体 rollback。
+
+可安全重试的保存操作使用 `INSERT ... ON CONFLICT DO NOTHING/UPDATE`。稳定 primary key 让同一个 request
+重试时命中原 row，而不是制造重复证据。`memory_leases` 等表还会检查 `claim_id`，防止过期 worker 覆盖新
+worker 的结果。
+
+### 9.6 逻辑过期和物理清理
+
+Memory 的 `expires_at` 是 typed timestamp。业务查询必须立即排除已经过期、forgotten 或 archived 的 row；
+用户行为不等待后台清理。`uv run python -m scripts.cleanup_expired` 负责稍后物理删除符合条件的记录，生产环境
+至少每小时运行一次。这个“双层规则”既保证到期行为准确，也避免请求路径承担大量删除工作。
+
+### 9.7 本地运行、schema migration 和生产 RDS
+
+从 `apps/api` 运行：
+
+```bash
+uv sync
+docker compose -f docker-compose.local.yml up -d postgres
+uv run alembic upgrade head
+uv run python -m scripts.dev_server
+```
+
+Compose 创建 `weakspot` 开发库和只允许测试 reset 的 `weakspot_test`。schema 变化必须修改 `schema.py`、新增并
+审查 Alembic revision，再在测试库运行 `uv run alembic upgrade head`；不要手工修改生产表，也不要重写已经
+在共享环境应用过的 migration。
+
+已 provision 的生产目标是 `us-west-1` 的 Amazon RDS PostgreSQL，不是 Aurora：PostgreSQL 16.14、Single-AZ
+`db.t4g.micro`、20 GiB gp3（最高自动扩展到 100 GiB）、加密、七天 backup、deletion protection，并只允许
+Oracle San Jose 后端的静态 `/32` 地址通过 TLS 连接。部署和迁移步骤见
+[`docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md`](docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md)。RDS infrastructure 已在线，
+但 production schema/data/application cutover 仍是单独的 maintenance-window 步骤。
+
+### 9.8 历史附录：旧 DynamoDB 单表实现
+
+> 以下内容只用于理解旧数据和一次性迁移工具，不描述当前 runtime。旧的 `PK`/`SK`、Decimal、TTL、boto3、
+> moto 和 `LastEvaluatedKey` 规则不能用于编写新的 repository 或本地启动命令。迁移入口是
+> `apps/api/scripts/migrate_dynamodb_to_postgres.py`。
+
+#### 9.8.1 旧实现中的 item、key、Query 和 Scan
 
 数据库是让数据在进程停止后仍能保存，并支持按规则读取的系统。第 23 章的 Python dict 只在内存里；后端一
 停止就丢失。DynamoDB 的基本单位可以先这样理解：
@@ -2283,7 +2407,7 @@ def parse_gpt56_mission(
 “用户 History 要完整显示”和“给模型的上下文必须有界”是两个不同规则：前者可能读完所有页，后者应在业务
 层明确截取，不应把数据库第一页误当成全部历史。
 
-### 9.2 单表设计的核心
+#### 9.8.2 单表设计的核心
 
 表只有两个主键字段：
 
@@ -2344,7 +2468,7 @@ PK=USER#xyz  SK=MEMORY#003
 条件 `PK = USER#abc AND begins_with(SK, "MEMORY#")` 只返回 001、002。它不会返回 abc 的 NOTE，也不会
 混入 xyz 的 MEMORY。若你的预测不同，先回到“partition 选组、sort key 在组内筛选”这句话。
 
-### 9.3 repository 层
+#### 9.8.3 旧 repository 层
 
 route/service 不应散落 `table.query(...)`。`repositories.py` 提供诸如：
 
@@ -2356,7 +2480,7 @@ get_chat_session(user_id, session_id)
 
 以后更换 key pattern 或增加条件写，主要修改 repository。
 
-### 9.4 为什么有 Decimal 转换
+#### 9.8.4 为什么旧实现有 Decimal 转换
 
 DynamoDB 的 boto3 不接受 Python `float`，读出的数字通常是 `Decimal`。`db/serialization.py` 在写入前递归执行 float → Decimal，读出后 Decimal → int/float。
 
@@ -2401,7 +2525,7 @@ def clean(value):
 注意两个细节：bool 在 Python 里是 `int` 的子类、也会匹配 `float` 判断分支之外的坑，所以先返回；
 `Decimal(str(value))` 走字符串而不是直接 `Decimal(value)`，避免二进制 float 的不精确进入 Decimal。
 
-### 9.5 一致性、条件写和 TTL
+#### 9.8.5 旧实现的一致性、条件写和 TTL
 
 一次“先读再改再写”不是天然原子的。两个请求同时读到 4，各自写 5，最终可能丢掉一次增加。DynamoDB
 conditional expression 可以要求“只有数据库仍是我读到的版本时才写”；transaction 则用于需要一起成功或
@@ -2640,31 +2764,32 @@ ebook 复习目标例外，因为它本来就是按紧凑目标指纹圈定的�
 
 ### 10.4 History 展示不截断，删除也不是只删一行
 
-`GET /history/{userId}` 是用户查看自己长期学习记录的界面，因此 submissions、errors 和 notes 都不设固定条数上限。`list_recent_submissions(..., limit=None)` 和 `list_recent_errors(..., limit=None)` 会循环读取 DynamoDB 的 `LastEvaluatedKey`，直到所有页完成。Dashboard、计划和 AI prompt 仍可以明确传入数字 limit 来控制摘要和上下文成本；这些内部有界读取不能影响用户在 History 中查看完整数据。
+`GET /history/{userId}` 是用户查看自己长期学习记录的界面，因此 submissions、errors 和 notes 都不设固定
+条数上限。`list_recent_submissions(..., limit=None)` 和 `list_recent_errors(..., limit=None)` 会执行按
+`(created_at, id)` 排序且没有 SQL `LIMIT` 的查询。Dashboard、计划和 AI prompt 则明确传入数字 limit 来
+控制摘要和上下文成本；这些内部有界读取不能影响用户在 History 中查看完整数据。
 
-分页循环本体在 `apps/api/app/db/repositories.py` 的 `list_recent_submissions`（`list_recent_errors`、
+查询本体在 `apps/api/app/db/postgres_repositories.py` 的 `list_recent_submissions`（`list_recent_errors`、
 `list_notes` 是同一模式）：
 
 ```py
 def list_recent_submissions(user_id: str, limit: Optional[int] = 10) -> list:
-    submissions: list[dict] = []
-    query_kwargs = {
-        "KeyConditionExpression": Key("PK").eq(user_pk(user_id))
-        & Key("SK").begins_with("SUBMISSION#"),
-        "ScanIndexForward": False,                 # 最新在前
-    }
-    while limit is None or len(submissions) < limit:
-        res = table.query(**query_kwargs)
-        submissions.extend(clean(item) for item in res.get("Items", []))
-        last_key = res.get("LastEvaluatedKey")
-        if not last_key:
-            break
-        query_kwargs["ExclusiveStartKey"] = last_key   # 下一页从上次停下的位置继续
-    return submissions if limit is None else submissions[:limit]
+    statement = (
+        select(schema.submissions)
+        .where(schema.submissions.c.user_id == user_id)
+        .order_by(
+            schema.submissions.c.created_at.desc(),
+            schema.submissions.c.submission_id.desc(),
+        )
+    )
+    if limit is not None:
+        statement = statement.limit(limit)
+    with session_scope() as session:
+        return _list_payloads(session, statement)
 ```
 
-History route 传 `limit=None`，所以循环一直走到没有 `LastEvaluatedKey` 为止；Dashboard/Plan 传数字
-limit，同一个函数就变成有界读取。
+History route 传 `limit=None`，所以不加 SQL `LIMIT`；Dashboard/Plan 传数字时，同一个函数生成有界查询。
+Chat 和 Input Learning 的 HTTP 列表另有 signed keyset cursor；不要把两种合同混为一谈。
 
 History 删除是用户点击删除、阅读影响说明并再次确认后的手动永久操作，不是弱点模型的自动毕业动作。删除 submission 时还要：
 
@@ -2675,7 +2800,7 @@ History 删除是用户点击删除、阅读影响说明并再次确认后的手
 
 接口返回 `removedErrors` 和 `removedNotes`，让 UI 可以准确告诉用户删除了什么。
 
-当前必须诚实记录一个一致性缺口：Diagnose 还会写统一 `RUN#`、`EVIDENCE#` 和 `LEARNING#`，现有删除 route
+当前必须诚实记录一个一致性缺口：Diagnose 还会写 `activity_runs`、`evidence_events` 和 `learning_states`，现有删除 route
 尚未撤销/重算这些新记录。因此删除已经级联到旧 Skill/Memory/Notebook，但 **Learning Overview 仍可能保留
 该来源的 evidence/state**。在实现带并发保护的 evidence retraction/rebuild 前，UI 和文档不能宣称“所有派生
 学习状态都已删除”。这是第 18 章列出的待改进边界。
@@ -2692,33 +2817,31 @@ History 删除是用户点击删除、阅读影响说明并再次确认后的手
 {"deleted":true,"removedErrors":2,"removedNotes":1}
 ```
 
-若只删 `SUBMISSION#...` 而不撤销 error source refs，Memory Center 仍会显示来自一个已不存在来源的弱点，
+若只删 `submissions` row 而不撤销 error source refs，Memory Center 仍会显示来自一个已不存在来源的弱点，
 这就是需要级联回滚的反例；统一 Learning state 的完整撤销则仍是后续工作。
 
 ### 10.5 Notes 和 Notebook
 
-诊断、对话结束分析和 ChatGPT 导入都可以产生 expression、vocabulary、grammar 笔记。每条记录用 `NOTE#<createdAt>#<noteId>` 作为排序键，并用 `submissionId` 指向产生它的诊断、导入或会话来源。
+诊断、对话结束分析和 ChatGPT 导入都可以产生 expression、vocabulary、grammar 笔记。每条 `notes` row 由
+`(user_id, note_id)` 唯一定位，并用 `submission_id` 指向产生它的诊断、导入或会话来源。
 
-`GET /notes` 不限制笔记数量。repository 会沿着 DynamoDB 的 `LastEvaluatedKey` 读取所有页，再按最新优先返回。前端导出 Markdown 时也导出全部笔记，而不是只导出当前筛选结果。
+`GET /notes` 不限制笔记数量。repository 用 `created_at DESC, note_id DESC` 执行完整有序查询；前端导出
+Markdown 时也导出全部笔记，而不是只导出当前筛选结果。
 
-分页循环与 10.4 的 `list_recent_submissions` 完全相同，`list_notes` 只是把前缀换成 `NOTE#`
-（`apps/api/app/db/repositories.py`）：
+查询结构与 10.4 的 `list_recent_submissions` 相同，只是目标换成 `notes`
+（`apps/api/app/db/postgres_repositories.py`）：
 
 ```py
 def list_notes(user_id: str, limit: Optional[int] = None) -> list:
-    notes: list[dict] = []
-    query_kwargs = {
-        "KeyConditionExpression": Key("PK").eq(user_pk(user_id)) & Key("SK").begins_with("NOTE#"),
-        "ScanIndexForward": False,
-    }
-    while limit is None or len(notes) < limit:
-        res = table.query(**query_kwargs)
-        notes.extend(clean(item) for item in res.get("Items", []))
-        last_key = res.get("LastEvaluatedKey")
-        if not last_key:
-            break
-        query_kwargs["ExclusiveStartKey"] = last_key
-    return notes if limit is None else notes[:limit]
+    statement = (
+        select(schema.notes)
+        .where(schema.notes.c.user_id == user_id)
+        .order_by(schema.notes.c.created_at.desc(), schema.notes.c.note_id.desc())
+    )
+    if limit is not None:
+        statement = statement.limit(limit)
+    with session_scope() as session:
+        return _list_payloads(session, statement)
 ```
 
 Notebook 先按学习状态分成“当前 / 以前 / 全部”，再按表达、词汇、语法分类：
@@ -2784,7 +2907,7 @@ Diagnose / Practice grade / Coach feedback / Chat analyze
 
 要点：
 
-- **不新增后端 API**，也不写 DynamoDB。wins 文案从现有 `DiagnosticResult`、grades、session analysis 派生。
+- **不新增后端 API**，也不写 PostgreSQL。wins 文案从现有 `DiagnosticResult`、grades、session analysis 派生。
 - 标题按粗分档（例如 diagnose 用 overallScore 阈值）选文案，wins 最多 2 条，避免变成第二份报告。
 - `localStorage` 失败（隐私模式）直接忽略；welcome-back 只是增强，不能当账号级进度。
 - 与 Daily Wins 互补：一个回答“今天整体如何”，一个回答“这一次刚结束时我为什么不该关掉页面”。
@@ -2801,7 +2924,7 @@ Diagnose / Practice grade / Coach feedback / Chat analyze
 ```text
 发送第 81 条
   -> prompt 只取最近 12 条 + 有界 Memory
-  -> DynamoDB 仍保留完整 80 条历史
+  -> PostgreSQL 仍保留完整 80 条历史
 ```
 
 “prompt 有界”与“用户历史被删除”是两件不同的事。
@@ -3296,39 +3419,41 @@ CreateActivityRunRequest(
 )
 ```
 
-同时，DynamoDB 单条 item 仍有大小上限。repository 在序列化后检查 item 大小，并把特定异常转换成 API 的 `413 payload_too_large`；未知异常才是 500。这样前端和日志能区分“用户/模型 payload 太大”与“服务器内部故障”。
+同时，应用仍为单个 JSONB payload 保留 400,000-byte 的显式安全预算。它不是 PostgreSQL 的 row 硬上限，
+而是防止异常 AI/用户内容让 request、memory、备份和 API response 无界增长的应用合同。repository 在 JSON
+序列化后检查 payload 大小，并把已知异常转换成 `413 payload_too_large`；未知异常才是 500。
 
 检查函数在 `apps/api/app/db/repositories.py`：
 
 ```py
-DYNAMODB_SAFE_ITEM_BYTES = 400_000   # 低于 DynamoDB 400 KB 硬上限的保守预算
+DATABASE_SAFE_PAYLOAD_BYTES = 400_000
 
 
 class ItemTooLargeError(RuntimeError):
-    """An application item exceeded the conservative DynamoDB storage budget."""
+    """An application payload exceeded its bounded storage contract."""
 
     def __init__(self, entity_type: str, size_bytes: int):
         self.entity_type = entity_type
         self.size_bytes = size_bytes
         super().__init__(
             f"{entity_type} requires {size_bytes} bytes; "
-            f"the safe DynamoDB item limit is {DYNAMODB_SAFE_ITEM_BYTES} bytes."
+            f"the safe application payload limit is {DATABASE_SAFE_PAYLOAD_BYTES} bytes."
         )
 
 
-def ensure_dynamodb_item_fits(item: dict, *, entity_type: Optional[str] = None) -> int:
-    """Fail before boto turns an oversized application item into a raw 500."""
-    size = _serialized_dynamo_item_size(item)
-    if size >= DYNAMODB_SAFE_ITEM_BYTES:
+def ensure_payload_fits(item: dict, *, entity_type: Optional[str] = None) -> int:
+    """Enforce the bounded JSON payload contract before a database write."""
+    size = _serialized_payload_size(item)
+    if size >= DATABASE_SAFE_PAYLOAD_BYTES:
         raise ItemTooLargeError(
-            entity_type or str(item.get("entityType") or "DynamoDB item"),
+            entity_type or str(item.get("entityType") or "payload"),
             size,
         )
     return size
 ```
 
-`_serialized_dynamo_item_size` 先 `to_dynamo` 再按低层 AttributeValue 序列化成 UTF-8 量尺寸——不是
-数 Python 字符。route 侧把已知异常映射成 413（`apps/api/app/api/routes/plan.py` 的 progress 更新）：
+`_serialized_payload_size` 把清理后的 payload 编码成紧凑 UTF-8 JSON 量尺寸——不是数 Python 字符。route
+侧把已知异常映射成 413（`apps/api/app/api/routes/plan.py` 的 progress 更新）：
 
 ```py
 except ItemTooLargeError as exc:
@@ -3782,8 +3907,8 @@ if record_trace:
     save_memory_trace(trace)
 ```
 
-`save_memory_trace` 在 `repositories.py`：一行 `_put`，SK 为 `MEMTRACE#<createdAt>#mtr_...`；前端
-`GET /memory/traces` 用 `ScanIndexForward=False` 取最新 20 条。
+`save_memory_trace` 把 trace 写入 `memory_traces`，由 `(user_id, trace_id)` 唯一定位，并对
+`(user_id, created_at)` 建 index；前端 `GET /memory/traces` 用 `created_at DESC` 取最新 20 条。
 
 ### 11.10 薄弱项如何用练习证据“毕业”
 
@@ -3914,7 +4039,7 @@ Memory Center 会显示每个薄弱项的 8 项证据、实际值/阈值和总�
 - `expired`：超过业务生命周期后立即不再召回。
 - `superseded`：被更新事实替代。
 - `pinned`：不自动过期。
-- `ttl`：稍后物理清理归档行。
+- `delete_after`：达到该时间后可由 cleanup job 物理清理归档 row。
 
 “不再参与业务”与“数据库物理删除”是两个时间点。
 
@@ -4550,18 +4675,21 @@ git commit -m "docs: complete first learning lab"
 ```bash
 cd apps/api
 uv sync
-DYNAMODB_ENDPOINT_URL= OPENAI_API_KEY= QWEN_TTS_API_KEY= \
+docker compose -f docker-compose.local.yml up -d postgres
+uv run alembic upgrade head
+DATABASE_URL=postgresql+psycopg://weakspot:weakspot@127.0.0.1:5432/weakspot \
+OPENAI_API_KEY= QWEN_TTS_API_KEY= \
 QWEN_MODEL_STUDIO_API_KEY= QWEN_EMBEDDING_API_KEY= \
 uv run python -m scripts.dev_server
 ```
 
-若本机已有真实 `.env`，上面的显式空值可避免这次学习误用 DynamoDB Local 地址或付费语音 key。脚本会：
+若本机已有真实 `.env`，显式的本地 `DATABASE_URL` 和空 provider key 可避免误连 RDS 或调用付费模型。流程会：
 
-- 用 moto 在进程内模拟 AWS。
-- 自动创建 DynamoDB table。
+- 在 Docker 中启动 PostgreSQL 16，并把端口只绑定到 `127.0.0.1`。
+- 用 Alembic 把 schema 升级到当前 revision。
 - 使用 `fake_ai.py` 返回固定结构。
 - 在 `127.0.0.1:8000` 启动 FastAPI。
-- 进程停止后清空数据。
+- 把开发数据保存在 Docker named volume 中，重启后仍可观察。
 
 保持终端 A 运行。新开终端 B，再从仓库根目录运行：
 
@@ -4591,10 +4719,17 @@ Network 中 POST /api/v1/diagnose 返回 200
 若 `apps/web/.env.local` 指向生产 API，命令行值会覆盖它。只查看纯前端 mock 时用
 `NEXT_PUBLIC_API_BASE_URL= pnpm dev`；Speech 不可用、Coach 使用浏览器语音回退是预期行为。
 
-**不要把仓库里的 `.env.example` 原样当成可用 AWS 凭证。** 无效 access key 会让真实 boto3 客户端在诊断路径上 500。本地学习应优先 `scripts.dev_server`（moto + fake AI），它会在进程内模拟 DynamoDB，不依赖真实 AWS。若你自己起了 uvicorn 并加载了坏的 `.env`，现象往往是：前端输入框正常，一点 Analyze 就失败。
+**不要让本地实验读取生产 `DATABASE_URL`。** `scripts.postgres_test` 只允许 localhost 且数据库名必须以
+`_test` 结尾；这个 guard 是为了阻止 destructive reset 误碰 RDS。本地学习应使用 Docker PostgreSQL +
+`scripts.dev_server` 的 fake AI，不需要 AWS 凭证或真实模型 key。
 
-完成实验后在两个终端分别按 `Ctrl+C`。再次打开 health 应连接失败，这正好证明服务只是本地进程。依赖和
-代码不会被删除；moto 的临时数据会清空。
+完成实验后在前后端终端分别按 `Ctrl+C`。若要停止数据库但保留数据，再运行：
+
+```bash
+docker compose -f docker-compose.local.yml stop postgres
+```
+
+不要随意加 `-v`；它会删除本地 PostgreSQL volume。
 
 ### 14.4 用 Swagger 逐个实验
 
@@ -4722,7 +4857,7 @@ curl -i -sS \
   http://localhost:8000/api/v1/profile/ignored-by-server
 ```
 
-删除 `/tmp/weakspot-cookie.txt` 会丢掉这个 curl guest 身份；moto 进程停止后数据也会清空。
+删除 `/tmp/weakspot-cookie.txt` 会丢掉这个 curl guest 身份；本地 PostgreSQL 数据会保留，直到你明确删除。
 
 生成一个指定类型的 Coach 任务：
 
@@ -4747,8 +4882,8 @@ curl -i -sS \
 下面在 Swagger 中完成，浏览器会自动沿用同一个 `guest_id` cookie；若改用 curl，必须继续带前面的
 `-c/-b /tmp/weakspot-cookie.txt`。每次先预测，再 Execute，并在 response 中复制下一步需要的 ID。
 若你已经在 14.4 提前执行过 Memory 写入/检索，先在终端 A 按 `Ctrl+C`，重新运行
-`uv run python -m scripts.dev_server` 取得一张全新的 moto 临时表，再开始本实验；curl cookie 与浏览器
-cookie 是两个身份，不会互相消耗额度。
+`uv run python -m scripts.dev_server`。若需要全新的 guest 配额，清除浏览器或 curl cookie；本地 PostgreSQL
+开发数据会有意保留。curl cookie 与浏览器 cookie 是两个身份，不会互相消耗额度。
 
 **Memory：创建 → 检索 → 决策**
 
@@ -4857,8 +4992,8 @@ cookie 是两个身份，不会互相消耗额度。
 
 预期同时返回 `userMessage`、`assistantMessage`、`memoryRecall` 和 `duplicate=false`；随后
 `GET /api/v1/chat/sessions/{session_id}/messages` 应看到原子保存的一对消息。重新提交完全相同的 ID 与
-text 会得到已保存的一轮且 `duplicate=true`。若 guest 配额让后续请求先返回 429，停止并重启 moto 学习
-服务或清除 cookie 后只重做这一小实验，不要把 429 误判成 Chat 合同失败。
+text 会得到已保存的一轮且 `duplicate=true`。若 guest 配额让后续请求先返回 429，清除 cookie 后用新 guest
+只重做这一小实验，不要把 429 误判成 Chat 合同失败。
 
 这四个实验分别证明：
 
@@ -4923,40 +5058,40 @@ Coach Speech 用 `LLM_OPERATION_TIMEOUT_MS`（110 秒，低于 proxy 的 120 秒
 body 延迟”的假 response 防止两类回归。先记录 path、status、耗时和 request ID，才有足够证据判断
 是否真是网络问题。
 
-### 14.7 再切换到真实服务
+### 14.7 再切换到真实 provider 或生产 RDS
 
-只有理解 fake 路径后，才能把真实服务当作**单独的云运维实验**。下面命令不是“复制就安全”的教程：
-`.env.example` 含占位值，`create_table` 可能访问当前 AWS 账户并产生资源/费用。执行前必须逐项确认：
+只有理解 fake 路径后，才能把真实服务当作**单独的云运维实验**。`.env.example` 含占位值；真实模型会产生
+调用费用，生产 `DATABASE_URL` 会修改真实学习数据。执行前必须逐项确认：
 
 ```text
 没有任何 your_* / placeholder 值
-明确选择真实 AWS 或本地 DynamoDB，不能混用
-知道当前 AWS account、region、table name 和 IAM 权限
+明确选择本地 Docker PostgreSQL 或生产 RDS，不能混用
+知道目标 hostname、database、role、TLS CA 和回滚方案
 provider key 已设置费用/额度限制且只存在后端
 知道怎样删除测试资源或回滚配置
 ```
 
-零基础阶段到此停止，继续使用 moto/fake 即可。准备真实部署时先读
-`docs/ALIBABA_QWEN_DEPLOYMENT.md` 和 `apps/api/README.md`，由有权限的人确认账户后再运行：
+零基础阶段到此停止，继续使用本地 PostgreSQL + fake AI 即可。准备真实部署时先读
+`docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md` 和 `apps/api/README.md`。schema 只通过 Alembic 管理：
 
 ```bash
 cd apps/api
 cp .env.example .env
 # 先用编辑器逐项填写并完成上面的 preflight
-uv run python -m scripts.create_table
+uv run alembic upgrade head
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
 不要提交 `.env`。
 
-若只想在 moto/fake text AI 环境试听真实 TTS，可以保留 `USE_FAKE_AI=true`，只在后端进程环境中配置
+若只想在本地 PostgreSQL/fake text AI 环境试听真实 TTS，可以保留 `USE_FAKE_AI=true`，只在后端进程环境中配置
 `QWEN_TTS_API_KEY`；也可以按生产逻辑复用 `QWEN_MODEL_STUDIO_API_KEY` 或
 `QWEN_EMBEDDING_API_KEY`。不要使用任何 `NEXT_PUBLIC_*_API_KEY`，也不要把 key 写进前端
 `.env.local`。文字生成、Qwen TTS 和 OpenAI Realtime 是三条独立调用路径。
 
 切换真实服务前先估计成本和失败半径，只做一条有界 probe；不要用完整 benchmark 或循环测试真实付费模型。
 probe 后检查 key 没出现在 Network、日志、shell history 截图和 `git diff` 中。真实 provider 成功只能证明
-那一次调用可用，不能代替 fake/moto 的确定性业务测试。
+那一次调用可用，不能代替 fake AI + 本地 PostgreSQL 的确定性业务测试。
 
 ## 15. 测试应该怎样理解
 
@@ -4966,20 +5101,20 @@ probe 后检查 key 没出现在 Network、日志、shell history 截图和 `git
 | --- | --- | --- | --- |
 | unit | 最快，一个纯函数/小对象 | 公式、分支、边界 | HTTP、真实依赖 |
 | contract | 一个上下游接口 | schema、长度、variant 一致 | 完整用户流程 |
-| integration | 多层 + fake/moto | route/service/repository 副作用 | 真实 provider/公网 |
+| integration | 多层 + fake AI + 本地 PostgreSQL | route/service/repository、constraint、lock、transaction | 真实 provider/公网 |
 | end-to-end | 浏览器到已部署系统 | 用户关键路径 | 所有异常组合 |
 | live probe | 一个真实外部依赖 | 当下 provider/配置可用 | 长期稳定和全部业务 |
 
 - **fixture**：测试前准备的固定状态。
 - **fake**：实现同一接口但返回确定数据的替身。
 - **mock**：记录调用或按测试指定返回的可控替身。
-- **moto**：在测试进程中模拟 AWS/DynamoDB 行为的库。
+- **test database fixture**：连接本机 `weakspot_test`，先运行 Alembic，再清空应用表；guard 拒绝生产地址。
 
-下面只是说明 Arrange / Act / Assert 的**概念片段**，`client` 和 fake/moto fixture 由真实测试模块创建，不能
+下面只是说明 Arrange / Act / Assert 的**概念片段**，`client`、fake AI 和 PostgreSQL fixture 由真实测试模块创建，不能
 单独复制运行：
 
 ```py
-# Arrange：准备一个短文本和 fake/moto 状态
+# Arrange：准备一个短文本、fake AI 和隔离的 PostgreSQL test 状态
 payload = {
     "userId": "demo-user-001",
     "text": "Yesterday I go to school.",
@@ -5004,7 +5139,7 @@ Pydantic 应正确返回 422。
 | `uv run python -m scripts.integration_test` | diagnose → profile → plan → practice → auth/chat 的完整环 |
 | `uv run python -m scripts.coach_contract_test` | 五类 mission schema、场景去重、context 证据边界、TTS 合同和 owner 403 |
 | `uv run python -m scripts.contract_boundary_test` | 上下游长度差异、确定性裁剪和跨层合同 |
-| `uv run python -m scripts.storage_contract_test` | DynamoDB item 大小、存储错误映射和分页边界 |
+| `uv run python -m scripts.storage_contract_test` | JSON payload 大小、存储错误映射和 PostgreSQL 分页边界 |
 | `uv run python -m scripts.dedup_test` | 同文本/同 context 去重、不同 context 可记录迁移、History 手动删除回滚 |
 | `uv run python -m scripts.diagnosis_claim_test` | 并发/重试 Diagnose 只能完成一次副作用 |
 | `uv run python -m scripts.single_sentence_evidence_test` | grounded quote、显式 success、verification 状态和最近窗口 |
@@ -5020,9 +5155,9 @@ Pydantic 应正确返回 422。
 | `pnpm test:timeouts` | 普通/模型调用点保持 20/110 秒，且 headers 后的慢正文仍受总 deadline 约束 |
 | `pnpm build` | Next.js 生产构建和所有 route 生成 |
 
-后端测试通常用 moto + fake AI，所以不等于“真实 Qwen 一定可用”；生产还需要少量 live probe。
+后端 integration 测试使用本地 PostgreSQL + fake AI，所以不等于“真实 Qwen 一定可用”；生产还需要少量 live probe。
 
-完整 integration fixture 会创建 26 条 History submission 和 57 条 Notebook note，专门防止旧的 20/50 显示上限回归。这里验证的是“repository 读完所有 DynamoDB 页 + API 返回完整集合”，不是一次请求向数据库索取无限大单页。
+完整 integration fixture 会创建 26 条 History submission 和 57 条 Notebook note，专门防止旧的 20/50 显示上限回归。这里验证的是“repository 正确遍历 PostgreSQL keyset pages + API 返回完整集合”，不是一次请求向数据库索取无限大单页。
 
 `next.config.mjs` 当前允许 build 跳过 TypeScript error，因此不能只看 `pnpm build`，必须独立运行 `pnpm exec tsc --noEmit`。
 当前前端没有 Vitest/Jest/Playwright 浏览器测试；lint、type check、Import/timeout 回归和 build 不能证明
@@ -5160,7 +5295,7 @@ docker compose config
 - FastAPI 在 Docker 中运行。
 - 端口 8000 只绑定本机。
 - Nginx 提供公网 443/TLS 并反向代理。
-- `apps/api/deploy/start_backend.sh` build image、幂等建表/启用 TTL、重建容器并健康检查。
+- `apps/api/deploy/start_backend.sh` 检查 RDS CA 和 production URL、build image、运行 Alembic、重建容器并检查 readiness。
 - `OPENAI_API_KEY` 可供 OpenAI Realtime 使用，也可作为自适应规划器专用 key 未设置时的后备。
 - Coach Speech 使用 Qwen key；TTS 的 base URL、model、voice 和 language 可以独立覆盖。
 
@@ -5170,20 +5305,22 @@ docker compose config
 set -euo pipefail
 cd "$(dirname "$0")/.."          # 固定到 apps/api，哪里执行都不影响路径
 docker compose build
-docker compose run --rm api python -m scripts.create_table   # 幂等建表/TTL
+docker compose run --rm api python -m scripts.check_production_database
+docker compose run --rm api alembic upgrade head
 docker compose up -d
 ```
 
-脚本尾部不是“起了就算成功”，而是用 urllib 轮询 health、30 次 × 2 秒、`status=="ok"` 才 exit 0：
+脚本尾部不是“起了就算成功”，而是用 urllib 轮询 database readiness、30 次 × 2 秒、
+`status=="ready"` 才 exit 0：
 
 ```py
-url = "http://127.0.0.1:8000/api/v1/health"
+url = "http://127.0.0.1:8000/api/v1/health/ready"
 for _ in range(30):
     try:
         with urllib.request.urlopen(url, timeout=5) as response:
             payload = json.loads(response.read().decode("utf-8"))
-        if payload.get("status") == "ok":
-            print("Backend is healthy at http://127.0.0.1:8000/api/v1/health")
+        if payload.get("status") == "ready":
+            print("Backend and PostgreSQL are ready")
             raise SystemExit(0)
     except Exception as exc:  # noqa: BLE001 - deployment script should report the last failure.
         last_error = exc
@@ -5197,8 +5334,9 @@ raise SystemExit(f"Backend did not become healthy: {last_error}")
 记录目标 Git SHA
   -> 备份现有代码（不打印 .env）
   -> 部署同一 SHA
-  -> 重建容器和幂等建表
-  -> /api/v1/health = 200
+  -> 验证 RDS TLS 配置并运行 Alembic
+  -> 重建容器
+  -> /api/v1/health/ready = 200
   -> 安全模型目录符合预期
   -> 一次有界功能 probe
   -> 保留回滚包
@@ -5206,15 +5344,18 @@ raise SystemExit(f"Backend did not become healthy: {last_error}")
 
 只看到 `docker compose up` 没报错不够；容器可能正在重启，Nginx 也可能仍代理旧进程。
 
-### 16.4 当前双后端
+### 16.4 当前源站与目标数据库拓扑
 
-- Oracle Cloud：日常生产源站；安全模型目录当前提供 DeepSeek deep/fast，语义检索使用 Qwen
-  `text-embedding-v4`，Coach Speech 使用 Qwen3-TTS-Flash。embedding 不可用时才退化为 lexical
-  similarity。
-- Alibaba ECS：最终展示源站，Qwen chat + embedding；平时保持配置与版本同步，但不承载日常流量。
-- 两者使用同一 DynamoDB learner state。
+- Oracle Cloud San Jose 是唯一生产后端源站；FastAPI/Docker 通过 Nginx 暴露 HTTPS。
+- `us-west-1` 的标准 Amazon RDS PostgreSQL infrastructure 已在线，security group 只允许 Oracle 静态
+  `/32` 地址访问 5432，并要求 `sslmode=verify-full` 和 AWS RDS CA；截至 2026-08-17，production
+  schema/data/application cutover 仍待 maintenance window，因此不能只凭 RDS `available` 宣称应用已经切换。
+- Alibaba ECS 已停止使用，不是 failover 或展示源站。Alibaba Model Studio/Qwen 仍可由 Oracle 作为外部模型
+  provider 调用，这不等于在 Alibaba 运行后端。
 
-日常上线顺序应是：Oracle 后端 API → health/models/memory probe → 前端 Vercel。只有最终展示前才把同一 Git commit 部署到 Alibaba，完成本机检查后再手动切换 Cloudflare origin；平时不要因为前端更新而切换源站。
+日常上线顺序是：先运行 Alembic → 部署 Oracle 后端 → 验证 `/health/ready`、models 和一个有界数据库功能
+probe → 部署 Vercel 前端。数据库 migration 必须先兼容旧 application revision，或者配套明确 maintenance
+window 和 rollback。
 
 ## 17. 想改某个功能时从哪里开始
 
@@ -5227,7 +5368,7 @@ raise SystemExit(f"Backend did not become healthy: {last_error}")
 | 修改 embedding | `services/embedding_client.py` |
 | 修改下一练习策略 | `services/decision_service.py` |
 | 修改混合练习多样性 | `decision_service.py`（slot/size）、`routes/practice.py`、`practice/page.tsx`、`api-client.ts` |
-| 修改 DynamoDB 查询 | `db/keys.py`、`db/repositories.py` |
+| 修改 PostgreSQL schema/query | `db/schema.py`、`db/postgres_repositories.py`、`alembic/versions/` |
 | 修改 mastery | `core/mastery.py` |
 | 修改前端 API | `apps/web/lib/api-client.ts`、`types.ts` |
 | 修改页面 | `apps/web/app/.../page.tsx` 和相关 component |
@@ -5247,33 +5388,28 @@ raise SystemExit(f"Backend did not become healthy: {last_error}")
 
 这些不是“项目不能用”，而是适合作为下一阶段工程学习的问题。
 
-### 18.1 DynamoDB 并发更新
+### 18.1 PostgreSQL 并发更新
 
-部分 Memory merge 和 strategy stats 是 read-modify-put。两个并发请求可能产生重复 canonical memory 或覆盖一次计数。进一步学习方向：conditional expression、optimistic locking 和 transaction。
-
-例如两个请求都读到 `observationCount=4`，各自计算并写入 5，最终应有的 6 被覆盖成 5。这叫 lost
-update；条件写可以要求“只有数据库仍是 4 时才成功”，失败方重新读取再重试。
-
-真实的 read-modify-put 例子是 `update_memory`（`apps/api/app/services/memory_service.py`）——先读、
-内存中改、再无条件写回：
+“两个请求同时读到 `observationCount=4`，各自写 5”仍是理解 lost update 的好例子，但当前
+`@memory_write_locked` 已不是单进程锁。它通过 PostgreSQL `memory_leases` row 获取 learner 级 fenced lease；
+保存时再次锁定 lease 并核对 `claim_id`，旧 worker 不能覆盖新 owner：
 
 ```py
-@memory_write_locked
-def update_memory(user_id: str, memory_id: str, fields: dict) -> Optional[dict]:
-    memory = get_memory(user_id, memory_id)   # 读
-    if not memory:
-        return None
-    now = utc_now()
-    for field in ("content", "evidence", "confidence", "importance", "pinned"):
-        if field in fields and fields[field] is not None:
-            memory[field] = fields[field]     # 内存中修改
-    memory["updatedAt"] = iso_at(now)
-    ...
-    save_memory(memory)                       # 写回（无条件覆盖）
+def save_memory_with_memory_write_lease(memory: dict, claim_id: str) -> None:
+    with session_scope() as session:
+        lease = session.execute(
+            select(schema.memory_leases.c.claim_id)
+            .where(schema.memory_leases.c.user_id == memory["userId"])
+            .with_for_update()
+        ).scalar_one_or_none()
+        if lease != claim_id:
+            raise MemoryWriteClaimLostError(...)
+        _save_memory_tx(session, memory)
 ```
 
-`@memory_write_locked` 只是**进程内** learner 级写 lease（`memory_write_service.py`），并不能挡住
-多实例部署下的跨进程并发——这正是本项目明确暴露的限制，也是学习条件写的入口。
+`touch_memory_access`、expiry、claim 和 learning-state 更新也使用 row lock 或 atomic SQL。继续学习的边界是：
+新增 read-modify-write 路径时必须复用 transaction/lease，而不是先在一个 session 读、再在另一个 session
+无条件写；还应在真实 PostgreSQL 上保留并发回归测试。
 
 ### 18.2 Token 是估算值
 
@@ -5308,35 +5444,22 @@ query、人工 relevance label、live embedding 对照和线上指标。
 
 ### 18.4 忘记是业务立即、物理稍后
 
-API forget 后不会再召回，但 DynamoDB 行通过 TTL 稍后物理删除。产品隐私文案需要准确说明这一点。
+API forget 会立刻把 PostgreSQL row 标记为 `forgotten`/`archived`，repository 把计划清理时间保存到 typed
+`delete_after` column，召回查询马上排除该 row。`scripts.cleanup_expired` 再按计划物理删除；它应在生产环境
+至少每小时运行一次。
 
-例如验证 forget 时，应先调用 retrieve 证明该项立即消失，再把控制台物理删除看作异步清理；两者顺序不能反过来。
-
-两段行为在同一条代码路径上：`forget_memory` 调 `_mark_archived`（`memory_service.py`），一次写入同时完成
-业务失效与物理删除预约：
-
-```py
-def _mark_archived(memory, status, now, ...):
-    memory = dict(memory)
-    memory["status"] = status          # "forgotten" → 业务层立即过滤
-    memory["updatedAt"] = iso_at(now)
-    memory["expiresAt"] = iso_at(now)
-    memory["ttl"] = _ttl_after(now)    # DynamoDB TTL 稍后物理删除
-    ...
-    persist_memory(memory)
-    return memory
-```
-
-而 `_active_memories` 在召回前逐条过滤 `expiresAt <= now`，所以业务从不依赖 TTL 的物理删除时刻。
+验证时先调用 retrieve 证明该项立即消失，再检查 cleanup job 最终删除 row。产品隐私文案要区分“不会再被
+业务召回”和“底层记录已物理清除”；物理删除由项目自己的 cleanup job 控制。
 
 ### 18.5 同步 SDK 和 async server
 
-项目通过线程池隔离部分阻塞工作。进一步可以学习 async HTTP client、aioboto3 的收益与复杂度，不要为了“全 async”盲目改写。
+项目通过线程池隔离部分同步 psycopg/SQLAlchemy 与 provider 工作。进一步可以学习 async SQLAlchemy/psycopg
+和 async HTTP client 的收益与复杂度，不要为了“全 async”盲目改写。
 
-例如单个 boto3 调用只要 20 ms，改写整层的收益可能很小；如果外部模型调用持续 60 秒且占满线程池，
+例如单个 PostgreSQL query 只要 20 ms，改写整层的收益可能很小；如果外部模型调用持续 60 秒且占满线程池，
 才需要用延迟、并发数和线程数数据评估 async client 或队列。
 
-线程池边界在 Diagnose route 里最直观（`apps/api/app/api/routes/diagnose.py`）——同步的 boto3 预检
+线程池边界在 Diagnose route 里最直观（`apps/api/app/api/routes/diagnose.py`）——同步的 database 预检
 不阻塞事件循环，而是显式丢进 executor：
 
 ```py
@@ -5423,13 +5546,13 @@ export function markSessionWin(source: SessionWinSource) {
 ### 18.8 History 删除与统一 Evidence 仍需同源撤销
 
 当前 History 删除会处理旧 Skill、Error、Note、Memory source 和 Profile 计数，但统一学习系统是后来新增的
-另一套投影。完整方案不能只删除 `EVIDENCE#`：
+另一套投影。完整方案不能只删除 `evidence_events` row：
 
 ```text
 按 sourceId 找 canonical + timeline evidence
   -> 在同用户写 lease/transaction 下撤销
-  -> 从剩余事件重建受影响 LEARNING# skill state
-  -> 删除/标记对应 RUN# 与 RUN_TIME#
+  -> 从剩余事件重建受影响 learning_states row
+  -> 删除/标记对应 activity_runs row
   -> 并发新 evidence 时检测 version 冲突并重试
 ```
 
@@ -5462,7 +5585,7 @@ delete_submission_hash(user_id, text_hash)
 updated_memories = forget_memories_from_source(user_id, submission_id)
 ```
 
-这段代码里没有任何 `EVIDENCE#`/`LEARNING#`/`RUN#` 处理——上面文本图里的“完整方案”正是要补上这部分，
+这段代码里没有任何 `evidence_events`/`learning_states`/`activity_runs` 处理——上面文本图里的“完整方案”正是要补上这部分，
 而且需要用条件写把并发新 evidence 挡在外面，否则重建期间的 state 会被覆盖。
 
 ### 18.9 “可重试”必须区分串行去重和并发幂等
@@ -5512,7 +5635,7 @@ event_id = "ev_" + sha256(f"{user_id}\0{clientEventId}".encode()).hexdigest()[:2
 ```
 
 同一个 `clientEventId` 重放会命中已存在的 evidence，但**没有**独立的 attempt claim 行——两个完全同时
-到达的请求在写 evidence 前就会各自创建 `ACTIVITY#`/`RUN#`，这就是表里“ActivityRun 仍可能并发重复”
+到达的请求在写 evidence 前就会各自创建 `activity_runs` row，这就是表里“ActivityRun 仍可能并发重复”
 的代码依据。
 
 ## 19. 给零基础学习者的八阶段路线
@@ -5538,7 +5661,7 @@ event_id = "ev_" + sha256(f"{user_id}\0{clientEventId}".encode()).hexdigest()[:2
 
 完成任务：
 
-1. 用两个终端启动 fake/moto 后端和前端。
+1. 启动本地 Docker PostgreSQL，再用两个终端启动 fake-AI 后端和前端。
 2. 完成一次 diagnose，在 Network 找到 method、status、payload、response。
 3. 用 cookie jar 连续请求 diagnose 与 profile。
 4. 分别制造 connection refused 和 422，再恢复。
@@ -5562,10 +5685,10 @@ event_id = "ev_" + sha256(f"{user_id}\0{clientEventId}".encode()).hexdigest()[:2
 
 完成任务：
 
-1. 跟一次 Diagnose，从 request 到 response，并记录写入哪些 item。
+1. 跟一次 Diagnose，从 request 到 response，并记录写入哪些 PostgreSQL table/row。
 2. 在纸上计算一次 mastery 变化。
-3. 用五条 PK/SK 数据预测 `begins_with` Query。
-4. 运行 `DYNAMODB_ENDPOINT_URL= uv run python -m scripts.diagnosis_claim_test`，观察受控并发产生
+3. 用 `schema.py` 找出 submission、error、skill 的 primary/foreign key 和 index。
+4. 在本地 `weakspot_test` 运行 `uv run python -m scripts.diagnosis_claim_test`，观察受控并发产生
    `[200, 409]`；再串行重复已完成输入，观察 `duplicate=true` 的结果复用。普通连续点击不一定能制造
    请求重叠，所以不能把“没有看到 409”当成实现失败。
 
@@ -5632,7 +5755,7 @@ event_id = "ev_" + sha256(f"{user_id}\0{clientEventId}".encode()).hexdigest()[:2
 - “FastAPI 会自动让所有代码异步。”——不会，阻塞 SDK 仍然阻塞执行它的线程。
 - “Pydantic 验证过就代表 AI 内容事实正确。”——只代表结构和约束正确。
 - “前端传了 userId 就是这个用户。”——身份必须由后端解析。
-- “DynamoDB TTL 到时间就立刻删除。”——不是。
+- “把 `delete_after` 写进 PostgreSQL，row 就会自动消失。”——不会；仍要运行 cleanup job。
 - “build 通过就没有 TypeScript 错误。”——本项目必须单独跑 `tsc`。
 - “Server default 只有一个模型。”——它是 Auto，内部有 Deep/Fast 路由。
 - “Memory 越多越好。”——检索质量和有界上下文比全量塞入更重要。
@@ -5657,13 +5780,15 @@ event_id = "ev_" + sha256(f"{user_id}\0{clientEventId}".encode()).hexdigest()[:2
 | Dependency Injection | FastAPI 自动先执行依赖并把结果传入 route |
 | Pydantic | Python 数据验证和 schema 工具 |
 | Repository | 封装数据库访问的层 |
-| boto3 | Python 官方 AWS 客户端库，DynamoDB 就通过它访问 |
-| moto | 在进程内模拟 AWS/DynamoDB 的库，测试用 |
+| SQLAlchemy | Python SQL toolkit；本项目用它生成 query、管理 transaction 和 connection pool |
+| psycopg | PostgreSQL Python driver；SQLAlchemy 通过它连接数据库 |
+| Alembic | 记录并应用 PostgreSQL schema revision 的 migration 工具 |
+| JSONB | PostgreSQL 可查询的 JSON column 类型；本项目用它保留灵活 AI payload |
 | OpenAPI / Swagger | 机器可读的路由描述，对应 `/docs` 交互页面 |
 | OpenAI-compatible | 使用相似 Chat Completions API 的模型服务 |
 | Embedding | 把文本变成向量以比较语义相似度 |
 | Cosine similarity | 比较两个向量方向接近程度的指标 |
-| TTL | 数据库用于最终清理过期数据的时间戳 |
+| `delete_after` | row 达到物理清理条件的时间；仍需 cleanup job 执行删除 |
 | CORS | 浏览器跨 origin 读取资源的规则 |
 | OAuth | 通过 GitHub/Google 完成第三方登录的协议流程 |
 | BYOK | Bring Your Own Key，用户使用自己的模型 key |
@@ -5694,7 +5819,7 @@ event_id = "ev_" + sha256(f"{user_id}\0{clientEventId}".encode()).hexdigest()[:2
 9. 若改了“练习结束 / 对话结束”体验，是否同步 Session Win 构造函数、挂载点、i18n 和 localStorage 语义。
 10. 若改了并行出题，是否仍传入并处理 `sessionSlot` / `sessionSize`，避免 diversity 回退。
 
-学习项目时不要试图一次读完所有文件。选择一条用户行为，从前端按钮一路跟到 DynamoDB，再跟着 response 回到页面；这是从“会写代码”走向“理解工程”的最快方法。
+学习项目时不要试图一次读完所有文件。选择一条用户行为，从前端按钮一路跟到 PostgreSQL repository，再跟着 response 回到页面；这是从“会写代码”走向“理解工程”的最快方法。
 
 ## 23. 从空目录重建一个最小版 WeakSpot
 
@@ -5709,7 +5834,7 @@ event_id = "ev_" + sha256(f"{user_id}\0{clientEventId}".encode()).hexdigest()[:2
 - 一个 FastAPI `/diagnose` endpoint。
 - Pydantic 请求/响应验证。
 - 一个可替换的 AI service。
-- 一个内存 repository（之后再换 DynamoDB）。
+- 一个内存 repository（之后再换 PostgreSQL）。
 - 两个自动测试和明确预期输出。
 - 一次从浏览器按钮到内存存储的完整纵向链。
 
@@ -5843,12 +5968,19 @@ def get_submission(submission_id: str) -> dict | None:
     return deepcopy(item) if item else None
 ```
 
-这还不是生产数据库，但 route 不需要知道数据存在 dict 还是 DynamoDB。下面只是**概念片段**：
-`table` 与 `to_dynamo` 没有在 mini 项目中定义，用来展示未来只替换 repository 的方向：
+这还不是生产数据库，但 route 不需要知道数据存在 dict 还是 PostgreSQL。下面只是**概念片段**：
+`session_scope`、`schema` 和 `_payload` 没有在 mini 项目中定义，用来展示未来只替换 repository 的方向：
 
 ```py
 def save_submission(item: dict) -> None:
-    table.put_item(Item=to_dynamo(item))
+    with session_scope() as session:
+        session.execute(
+            insert(schema.submissions).values(
+                user_id=item["userId"],
+                submission_id=item["submissionId"],
+                payload=_payload(item),
+            )
+        )
 ```
 
 真实项目的 `apps/api/app/db/repositories.py` 就是这个思想的大型版本。
@@ -6161,7 +6293,7 @@ uv run pytest -q
 ```text
 加入身份 -> 测试 body userId 不能冒充别人
 加入 AI -> fake AI 合同测试 + malformed JSON 测试
-加入 DynamoDB -> moto repository/integration 测试
+加入 PostgreSQL -> Alembic schema + 本地真实 transaction/constraint integration 测试
 加入幂等 -> 同 clientAttemptId 重试不重复写
 加入分页 -> fixture 超过一页仍完整返回
 ```
@@ -6227,7 +6359,7 @@ pnpm build
 推荐顺序：
 
 1. Diagnose + 内存 repository。
-2. 换 DynamoDB，并学习 PK/SK。
+2. 换 PostgreSQL，并学习 table、primary/foreign key、index、transaction 和 Alembic。
 3. 加 profile 和 skill mastery。
 4. 加 practice generate/submit，使用 `clientAttemptId` 保证重试幂等。
 5. 加 text chat，保存 session/message，并限制最近上下文。
@@ -6266,13 +6398,13 @@ secret 不进入浏览器或 Git
 1. `POST /api/v1/diagnose` 的 body 少了必填 text，应该返回 400、401、422 还是 500？模型会被调用吗？
 2. `nickname: str | None` 是否代表调用函数时可以完全省略 `nickname`？怎样才可以省略？
 3. 新增了 `routes/debug.py` 和 decorator，却没有 `include_router`。请求会发生什么？
-4. guest 把 body 的 `userId` 改成 owner，会以谁的身份写 DynamoDB？
+4. guest 把 body 的 `userId` 改成 owner，会以谁的身份写 PostgreSQL？
 5. 同一用户并发重试同一 Diagnose，请求怎样避免模型收费和 mastery 更新两次？
 6. AI 返回合法 JSON，但 error 的 `originalText` 不在 learner text 中。Pydantic 会不会发现？系统最终应该怎样处理？
 7. 一次 grounded article error 会让 weakness 直接 `confirmed` 吗？两次同一天和三次跨两天分别是什么状态？
 8. 模型没有报告 preposition error，能否自动记录一次 preposition success？
 9. 文字 Chat、OpenAI Realtime、Qwen TTS 和浏览器 ASR 分别接收/产生什么？
-10. 为什么 DynamoDB 写入前要把 `73.5` 转成 `Decimal("73.5")`？TTL 到点后业务应该等物理删除吗？
+10. 为什么 `memories` 同时使用 typed column 和 `payload JSONB`？写入 `delete_after` 后业务应该等待物理删除吗？
 11. 历史有 25 次机会、5 次 failure；最近 20 次有 4 次 failure。累计与最近 error rate 应怎样表达？
 12. Memory 分量 `.80/.50/.90/.70/.20/1.0` 按第 11.6 节权重计算是多少？pin 后是多少？
 13. 四道 mixed practice 都不传 `sessionSlot/sessionSize`，即使每次 top-1 排序正确，为什么整体仍可能很差？
@@ -6346,27 +6478,12 @@ secret 不进入浏览器或 Git
    request.supportLevel == 0 and request.opportunityPresent`）。
 9. 文字路径收发 JSON；Realtime 持续交换音频并产生 transcript；TTS 把现成 text 变成完整音频；
    ASR 把用户声音变成可编辑文字。
-10. boto3 的 DynamoDB 数字合同使用 Decimal。业务在过期时立即过滤，TTL 只负责稍后物理清理。双向转换
-    都在 `apps/api/app/db/serialization.py`：
-
-    ```py
-    def to_dynamo(value):
-        ...
-        if isinstance(value, float):
-            # via str() to avoid binary float imprecision in Decimal
-            return Decimal(str(value))
-        ...
-
-    def clean(value):
-        if isinstance(value, Decimal):
-            if value % 1 == 0:
-                return int(value)
-            return float(value)
-        ...
-    ```
+10. `user_id`、`memory_id`、`status`、`expires_at` 等 typed column 支持 constraint、index、filter 和 ordering；
+    JSONB 保存变化快的 explanation/evidence 等完整 API payload。业务按 status/expiry 立即排除，
+    `delete_after` 只表示 cleanup job 何时可以物理删除。
 11. 累计是 `failureCount=5 / opportunityCount=25`；当前窗口是
     `recentFailureCount=4 / recentOpportunityCount=20 = 0.20`。二者不能互相覆盖。两组字段都写在
-    `LEARNING#` state 里（`apps/api/app/services/learning_service.py`）：`failureCount` /
+    `learning_states` row 里（`apps/api/app/services/learning_service.py`）：`failureCount` /
     `opportunityCount` 随每次 opportunity 累计，而 `recentFailureCount` /
     `recentOpportunityCount` 来自截断到 `RECENT_EVIDENCE_WINDOW = 20` 的 `recentEvidence` 列表：
 
@@ -6451,13 +6568,14 @@ secret 不进入浏览器或 Git
     )
     ```
 
-    state 写入走 `save_evidence_with_learning_state` 的事务写，条件
-    `ConditionExpression: "#version = :expected"`，version 不匹配抛
-    `LearningStateConflictError`，外层 `range(6)` 重读重算后重试——所以重复 event 不会二次更新。
+    state 写入走 `save_evidence_with_learning_state` 的 PostgreSQL transaction：新 state 使用
+    `ON CONFLICT DO NOTHING`，已有 state 使用带 `WHERE version = expected_state_version` 的 compare-and-swap
+    `UPDATE`。影响行数不是 1 时抛 `LearningStateConflictError`，外层 `range(6)` 重读重算后重试——所以重复
+    event 不会二次更新。
 22. origin 包含 scheme、host、port，所以 3000 与 3001 不同；curl 又不执行浏览器 CORS。停止占用 3000
     的旧进程并固定在 3000，或有意同步修改 `allow_origins` 后重启 API。
 23. 它证明最小合同、service、内存 repository、React 状态、类型/静态规则和本机纵向链在这些输入下成立。
-    它没有证明 OAuth、DynamoDB、真实 AI、并发/分页、可访问性、生产网络或所有浏览器；扩展每一层时必须
+    它没有证明 OAuth、PostgreSQL、真实 AI、并发/分页、可访问性、生产网络或所有浏览器；扩展每一层时必须
     再加相应合同与失败测试。
 
 如果某题只能背出答案却找不到代码或验证入口，就回到对应章节再跟读一遍；如果答案与代码冲突，以当前
@@ -6603,18 +6721,18 @@ class UserService:
 ```python
 class UserService:
     def __init__(self):
-        self.db = DynamoDB()      # 自己写死实现
+        self.db = PostgreSQL()    # 自己写死实现
 
     def get_user(self, user_id):
         return self.db.get_user(user_id)
 ```
 
-`UserService` 不只是说“我需要一个数据库”，而是说“**我必须要 DynamoDB，而且我要自己创建它**”。这就是比较强的 coupling。
+`UserService` 不只是说“我需要一个数据库”，而是说“**我必须要 PostgreSQL，而且我要自己创建它**”。这就是比较强的 coupling。
 
 两个典型问题：
 
-1. **换实现要改业务逻辑**：以后想换 PostgreSQL，必须修改 `UserService` 本身（数据库变化，业务逻辑跟着改）。
-2. **测试被真实依赖拖累**：跑 `get_user()` 会真的创建 DynamoDB → 连接 AWS → 要 credentials → 可能真读数据库。你只想测业务逻辑，却被逼着连真实数据库。
+1. **换实现要改业务逻辑**：以后想换 SQLite 或 fake，必须修改 `UserService` 本身（数据库变化，业务逻辑跟着改）。
+2. **测试被真实依赖拖累**：跑 `get_user()` 会真的创建 PostgreSQL connection → 需要 URL/password → 可能真读生产数据库。你只想测业务逻辑，却被逼着连真实数据库。
 
 #### 25.2.3 Dependency Injection 怎么解决
 
@@ -6626,7 +6744,7 @@ class UserService:
     def get_user(self, user_id):
         return self.db.get_user(user_id)
 
-db = DynamoDB()
+db = PostgreSQL()
 service = UserService(db)         # 把 dependency“注入”进去
 ```
 
@@ -6646,8 +6764,8 @@ service = UserService(db)         # 把 dependency“注入”进去
 经过 DI 后，`UserService` 只要求“给我一个能 `get_user()` 的东西”：
 
 ```python
-service = UserService(DynamoDB())
 service = UserService(PostgreSQL())
+service = UserService(SQLite())
 service = UserService(FakeDatabase())
 ```
 
@@ -6657,7 +6775,7 @@ service = UserService(FakeDatabase())
 
 #### 25.2.5 DI 的主要优势
 
-1. **容易换实现**：`DynamoDBRepository` → `PostgreSQLRepository` → `FakeDB`，`UserService` 完全不用改。
+1. **容易换实现**：`PostgreSQLRepository` → `SQLiteRepository` → `FakeDB`，`UserService` 完全不用改。
 
 ```python
 class UserService:
@@ -6665,7 +6783,7 @@ class UserService:
         self.repository = repository
 ```
 
-2. **容易测试**：用假的 DB 替换真实数据库，测业务逻辑不需要 AWS。
+2. **容易测试**：用假的 DB 替换真实数据库，纯业务单元测试不需要连接 PostgreSQL。
 
 ```python
 class FakeDatabase:
@@ -6715,7 +6833,7 @@ DI 更适合：**可能变化、有生命周期、测试时希望替换、多个
 | --- | --- |
 | Dependency | 我完成工作需要的另一个东西（`UserService` 需要 `Database`，Database 就是 dependency） |
 | Coupling | 我和这个东西绑定得有多紧 |
-| Strong / Tight coupling | 不仅需要你，还写死了你是谁、怎么创建（`self.db = DynamoDB()`） |
+| Strong / Tight coupling | 不仅需要你，还写死了你是谁、怎么创建（`self.db = PostgreSQL()`） |
 | Loose coupling | 需要某种能力，但不强制绑定具体实现（`def __init__(self, db)`） |
 | Decoupling | 把原本绑得很紧的两个模块拆松一点 |
 | Dependency Injection | 由外部把 dependency 提供给需要它的对象/函数（`UserService(db)`；FastAPI 里是 `Depends(get_db)` 自动完成注入） |
@@ -6727,10 +6845,10 @@ DI 更适合：**可能变化、有生命周期、测试时希望替换、多个
 ```python
 class UserService:
     def __init__(self):
-        self.db = DynamoDB()
+        self.db = PostgreSQL()
 ```
 
-→ “我要 DynamoDB，而且我自己造。”
+→ “我要 PostgreSQL，而且我自己造。”
 
 Dependency Injection：
 

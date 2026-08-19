@@ -2,7 +2,7 @@
 
 Default is deterministic lexical fallback (no external calls):
 
-    DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
+    uv run python -m scripts.memory_benchmark
 
 To exercise live Qwen text-embedding-v4 retrieval, set
 MEMORY_BENCHMARK_LIVE=1 and configure QWEN_EMBEDDING_API_KEY or
@@ -17,16 +17,11 @@ import uuid
 
 def main() -> int:
     live = os.getenv("MEMORY_BENCHMARK_LIVE", "0") == "1"
-    os.environ["AWS_ACCESS_KEY_ID"] = "testing"
-    os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
-    os.environ["AWS_REGION"] = "us-east-1"
-    os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
-    os.environ["DYNAMODB_ENDPOINT_URL"] = ""
     os.environ["USE_FAKE_AI"] = "false" if live else "true"
 
-    import moto
+    from scripts.postgres_test import mock_postgres
 
-    mock = moto.mock_aws()
+    mock = mock_postgres()
     mock.start()
     try:
         from app.config import settings

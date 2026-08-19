@@ -1,4 +1,7 @@
 # Gemini Veo 3 — WeakSpot English Coach Demo Prompt (V2)
+
+> Historical video prompt. DynamoDB and Alibaba backend statements below are no
+> longer current; use `docs/ARCHITECTURE.md` for production facts.
 # H0 Hackathon · All features · 2:30 target
 
 ## How to use this prompt

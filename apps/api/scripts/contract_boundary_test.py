@@ -4,7 +4,7 @@ Run from ``apps/api``:
 
     python -m scripts.contract_boundary_test
 
-No network, DynamoDB, or model-provider call is made.
+No network, database, or model-provider call is made.
 """
 
 import asyncio

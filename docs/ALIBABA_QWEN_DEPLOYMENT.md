@@ -1,5 +1,11 @@
 # Alibaba Cloud + Qwen 3.7 Deployment
 
+> **Historical only (retired 2026-08-17).** Alibaba ECS is no longer a backend
+> server or failover origin. Production runs on Oracle San Jose with Amazon RDS
+> PostgreSQL. Qwen Model Studio may still be called as an external provider.
+> Use [`AWS_RDS_POSTGRESQL_DEPLOYMENT.md`](AWS_RDS_POSTGRESQL_DEPLOYMENT.md) for
+> the active runbook. Do not follow the origin-switch or DynamoDB steps below.
+
 This runbook keeps the FastAPI backend ready on Alibaba Cloud ECS and uses
 Alibaba Cloud Model Studio as the text-model provider. Oracle is the normal
 production origin; Alibaba is activated only for the final Qwen Cloud Hackathon

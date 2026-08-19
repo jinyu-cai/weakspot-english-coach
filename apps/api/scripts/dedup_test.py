@@ -1,6 +1,6 @@
 """Local test for de-dup + manual history deletion (with weakness-model reversal).
 
-Runs in-process with moto (mock AWS) + fake AI — no Docker, AWS, or LLM key:
+Runs against the local PostgreSQL test container with fake AI:
 
     uv run python -m scripts.dedup_test
 
@@ -17,7 +17,6 @@ Asserts:
 """
 
 import os
-import sys
 import uuid
 
 SAMPLE = (
@@ -32,23 +31,15 @@ def _sum_error_count(skills: list) -> int:
 
 
 def main() -> int:
-    os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
-    os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
-    os.environ.setdefault("AWS_REGION", "us-east-1")
-    os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
     os.environ.setdefault("USE_FAKE_AI", "true")
     os.environ.setdefault("OWNER_BYPASS_TOKEN", "dedup-owner-token")
     os.environ.setdefault(
         "SESSION_SECRET", "dedup-test-session-secret-at-least-32-bytes"
     )
 
-    try:
-        import moto
-    except ImportError:
-        print("moto is not installed. Run `uv sync`.", file=sys.stderr)
-        return 1
+    from scripts.postgres_test import mock_postgres
 
-    mock = moto.mock_aws()
+    mock = mock_postgres()
     mock.start()
     try:
         from fastapi.testclient import TestClient

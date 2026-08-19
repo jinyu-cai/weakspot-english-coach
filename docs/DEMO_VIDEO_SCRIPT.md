@@ -1,5 +1,8 @@
 # WeakSpot MemoryAgent — Demo Video Script
 
+> Historical Qwen hackathon script. Alibaba ECS and DynamoDB shots below do not
+> describe the current Oracle + RDS PostgreSQL production system.
+
 Target runtime: **2:45**. Keep the mouse moving only when the narration names a
 visible feature. Do not expose API keys, cookies, AWS credentials, or OAuth
 secrets.

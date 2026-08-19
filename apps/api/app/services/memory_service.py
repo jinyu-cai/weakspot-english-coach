@@ -122,7 +122,7 @@ def normalize_canonical_key(kind: str, key: str, content: str = "") -> str:
 
 
 def public_memory(memory: dict, *, include_scores: bool = True) -> dict:
-    hidden = {"PK", "SK", "entityType", "embedding"}
+    hidden = {"embedding"}
     if not include_scores:
         hidden |= {"retrievalScore", "scoreBreakdown"}
     return {key: value for key, value in memory.items() if key not in hidden}

@@ -5,9 +5,7 @@ from __future__ import annotations
 import os
 from uuid import uuid4
 
-os.environ.setdefault("DYNAMODB_ENDPOINT_URL", "")
-
-from moto import mock_aws
+from scripts.postgres_test import mock_postgres
 from pydantic import ValidationError
 
 from app.models.learning import (
@@ -25,7 +23,7 @@ from scripts.create_table import create_table
 
 
 def main() -> int:
-    with mock_aws():
+    with mock_postgres():
         create_table()
         user_id = f"learning-loop-{uuid4().hex[:8]}"
         run = create_activity_run(

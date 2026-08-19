@@ -3,21 +3,19 @@
 diagnose -> profile -> plan -> practice/generate -> practice/submit -> history,
 asserting the learner profile actually accumulates across calls.
 
-Default (zero external services): in-process mock AWS (moto) + fake AI.
-No Docker, no AWS, no DeepSeek key:
+Default: local Docker PostgreSQL + fake AI. No AWS account or model key:
 
     uv run python -m scripts.integration_test
 
-Against your real/local DynamoDB instead of moto (set USE_MOTO=0; AI then follows
-USE_FAKE_AI / your DeepSeek key):
+To use another disposable PostgreSQL test database, set ``DATABASE_URL``. The
+database must be local and its name must end in ``_test``:
 
-    USE_MOTO=0 DYNAMODB_ENDPOINT_URL=http://localhost:8001 \
-      AWS_ACCESS_KEY_ID=local AWS_SECRET_ACCESS_KEY=local USE_FAKE_AI=true \
+    DATABASE_URL=postgresql+psycopg://weakspot:weakspot@localhost/weakspot_test \
+      USE_FAKE_AI=true \
       uv run python -m scripts.integration_test
 """
 
 import os
-import sys
 import time
 import asyncio
 import uuid
@@ -32,43 +30,25 @@ SAMPLE = (
 
 
 def main() -> int:
-    use_moto = os.getenv("USE_MOTO", "1") != "0" and not os.getenv("DYNAMODB_ENDPOINT_URL")
+    os.environ.setdefault("USE_FAKE_AI", "true")
+    os.environ.setdefault("OWNER_BYPASS_TOKEN", "itest-owner-token")
+    os.environ.setdefault("GUEST_DAILY_LIMIT", "3")
+    os.environ.setdefault("USER_DAILY_LIMIT", "20")
+    os.environ.setdefault(
+        "SESSION_SECRET", "integration-test-session-secret-at-least-32-bytes"
+    )
+    from scripts.postgres_test import mock_postgres
 
-    mock = None
-    if use_moto:
-        os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
-        os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
-        os.environ.setdefault("AWS_REGION", "us-east-1")
-        os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
-        os.environ.setdefault("USE_FAKE_AI", "true")
-        os.environ.setdefault("OWNER_BYPASS_TOKEN", "itest-owner-token")
-        os.environ.setdefault("GUEST_DAILY_LIMIT", "3")
-        os.environ.setdefault("USER_DAILY_LIMIT", "20")
-        os.environ.setdefault(
-            "SESSION_SECRET", "integration-test-session-secret-at-least-32-bytes"
-        )
-        try:
-            import moto
-        except ImportError:
-            print(
-                "moto is not installed. Run `uv sync` (it's a dev dependency), "
-                "or use USE_MOTO=0 against a real/local DynamoDB.",
-                file=sys.stderr,
-            )
-            return 1
-        mock = moto.mock_aws()
-        mock.start()
-        print("Mode: in-process moto (mock AWS) + fake AI — no external services.")
-    else:
-        print("Mode: real/local DynamoDB (USE_MOTO=0).")
+    database = mock_postgres()
+    database.start()
+    print("Mode: local PostgreSQL test database + fake AI.")
 
     try:
-        # Import AFTER env + moto are active (the module-level boto3 resource binds here).
+        # Import after the isolated test DATABASE_URL is configured.
         from fastapi.testclient import TestClient
         from starlette.requests import Request
 
         from app.api.deps import _client_ip, make_session_jwt
-        from app.config import settings
         from app.db import repositories as repository_module
         from app.db.repositories import (
             get_activity_run,
@@ -86,13 +66,7 @@ def main() -> int:
         from app.services.decision_service import recommend_next_action
         from app.services.fake_ai import fake_for
         from app.services.realtime_sideband import RealtimeSidebandState, _handle_realtime_event
-        from botocore.exceptions import ClientError
         from scripts.create_table import create_table
-
-        print(
-            f"  endpoint_url={settings.dynamodb_endpoint_url or '(default AWS)'}  "
-            f"table={settings.dynamodb_table}  use_fake_ai={settings.use_fake_ai}\n"
-        )
 
         create_table()  # idempotent
 
@@ -276,28 +250,19 @@ def main() -> int:
         assert ex["question"], "expected a question"
         print(f"4. POST /practice/generate -> skill {ex['targetSkillCode']}, type {ex['type']}")
 
-        # A DynamoDB transaction that fences a memory write can briefly overlap
-        # a normal UpdateItem claim on the same lease row. This is lock
-        # contention, not a fatal repository error, and must enter the bounded
-        # retry path instead of surfacing as a 500 response.
-        transaction_conflict = ClientError(
-            {
-                "Error": {
-                    "Code": "TransactionConflictException",
-                    "Message": "Transaction is ongoing for the item",
-                }
-            },
-            "UpdateItem",
-        )
-        with patch.object(
-            repository_module.table,
-            "update_item",
-            side_effect=transaction_conflict,
-        ):
-            assert not repository_module.claim_memory_write_lease(
-                f"practice-lease-conflict-{uuid.uuid4().hex[:8]}",
-                f"claim-{uuid.uuid4().hex}",
+        # PostgreSQL's unique lease row permits only one concurrent writer.
+        lease_user = f"practice-lease-conflict-{uuid.uuid4().hex[:8]}"
+        lease_claims = [f"claim-{uuid.uuid4().hex}" for _ in range(4)]
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            lease_results = list(
+                pool.map(
+                    lambda claim: repository_module.claim_memory_write_lease(
+                        lease_user, claim
+                    ),
+                    lease_claims,
+                )
             )
+        assert lease_results.count(True) == 1, lease_results
 
         # Adaptive selection is read-only. It must not acquire the MemoryAgent
         # writer lease, otherwise the four requests started by /practice race
@@ -328,7 +293,7 @@ def main() -> int:
         print("   concurrent generation    -> four exercise requests completed")
 
         # A large adaptive fingerprint used to be copied into the EXERCISE
-        # record and made DynamoDB reject the PutItem at its 400 KB limit. The
+        # record and exceeded the bounded application payload contract. The
         # response can retain the complete decision for the current request,
         # while durable exercise provenance stays compact.
         from app.api.routes import practice as practice_route
@@ -354,7 +319,7 @@ def main() -> int:
             assert "errorFingerprint" not in stored_exercise["decision"]
         finally:
             practice_route.recommend_next_action = original_recommend_next_action
-        print("   oversized decision       -> compact DynamoDB exercise record")
+        print("   oversized decision       -> compact PostgreSQL exercise record")
 
         # 5. practice submit
         from app.services import practice_service as practice_service_module
@@ -391,7 +356,7 @@ def main() -> int:
         )
 
         # 6. History is intentionally unbounded. Seed more than the former
-        # route cap of 20, with enough data to force DynamoDB pagination for
+        # route cap of 20, with enough data to exercise database pagination for
         # both submissions and errors.
         seeded_submission_ids = set()
         seeded_error_ids = set()
@@ -462,7 +427,7 @@ def main() -> int:
                 "topic": f"Unbounded notebook note {index}",
                 "original": f"Original {index}",
                 "natural": f"Natural {index}",
-                # The combined rows exceed DynamoDB's 1 MB Query page, so this
+                # The combined rows are large enough to stress pagination, so this
                 # also verifies that list_notes follows LastEvaluatedKey.
                 "explanation": "Notebook pagination regression coverage. " + ("x" * 24000),
                 "context": "Integration test",
@@ -1356,7 +1321,7 @@ def main() -> int:
         )
 
         print(f"\nFULL LOOP PASSED ✅  (test user {user})")
-        if use_moto:
+        if True:
             print("\n--- auth + rate limiting ---")
             guest = TestClient(app)
             me = guest.get("/api/v1/auth/me")
@@ -1440,8 +1405,7 @@ def main() -> int:
 
         return 0
     finally:
-        if mock is not None:
-            mock.stop()
+        database.stop()
 
 
 if __name__ == "__main__":

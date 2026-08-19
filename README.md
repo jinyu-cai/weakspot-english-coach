@@ -133,7 +133,7 @@ model metadata returned with a newly generated Coach mission.
 | Autonomous experience accumulation | Qwen extracts durable memory candidates during diagnosis/chat; practice outcomes update strategy statistics automatically |
 | Preferences and goals | Remembers feedback style, explanation language, learning focus, learner-defined communication/work/exam goals, and explicit manual memories |
 | Efficient retrieval | Qwen `text-embedding-v4` (256d) + lexical hybrid ranking; the same embeddings help match Stealth Practice to the live topic |
-| Timely forgetting | Kind-specific expiration, evidence-based weakness graduation and relapse, conflict replacement, capacity pruning, user-controlled forget, DynamoDB TTL |
+| Timely forgetting | Kind-specific expiration, evidence-based weakness graduation and relapse, conflict replacement, capacity pruning, user-controlled forget, scheduled PostgreSQL cleanup |
 | Limited-context recall | At most six memories under a 700 estimated-token ceiling with a 15% safety reserve; text chat keeps 12 recent turns |
 | Improving decisions | Next skill and exercise format use mastery, error density, spacing, historical score, productive difficulty, and exploration |
 | Explainability | Memory Center shows every memory; recall traces show selected IDs, component scores, and token use |
@@ -144,7 +144,7 @@ model metadata returned with a newly generated Coach mission.
 diagnose / chat / import / practice
   -> configured structured text analysis + durable memory candidates
   -> consolidate, merge evidence, replace conflicts, expire stale memory
-  -> store MEMORY# rows in DynamoDB
+  -> store typed memory rows with flexible JSONB evidence in PostgreSQL
   -> hybrid retrieve into a bounded Memory Pack
   -> personalize chat, diagnosis, plan, and exercise generation
   -> grade outcome, update strategy effectiveness, and evaluate spaced mastery evidence
@@ -162,15 +162,14 @@ flowchart LR
     API --> Memory[Memory lifecycle + hybrid ranker]
     API -. existing provider routes .-> Qwen[Qwen 3.7 Max / Plus]
     API -. existing embeddings .-> Embed[Qwen text-embedding-v4]
-    Memory <--> DB[(DynamoDB single table)]
+    Memory <--> DB[(Amazon RDS PostgreSQL 16)]
 ```
 
-The hosting origin is independent from the new model path: whichever FastAPI
-origin serves the request calls OpenAI directly for Build Week missions. The
-older Oracle/Alibaba/Qwen deployment history remains in
-[Architecture](docs/ARCHITECTURE.md) and the
-[Alibaba/Qwen deployment runbook](docs/ALIBABA_QWEN_DEPLOYMENT.md), but Qwen
-Cloud console footage is not required in the OpenAI Build Week demo.
+The production FastAPI backend runs on Oracle Cloud in San Jose and connects to
+Amazon RDS PostgreSQL in `us-west-1`. Alibaba ECS is no longer a backend origin.
+Qwen Model Studio remains an optional external model, embedding, and speech
+provider. The former Alibaba deployment runbook is retained only as
+[historical hackathon material](docs/ALIBABA_QWEN_DEPLOYMENT.md).
 
 ## Product features
 
@@ -198,18 +197,17 @@ in [Coach Mode / Input Lab 2.0 P0](docs/COACH_MODE_P0.md).
 | --- | --- |
 | Frontend | Next.js 16, TypeScript, Tailwind CSS, shadcn/ui, Vercel |
 | Build Week planner | OpenAI Responses API, `gpt-5.6-sol`, Pydantic Structured Outputs |
-| Daily backend | FastAPI/Python 3.11 in Docker on Oracle Cloud, Nginx, TLS, DeepSeek |
-| Existing alternate backend | Same FastAPI release on Alibaba Cloud ECS |
+| Production backend | FastAPI/Python 3.11 in Docker on Oracle Cloud San Jose, Nginx, TLS |
 | Qwen | Model Studio `qwen3.7-max`, `qwen3.7-plus`, `qwen3-tts-flash`, `text-embedding-v4` |
-| Persistence | Amazon DynamoDB single-table design with TTL |
-| Traffic routing | Stable Cloudflare API hostname in front of the active FastAPI origin |
+| Persistence | Amazon RDS for PostgreSQL 16; typed/indexed columns plus JSONB payloads |
+| Traffic routing | Stable Cloudflare API hostname in front of the Oracle origin |
 | Voice | OpenAI Realtime API for voice chat; Qwen3-TTS-Flash for Coach listening; browser speech fallback |
 | Auth | GitHub/Google OAuth, server-resolved identity, per-tier limits |
 
 ## Repository
 
 ```text
-apps/api/   FastAPI, GPT-5.6/Qwen integrations, DynamoDB, MemoryAgent, tests, deploy
+apps/api/   FastAPI, GPT-5.6/Qwen integrations, PostgreSQL, MemoryAgent, tests, deploy
 apps/web/   Next.js application and Memory Center
 docs/       architecture, MemoryAgent design, submission, demo, deployment
 prompts/    personal prompt library (TOEFL learning, vocabulary, essay polishing)
@@ -229,9 +227,11 @@ production Web engineering, start with the
 [Chinese beginner learning guide](development.md) or its matching
 [English edition](development.en.md). They explain the required Python
 syntax, HTTP/FastAPI request lifecycle, route/service/repository layering,
-DynamoDB key design, the original diagnosis-plan-practice loop, server model
+the original diagnosis-plan-practice loop, server model
 selection, the complete MemoryAgent flow, and how to rebuild a smaller version
-of the project from an empty directory using the current source code.
+of the project from an empty directory. Their older DynamoDB chapters are
+historical; use the [PostgreSQL beginner guide](docs/POSTGRESQL_BEGINNER_GUIDE.md)
+for the current database implementation.
 
 After that, use [Architecture](docs/ARCHITECTURE.md) for the production view,
 [MemoryAgent Design](docs/MEMORY_AGENT_DESIGN.md) for algorithm details, and
@@ -247,7 +247,8 @@ Backend:
 cd apps/api
 uv sync
 cp .env.example .env
-uv run python -m scripts.create_table
+docker compose -f docker-compose.local.yml up -d postgres
+uv run alembic upgrade head
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
@@ -281,16 +282,17 @@ the server's default text provider.
 
 ## Tests and benchmark
 
-All backend tests below run without external services by using moto and fake
-structured model output:
+Database integration tests use the local PostgreSQL Docker container and fake
+structured model output; they make no AWS or model-provider calls:
 
 ```bash
 cd apps/api
+docker compose -f docker-compose.local.yml up -d postgres
 uv run python -m scripts.coach_contract_test
 uv run python -m scripts.smoke_test
-DYNAMODB_ENDPOINT_URL= uv run python -m scripts.integration_test
-DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_agent_test
-DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
+uv run python -m scripts.integration_test
+uv run python -m scripts.memory_agent_test
+uv run python -m scripts.memory_benchmark
 ```
 
 Frontend:
@@ -316,11 +318,12 @@ and the separate live-embedding option.
 - [OpenAI Build Week Devpost draft](docs/OPENAI_BUILD_WEEK_SUBMISSION.md)
 - [OpenAI Build Week video production pack](docs/openai-build-week/README.md)
 - [Codex collaboration log](docs/OPENAI_BUILD_WEEK_CODEX_LOG.md)
-- [Original Qwen Devpost submission draft](docs/SUBMISSION.md)
+- [Historical Qwen Devpost submission draft](docs/SUBMISSION.md)
 - [Under-three-minute demo script](docs/DEMO_VIDEO_SCRIPT.md)
 - [Demo video production pack](docs/demo-production/README.md)
 - [MemoryAgent technical design](docs/MEMORY_AGENT_DESIGN.md)
-- [Alibaba Cloud deployment evidence checklist](docs/ALIBABA_QWEN_DEPLOYMENT.md)
+- [Active RDS PostgreSQL production runbook](docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md)
+- [Historical Alibaba Cloud deployment evidence checklist](docs/ALIBABA_QWEN_DEPLOYMENT.md)
 
 ## License
 

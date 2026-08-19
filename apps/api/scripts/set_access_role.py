@@ -1,4 +1,4 @@
-"""Grant or revoke owner/member access roles in DynamoDB.
+"""Grant or revoke owner/member access roles in PostgreSQL.
 
 Examples:
     uv run python -m scripts.set_access_role member@example.com member

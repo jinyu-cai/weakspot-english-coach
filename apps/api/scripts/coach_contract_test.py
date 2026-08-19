@@ -4,7 +4,7 @@ Run from ``apps/api``:
 
     UV_CACHE_DIR=.uv-cache uv run python -m scripts.coach_contract_test
 
-No network, DynamoDB, or model-provider call is made.
+No network, database, or model-provider call is made.
 """
 
 from types import SimpleNamespace

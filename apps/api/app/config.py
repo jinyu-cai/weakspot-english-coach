@@ -74,14 +74,15 @@ class Settings(BaseSettings):
     llm_model: str = "deepseek-v4-pro"
     llm_model_fast: str = "ds-v4-flash-0731"
 
-    # AWS DynamoDB
-    aws_region: str = "us-east-1"
-    aws_access_key_id: str = ""
-    aws_secret_access_key: str = ""
-    dynamodb_table: str = "WeakSpotEnglishCoach"
-    # Local dev: point DynamoDB at a local emulator (e.g. http://localhost:8001).
-    # Leave empty to use real AWS DynamoDB.
-    dynamodb_endpoint_url: str = ""
+    # PostgreSQL. Production supplies an RDS URL with sslmode=verify-full.
+    # The local default is intentionally non-secret and connects only to the
+    # Docker Compose development database.
+    database_url: str = (
+        "postgresql+psycopg://weakspot:weakspot@127.0.0.1:5432/weakspot"
+    )
+    database_pool_size: int = 5
+    database_max_overflow: int = 5
+    database_connect_timeout_seconds: int = 10
 
     cors_origins: str = "http://localhost:3000"
     demo_user_id: str = "demo-user-001"

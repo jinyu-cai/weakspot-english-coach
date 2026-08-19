@@ -6,15 +6,14 @@ import os
 from copy import deepcopy
 from unittest.mock import patch
 
-os.environ.setdefault("DYNAMODB_ENDPOINT_URL", "")
 os.environ.setdefault("USE_FAKE_AI", "true")
 os.environ.setdefault("OWNER_BYPASS_TOKEN", "plan-lifecycle-owner")
 
-from moto import mock_aws
+from scripts.postgres_test import mock_postgres
 
 
 def main() -> int:
-    with mock_aws():
+    with mock_postgres():
         from fastapi.testclient import TestClient
 
         from app.db.repositories import (

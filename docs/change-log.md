@@ -18,6 +18,48 @@ Known issues:
 Next step:
 ```
 
+## 2026-08-17 — Replace DynamoDB with Amazon RDS PostgreSQL
+
+Date: 2026-08-17 PDT
+
+- Replaced the application persistence layer with PostgreSQL 16 using
+  SQLAlchemy, psycopg, Alembic, typed relational columns, and JSONB payloads.
+- Added signed keyset pagination, PostgreSQL-backed leases and atomic writes,
+  local Docker PostgreSQL, guarded database test tooling, and readiness checks.
+- Added a one-time DynamoDB importer with dry-run, idempotent apply, counts,
+  checksums, and verification before cutover.
+- Added CloudFormation for a low-cost Single-AZ RDS PostgreSQL deployment in
+  `us-west-1`, restricted to the Oracle server's static `/32` address.
+- Updated active architecture, deployment, beginner, testing, and backend
+  documentation. Alibaba backend deployment material is now marked historical;
+  Alibaba Model Studio remains an optional remote model provider only.
+- Reworked the database portions of `development.md` and `development.en.md`:
+  PostgreSQL is now the active teaching path for schema, SQLAlchemy, JSONB,
+  transactions, concurrency, pagination, cleanup, local testing, and RDS;
+  DynamoDB material is isolated in a labeled migration-history appendix.
+
+Tests run:
+
+- Backend smoke, coach contract, contract-boundary, and migration-contract
+  tests pass.
+- Python compilation, Alembic offline SQL generation, CloudFormation/Compose
+  YAML parsing, repository import checks, and `git diff --check` pass.
+- The full PostgreSQL integration suite was not run in this workspace because
+  no Docker/Podman or local PostgreSQL server is installed.
+
+Deploy status: **RDS infrastructure LIVE**. CloudFormation stack
+`weakspot-postgresql` completed in `us-west-1`; PostgreSQL 16.14 is available at
+`weakspot-postgresql.c94asc6yw9lr.us-west-1.rds.amazonaws.com`. The post-create
+audit confirmed `db.t4g.micro`, Single-AZ, 20 GiB gp3 with a 100 GiB ceiling,
+encryption, seven-day backups, deletion protection, a managed rotating master
+secret, required TLS, and one inbound PostgreSQL rule for the Oracle server at
+`129.159.45.19/32`. A TCP reachability check from Oracle passed. The application
+schema and production data cutover have not run yet.
+
+Next step: bootstrap the application role, rehearse the import against a
+snapshot/export, and perform the documented maintenance-window cutover after
+verification succeeds.
+
 
 ## 2026-08-16 — Ebook step 1 (Understand) passes above score 60
 

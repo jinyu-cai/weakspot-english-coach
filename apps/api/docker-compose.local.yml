@@ -1,17 +1,28 @@
-# Local DynamoDB emulator only (no AWS needed) — for live-server / front+back testing.
+# Local PostgreSQL for development and integration tests.
 #
-#   docker compose -f docker-compose.local.yml up -d
+#   docker compose -f docker-compose.local.yml up -d postgres
+#   uv run alembic upgrade head
 #
-# Then run the backend with:
-#   DYNAMODB_ENDPOINT_URL=http://localhost:8001 AWS_ACCESS_KEY_ID=local \
-#   AWS_SECRET_ACCESS_KEY=local uv run python -m scripts.create_table
-#   ... and the same env for uvicorn.
-#
-# Data is in-memory (lost on restart). Drop "-inMemory" to persist.
+# Development data persists in the named volume. The dedicated weakspot_test
+# database is safe for test reset helpers and must never point at production.
 services:
-  dynamodb-local:
-    image: amazon/dynamodb-local:latest
-    container_name: weakspot-dynamodb-local
+  postgres:
+    image: postgres:16-alpine
+    container_name: weakspot-postgres-local
+    environment:
+      POSTGRES_USER: weakspot
+      POSTGRES_PASSWORD: weakspot
+      POSTGRES_DB: weakspot
     ports:
-      - "8001:8000"
-    command: ["-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb"]
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U weakspot -d weakspot"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - weakspot-postgres-data:/var/lib/postgresql/data
+      - ./deploy/init-local.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro
+
+volumes:
+  weakspot-postgres-data:

@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Low-cost PostgreSQL 16 RDS instance for WeakSpot English Coach
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public subnet in the first Availability Zone
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public subnet in a different Availability Zone
+  OracleBackendCidr:
+    Type: String
+    AllowedPattern: "^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}/32$"
+    Description: Static public IPv4 address of the Oracle backend, with /32
+  DatabaseName:
+    Type: String
+    Default: weakspot
+    AllowedPattern: "^[a-z][a-z0-9_]{0,62}$"
+  MasterUsername:
+    Type: String
+    Default: weakspot_admin
+    AllowedPattern: "^[a-zA-Z][a-zA-Z0-9_]{0,62}$"
+  EngineVersion:
+    Type: String
+    Default: "16.14"
+    AllowedPattern: "^16\\.[0-9]+$"
+    Description: PostgreSQL 16 minor version available in us-west-1
+
+Resources:
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: PostgreSQL access from the Oracle backend only
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: !Ref OracleBackendCidr
+          Description: Oracle backend PostgreSQL TLS
+      Tags:
+        - Key: Name
+          Value: weakspot-rds-postgresql
+
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Public subnets for the cross-cloud RDS endpoint
+      SubnetIds:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+
+  DatabaseParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: Require TLS for WeakSpot PostgreSQL
+      Family: postgres16
+      Parameters:
+        rds.force_ssl: "1"
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: weakspot-postgresql
+      Engine: postgres
+      EngineVersion: !Ref EngineVersion
+      DBInstanceClass: db.t4g.micro
+      DBName: !Ref DatabaseName
+      MasterUsername: !Ref MasterUsername
+      ManageMasterUserPassword: true
+      AllocatedStorage: "20"
+      MaxAllocatedStorage: 100
+      StorageType: gp3
+      StorageEncrypted: true
+      MultiAZ: false
+      PubliclyAccessible: true
+      NetworkType: IPV4
+      Port: 5432
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      VPCSecurityGroups:
+        - !GetAtt DatabaseSecurityGroup.GroupId
+      DBParameterGroupName: !Ref DatabaseParameterGroup
+      BackupRetentionPeriod: 7
+      CopyTagsToSnapshot: true
+      DeletionProtection: true
+      AutoMinorVersionUpgrade: true
+      EnablePerformanceInsights: false
+      MonitoringInterval: 0
+      Tags:
+        - Key: Application
+          Value: weakspot-english-coach
+
+Outputs:
+  Endpoint:
+    Value: !GetAtt Database.Endpoint.Address
+  Port:
+    Value: !GetAtt Database.Endpoint.Port
+  MasterSecretArn:
+    Value: !GetAtt Database.MasterUserSecret.SecretArn
+  SecurityGroupId:
+    Value: !GetAtt DatabaseSecurityGroup.GroupId
+  DatabaseIdentifier:
+    Value: !Ref Database

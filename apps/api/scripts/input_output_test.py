@@ -6,10 +6,9 @@ import os
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-os.environ.setdefault("DYNAMODB_ENDPOINT_URL", "")
 os.environ.setdefault("USE_FAKE_AI", "true")
 
-from moto import mock_aws
+from scripts.postgres_test import mock_postgres
 
 from app.db.repositories import get_input_learning_source, save_input_learning_source
 from app.models.input_learning import AnalyzeInputLearningRequest, SubmitInputLearningAttemptRequest
@@ -19,7 +18,7 @@ from scripts.create_table import create_table
 
 
 def main() -> int:
-    with mock_aws():
+    with mock_postgres():
         create_table()
         user_id = f"input-output-{uuid4().hex[:8]}"
         source = analyze_input_learning(

@@ -2,7 +2,7 @@
 
 Run from apps/api:
 
-    DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_agent_test
+    uv run python -m scripts.memory_agent_test
 """
 
 import os
@@ -11,18 +11,13 @@ import uuid
 
 
 def main() -> int:
-    os.environ["AWS_ACCESS_KEY_ID"] = "testing"
-    os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
-    os.environ["AWS_REGION"] = "us-east-1"
-    os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
-    os.environ["DYNAMODB_ENDPOINT_URL"] = ""
     os.environ["USE_FAKE_AI"] = "true"
     os.environ["OWNER_BYPASS_TOKEN"] = "memory-test-owner-token"
     os.environ["SESSION_SECRET"] = "memory-agent-test-secret-at-least-32-bytes"
 
-    import moto
+    from scripts.postgres_test import mock_postgres
 
-    mock = moto.mock_aws()
+    mock = mock_postgres()
     mock.start()
     try:
         from fastapi.testclient import TestClient
@@ -94,7 +89,7 @@ def main() -> int:
         print("2. conflicting preference -> old memory superseded")
 
         # 3. Expired memory is immediately filtered and marked, independent of
-        # DynamoDB's eventually-consistent physical TTL deletion.
+        # the scheduled PostgreSQL cleanup job.
         yesterday = datetime.now(timezone.utc) - timedelta(days=1)
         expired_id = f"mem_{uuid.uuid4().hex[:12]}"
         save_memory({

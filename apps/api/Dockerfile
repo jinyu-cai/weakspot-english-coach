@@ -15,6 +15,8 @@ RUN uv sync --frozen --no-dev
 # Then copy the application code.
 COPY app ./app
 COPY scripts ./scripts
+COPY alembic.ini ./alembic.ini
+COPY alembic ./alembic
 
 # Use the project venv created by uv sync.
 ENV PATH="/app/.venv/bin:$PATH"

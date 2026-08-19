@@ -118,17 +118,20 @@ Notebook category labels remain on one line at 320px, 360px, and desktop widths
 
 ## Backend smoke and integration tests
 
-These tests do not need real AWS, Docker, or an LLM key.
+The smoke/contract tests need no external service. Repository and integration
+tests require the local PostgreSQL Docker container but no AWS account or model
+key.
 
 ```bash
 cd apps/api
+docker compose -f docker-compose.local.yml up -d postgres
 uv run python -m scripts.smoke_test
 uv run python -m scripts.integration_test
 uv run python -m scripts.dedup_test
-DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_agent_test
-DYNAMODB_ENDPOINT_URL= uv run python -m scripts.stealth_input_test
-DYNAMODB_ENDPOINT_URL= uv run python -m scripts.ebook_test
-DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
+uv run python -m scripts.memory_agent_test
+uv run python -m scripts.stealth_input_test
+uv run python -m scripts.ebook_test
+uv run python -m scripts.memory_benchmark
 ```
 
 The integration test covers diagnose, profile, plan, practice generation,
@@ -147,13 +150,10 @@ validation, sentence/annotation grounding, provisional weakness semantics,
 three-step and delayed review transitions, cross-user isolation, encrypted PDF
 rejection, and source-data cascade deletion.
 
-`stealth_input_test` is the focused release gate for personalized learning. It
-uses moto and fake AI, so it needs no AWS or model key. It verifies retention
-scheduling, the no-penalty opportunity gate, all stealth outcomes, modality
-mastery separation, replay/variation/transfer progression, memory verification,
-relapse/due behavior, hidden-until-summary chat integration, grounded Input
-Learning capture, single-event penalty de-duplication, attention missions,
-derivative cleanup, CRUD, and cross-user isolation.
+`stealth_input_test` is the focused PostgreSQL release gate for learner memory,
+atomic/idempotent transcript batches, grounded Input Learning, server-owned
+identity, and keyset pagination. The broader feature contracts remain covered
+by the integration, MemoryAgent, learning-loop, and Input Learning scripts.
 
 ## Full local frontend + backend
 
@@ -164,9 +164,12 @@ cd apps/api
 uv run python -m scripts.dev_server
 ```
 
-This recommended learning mode uses in-process moto + fake AI, needs no AWS or
-model keys, and resets data when stopped. To test real configured services,
-use `uv run uvicorn app.main:app --reload --port 8000` with a valid `.env`.
+This recommended learning mode uses the local PostgreSQL container, applies
+Alembic migrations, and enables fake AI. Start the container with the command
+from the preceding test section first. It needs no AWS or model keys. Local
+development data persists in Docker until its volume is intentionally removed.
+To test real configured services, use `uv run uvicorn app.main:app --reload
+--port 8000` with a valid `.env`.
 
 Terminal B:
 
@@ -182,7 +185,7 @@ Diagnose creates records
 Practice submit creates attempts
 Memory Center recalls and forgets a manual memory
 Chat model selector shows independent Deep and Fast choices; Server default
-matches the active deployment (Oracle currently DeepSeek, Alibaba Qwen), and
+matches the providers configured on the Oracle deployment, and
 mixed Qwen/DeepSeek choices appear only when both providers are configured
 Input Learning `/input` saves grounded material, creates an attention mission
 without pasted material, opens a saved capture, and deletes it
@@ -231,9 +234,9 @@ Before merging:
 ```bash
 cd apps/api && uv run python -m scripts.smoke_test
 cd apps/api && uv run python -m scripts.integration_test
-cd apps/api && DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_agent_test
-cd apps/api && DYNAMODB_ENDPOINT_URL= uv run python -m scripts.stealth_input_test
-cd apps/api && DYNAMODB_ENDPOINT_URL= uv run python -m scripts.memory_benchmark
+cd apps/api && uv run python -m scripts.memory_agent_test
+cd apps/api && uv run python -m scripts.stealth_input_test
+cd apps/api && uv run python -m scripts.memory_benchmark
 cd apps/web && pnpm lint
 cd apps/web && pnpm exec tsc --noEmit
 cd apps/web && pnpm test:chat-import

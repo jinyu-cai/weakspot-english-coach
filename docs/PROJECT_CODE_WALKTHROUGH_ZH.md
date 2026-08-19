@@ -5,6 +5,11 @@
 > 最后核对：2026-07-30。
 >
 > 阅读顺序：先读「1–5」理解系统，再按「6–11」追踪一个功能，最后用「12–15」查每个函数所属模块。本文按模块覆盖**主要项目自定义业务函数、路由函数、数据函数、前端 API/工具函数和页面组件**；高重复、只服务局部渲染的 helper 以所属模块归类，不宣称逐行穷举。`components/ui/` 内的函数是 shadcn/Radix 的薄样式包装器，统一在第 9 节说明，避免对相同的 `className + ...props` 转发重复几十次。
+
+> **历史存储说明（2026-08-17）：** 本文的 DynamoDB 文件名、PK/SK 与 moto
+> 测试说明记录旧版本。当前代码使用 RDS PostgreSQL、SQLAlchemy 与 Alembic；
+> 请先阅读 [`POSTGRESQL_BEGINNER_GUIDE.md`](POSTGRESQL_BEGINNER_GUIDE.md) 和
+> [`ARCHITECTURE.md`](ARCHITECTURE.md)。
 >
 > 本文是“源码索引”：回答“函数在哪里、负责什么”。概念原理、数值演算、成功/失败示例和可运行实验
 > 以 [`../development.md`](../development.md) 为主；英文对照见

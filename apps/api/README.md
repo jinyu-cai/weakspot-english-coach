@@ -1,6 +1,6 @@
 # WeakSpot English Coach — Backend (FastAPI)
 
-FastAPI service that owns AI calls, DynamoDB access, the learner
+FastAPI service that owns AI calls, PostgreSQL access, the learner
 profile, persistent MemoryAgent, plan generation, and practice grading. Deployed on a Linux server
 behind Nginx/HTTPS. The Vercel frontend talks to it over `/api/v1`.
 
@@ -13,11 +13,13 @@ Dependencies are managed with [uv](https://docs.astral.sh/uv/) via
 cd apps/api
 uv sync                       # creates .venv (Python 3.11) + installs from the lockfile
 cp .env.example .env          # then fill in real keys
+docker compose -f docker-compose.local.yml up -d postgres
+uv run alembic upgrade head
 ```
 
 Common production `.env` values are: at least one text-model provider profile
 (`QWEN_MODEL_STUDIO_*`, `OPENAI_COMPAT_*`, or the backwards-compatible
-`DEEPSEEK_*` variables), AWS credentials/role + `DYNAMODB_TABLE`, and
+`DEEPSEEK_*` variables), an RDS PostgreSQL `DATABASE_URL`, and
 `CORS_ORIGINS` (include your Vercel URL). Add `OPENAI_API_KEY` when realtime
 voice or Coach AI speech is enabled, and add OAuth/session values when login is enabled. See
 `.env.example`.
@@ -25,25 +27,27 @@ voice or Coach AI speech is enabled, and add OAuth/session values when login is 
 Managing dependencies: `uv add <pkg>` / `uv remove <pkg>` (updates the lockfile);
 `uv lock --upgrade` to bump. Need a `requirements.txt`? `uv export -o requirements.txt`.
 
-## Verify without secrets (offline)
+## Verify without cloud/model secrets
 
 ```bash
 uv run python -m scripts.smoke_test          # imports + schemas + validation
-uv run python -m scripts.integration_test    # full loop end-to-end (moto + fake AI)
+uv run python -m scripts.integration_test    # full loop against local PostgreSQL + fake AI
 uv run python -m scripts.memory_agent_test   # lifecycle/graduation/relapse/API/decision
 uv run python -m scripts.stealth_input_test  # stealth retention + grounded input + identity
 uv run python -m scripts.ebook_test          # private import, grounding, review, cleanup
 uv run python -m scripts.memory_benchmark    # recall, stale suppression, context budget
 ```
 
-The integration test drives diagnose → profile → plan → practice → history in-process
-with a mock AWS (moto) and canned AI — no Docker, no AWS, no DeepSeek key. See the
+The smoke test is offline. Database tests use the real PostgreSQL 16 Docker
+container plus canned AI, so they exercise constraints, transactions, JSONB,
+and row locks without AWS or a model key. See the
 repo-root **`LOCAL_TESTING.md`** for the full tier-by-tier local + front/back guide.
 
-## Create the DynamoDB table (needs AWS creds)
+## Apply database migrations
 
 ```bash
-uv run python -m scripts.create_table   # idempotent; single table, PK + SK string keys
+uv run alembic upgrade head
+uv run alembic current
 ```
 
 ## Run
@@ -51,6 +55,7 @@ uv run python -m scripts.create_table   # idempotent; single table, PK + SK stri
 ```bash
 uv run uvicorn app.main:app --reload --port 8000
 curl http://localhost:8000/api/v1/health      # -> {"status":"ok"}
+curl http://localhost:8000/api/v1/health/ready # -> {"status":"ready"} when PostgreSQL responds
 ```
 
 Interactive docs at `http://localhost:8000/docs`.
@@ -152,7 +157,7 @@ compressed files fail with an explicit error; the service does not run OCR.
 EPUB chapters receive stable
 approximately 300-word logical pages, while PDFs keep their physical page
 numbers. The upload exists only in a controlled temporary file and is removed
-after parsing succeeds or fails. Extracted pages are separate DynamoDB items.
+after parsing succeeds or fails. Extracted pages are separate PostgreSQL rows.
 
 Study packs retain their original comparison mode (`translation` or
 `plain_english`) and selected model tier (`fast` or `deep`) even if the book
@@ -174,10 +179,9 @@ artifacts while retaining anonymous aggregate skill totals.
 ## History API
 
 `GET /api/v1/history/{user_id}` returns every submission, correction, and note
-owned by the server-resolved learner identity. There is no 20-item display cap:
-submission and error repositories follow DynamoDB `LastEvaluatedKey` across all
-query pages, while notes use the same unbounded pagination behavior documented
-below. Other services may deliberately request a bounded recent subset for AI
+owned by the server-resolved learner identity. There is no 20-item display cap;
+the repository returns the complete learner archive in indexed timestamp order.
+Other services may deliberately request a bounded recent subset for AI
 context or dashboard summaries; that does not limit the learner-facing History.
 
 Chat-session and Input Learning history use bounded cursor pages instead of one
@@ -186,8 +190,8 @@ following it until it is `null`. `pageSize` is only the per-request batch size
 (maximum 100), not a lifetime or display limit. Invalid or cross-user cursors
 are rejected, and browsing chat history does not consume a generative-chat
 quota event. Chat pages use the `messageCount` maintained atomically on each
-session; listing sessions never rescans `CHATMSG#`, `CHATBATCH#`, or
-`CHATSTAGE#` transcript rows. A missing or invalid stored count is returned as
+session; listing sessions never rescans message or transcript-batch rows. A
+missing or invalid stored count is returned as
 zero rather than triggering an archive scan.
 
 For compatibility, `GET /input-learning?limit=N` still supports the legacy
@@ -200,13 +204,12 @@ pagination modes return `400 ambiguous_pagination`.
 
 Notebook notes are generated by diagnoses, end-of-session chat analysis, and
 ChatGPT imports. Their types are `expression`, `vocabulary`, and `grammar`.
-Each row keeps its source in `submissionId` and is stored under
-`NOTE#<createdAt>#<noteId>`, newest first.
+Each row keeps its source in `submissionId` and is indexed by learner and
+creation time, newest first.
 
-`GET /api/v1/notes` returns all notes owned by the resolved server identity. It
-has no item-count cap: the repository follows DynamoDB `LastEvaluatedKey` until
-all query pages have been read. The normal account request-rate policy still
-applies. In addition to the stored note fields, the response includes:
+`GET /api/v1/notes` returns all notes owned by the resolved server identity and
+has no item-count cap. The normal account request-rate policy still applies. In
+addition to the stored note fields, the response includes:
 
 - `learningState`: `current` or `previous`;
 - `relatedWeaknesses`: active/resolved weaknesses linked through the same
@@ -307,10 +310,9 @@ is still being generated or leave a lone user message after an AI failure.
 Realtime transcript uploads use the same turn claim. Public requests accept at
 most 8 messages so even worst-case JSON escaping stays below the production
 proxy's 1 MiB body limit; clients split longer transcripts into sequential
-sub-800 KB batches. Internally, uploads are packed below DynamoDB item and 4 MB
-transaction budgets, staged with a 24-hour cleanup TTL, and made visible only
-when one final transaction removes those TTLs, publishes the commit marker,
-updates the session, and releases the claim.
+sub-800 KB batches. Internally, PostgreSQL inserts the transcript-batch marker,
+message rows, updated session count, and released claim in one transaction. A
+failure rolls back the whole batch, so partial messages never become visible.
 
 Canonical Memory read-modify-write operations use a learner-scoped, re-entrant
 `MEMORY_WRITE` lease with stale-writer fencing. Independent sources therefore
@@ -383,27 +385,26 @@ capture removes its dependent items and prevents them from later memory recall.
 ## Deploy (Linux)
 
 ```bash
-docker compose up -d --build
-curl http://localhost:8000/api/v1/health
+./deploy/start_backend.sh
+curl http://localhost:8000/api/v1/health/ready
 ```
 
-Then put Nginx in front and issue HTTPS with Certbot (see `DEPLOY.md` and
-[`../../docs/ALIBABA_QWEN_DEPLOYMENT.md`](../../docs/ALIBABA_QWEN_DEPLOYMENT.md)).
+Then put Nginx in front and issue HTTPS with Certbot. Provision and migrate the
+database with the active
+[`RDS PostgreSQL runbook`](../../docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md).
 The frontend's `NEXT_PUBLIC_API_BASE_URL` must point at
 the HTTPS backend domain, and that domain must be listed in `CORS_ORIGINS`.
-Production uses one stable API hostname: Cloudflare normally sends it to the
-Oracle/DeepSeek deployment and sends it to the release-matched Alibaba/Qwen
-deployment only for the final submission demo. Deploy and health-check the same
-commit on both servers before changing the Cloudflare origin.
+Production uses one stable API hostname routed to the Oracle San Jose backend.
+Alibaba ECS is no longer a backend server.
 
 ## AI client note (OpenAI-compatible / BYOK)
 
 The backend uses the OpenAI Python SDK against OpenAI-compatible chat
 completions APIs. The hosted profile uses OpenRouter for the Luna pair and
 OpenCode Go for the DeepSeek V4 pair, Qwen `text-embedding-v4` for semantic
-retrieval, and Qwen3-TTS-Flash for Coach Speech. The release-matched Alibaba
-demo deployment uses Qwen Model Studio for text and embeddings. The code
-remains provider-neutral; each deployment chooses its default from its
+retrieval, and Qwen3-TTS-Flash for Coach Speech. Qwen Model Studio remains an
+optional external provider called from Oracle. The code remains
+provider-neutral; the deployment chooses its default from its
 configured server-side environment. Provider-neutral deployments can use:
 
 ```bash
@@ -427,7 +428,8 @@ OPENCODE_GO_DEEPSEEK_MODEL=deepseek-v4-pro
 OPENCODE_GO_DEEPSEEK_FAST_MODEL=deepseek-v4-flash
 ```
 
-For Alibaba Cloud Model Studio, set the Qwen 3.7 profile instead. The backend
+To use Alibaba Cloud Model Studio as an external provider, set the Qwen 3.7
+profile. The backend
 uses `qwen3.7-max` for deep analysis and `qwen3.7-plus` for fast paths:
 
 ```bash
@@ -445,9 +447,8 @@ unavailable. Its default Memory Pack is bounded to six memories and 700
 estimated tokens. See
 [`../../docs/MEMORY_AGENT_DESIGN.md`](../../docs/MEMORY_AGENT_DESIGN.md).
 
-Use the base URL that matches the Model Studio workspace and API key. See
-[`../../docs/ALIBABA_QWEN_DEPLOYMENT.md`](../../docs/ALIBABA_QWEN_DEPLOYMENT.md)
-for the Alibaba Cloud deployment runbook and regional endpoints.
+Use the base URL that matches the Model Studio workspace and API key. This does
+not require or imply an Alibaba ECS deployment.
 
 ### Server-managed model selection
 
@@ -490,7 +491,7 @@ X-LLM-Fast-Model: your_fast_chat_model  # optional
 ```
 
 The request-scoped key is used only for that API call and is not stored in
-DynamoDB. BYOK endpoints must use HTTPS and remain subject to the normal
+PostgreSQL. BYOK endpoints must use HTTPS and remain subject to the normal
 account rate and size limits. The client uses JSON mode
 (`response_format={"type":"json_object"}`) + Pydantic validation + one retry,
 which works across providers that support the OpenAI-compatible chat

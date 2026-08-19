@@ -1,46 +1,32 @@
-"""Run a LIVE backend on http://localhost:8000 backed by in-process moto + fake AI.
+"""Run the local API with Docker PostgreSQL and fake AI.
 
-No Docker, no AWS, no DeepSeek key — ideal for local front + back integration:
-point the frontend's NEXT_PUBLIC_API_BASE_URL at http://localhost:8000.
+Start the database first:
 
+    docker compose -f docker-compose.local.yml up -d postgres
     uv run python -m scripts.dev_server
-
-Data is in-memory and resets when you stop the server. To run a live server
-against a REAL database/AI instead, just use uvicorn directly with a real .env:
-    uv run uvicorn app.main:app --reload --port 8000
 """
 
 import os
 
 
 def main() -> None:
-    os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
-    os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
-    os.environ.setdefault("AWS_REGION", "us-east-1")
-    os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
+    os.environ.setdefault(
+        "DATABASE_URL",
+        "postgresql+psycopg://weakspot:weakspot@127.0.0.1:5432/weakspot",
+    )
     os.environ.setdefault("USE_FAKE_AI", "true")
     os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
 
-    import moto
+    from scripts.create_table import create_table
 
-    mock = moto.mock_aws()
-    mock.start()
-    try:
-        from scripts.create_table import create_table
+    create_table()
 
-        create_table()
+    import uvicorn
 
-        import uvicorn
-
-        print("\n  Live dev backend  ->  http://localhost:8000")
-        print("  Mode: in-process moto (mock AWS) + fake AI — no keys needed")
-        print("  CORS allows: http://localhost:3000")
-        print("  Frontend:  NEXT_PUBLIC_API_BASE_URL=http://localhost:8000\n")
-
-        # reload=False is REQUIRED: reload spawns a subprocess where moto is not active.
-        uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=False, log_level="info")
-    finally:
-        mock.stop()
+    print("\n  Live dev backend  ->  http://localhost:8000")
+    print("  Mode: local PostgreSQL + fake AI — no provider key needed")
+    print("  CORS allows: http://localhost:3000\n")
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=False, log_level="info")
 
 
 if __name__ == "__main__":
