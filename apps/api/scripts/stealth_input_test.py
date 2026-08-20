@@ -117,6 +117,7 @@ def main() -> int:
         }
     )
     transcript = {
+        "userId": "client-supplied-id-is-ignored",
         "messages": [
             {
                 "role": "user",
@@ -166,7 +167,13 @@ def main() -> int:
     response = client.post("/api/v1/input-learning/analyze", json=request)
     assert response.status_code == 200, response.text
     source = response.json()["source"]
-    assert source["userId"] == "owner"
+    assert "userId" not in source
+    stored_source = next(
+        item
+        for item in list_input_learning_sources("owner")
+        if item["id"] == source["id"]
+    )
+    assert stored_source["userId"] == "owner"
     assert source["status"] == "complete"
     assert source["items"]
     assert all(item.get("sourceEvidence") in content for item in source["items"])

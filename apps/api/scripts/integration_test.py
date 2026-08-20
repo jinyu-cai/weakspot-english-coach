@@ -49,6 +49,7 @@ def main() -> int:
         from starlette.requests import Request
 
         from app.api.deps import _client_ip, make_session_jwt
+        from app.config import settings
         from app.db import repositories as repository_module
         from app.db.repositories import (
             get_activity_run,
