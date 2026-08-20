@@ -372,8 +372,8 @@ pnpm build
 - 前端：Vercel Production 已成功，公开新页面均返回 200。
 - Alibaba Cloud：未部署、未重启、未切流量，留到最终展示前同步同一 release commit。
 
-自动检查和人工检查的实际结果同时记录在本文件测试表与
-[`change-log.md`](change-log.md)；后续修改 Coach、Chat、Auth 或 API 合同时仍需重新运行发布门禁。
+自动检查和人工检查的实际结果记录在本文件测试表；后续修改
+Coach、Chat、Auth 或 API 合同时仍需重新运行发布门禁。
 
 ## 12. P1 后续
 

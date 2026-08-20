@@ -2,6 +2,7 @@
 
 # dependencies
 node_modules/
+/apps/web/package-lock.json
 
 # next.js
 .next/
@@ -21,6 +22,14 @@ yarn-error.log*
 .claude/
 .pnpm-store/
 *.local.md
+/.pi/
+/.obsidian/
+
+# local notes, backups, and scratch exercises
+*.bak
+*.lab.py
+/docs/PROMPT_CATALOG.md
+/docs/change-log.md
 
 # env files
 .env*

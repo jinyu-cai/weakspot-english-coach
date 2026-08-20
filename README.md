@@ -211,14 +211,12 @@ apps/api/   FastAPI, GPT-5.6/Qwen integrations, PostgreSQL, MemoryAgent, tests, 
 apps/web/   Next.js application and Memory Center
 docs/       architecture, MemoryAgent design, submission, demo, deployment
 prompts/    personal prompt library (TOEFL learning, vocabulary, essay polishing)
-.pi/skills/ agent skills (programming-tutor, learn-new-topic)
 ```
 
-## Prompts and skills
+## Prompts
 
 A personal library of learning prompts (TOEFL, vocabulary, writing) lives in
-[`prompts/`](prompts/README.md), alongside reusable agent skills in `.pi/skills/`
-(`programming-tutor` and `learn-new-topic`).
+[`prompts/`](prompts/README.md).
 
 ## Learn the codebase
 
