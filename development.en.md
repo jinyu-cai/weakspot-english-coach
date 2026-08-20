@@ -1280,9 +1280,7 @@ originalText = "at school" with an otherwise valid object
   -> grounding check fails because the quote is absent
 ```
 
-Structured output constrains shape. Grounding constrains whether a claim has observable support. The one-repair-retry
-step from the diagram above is literal — `ai_client.py` appends the validation error to the messages and asks for
-valid JSON only once:
+Structured output constrains shape. Grounding constrains whether a claim has observable support. The one-repair-retry step from the diagram above is literal — `ai_client.py` appends the validation error to the messages and asks for valid JSON only once:
 
 ```py
 try:

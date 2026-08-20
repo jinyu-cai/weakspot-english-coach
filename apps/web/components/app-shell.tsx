@@ -315,7 +315,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
       >
         {/* Top bar */}
-        <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-3 border-b border-border/80 bg-background/88 px-3 py-2 backdrop-blur-xl sm:px-5 lg:px-7">
+        <header className="sticky top-0 z-30 flex min-h-14 items-center justify-between gap-3 border-b border-border bg-background/85 px-3 py-2 backdrop-blur-xl sm:px-5 lg:px-7">
           <div className="flex min-w-0 items-center gap-2.5">
             <Sheet open={open} onOpenChange={setOpen}>
               <SheetTrigger
@@ -331,11 +331,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </SheetContent>
             </Sheet>
             <div className="min-w-0">
-              <p className="truncate font-heading text-sm font-semibold text-foreground sm:text-base">
+              <p className="truncate font-heading text-base font-semibold tracking-tight text-foreground sm:text-lg">
                 {activeNavItem ? t.nav.items[activeNavItem.key][0] : "WeakSpot"}
               </p>
               {activeNavItem ? (
-                <p className="hidden truncate text-[11px] text-muted-foreground sm:block">
+                <p className="label-mono hidden truncate text-muted-foreground sm:block">
                   {t.nav.items[activeNavItem.key][1]}
                 </p>
               ) : null}
@@ -349,7 +349,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8 xl:px-10">{children}</main>
+        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-7 xl:px-10">{children}</main>
       </div>
     </div>
   )

@@ -8,10 +8,7 @@ import {
   BookOpen,
   ChevronDown,
   Compass,
-  Import,
   Info,
-  MessageCircle,
-  PencilLine,
   PlayCircle,
   Sparkles,
 } from "lucide-react"
@@ -93,68 +90,96 @@ export default function DiagnosePage() {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       {!learningStarted && hydrated && !returning ? (
-        <section className="rounded-3xl border border-primary/20 bg-gradient-to-br from-primary/12 via-card to-background p-4 shadow-sm sm:p-6">
-          <div className="mb-4">
-            <p className="text-xs font-semibold tracking-wide text-primary uppercase">
-              {zh ? "从一个真实动作开始" : "Start with one real action"}
-            </p>
-            <h1 className="mt-1 text-balance font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
-              {zh ? "WeakSpot 会替你找到下一步" : "WeakSpot finds the next step for you"}
+        <section className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+          {/* Masthead */}
+          <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3 sm:px-7">
+            <p className="label-mono text-primary">{zh ? "首次诊断" : "First session"}</p>
+            <p className="label-mono hidden text-muted-foreground sm:block">WeakSpot Journal</p>
+          </div>
+
+          {/* Front-page headline */}
+          <div className="px-5 py-8 sm:px-7 sm:py-10">
+            <h1 className="max-w-2xl text-balance font-heading text-3xl font-semibold leading-[1.18] sm:text-4xl">
+              {zh ? (
+                <>写下一段英文，让<span className="text-primary">薄弱点</span>自己浮现。</>
+              ) : (
+                <>Paste your English. <em className="text-primary">Find the weak spot.</em></>
+              )}
             </h1>
-            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
               {zh ? "选择一种方式即可开始；所有路径都会更新同一份学习画像。" : "Choose one way to begin. Every path updates the same learning profile."}
             </p>
           </div>
-          <div className="grid gap-2 sm:grid-cols-3" aria-label={zh ? "开始方式" : "Ways to begin"}>
+
+          {/* Three newspaper columns */}
+          <div className="grid divide-y divide-border border-t border-border sm:grid-cols-3 sm:divide-x sm:divide-y-0" aria-label={zh ? "开始方式" : "Ways to begin"}>
             <button
               type="button"
               onClick={focusWriting}
-              className="flex min-h-12 items-center gap-3 rounded-xl border border-primary/35 bg-primary px-4 py-3 text-left text-primary-foreground outline-none transition hover:bg-primary/90 focus-visible:ring-3 focus-visible:ring-ring/40"
+              className="group flex items-center gap-4 px-5 py-5 text-left outline-none transition hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 sm:px-7"
             >
-              <PencilLine className="size-5 shrink-0" />
-              <span><span className="block text-sm font-semibold">{zh ? "写一段" : "Write something"}</span><span className="block text-xs opacity-75">{zh ? "立即诊断" : "Diagnose now"}</span></span>
+              <span className="label-mono shrink-0 text-primary">01</span>
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5 text-sm font-semibold">
+                  {zh ? "写一段" : "Write something"}
+                  <ArrowRight className="size-3.5 text-primary opacity-0 transition group-hover:translate-x-0.5 group-hover:opacity-100" />
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">{zh ? "立即诊断" : "Diagnose now"}</span>
+              </span>
             </button>
             <Link
               href="/chat"
               onClick={() => markFirstAction("chat")}
-              className="flex min-h-12 items-center gap-3 rounded-xl border border-border bg-background px-4 py-3 outline-none transition hover:border-primary/35 hover:bg-primary/5 focus-visible:ring-3 focus-visible:ring-ring/40"
+              className="group flex items-center gap-4 px-5 py-5 outline-none transition hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 sm:px-7"
             >
-              <MessageCircle className="size-5 shrink-0 text-primary" />
-              <span><span className="block text-sm font-semibold">{zh ? "开始对话" : "Start a chat"}</span><span className="block text-xs text-muted-foreground">{zh ? "文字或语音" : "Text or voice"}</span></span>
+              <span className="label-mono shrink-0 text-primary">02</span>
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5 text-sm font-semibold">
+                  {zh ? "开始对话" : "Start a chat"}
+                  <ArrowRight className="size-3.5 text-primary opacity-0 transition group-hover:translate-x-0.5 group-hover:opacity-100" />
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">{zh ? "文字或语音" : "Text or voice"}</span>
+              </span>
             </Link>
             <Link
               href="/import"
               onClick={() => markFirstAction("import")}
-              className="flex min-h-12 items-center gap-3 rounded-xl border border-border bg-background px-4 py-3 outline-none transition hover:border-primary/35 hover:bg-primary/5 focus-visible:ring-3 focus-visible:ring-ring/40"
+              className="group flex items-center gap-4 px-5 py-5 outline-none transition hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 sm:px-7"
             >
-              <Import className="size-5 shrink-0 text-primary" />
-              <span><span className="block text-sm font-semibold">{zh ? "导入历史" : "Import history"}</span><span className="block text-xs text-muted-foreground">{zh ? "利用过去对话" : "Learn from past chats"}</span></span>
+              <span className="label-mono shrink-0 text-primary">03</span>
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5 text-sm font-semibold">
+                  {zh ? "导入历史" : "Import history"}
+                  <ArrowRight className="size-3.5 text-primary opacity-0 transition group-hover:translate-x-0.5 group-hover:opacity-100" />
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">{zh ? "利用过去对话" : "Learn from past chats"}</span>
+              </span>
             </Link>
           </div>
         </section>
       ) : null}
 
       {!learningStarted && hydrated && returning ? (
-        <section className="flex flex-col gap-4">
-          <div>
-            <p className="text-xs font-semibold tracking-wide text-primary uppercase">{zh ? "欢迎回来" : "Welcome back"}</p>
-            <h1 className="mt-1 font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
+        <section className="flex flex-col gap-5">
+          <div className="border-b border-border pb-5">
+            <p className="label-mono text-primary">{zh ? "欢迎回来" : "Welcome back"}</p>
+            <h1 className="mt-2 font-heading text-2xl font-semibold tracking-tight sm:text-4xl">
               {welcomeBack ?? (zh ? "从上次的位置继续" : "Pick up where you left off")}
             </h1>
           </div>
           <div className="grid gap-3 md:grid-cols-3">
             <Link
               href={resume?.href ?? recentPath}
-              className="group flex min-h-28 flex-col justify-between rounded-2xl border border-primary/30 bg-primary p-4 text-primary-foreground shadow-sm outline-none transition hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/40"
+              className="group flex min-h-28 flex-col justify-between rounded-lg border border-primary bg-primary p-4 text-primary-foreground shadow-sm outline-none transition hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/40"
             >
               <span className="flex items-center justify-between gap-3 text-sm font-semibold"><span className="flex items-center gap-2"><PlayCircle className="size-4" />{zh ? "继续上次任务" : "Continue last task"}</span><ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" /></span>
               <span className="mt-3 text-sm text-primary-foreground/75">{resume?.title ?? (zh ? "回到最近的学习路径" : "Return to your latest learning path")}</span>
             </Link>
-            <Link href="/coach" className="group flex min-h-28 flex-col justify-between rounded-2xl border border-border bg-card p-4 outline-none transition hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/40">
+            <Link href="/coach" className="group flex min-h-28 flex-col justify-between rounded-lg border border-border bg-card p-4 outline-none transition hover:-translate-y-0.5 hover:border-foreground/35 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/40">
               <span className="flex items-center justify-between gap-3 text-sm font-semibold"><span className="flex items-center gap-2"><Compass className="size-4 text-primary" />{zh ? "今日推荐" : "Today’s recommendation"}</span><ArrowRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" /></span>
               <span className="mt-3 text-sm text-muted-foreground">{zh ? "让教练根据现有证据安排任务" : "Let your coach choose from your evidence"}</span>
             </Link>
-            <Link href="/dashboard" className="group flex min-h-28 flex-col justify-between rounded-2xl border border-border bg-card p-4 outline-none transition hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/40">
+            <Link href="/dashboard" className="group flex min-h-28 flex-col justify-between rounded-lg border border-border bg-card p-4 outline-none transition hover:-translate-y-0.5 hover:border-foreground/35 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/40">
               <span className="flex items-center justify-between gap-3 text-sm font-semibold"><span className="flex items-center gap-2"><BarChart3 className="size-4 text-primary" />{zh ? "最近进步" : "Recent progress"}</span><ArrowRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" /></span>
               <span className="mt-3 text-sm text-muted-foreground">{recentSource}</span>
             </Link>
@@ -163,9 +188,9 @@ export default function DiagnosePage() {
       ) : null}
 
       {!result ? (
-        <div className="flex flex-col gap-1">
-          <p className="text-xs font-semibold tracking-wide text-primary uppercase">{t.diagnose.onboarding.eyebrow}</p>
-          <h2 className="font-heading text-xl font-semibold tracking-tight">{t.diagnose.onboarding.title}</h2>
+        <div className="flex flex-col gap-1.5">
+          <p className="label-mono text-primary">{t.diagnose.onboarding.eyebrow}</p>
+          <h2 className="font-heading text-xl font-semibold tracking-tight sm:text-2xl">{t.diagnose.onboarding.title}</h2>
         </div>
       ) : null}
 
@@ -191,7 +216,7 @@ export default function DiagnosePage() {
       {!loading && result ? (
         <div className="flex flex-col gap-4">
           {isDuplicate ? (
-            <div className="flex items-start gap-2.5 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
+            <div className="flex items-start gap-2.5 rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
               <Info className="mt-0.5 size-4 shrink-0 text-warning" />
               <p className="leading-relaxed text-foreground">{t.diagnose.duplicate}</p>
             </div>
@@ -201,14 +226,14 @@ export default function DiagnosePage() {
       ) : null}
 
       {!loading && !result ? (
-        <details className="group rounded-2xl border border-border/70 bg-card/60 p-4">
+        <details className="group rounded-lg border border-border bg-card p-4">
           <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/40">
             <span className="flex items-center gap-2"><Sparkles className="size-4 text-primary" />{zh ? "展开其他学习方式" : "Explore other learning paths"}</span>
             <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
           </summary>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            <Link href="/input" className="flex min-h-11 items-center gap-3 rounded-xl border border-border p-3 text-sm outline-none hover:border-primary/35 focus-visible:ring-3 focus-visible:ring-ring/40"><BookOpen className="size-4 text-primary" />{t.diagnose.onboarding.shortcuts.input.title}</Link>
-            <Link href="/coach" className="flex min-h-11 items-center gap-3 rounded-xl border border-border p-3 text-sm outline-none hover:border-primary/35 focus-visible:ring-3 focus-visible:ring-ring/40"><Compass className="size-4 text-primary" />{t.nav.items.mission[0]}</Link>
+          <div className="mt-3 grid gap-2 border-t border-border pt-3 sm:grid-cols-2">
+            <Link href="/input" className="flex min-h-11 items-center gap-3 rounded-md border border-border p-3 text-sm outline-none transition hover:border-foreground/35 hover:bg-accent/40 focus-visible:ring-3 focus-visible:ring-ring/40"><BookOpen className="size-4 text-primary" />{t.diagnose.onboarding.shortcuts.input.title}</Link>
+            <Link href="/coach" className="flex min-h-11 items-center gap-3 rounded-md border border-border p-3 text-sm outline-none transition hover:border-foreground/35 hover:bg-accent/40 focus-visible:ring-3 focus-visible:ring-ring/40"><Compass className="size-4 text-primary" />{t.nav.items.mission[0]}</Link>
           </div>
         </details>
       ) : null}

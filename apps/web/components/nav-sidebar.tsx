@@ -5,6 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ChevronDown, PanelLeftClose, PanelLeftOpen, PlayCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { BrandMark } from "@/components/brand-mark"
 import { NAV_GROUPS, NAV_ITEMS } from "@/lib/nav"
 import { getMe } from "@/lib/auth"
 import { useLanguage } from "@/components/language-provider"
@@ -61,13 +62,16 @@ export function NavSidebar({
         aria-label={collapsed ? localized[0] : undefined}
         title={collapsed ? localized[0] : undefined}
         className={cn(
-          "group relative flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-sidebar-ring/35",
+          "group relative flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-sm font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-sidebar-ring/35",
           collapsed && "justify-center px-2",
           isActive
-            ? "bg-sidebar-accent text-sidebar-accent-foreground ring-1 ring-primary/10"
+            ? "bg-sidebar-accent text-sidebar-accent-foreground"
             : "text-muted-foreground hover:bg-sidebar-accent/55 hover:text-sidebar-foreground",
         )}
       >
+        {isActive ? (
+          <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-primary" aria-hidden="true" />
+        ) : null}
         <Icon className={cn("size-[18px] shrink-0", isActive && "text-primary")} />
         {!collapsed ? (
           <span className="min-w-0 flex-1 leading-tight">
@@ -102,17 +106,13 @@ export function NavSidebar({
             collapsed && "justify-center px-0",
           )}
         >
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm transition-transform group-hover:-rotate-3">
-            <span className="text-xl" aria-hidden="true">
-              🦉
-            </span>
-          </span>
+          <BrandMark className="rounded-md transition-transform group-hover:scale-105" />
           {!collapsed ? (
             <span className="flex min-w-0 flex-col leading-tight">
-              <span className="font-heading text-lg font-semibold tracking-tight text-sidebar-foreground">
+              <span className="font-heading text-xl font-semibold tracking-tight text-sidebar-foreground">
                 WeakSpot
               </span>
-              <span className="text-[11px] text-muted-foreground">English Coach</span>
+              <span className="label-mono mt-0.5 text-muted-foreground">English Coach</span>
             </span>
           ) : null}
         </Link>
@@ -144,16 +144,16 @@ export function NavSidebar({
             ? `${language === "zh-CN" ? "继续学习" : "Continue learning"}: ${resume.title}`
             : undefined}
           className={cn(
-            "group flex min-h-11 items-center gap-3 rounded-xl border border-primary/25 bg-primary/8 px-3 py-2.5 text-sm outline-none transition hover:border-primary/45 hover:bg-primary/12 focus-visible:ring-3 focus-visible:ring-ring/40",
+            "group flex min-h-11 items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2.5 text-sm outline-none transition hover:border-primary/45 hover:bg-primary/10 focus-visible:ring-3 focus-visible:ring-ring/40",
             collapsed && "justify-center px-2",
           )}
         >
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-sm bg-primary text-primary-foreground">
             <PlayCircle className="size-4" />
           </span>
           {!collapsed ? (
             <span className="min-w-0 flex-1">
-              <span className="block text-[10px] font-semibold tracking-wide text-primary uppercase">
+              <span className="label-mono block text-primary">
                 {language === "zh-CN" ? "继续学习" : "Continue learning"}
               </span>
               <span className="block truncate font-medium text-sidebar-foreground">{resume.title}</span>
@@ -164,7 +164,7 @@ export function NavSidebar({
 
       <nav className={cn("flex flex-1 flex-col gap-4", collapsed && "gap-2")} aria-label="Main navigation">
         <section aria-labelledby="nav-group-start">
-          <h2 id="nav-group-start" className={cn("mb-1 px-3 text-[10px] font-semibold tracking-[0.14em] text-muted-foreground/80 uppercase", collapsed && "sr-only")}>
+          <h2 id="nav-group-start" className={cn("label-mono mb-1.5 px-3 text-muted-foreground/80", collapsed && "sr-only")}>
             {t.nav.groups.start}
           </h2>
           <div className="flex flex-col gap-0.5">{coreItems.map(renderNavItem)}</div>
@@ -185,7 +185,7 @@ export function NavSidebar({
               type="button"
               aria-expanded={showAdvanced}
               onClick={() => setAdvancedOpen((value) => !value)}
-              className="flex min-h-11 w-full items-center justify-between rounded-xl px-3 text-left text-[10px] font-semibold tracking-[0.14em] text-muted-foreground/80 uppercase outline-none transition hover:bg-sidebar-accent/45 focus-visible:ring-3 focus-visible:ring-sidebar-ring/35"
+              className="label-mono flex min-h-11 w-full items-center justify-between rounded-md px-3 text-left text-muted-foreground/80 outline-none transition hover:bg-sidebar-accent/45 focus-visible:ring-3 focus-visible:ring-sidebar-ring/35"
             >
               <span>{language === "zh-CN" ? "更多学习工具" : "More learning tools"}</span>
               <ChevronDown className={cn("size-4 transition-transform", showAdvanced && "rotate-180")} />
@@ -196,7 +196,7 @@ export function NavSidebar({
 
         {adminItems.length > 0 ? (
           <section aria-labelledby="nav-group-admin">
-            <h2 id="nav-group-admin" className={cn("mb-1 px-3 text-[10px] font-semibold tracking-[0.14em] text-muted-foreground/80 uppercase", collapsed && "sr-only")}>
+            <h2 id="nav-group-admin" className={cn("label-mono mb-1.5 px-3 text-muted-foreground/80", collapsed && "sr-only")}>
               {t.nav.groups.admin}
             </h2>
             <div className={cn("flex flex-col gap-0.5", collapsed && "border-t border-sidebar-border pt-2")}>
@@ -207,7 +207,8 @@ export function NavSidebar({
       </nav>
 
       {!collapsed ? (
-        <div className="rounded-2xl border border-sidebar-border bg-card/70 p-3 text-xs leading-relaxed text-muted-foreground shadow-sm">
+        <div className="border-t border-sidebar-border pt-3 text-[11px] leading-relaxed text-muted-foreground">
+          <p className="label-mono mb-1 text-primary/80">{language === "zh-CN" ? "办刊宗旨" : "Our promise"}</p>
           {t.nav.tagline}
         </div>
       ) : null}

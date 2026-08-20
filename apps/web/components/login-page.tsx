@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Code2, Mail, ShieldCheck, Sparkles } from "lucide-react"
+import { ArrowLeft, Code2, Mail, ShieldCheck } from "lucide-react"
+import { BrandMark } from "@/components/brand-mark"
 import { LanguageSwitcher } from "@/components/language-switcher"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
@@ -48,9 +49,8 @@ export function LoginPage({ redirect }: { redirect: string }) {
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-10">
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <div className="absolute -left-24 -top-24 size-80 rounded-full bg-primary/15 blur-3xl" />
-        <div className="absolute -bottom-32 -right-20 size-96 rounded-full bg-accent/50 blur-3xl" />
-        <div className="absolute left-1/2 top-1/3 size-48 -translate-x-1/2 rounded-full bg-success/10 blur-3xl" />
+        <div className="absolute inset-0 bg-[radial-gradient(64rem_36rem_at_50%_-12%,color-mix(in_oklch,var(--primary)_7%,transparent),transparent_62%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_bottom,transparent,color-mix(in_oklch,var(--border)_35%,transparent))]" />
       </div>
 
       <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
@@ -58,23 +58,27 @@ export function LoginPage({ redirect }: { redirect: string }) {
         <ThemeToggle />
       </div>
 
-      <div className="relative z-10 grid w-full max-w-5xl overflow-hidden rounded-3xl border border-border bg-card/90 shadow-2xl shadow-primary/5 backdrop-blur-xl lg:grid-cols-[1.05fr_0.95fr]">
-        <section className="hidden min-h-[610px] flex-col justify-between bg-sidebar p-10 text-sidebar-foreground lg:flex">
+      <div className="relative z-10 grid w-full max-w-5xl overflow-hidden rounded-lg border border-border bg-card/90 shadow-2xl shadow-primary/5 backdrop-blur-xl lg:grid-cols-[1.05fr_0.95fr]">
+        <section className="hidden min-h-[610px] flex-col justify-between border-r border-sidebar-border bg-sidebar p-10 text-sidebar-foreground lg:flex">
           <Link href="/" className="flex w-fit items-center gap-3">
-            <span className="flex size-11 items-center justify-center rounded-2xl bg-sidebar-primary/20 text-2xl">🦉</span>
+            <BrandMark className="size-11 rounded-md" />
             <span>
-              <span className="block font-heading text-xl font-semibold">WeakSpot</span>
-              <span className="block text-sm text-muted-foreground">English Coach</span>
+              <span className="block font-heading text-2xl font-semibold tracking-tight">WeakSpot</span>
+              <span className="label-mono mt-0.5 block text-muted-foreground">English Coach</span>
             </span>
           </Link>
 
           <div className="space-y-6">
-            <div className="flex size-12 items-center justify-center rounded-2xl bg-sidebar-primary/20 text-sidebar-primary">
-              <Sparkles className="size-6" />
-            </div>
-            <div className="space-y-3">
-              <h1 className="max-w-md text-balance font-heading text-4xl font-bold leading-tight">
-                {isChinese ? "让每次练习，都针对你的真实薄弱点。" : "Practice what your English actually needs."}
+            <p className="label-mono text-primary">
+              {isChinese ? "诊断 · 练习 · 进步" : "Diagnose · Practice · Progress"}
+            </p>
+            <div className="space-y-4">
+              <h1 className="max-w-md text-balance font-heading text-[2.6rem] font-semibold leading-[1.15]">
+                {isChinese ? (
+                  <>让每次练习，都针对你的<span className="text-primary">真实薄弱点</span>。</>
+                ) : (
+                  <>Practice what your English <em className="text-primary">actually</em> needs.</>
+                )}
               </h1>
               <p className="max-w-md text-pretty leading-relaxed text-muted-foreground">
                 {isChinese
@@ -84,7 +88,7 @@ export function LoginPage({ redirect }: { redirect: string }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 border-t border-sidebar-border pt-5 text-sm text-muted-foreground">
             <ShieldCheck className="size-4 text-success" />
             {isChinese ? "安全登录，不会读取你的密码" : "Secure sign-in. We never see your password."}
           </div>
@@ -97,9 +101,12 @@ export function LoginPage({ redirect }: { redirect: string }) {
                 <ArrowLeft className="size-4" />
                 {isChinese ? "返回 WeakSpot" : "Back to WeakSpot"}
               </Link>
-              <div className="mx-auto mb-5 flex size-14 items-center justify-center rounded-2xl bg-primary/15 text-3xl sm:mx-0 lg:hidden">🦉</div>
-              <CardTitle className="font-heading text-3xl font-bold">
+              <BrandMark className="mx-auto mb-5 size-14 rounded-lg sm:mx-0 lg:hidden" />
+              <p className="label-mono mb-2 text-primary">
                 {isChinese ? "欢迎回来" : "Welcome back"}
+              </p>
+              <CardTitle className="font-heading text-3xl font-semibold">
+                {isChinese ? "继续你的学习" : "Continue learning"}
               </CardTitle>
               <CardDescription className="text-base leading-relaxed">
                 {isChinese ? "选择一种方式继续你的英语学习。" : "Choose a sign-in method to continue learning."}
@@ -136,7 +143,7 @@ export function LoginPage({ redirect }: { redirect: string }) {
                   {isChinese ? "正在检查登录状态…" : "Checking your session…"}
                 </p>
               ) : !configured ? (
-                <p className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-center text-sm text-warning-foreground">
+                <p className="rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-center text-sm text-warning-foreground">
                   {isChinese
                     ? "尚未配置登录服务。请设置 NEXT_PUBLIC_API_BASE_URL。"
                     : "Sign-in is not configured. Set NEXT_PUBLIC_API_BASE_URL to enable it."}

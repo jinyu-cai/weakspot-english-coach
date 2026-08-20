@@ -1,7 +1,7 @@
 import { Analytics } from "@vercel/analytics/next"
 import type { Metadata, Viewport } from "next"
 import Script from "next/script"
-import { Inter, Geist_Mono, Fredoka } from "next/font/google"
+import { Inter, Geist_Mono, Fraunces } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AppShell } from "@/components/app-shell"
@@ -16,10 +16,10 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 })
 
-const fredoka = Fredoka({
-  variable: "--font-fredoka",
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  style: ["normal", "italic"],
 })
 
 export const metadata: Metadata = {
@@ -32,8 +32,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   colorScheme: "light dark",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#faf5ee" },
-    { media: "(prefers-color-scheme: dark)", color: "#241e1b" },
+    { media: "(prefers-color-scheme: light)", color: "#f4efe6" },
+    { media: "(prefers-color-scheme: dark)", color: "#1b1813" },
   ],
 }
 
@@ -46,7 +46,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${inter.variable} ${geistMono.variable} ${fredoka.variable} bg-background`}
+      className={`${inter.variable} ${geistMono.variable} ${fraunces.variable} bg-background`}
     >
       <body className="font-sans antialiased">
         <Script id="weakspot-preferences" strategy="beforeInteractive">
