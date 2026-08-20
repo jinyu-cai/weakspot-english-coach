@@ -5,6 +5,29 @@ Jose server; Alibaba ECS is no longer a backend origin. Qwen Model Studio can
 still be configured as an external model, embedding, or speech provider from
 Oracle.
 
+## Production deployment record (2026-08-19)
+
+- Production backend: Oracle San Jose, final `main` commit
+  `f553eb362f5918e83059b40080c9582a7e711846`.
+- Deployed `apps/api` archive SHA-256:
+  `75f6b4bdffe052983f8673b37dec47b91650c04c5efe66282869b26f099a35c9`.
+- Migration: 4,366 durable rows from `WeakSpotEnglishCoach` in `us-west-1`;
+  source checksum
+  `e612ddac0f166234a9c4f493aa7b3f1a987c862d22eb34ae254f774c26f62b4f`.
+- Import audit: `dynamo_20260820T005649Z_d608ed0b`; apply and independent
+  verification both matched per-entity counts and payload checksums.
+- Public verification: `/api/v1/health/ready` returns
+  `{"status":"ready","database":"postgresql"}`; authenticated read-only
+  Profile, History, Plan, Memory, Chat, Ebook, and Input Learning checks passed.
+- Rollback protection: DynamoDB PITR is enabled, backup
+  `WeakSpotEnglishCoach-pre-rds-20260819` is available, and the stopped prior
+  backend is preserved at
+  `/home/ubuntu/weakspot-backend.rollback-pre-rds-20260820T0057Z`.
+
+Keep the DynamoDB table and rollback directory through the observation window.
+They are no longer the active runtime and must not receive normal application
+writes.
+
 ## Chosen production shape
 
 | Setting | Value | Reason |

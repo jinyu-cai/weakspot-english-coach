@@ -3,18 +3,19 @@
 > Audience: a first-year student with no prior development experience. You may never have used a terminal or written
 > a program.
 >
-> Last source audit: 2026-08-17.
+> Last source audit: 2026-08-19.
 >
 > Chinese edition: [`development.md`](development.md). Both editions use the same 0–25 chapter structure, the same
 > subsection numbering, and the same source paths, commands, and implementation boundaries, so any chapter or
 > subsection can be compared side by side.
 
-> **Database note (2026-08-17):** Chapters 9, 14, 15, and 18 now describe the active PostgreSQL runtime. Section 9.8
+> **Database note (2026-08-19):** Chapters 9, 14, 15, and 18 describe the active PostgreSQL runtime. Section 9.8
 > keeps the former DynamoDB design only as migration history. Use
 > [`docs/POSTGRESQL_BEGINNER_GUIDE.md`](docs/POSTGRESQL_BEGINNER_GUIDE.md) for focused exercises and
 > [`docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md`](docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md) for production deployment/cutover.
-> PostgreSQL repository code and RDS infrastructure are complete; as of this date, the production schema/data/app
-> maintenance cutover has not run. Treat [`docs/change-log.md`](docs/change-log.md) as the live-status authority.
+> The production schema, verified DynamoDB migration, and Oracle application cutover are complete. The live readiness
+> endpoint reports PostgreSQL; DynamoDB remains only as the protected rollback source. Treat
+> [`docs/change-log.md`](docs/change-log.md) as the live-status authority.
 
 ## 0. How to use this guide
 
@@ -2141,11 +2142,12 @@ accepts. For a schema change, edit `schema.py`, add and review a new Alembic rev
 head` against the test database. Do not hand-edit production tables or rewrite a migration already applied to a shared
 environment.
 
-The provisioned production target is standard Amazon RDS PostgreSQL—not Aurora—in `us-west-1`: PostgreSQL 16.14, Single-AZ
+The active production database is standard Amazon RDS PostgreSQL—not Aurora—in `us-west-1`: PostgreSQL 16.14, Single-AZ
 `db.t4g.micro`, 20 GiB gp3 with a 100 GiB autoscaling ceiling, encryption, seven-day backups, deletion protection, and
 TLS access only from the Oracle San Jose backend's static `/32`. See
 [`docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md`](docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md) for deployment and data migration. The
-RDS infrastructure is live, but the production schema/data/application cutover remains a separate maintenance-window step.
+2026-08-19 maintenance cutover migrated and independently verified 4,366 durable source rows before the Oracle API
+started against RDS. DynamoDB PITR and the named pre-cutover backup remain rollback protections, not runtime storage.
 
 ### 9.8 Historical appendix: the former DynamoDB single-table implementation
 
@@ -4294,9 +4296,9 @@ the safe model catalog and one bounded feature probe after every deploy.
 
 ### 16.4 The current origin and target database topology
 - **Oracle Cloud San Jose** is the only production backend origin; Nginx exposes the FastAPI/Docker service over HTTPS.
-- Standard Amazon RDS PostgreSQL infrastructure is live in `us-west-1`. Its security group permits port 5432 only from
-  Oracle's static `/32`, with `sslmode=verify-full` and the AWS RDS CA. As of 2026-08-17, the production schema/data/app
-  cutover still awaits a maintenance window; RDS status `available` alone does not prove the application has switched.
+- Standard Amazon RDS PostgreSQL is the live production database in `us-west-1`. Its security group permits port 5432
+  only from Oracle's static `/32`, with `sslmode=verify-full` and the AWS RDS CA. The 2026-08-19 cutover passed source/
+  target counts, payload checksums, container health, and public `/api/v1/health/ready` verification.
 - Alibaba ECS is no longer used as a backend, showcase origin, or failover. Oracle may still call Alibaba Model
   Studio/Qwen as an external model provider; that does not run this backend on Alibaba.
 
