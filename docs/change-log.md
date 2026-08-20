@@ -22,12 +22,16 @@ Next step:
 
 Date: 2026-08-19 PDT
 
-Branch: `codex/rds-postgresql-returning-fix` → `main`
+Branches: `codex/rds-postgresql-returning-fix` and
+`codex/rds-postgresql-bootstrap-fix` → `main`
 
-GitHub status: follow-up fix PR pending. The original RDS release PR
+GitHub status: real-database fix PR
+[#141](https://github.com/jinyu-cai/weakspot-english-coach/pull/141) merged at
+`4b089aecc59bcfb96510e3fa646c62a7d86fcfa9`; role-bootstrap fix PR pending.
+The original RDS release PR
 [#139](https://github.com/jinyu-cai/weakspot-english-coach/pull/139) and cleanup
 PR [#140](https://github.com/jinyu-cai/weakspot-english-coach/pull/140) are merged;
-Vercel deployed merged commit `b5a37e6554411c8ce68876b37633fd650ba8b632`.
+Vercel checks passed for each reviewed change.
 
 Deploy status: **production cutover not started**. The existing Oracle/DynamoDB
 backend remains healthy. The merged API was staged separately on Oracle and
@@ -44,12 +48,15 @@ Summary:
   in the PostgreSQL repository.
 - Preserved the existing oversized chat-turn preflight contract before session
   claim lookup.
+- Rendered role passwords with psycopg's quoted SQL literal composition because
+  PostgreSQL role DDL does not accept a bind parameter in that position.
 - Corrected PostgreSQL test harness assumptions for settings import, transcript
   batches, required request identity, and public input-learning privacy.
 
 Files changed:
 
 - `apps/api/app/db/postgres_repositories.py`
+- `apps/api/scripts/bootstrap_rds_app_user.py`
 - `apps/api/scripts/integration_test.py`
 - `apps/api/scripts/storage_contract_test.py`
 - `apps/api/scripts/stealth_input_test.py`
@@ -62,12 +69,13 @@ Tests run:
   sentence evidence, dedup/delete, plan lifecycle, and ebook suites — pass.
 - Offline smoke, contract-boundary, migration-contract, compilation, and
   `git diff --check` — pass.
+- RDS application-role bootstrap validated against disposable PostgreSQL — pass.
 
 Known issues: No remaining release-test failure. Production data migration and
-RDS application-role bootstrap intentionally wait for the follow-up fix to be
-reviewed and merged.
+RDS application-role bootstrap intentionally wait for the final bootstrap fix
+to be reviewed and merged.
 
-Next step: merge the follow-up fix, deploy that exact merged revision, migrate
+Next step: merge the bootstrap fix, deploy that exact merged revision, migrate
 and verify DynamoDB data during maintenance, and update this entry with final
 production evidence.
 

@@ -66,17 +66,23 @@ def main() -> int:
             cursor.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (app_user,))
             if cursor.fetchone():
                 cursor.execute(
-                    sql.SQL("ALTER ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD %s").format(
-                        sql.Identifier(app_user)
-                    ),
-                    (app_password,),
+                    sql.SQL(
+                        "ALTER ROLE {} LOGIN NOSUPERUSER NOCREATEDB "
+                        "NOCREATEROLE PASSWORD {}"
+                    ).format(
+                        sql.Identifier(app_user),
+                        sql.Literal(app_password),
+                    )
                 )
             else:
                 cursor.execute(
-                    sql.SQL("CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD %s").format(
-                        sql.Identifier(app_user)
-                    ),
-                    (app_password,),
+                    sql.SQL(
+                        "CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB "
+                        "NOCREATEROLE PASSWORD {}"
+                    ).format(
+                        sql.Identifier(app_user),
+                        sql.Literal(app_password),
+                    )
                 )
             cursor.execute(
                 sql.SQL("ALTER DATABASE {} OWNER TO {}").format(
