@@ -20,22 +20,3 @@ Chinese. 教育部分的 Prompt 主要面向托福学习，并使用中文回复
 | [`toefl-reading-translator.md`](education/toefl-reading-translator.md) | Sentence-by-sentence translation (literal + natural) and detailed explanation in Chinese. |
 | [`toefl-writing-task1.md`](education/toefl-writing-task1.md) | TOEFL Writing Task 1 (integrated) error correction and polishing. |
 | [`toelf-independWriting.md`](education/toelf-independWriting.md) | TOEFL independent writing polish (110–120 words). |
-
-## Skills
-
-The same workflows are also packaged as discoverable skills for agent
-harnesses that implement the
-[Agent Skills standard](https://agentskills.io/specification):
-
-- [`../.pi/skills/programming-tutor/`](../.pi/skills/programming-tutor/) — Acts as a personal programming tutor.
-- [`../.pi/skills/learn-new-topic/`](../.pi/skills/learn-new-topic/) — Teach a complete beginner any
-  unfamiliar topic with a knowledge map, sourced case, staged explanations, and
-  understanding checks. Includes `agents/openai.yaml` metadata for ChatGPT/Codex
-  (OpenAI agent skills format).
-
-Install for local use:
-
-```bash
-# Pi / Claude Code / Codex style skill location
-cp -r .pi/skills/* ~/.pi/agent/skills/
-```

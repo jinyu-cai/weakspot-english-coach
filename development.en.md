@@ -14,8 +14,7 @@
 > [`docs/POSTGRESQL_BEGINNER_GUIDE.md`](docs/POSTGRESQL_BEGINNER_GUIDE.md) for focused exercises and
 > [`docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md`](docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md) for production deployment/cutover.
 > The production schema, verified DynamoDB migration, and Oracle application cutover are complete. The live readiness
-> endpoint reports PostgreSQL; DynamoDB remains only as the protected rollback source. Treat
-> [`docs/change-log.md`](docs/change-log.md) as the live-status authority.
+> endpoint reports PostgreSQL; DynamoDB remains only as the protected rollback source.
 
 ## 0. How to use this guide
 

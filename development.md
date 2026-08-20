@@ -11,8 +11,7 @@
 > [`docs/POSTGRESQL_BEGINNER_GUIDE.md`](docs/POSTGRESQL_BEGINNER_GUIDE.md)，生产部署与 cutover 见
 > [`docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md`](docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md)。
 > production schema、经过验证的 DynamoDB 数据迁移和 Oracle application cutover 均已完成；线上 readiness
-> endpoint 已报告 PostgreSQL。DynamoDB 只作为受保护的 rollback source 保留，实时状态以
-> [`docs/change-log.md`](docs/change-log.md) 为准。
+> endpoint 已报告 PostgreSQL。DynamoDB 只作为受保护的 rollback source 保留。
 
 ## 0. 先说明：原来的笔记有什么问题
 
