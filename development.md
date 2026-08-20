@@ -2,16 +2,17 @@
 
 > 适合读者：真正从零开始的大一新生。你可以还没写过程序、没用过终端，也不知道 API、端口、数据库和部署是什么。
 >
-> 最后核对日期：2026-08-17。本文以真实代码为准，不再作为“让 AI 生成项目的规格”，而是作为读懂和重建项目的学习教程。
+> 最后核对日期：2026-08-19。本文以真实代码为准，不再作为“让 AI 生成项目的规格”，而是作为读懂和重建项目的学习教程。
 >
 > English edition: [`development.en.md`](development.en.md). 两个版本使用相同的 0–25 章结构；代码、命令和文件路径保持一致，方便双语对照。
 
-> **数据库说明（2026-08-17）：** 第 9、14、15、18 章已按当前 PostgreSQL runtime 更新；第 9.8 节保留
+> **数据库说明（2026-08-19）：** 第 9、14、15、18 章按当前 PostgreSQL runtime 编写；第 9.8 节保留
 > DynamoDB 旧实现，只用于理解一次性数据迁移。更集中的动手练习见
 > [`docs/POSTGRESQL_BEGINNER_GUIDE.md`](docs/POSTGRESQL_BEGINNER_GUIDE.md)，生产部署与 cutover 见
 > [`docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md`](docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md)。
-> PostgreSQL repository code 和 RDS infrastructure 已完成；截至该日期，production schema/data/application
-> maintenance cutover 尚未执行，实时状态以 [`docs/change-log.md`](docs/change-log.md) 为准。
+> production schema、经过验证的 DynamoDB 数据迁移和 Oracle application cutover 均已完成；线上 readiness
+> endpoint 已报告 PostgreSQL。DynamoDB 只作为受保护的 rollback source 保留，实时状态以
+> [`docs/change-log.md`](docs/change-log.md) 为准。
 
 ## 0. 先说明：原来的笔记有什么问题
 
@@ -2366,11 +2367,12 @@ Compose 创建 `weakspot` 开发库和只允许测试 reset 的 `weakspot_test`�
 审查 Alembic revision，再在测试库运行 `uv run alembic upgrade head`；不要手工修改生产表，也不要重写已经
 在共享环境应用过的 migration。
 
-已 provision 的生产目标是 `us-west-1` 的 Amazon RDS PostgreSQL，不是 Aurora：PostgreSQL 16.14、Single-AZ
+当前生产数据库是 `us-west-1` 的 Amazon RDS PostgreSQL，不是 Aurora：PostgreSQL 16.14、Single-AZ
 `db.t4g.micro`、20 GiB gp3（最高自动扩展到 100 GiB）、加密、七天 backup、deletion protection，并只允许
 Oracle San Jose 后端的静态 `/32` 地址通过 TLS 连接。部署和迁移步骤见
-[`docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md`](docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md)。RDS infrastructure 已在线，
-但 production schema/data/application cutover 仍是单独的 maintenance-window 步骤。
+[`docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md`](docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md)。2026-08-19 的 maintenance cutover
+先迁移并独立验证了 4,366 条 durable source rows，再让 Oracle API 连接 RDS。DynamoDB PITR 和命名的 cutover
+前备份继续作为 rollback 保护，不再承担 runtime storage。
 
 ### 9.8 历史附录：旧 DynamoDB 单表实现
 
@@ -5347,9 +5349,9 @@ raise SystemExit(f"Backend did not become healthy: {last_error}")
 ### 16.4 当前源站与目标数据库拓扑
 
 - Oracle Cloud San Jose 是唯一生产后端源站；FastAPI/Docker 通过 Nginx 暴露 HTTPS。
-- `us-west-1` 的标准 Amazon RDS PostgreSQL infrastructure 已在线，security group 只允许 Oracle 静态
-  `/32` 地址访问 5432，并要求 `sslmode=verify-full` 和 AWS RDS CA；截至 2026-08-17，production
-  schema/data/application cutover 仍待 maintenance window，因此不能只凭 RDS `available` 宣称应用已经切换。
+- `us-west-1` 的标准 Amazon RDS PostgreSQL 是当前线上 production database；security group 只允许 Oracle
+  静态 `/32` 地址访问 5432，并要求 `sslmode=verify-full` 和 AWS RDS CA。2026-08-19 cutover 已通过 source/target
+  counts、payload checksums、container health 和公开 `/api/v1/health/ready` 验证。
 - Alibaba ECS 已停止使用，不是 failover 或展示源站。Alibaba Model Studio/Qwen 仍可由 Oracle 作为外部模型
   provider 调用，这不等于在 Alibaba 运行后端。
 

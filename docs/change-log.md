@@ -27,17 +27,22 @@ Branches: `codex/rds-postgresql-returning-fix` and
 
 GitHub status: real-database fix PR
 [#141](https://github.com/jinyu-cai/weakspot-english-coach/pull/141) merged at
-`4b089aecc59bcfb96510e3fa646c62a7d86fcfa9`; role-bootstrap fix PR pending.
+`4b089aecc59bcfb96510e3fa646c62a7d86fcfa9`; role-bootstrap fix PR
+[#142](https://github.com/jinyu-cai/weakspot-english-coach/pull/142) merged at
+`f553eb362f5918e83059b40080c9582a7e711846`.
 The original RDS release PR
 [#139](https://github.com/jinyu-cai/weakspot-english-coach/pull/139) and cleanup
 PR [#140](https://github.com/jinyu-cai/weakspot-english-coach/pull/140) are merged;
-Vercel checks passed for each reviewed change.
+Vercel checks passed for each reviewed change, and the final merged-commit
+Production deployment `C1P46o6jrVCZ4zX1vJPwgpLMGwdc` succeeded.
 
-Deploy status: **production cutover not started**. The existing Oracle/DynamoDB
-backend remains healthy. The merged API was staged separately on Oracle and
-validated against an isolated local PostgreSQL 16 container. DynamoDB PITR is
-enabled and pre-cutover backup `WeakSpotEnglishCoach-pre-rds-20260819` is
-available.
+Deploy status: **frontend and PostgreSQL backend LIVE**. Oracle runs exact
+commit `f553eb362f5918e83059b40080c9582a7e711846`; the deployed `apps/api`
+archive SHA-256 is
+`75f6b4bdffe052983f8673b37dec47b91650c04c5efe66282869b26f099a35c9`.
+Public `/api/v1/health/ready` reports `database: postgresql`, the container is
+healthy, and authenticated read-only Profile, History, Plan, Memory, Chat,
+Ebook, and Input Learning checks returned 200.
 
 Summary:
 
@@ -52,6 +57,13 @@ Summary:
   PostgreSQL role DDL does not accept a bind parameter in that position.
 - Corrected PostgreSQL test harness assumptions for settings import, transcript
   batches, required request identity, and public input-learning privacy.
+- Enabled DynamoDB PITR, created available backup
+  `WeakSpotEnglishCoach-pre-rds-20260819`, and migrated 4,366 durable rows with
+  source checksum
+  `e612ddac0f166234a9c4f493aa7b3f1a987c862d22eb34ae254f774c26f62b4f`.
+- The apply pass and independent verify pass matched all expected per-entity
+  counts and payload checksums; audit
+  `dynamo_20260820T005649Z_d608ed0b` is verified.
 
 Files changed:
 
@@ -60,6 +72,9 @@ Files changed:
 - `apps/api/scripts/integration_test.py`
 - `apps/api/scripts/storage_contract_test.py`
 - `apps/api/scripts/stealth_input_test.py`
+- `development.md`
+- `development.en.md`
+- `docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md`
 - `docs/change-log.md`
 
 Tests run:
@@ -70,14 +85,18 @@ Tests run:
 - Offline smoke, contract-boundary, migration-contract, compilation, and
   `git diff --check` — pass.
 - RDS application-role bootstrap validated against disposable PostgreSQL — pass.
+- RDS TLS guard, Alembic upgrade, migration dry-run/apply/verify, container
+  readiness, public health/readiness, authenticated read-only API probes, and
+  final Vercel Production deployment — pass.
 
-Known issues: No remaining release-test failure. Production data migration and
-RDS application-role bootstrap intentionally wait for the final bootstrap fix
-to be reviewed and merged.
+Known issues: No known deployment issue. The previous DynamoDB backend remains
+stopped at `/home/ubuntu/weakspot-backend.rollback-pre-rds-20260820T0057Z`.
+DynamoDB PITR and the pre-cutover backup are retained through the rollback
+observation window; switching back after new PostgreSQL writes would require a
+deliberate reconciliation rather than a casual rollback.
 
-Next step: merge the bootstrap fix, deploy that exact merged revision, migrate
-and verify DynamoDB data during maintenance, and update this entry with final
-production evidence.
+Next step: monitor RDS connections, CPU credits, storage, latency, and application
+errors; keep the rollback assets until the chosen observation window closes.
 
 ## 2026-08-17 — Replace DynamoDB with Amazon RDS PostgreSQL
 
@@ -85,7 +104,10 @@ Date: 2026-08-17 PDT
 
 Branch: `codex/rds-postgresql-release` → `main`
 
-GitHub status: release PR pending.
+GitHub status: release PR
+[#139](https://github.com/jinyu-cai/weakspot-english-coach/pull/139) and cleanup
+PR [#140](https://github.com/jinyu-cai/weakspot-english-coach/pull/140) merged;
+real-database hardening continued in the 2026-08-19 entry above.
 
 - Replaced the application persistence layer with PostgreSQL 16 using
   SQLAlchemy, psycopg, Alembic, typed relational columns, and JSONB payloads.
