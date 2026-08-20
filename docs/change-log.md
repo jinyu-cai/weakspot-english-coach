@@ -18,6 +18,59 @@ Known issues:
 Next step:
 ```
 
+## 2026-08-19 — Harden the PostgreSQL release with a real database
+
+Date: 2026-08-19 PDT
+
+Branch: `codex/rds-postgresql-returning-fix` → `main`
+
+GitHub status: follow-up fix PR pending. The original RDS release PR
+[#139](https://github.com/jinyu-cai/weakspot-english-coach/pull/139) and cleanup
+PR [#140](https://github.com/jinyu-cai/weakspot-english-coach/pull/140) are merged;
+Vercel deployed merged commit `b5a37e6554411c8ce68876b37633fd650ba8b632`.
+
+Deploy status: **production cutover not started**. The existing Oracle/DynamoDB
+backend remains healthy. The merged API was staged separately on Oracle and
+validated against an isolated local PostgreSQL 16 container. DynamoDB PITR is
+enabled and pre-cutover backup `WeakSpotEnglishCoach-pre-rds-20260819` is
+available.
+
+Summary:
+
+- Replaced unreliable psycopg insert `rowcount` checks with PostgreSQL
+  `RETURNING` results for create-only rows, claims, leases, and transcript
+  markers.
+- Restored deterministic diagnosis submission IDs and original claim timestamps
+  in the PostgreSQL repository.
+- Preserved the existing oversized chat-turn preflight contract before session
+  claim lookup.
+- Corrected PostgreSQL test harness assumptions for settings import, transcript
+  batches, required request identity, and public input-learning privacy.
+
+Files changed:
+
+- `apps/api/app/db/postgres_repositories.py`
+- `apps/api/scripts/integration_test.py`
+- `apps/api/scripts/storage_contract_test.py`
+- `apps/api/scripts/stealth_input_test.py`
+- `docs/change-log.md`
+
+Tests run:
+
+- Real PostgreSQL: diagnosis concurrency, full learner loop, storage contracts,
+  learning lifecycle, memory agent/benchmark, stealth input, input/output,
+  sentence evidence, dedup/delete, plan lifecycle, and ebook suites — pass.
+- Offline smoke, contract-boundary, migration-contract, compilation, and
+  `git diff --check` — pass.
+
+Known issues: No remaining release-test failure. Production data migration and
+RDS application-role bootstrap intentionally wait for the follow-up fix to be
+reviewed and merged.
+
+Next step: merge the follow-up fix, deploy that exact merged revision, migrate
+and verify DynamoDB data during maintenance, and update this entry with final
+production evidence.
+
 ## 2026-08-17 — Replace DynamoDB with Amazon RDS PostgreSQL
 
 Date: 2026-08-17 PDT

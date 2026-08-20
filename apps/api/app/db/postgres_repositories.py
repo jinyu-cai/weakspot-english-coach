@@ -319,8 +319,9 @@ def _save_activity_run_tx(
             .on_conflict_do_nothing(
                 index_elements=[schema.activity_runs.c.user_id, schema.activity_runs.c.run_id]
             )
+            .returning(schema.activity_runs.c.run_id)
         )
-        if result.rowcount != 1:
+        if result.scalar_one_or_none() is None:
             raise PlanProgressConflictError("ActivityRun already exists.")
         return
     if expected_version is not None:
@@ -489,8 +490,9 @@ def save_evidence_with_learning_state(
             .on_conflict_do_nothing(
                 index_elements=[schema.evidence_events.c.user_id, schema.evidence_events.c.event_id]
             )
+            .returning(schema.evidence_events.c.event_id)
         )
-        if inserted.rowcount != 1:
+        if inserted.scalar_one_or_none() is None:
             return False
 
         values = {
@@ -509,8 +511,9 @@ def save_evidence_with_learning_state(
                 .on_conflict_do_nothing(
                     index_elements=[schema.learning_states.c.user_id, schema.learning_states.c.skill_code]
                 )
+                .returning(schema.learning_states.c.skill_code)
             )
-            if created.rowcount != 1:
+            if created.scalar_one_or_none() is None:
                 raise LearningStateConflictError("Learning state changed; retry the evidence update.")
         else:
             changed = session.execute(
@@ -775,9 +778,14 @@ def claim_diagnosis_request(
 ) -> dict:
     now = datetime.now(timezone.utc)
     now_text = _datetime_text(now)
+    stable_id = "sub_" + hashlib.sha256(
+        f"{user_id}\0{text_hash}".encode("utf-8")
+    ).hexdigest()[:20]
     item = {
         "userId": user_id,
         "textHash": text_hash,
+        "submissionId": stable_id,
+        "submissionCreatedAt": now_text,
         "status": "processing",
         "processingClaimId": claim_id,
         "processingClaimedAt": now_text,
@@ -793,8 +801,9 @@ def claim_diagnosis_request(
             .on_conflict_do_nothing(
                 index_elements=[schema.diagnosis_requests.c.user_id, schema.diagnosis_requests.c.text_hash]
             )
+            .returning(schema.diagnosis_requests.c.text_hash)
         )
-        if inserted.rowcount == 1:
+        if inserted.scalar_one_or_none() is not None:
             return {**item, "claimState": "acquired"}
         row = session.execute(
             select(schema.diagnosis_requests)
@@ -810,7 +819,12 @@ def claim_diagnosis_request(
         stale_before = int(now.timestamp()) - max(60, stale_after_seconds)
         if row.claim_id and (row.claimed_at_epoch or 0) >= stale_before:
             return {**existing, "claimState": "busy"}
-        replacement = {**existing, **item, "createdAt": existing.get("createdAt", now_text)}
+        replacement = {
+            **existing,
+            **item,
+            "submissionCreatedAt": existing.get("submissionCreatedAt", now_text),
+            "createdAt": existing.get("createdAt", now_text),
+        }
         session.execute(
             update(schema.diagnosis_requests)
             .where(
@@ -976,8 +990,9 @@ def claim_memory_write_lease(
             pg_insert(schema.memory_leases)
             .values(user_id=user_id, claim_id=claim_id, claimed_at=now, claimed_at_epoch=epoch)
             .on_conflict_do_nothing(index_elements=[schema.memory_leases.c.user_id])
+            .returning(schema.memory_leases.c.user_id)
         )
-        if inserted.rowcount == 1:
+        if inserted.scalar_one_or_none() is not None:
             return True
         row = session.execute(
             select(schema.memory_leases)
@@ -1232,8 +1247,9 @@ def claim_input_learning_source(
             .on_conflict_do_nothing(
                 index_elements=[schema.input_sources.c.user_id, schema.input_sources.c.source_id]
             )
+            .returning(schema.input_sources.c.source_id)
         )
-        if inserted.rowcount == 1:
+        if inserted.scalar_one_or_none() is not None:
             return True
         row = session.execute(
             select(schema.input_sources)
@@ -2003,8 +2019,9 @@ def claim_practice_attempt_request(
             .on_conflict_do_nothing(
                 index_elements=[schema.practice_requests.c.user_id, schema.practice_requests.c.client_attempt_id]
             )
+            .returning(schema.practice_requests.c.client_attempt_id)
         )
-        if inserted.rowcount == 1:
+        if inserted.scalar_one_or_none() is not None:
             return {**item, "claimState": "acquired"}
         row = session.execute(
             select(schema.practice_requests)
@@ -2624,8 +2641,8 @@ def _save_chat_message_tx(session: Session, message: dict, *, create_only: bool 
     if create_only:
         result = session.execute(statement.on_conflict_do_nothing(
             index_elements=[schema.chat_messages.c.user_id, schema.chat_messages.c.session_id, schema.chat_messages.c.message_id]
-        ))
-        return result.rowcount == 1
+        ).returning(schema.chat_messages.c.message_id))
+        return result.scalar_one_or_none() is not None
     _upsert(
         session,
         schema.chat_messages,
@@ -2665,6 +2682,10 @@ def finalize_chat_session_turn(
     stealth_probes: Optional[list[dict]] = None,
     stealth_probe_history: Optional[list[dict]] = None,
 ) -> None:
+    # Preserve the established contract: reject an oversized half-turn before
+    # looking up or mutating its session claim.
+    ensure_payload_fits(user_message, entity_type="CHAT_MESSAGE")
+    ensure_payload_fits(assistant_message, entity_type="CHAT_MESSAGE")
     with session_scope() as session:
         row = session.execute(
             select(schema.chat_sessions)
@@ -2741,8 +2762,9 @@ def finalize_chat_session_transcript_batch(
             .on_conflict_do_nothing(
                 index_elements=[schema.chat_transcript_batches.c.user_id, schema.chat_transcript_batches.c.session_id, schema.chat_transcript_batches.c.batch_id]
             )
+            .returning(schema.chat_transcript_batches.c.batch_id)
         )
-        if inserted.rowcount != 1:
+        if inserted.scalar_one_or_none() is None:
             # An ambiguous retry is successful only if the same marker exists.
             return
         for message in messages:

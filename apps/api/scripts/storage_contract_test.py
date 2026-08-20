@@ -124,7 +124,8 @@ def main() -> int:
     assert rejected_response.status_code == 422, rejected_response.text
     deleted_response = client.delete("/api/v1/chat/sessions/cs_capacity_api")
     assert deleted_response.status_code == 200, deleted_response.text
-    assert deleted_response.json()["removed"]["transcriptStages"] > 0
+    assert deleted_response.json()["removed"]["transcriptBatches"] > 0
+    assert deleted_response.json()["removed"]["transcriptStages"] == 0
     assert get_chat_session("owner", "cs_capacity_api") is None
     assert list_chat_messages("owner", "cs_capacity_api", limit=None) == []
     assert client.delete("/api/v1/chat/sessions/cs_capacity_api").status_code == 404
