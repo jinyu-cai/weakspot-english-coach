@@ -648,6 +648,10 @@ export default function CoachPage() {
         const createdSession = await createChatSession({
           userId: DEMO_USER_ID,
           topic: mission.title,
+          setting: mission.scene.setting,
+          userRole: mission.scene.userRole,
+          aiRole: mission.scene.aiRole,
+          goal: mission.scene.goal,
           scenarioPrompt: mission.scene.scenarioPrompt,
           starterMessage: mission.scene.starterMessage,
           scenarioFamily: mission.scene.scenarioFamily,

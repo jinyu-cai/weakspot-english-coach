@@ -1036,6 +1036,10 @@ export interface ChatSession {
   userId: string
   mode?: "text" | "voice"
   topic?: string | null
+  setting?: string | null
+  userRole?: string | null
+  aiRole?: string | null
+  goal?: string | null
   scenarioPrompt?: string | null
   starterMessage?: string | null
   scenarioFamily?: string | null

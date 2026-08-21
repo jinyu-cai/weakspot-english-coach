@@ -1972,6 +1972,10 @@ export interface CreateChatSessionRequest {
   userId?: string
   topic?: string
   textModel?: TextChatModel
+  setting?: string
+  userRole?: string
+  aiRole?: string
+  goal?: string
   scenarioPrompt?: string
   starterMessage?: string
   scenarioFamily?: string
@@ -1987,6 +1991,10 @@ export async function createChatSession(input: CreateChatSessionRequest = {}): P
     userId = DEMO_USER_ID,
     topic,
     textModel,
+    setting,
+    userRole,
+    aiRole,
+    goal,
     scenarioPrompt,
     starterMessage,
     scenarioFamily,
@@ -2002,6 +2010,10 @@ export async function createChatSession(input: CreateChatSessionRequest = {}): P
       id: `cs-${Date.now()}`,
       userId,
       topic: topic ?? null,
+      setting: setting ?? null,
+      userRole: userRole ?? null,
+      aiRole: aiRole ?? null,
+      goal: goal ?? null,
       scenarioPrompt: scenarioPrompt ?? null,
       starterMessage: starterMessage ?? null,
       scenarioFamily: scenarioFamily ?? null,
@@ -2023,6 +2035,10 @@ export async function createChatSession(input: CreateChatSessionRequest = {}): P
       userId,
       topic,
       ...(textModel ? { textModel } : {}),
+      ...(setting ? { setting } : {}),
+      ...(userRole ? { userRole } : {}),
+      ...(aiRole ? { aiRole } : {}),
+      ...(goal ? { goal } : {}),
       ...(scenarioPrompt ? { scenarioPrompt } : {}),
       ...(starterMessage ? { starterMessage } : {}),
       ...(scenarioFamily ? { scenarioFamily } : {}),

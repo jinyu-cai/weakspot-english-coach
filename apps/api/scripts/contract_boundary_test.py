@@ -139,12 +139,23 @@ def main() -> None:
         ),
     ):
         result = chat_routes.create_session(
-            ChatCreateSessionRequest(userId="ignored", topic=topic),
+            ChatCreateSessionRequest(
+                userId="ignored",
+                topic=topic,
+                setting="A delayed flight at a crowded airport gate.",
+                userRole="A passenger who needs to make a connection.",
+                aiRole="The airline gate agent.",
+                goal="Find a workable route to the destination.",
+            ),
             llm_provider=None,
             identity=identity,
         )
     assert result["session"]["topic"] == topic
     assert saved_sessions[0]["topic"] == topic
+    assert result["session"]["setting"] == "A delayed flight at a crowded airport gate."
+    assert result["session"]["userRole"] == "A passenger who needs to make a connection."
+    assert result["session"]["aiRole"] == "The airline gate agent."
+    assert result["session"]["goal"] == "Find a workable route to the destination."
     assert captured_chat_runs[0].title == topic[:240]
     assert captured_chat_runs[0].goal == topic
 

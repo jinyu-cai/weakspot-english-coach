@@ -411,6 +411,10 @@ export default function ChatPage() {
       const session = await createChatSession({
         userId: DEMO_USER_ID,
         topic: mission.title,
+        setting: mission.scene.setting,
+        userRole: mission.scene.userRole,
+        aiRole: mission.scene.aiRole,
+        goal: mission.scene.goal,
         scenarioPrompt: mission.scene.scenarioPrompt,
         starterMessage: mission.scene.starterMessage,
         scenarioFamily: mission.scene.scenarioFamily,
@@ -986,6 +990,7 @@ export default function ChatPage() {
             )}
 
             <div className="flex flex-col gap-4">
+              <SceneBriefing session={activeSession} />
               {messages.map((msg) => (
                 <ChatBubble
                   key={msg.id}
@@ -1073,6 +1078,45 @@ export default function ChatPage() {
         </>
       )}
     </div>
+  )
+}
+
+function SceneBriefing({ session }: { session: ChatSession }) {
+  const { t } = useLanguage()
+  const details = [
+    [t.chat.sceneBriefing.setting, session.setting?.trim()],
+    [t.chat.sceneBriefing.yourRole, session.userRole?.trim()],
+    [t.chat.sceneBriefing.aiRole, session.aiRole?.trim()],
+    [t.chat.sceneBriefing.goal, session.goal?.trim()],
+  ].filter((detail): detail is [string, string] => Boolean(detail[1]))
+
+  if (details.length === 0) return null
+
+  return (
+    <section
+      aria-label={t.chat.sceneBriefing.title}
+      className="rounded-2xl border border-primary/25 bg-primary/5 p-4 sm:p-5"
+    >
+      <div className="flex items-start gap-3">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <Sparkles className="size-4" />
+        </span>
+        <div>
+          <h2 className="font-heading text-sm font-semibold">{t.chat.sceneBriefing.title}</h2>
+          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+            {t.chat.sceneBriefing.description}
+          </p>
+        </div>
+      </div>
+      <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+        {details.map(([label, value]) => (
+          <div key={label} className="rounded-xl border border-border/70 bg-background/70 px-3.5 py-3">
+            <dt className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{label}</dt>
+            <dd className="mt-1 text-sm leading-relaxed text-foreground">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   )
 }
 
