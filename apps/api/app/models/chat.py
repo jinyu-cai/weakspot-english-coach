@@ -18,6 +18,10 @@ EVIDENCE_QUOTE_MAX_CHARACTERS = 600
 class ChatCreateSessionRequest(BaseModel):
     userId: str
     topic: Optional[str] = Field(default=None, max_length=300)
+    setting: Optional[str] = Field(default=None, max_length=500)
+    userRole: Optional[str] = Field(default=None, max_length=300)
+    aiRole: Optional[str] = Field(default=None, max_length=300)
+    goal: Optional[str] = Field(default=None, max_length=500)
     scenarioPrompt: Optional[str] = Field(default=None, max_length=4000)
     starterMessage: Optional[str] = Field(default=None, max_length=1200)
     scenarioFamily: Optional[CoachScenarioFamily] = None

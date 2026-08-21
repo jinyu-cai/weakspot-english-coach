@@ -369,6 +369,14 @@ export const copy = {
       replyDeepHint: "Use the selected Deep model for chat replies",
       sendFailed: "Failed to send message. Please try again.",
       analyzeFailed: "Failed to analyze session.",
+      sceneBriefing: {
+        title: "Before you start",
+        description: "Review the situation and roles, then reply in English as your character.",
+        setting: "Situation",
+        yourRole: "Your role",
+        aiRole: "AI role",
+        goal: "Your goal",
+      },
       scenarios: {
         dynamic: ["Generate a random conversation", "Deep mode plans a 15-minute roleplay with staged complications; Fast creates a shorter scene."],
         free: ["Free Chat", "Talk about anything"],
@@ -1420,6 +1428,14 @@ export const copy = {
       replyDeepHint: "使用当前选择的 Deep 模型回复聊天",
       sendFailed: "发送失败，请重试。",
       analyzeFailed: "分析会话失败。",
+      sceneBriefing: {
+        title: "开始对话前",
+        description: "先确认具体情境和双方角色，再以你的角色用英文回应。",
+        setting: "具体场景",
+        yourRole: "你的角色",
+        aiRole: "AI 的角色",
+        goal: "你的目标",
+      },
       scenarios: {
         dynamic: ["生成一个随机对话场景", "深度模式规划约 15 分钟、包含阶段性变化的角色扮演；快速模式生成较短场景。"],
         free: ["自由对话", "聊任何话题"],
