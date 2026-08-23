@@ -87,7 +87,7 @@ export default function EbookLearningPage() {
   const [activeBook, setActiveBook] = useState<Ebook | null>(null)
   const [startPage, setStartPage] = useState(1)
   const [endPage, setEndPage] = useState(1)
-  const [studyTier, setStudyTier] = useState<EbookModelTier>("deep")
+  const [studyTier, setStudyTier] = useState<EbookModelTier>("fast")
   const [studyPack, setStudyPack] = useState<EbookStudyPack | null>(null)
   const [studying, setStudying] = useState(false)
   const [deletingStudyPackId, setDeletingStudyPackId] = useState<string | null>(null)
@@ -171,7 +171,7 @@ export default function EbookLearningPage() {
     const timer = window.setTimeout(() => {
       setStartPage(Math.max(1, initial))
       setEndPage(Math.max(1, savedRange?.endPage ?? initial))
-      setStudyTier(savedRange?.modelTier ?? "deep")
+      setStudyTier(savedRange?.modelTier ?? "fast")
       setStudyPack(null)
       setExtraAnnotations([])
       setSelection(null)

@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     qwen_model_studio_base_url: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
     qwen_model_studio_model: str = "qwen3.7-max"
     qwen_model_studio_fast_model: str = "qwen3.7-plus"
+    # Private Ollama deployment used as the preferred Fast model and for the
+    # ebook reader's default translation path. Keep the Tailnet URL and token
+    # in deployment configuration rather than exposing them to the browser.
+    local_qwen_api_key: str = ""
+    local_qwen_base_url: str = ""
+    local_qwen_model: str = "qwen3.5:9b"
     # Embeddings may use a Qwen key without changing the server's default text
     # provider. This keeps text routing unchanged while enabling Model Studio
     # semantic retrieval and stealth-practice topic matching.
@@ -141,6 +147,14 @@ class Settings(BaseSettings):
         return bool(self.qwen_model_studio_api_key)
 
     @property
+    def uses_local_qwen(self) -> bool:
+        return bool(
+            self.local_qwen_api_key.strip()
+            and self.local_qwen_base_url.strip()
+            and self.local_qwen_model.strip()
+        )
+
+    @property
     def uses_openrouter(self) -> bool:
         return bool(self.openrouter_api_key.strip())
 
@@ -200,6 +214,8 @@ class Settings(BaseSettings):
 
     @property
     def default_llm_fast_model(self) -> str:
+        if self.uses_local_qwen:
+            return self.local_qwen_model
         if self.uses_opencode_go and self.opencode_go_deepseek_fast_model.strip():
             return self.opencode_go_deepseek_fast_model
         if self.uses_openrouter:
@@ -210,6 +226,8 @@ class Settings(BaseSettings):
 
     @property
     def default_llm_fast_api_key(self) -> str:
+        if self.uses_local_qwen:
+            return self.local_qwen_api_key
         if self.uses_opencode_go and self.opencode_go_deepseek_fast_model.strip():
             return self.opencode_go_api_key
         if self.uses_openrouter:
@@ -220,6 +238,8 @@ class Settings(BaseSettings):
 
     @property
     def default_llm_fast_base_url(self) -> str:
+        if self.uses_local_qwen:
+            return self.local_qwen_base_url
         if self.uses_opencode_go and self.opencode_go_deepseek_fast_model.strip():
             return self.opencode_go_base_url
         if self.uses_openrouter:

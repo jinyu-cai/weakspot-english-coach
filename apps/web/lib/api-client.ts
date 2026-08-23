@@ -98,6 +98,7 @@ import {
 } from "./mock-data"
 import {
   getLLMProviderHeaders,
+  LOCAL_QWEN_35_9B_MODEL,
   OPENCODE_GO_DEEPSEEK_V4_FLASH_MODEL,
   OPENCODE_GO_DEEPSEEK_V4_PRO_MODEL,
   OPENROUTER_56_LUNA_MODEL,
@@ -298,7 +299,7 @@ export async function getServerLLMModels(): Promise<ServerLLMModel[]> {
         label: "Server default",
         provider: "Server",
         model: OPENROUTER_56_LUNA_PRO_MODEL,
-        fastModel: OPENCODE_GO_DEEPSEEK_V4_FLASH_MODEL,
+        fastModel: LOCAL_QWEN_35_9B_MODEL,
         adaptive: true,
       },
       {
@@ -327,6 +328,13 @@ export async function getServerLLMModels(): Promise<ServerLLMModel[]> {
         label: "Qwen 3.7 Plus",
         provider: "Qwen Model Studio",
         model: QWEN_37_PLUS_MODEL,
+        mode: "fast",
+      },
+      {
+        id: "local-qwen-fast",
+        label: "Qwen 3.5 9B · Fast ebook translation",
+        provider: "Private Ollama",
+        model: LOCAL_QWEN_35_9B_MODEL,
         mode: "fast",
       },
       {
