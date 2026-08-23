@@ -51,13 +51,14 @@ export const OPENROUTER_56_LUNA_PRO_MODEL = "openai/gpt-5.6-luna-pro"
 export const OPENROUTER_56_LUNA_MODEL = "openai/gpt-5.6-luna"
 export const OPENCODE_GO_DEEPSEEK_V4_PRO_MODEL = "deepseek-v4-pro"
 export const OPENCODE_GO_DEEPSEEK_V4_FLASH_MODEL = "deepseek-v4-flash"
+export const LOCAL_QWEN_35_9B_MODEL = "qwen3.5:9b"
 export const SERVER_DEFAULT_MODEL_ID = "default"
 export const DEFAULT_SERVER_DEEP_MODEL_ID = "openrouter-deep"
-export const DEFAULT_SERVER_FAST_MODEL_ID = "deepseek-fast"
+export const DEFAULT_SERVER_FAST_MODEL_ID = "local-qwen-fast"
 export const LLM_SETTINGS_CHANGE_EVENT = "weakspot:llm-settings-change"
 
 const STORAGE_KEY = "weakspot.llmSettings.v1"
-const DEFAULT_SERVER_PAIR_VERSION = 2
+const DEFAULT_SERVER_PAIR_VERSION = 3
 
 const defaultSettings: LLMSettings = {
   apiKey: "",
@@ -134,9 +135,9 @@ export function loadLLMSettings(): LLMSettings {
     const parsed = JSON.parse(raw) as StoredLLMSettings
     const legacyPair = legacyServerPair(parsed.serverModelId)
     const usedPreviousDefaultPair = (
-      !parsed.serverDefaultVersion
+      (parsed.serverDefaultVersion ?? 0) < DEFAULT_SERVER_PAIR_VERSION
       && parsed.serverDeepModelId === "openrouter-deep"
-      && parsed.serverFastModelId === "openrouter-fast"
+      && ["openrouter-fast", "deepseek-fast"].includes(parsed.serverFastModelId || "")
       && !parsed.apiKey
       && !parsed.model
     )

@@ -46,6 +46,7 @@ def _add_option(
     base_url: str,
     model: str,
     mode: Literal["deep", "fast"],
+    reasoning_effort_override: Optional[str] = None,
 ) -> None:
     api_key = _normalized(api_key)
     base_url = _normalized(base_url).rstrip("/")
@@ -66,6 +67,8 @@ def _add_option(
                 # An explicit user choice should not silently switch to a
                 # provider's fast model for a different request type.
                 fast_model=model,
+                reasoning_effort_override=reasoning_effort_override,
+                fast_reasoning_effort_override=reasoning_effort_override,
                 server_model_id=option_id,
             ),
         )
@@ -95,6 +98,17 @@ def configured_server_models(config: Settings = settings) -> list[ServerModelOpt
         base_url=config.openrouter_base_url,
         model=config.openrouter_fast_model,
         mode="fast",
+    )
+    _add_option(
+        options,
+        option_id="local-qwen-fast",
+        label="Qwen 3.5 9B · Fast ebook translation",
+        provider_label="Private Ollama",
+        api_key=config.local_qwen_api_key,
+        base_url=config.local_qwen_base_url,
+        model=config.local_qwen_model,
+        mode="fast",
+        reasoning_effort_override="none",
     )
     if config.uses_opencode_go:
         _add_option(
@@ -262,6 +276,11 @@ def server_model_pair(
         fast_model=fast.model,
         fast_api_key=fast.config.api_key,
         fast_base_url=fast.config.base_url,
+        reasoning_effort_override=deep.config.reasoning_effort_override,
+        fast_reasoning_effort_override=(
+            fast.config.fast_reasoning_effort_override
+            or fast.config.reasoning_effort_override
+        ),
         server_deep_model_id=deep.id,
         server_fast_model_id=fast.id,
     )
@@ -275,6 +294,8 @@ def default_server_model_ids(config: Settings = settings) -> tuple[str, str] | N
     fast_priority: list[str] = []
     if config.uses_openrouter:
         deep_priority.append("openrouter-deep")
+    if config.uses_local_qwen:
+        fast_priority.append("local-qwen-fast")
     if config.uses_opencode_go:
         deep_priority.append("deepseek-deep")
         fast_priority.append("deepseek-fast")

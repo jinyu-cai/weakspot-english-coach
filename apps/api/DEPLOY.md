@@ -85,6 +85,12 @@ OPENCODE_GO_BASE_URL=https://opencode.ai/zen/go/v1
 OPENCODE_GO_DEEPSEEK_MODEL=deepseek-v4-pro
 OPENCODE_GO_DEEPSEEK_FAST_MODEL=deepseek-v4-flash
 
+# Optional private Fast model used by default for ebook translation. The host
+# must already be logged into the same Tailnet as the Ollama server.
+LOCAL_QWEN_API_KEY=ollama
+LOCAL_QWEN_BASE_URL=https://your-tailnet-host:8443/v1
+LOCAL_QWEN_MODEL=qwen3.5:9b
+
 # Realtime voice only; keep this server-side.
 OPENAI_API_KEY=<openai-api-key>
 OPENAI_REALTIME_MODEL=gpt-realtime-mini-2025-12-15
@@ -176,6 +182,15 @@ curl -s https://api.your-domain.com/api/v1/llm/models
 Then open the Vercel site, run a diagnosis, inspect `/memory`, and confirm the
 result persists. The model catalog must never contain API keys or provider base
 URLs.
+
+If `LOCAL_QWEN_*` is enabled, verify the server can reach the private endpoint
+before restarting the API:
+
+```bash
+tailscale status
+curl -fsS -H "Authorization: Bearer $LOCAL_QWEN_API_KEY" \
+  "$LOCAL_QWEN_BASE_URL/models"
+```
 
 ## Updating after changes
 

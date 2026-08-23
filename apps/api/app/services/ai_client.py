@@ -45,6 +45,11 @@ class LLMProviderConfig:
     # server and select them only when the fast model is requested.
     fast_api_key: Optional[str] = None
     fast_base_url: Optional[str] = None
+    # Some OpenAI-compatible models expose a provider-specific reasoning
+    # control. Ollama's Qwen 3.5 path needs `none`; otherwise it may spend the
+    # entire completion budget in the reasoning field and return empty JSON.
+    reasoning_effort_override: Optional[str] = None
+    fast_reasoning_effort_override: Optional[str] = None
     # Server-managed choices are resolved from a small allowlist and never send
     # their credentials to the browser. BYOK remains request-scoped and is
     # intentionally distinguished so quotas cannot be relaxed merely because a
@@ -68,6 +73,24 @@ def _provider_connection(
     ):
         return provider.fast_api_key, provider.fast_base_url
     return provider.api_key, provider.base_url
+
+
+def _provider_reasoning_effort(
+    provider: Optional[LLMProviderConfig],
+    selected_model: str,
+    requested_effort: Optional[str],
+) -> Optional[str]:
+    if provider is None:
+        return requested_effort
+    if (
+        provider.fast_model
+        and selected_model == provider.fast_model
+        and provider.fast_reasoning_effort_override is not None
+    ):
+        return provider.fast_reasoning_effort_override
+    if provider.reasoning_effort_override is not None:
+        return provider.reasoning_effort_override
+    return requested_effort
 
 
 def _provider_request_model(
@@ -242,6 +265,16 @@ def parse_with_model(
         _provider_request_model(provider, selected_model, base_url),
         base_url,
         openrouter_routing_mode,
+    )
+    reasoning_effort = _provider_reasoning_effort(
+        provider,
+        selected_model,
+        reasoning_effort,
+    )
+    retry_reasoning_effort = _provider_reasoning_effort(
+        provider,
+        selected_model,
+        retry_reasoning_effort,
     )
     uses_model_studio_qwen = _uses_model_studio_qwen(request_model, base_url)
     uses_openrouter = _uses_openrouter_api(base_url)
