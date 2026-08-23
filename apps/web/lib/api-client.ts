@@ -332,7 +332,7 @@ export async function getServerLLMModels(): Promise<ServerLLMModel[]> {
       },
       {
         id: "local-qwen-fast",
-        label: "Qwen 3.5 9B · Fast ebook translation",
+        label: "Qwen 3.5 9B · Ebook translation only",
         provider: "Private Ollama",
         model: LOCAL_QWEN_35_9B_MODEL,
         mode: "fast",

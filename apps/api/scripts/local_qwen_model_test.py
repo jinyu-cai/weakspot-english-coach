@@ -7,7 +7,13 @@ from pydantic import BaseModel
 
 from app.config import Settings
 from app.services import ai_client
-from app.services.model_catalog import catalog_payload, default_server_model_ids, default_text_provider
+from app.services.model_catalog import (
+    catalog_payload,
+    default_server_model_ids,
+    default_text_provider,
+    ebook_annotation_provider,
+    local_qwen_translation_provider,
+)
 
 
 class TranslationResult(BaseModel):
@@ -36,7 +42,7 @@ def main() -> None:
     assert models["default"]["fastModel"] == "qwen3.5:9b"
     assert models["local-qwen-fast"] == {
         "id": "local-qwen-fast",
-        "label": "Qwen 3.5 9B · Fast ebook translation",
+        "label": "Qwen 3.5 9B · Ebook translation only",
         "provider": "Private Ollama",
         "model": "qwen3.5:9b",
         "mode": "fast",
@@ -49,6 +55,13 @@ def main() -> None:
     assert provider.fast_api_key == "ollama"
     assert provider.fast_base_url == "https://private-model.example/v1"
     assert provider.fast_reasoning_effort_override == "none"
+
+    translation_provider = local_qwen_translation_provider(config)
+    assert translation_provider is not None
+    assert translation_provider.model == "qwen3.5:9b"
+    annotation_provider = ebook_annotation_provider(translation_provider, config)
+    assert annotation_provider is not None
+    assert annotation_provider.model == config.openrouter_model
 
     request: dict = {}
 

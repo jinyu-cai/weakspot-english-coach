@@ -102,7 +102,7 @@ def configured_server_models(config: Settings = settings) -> list[ServerModelOpt
     _add_option(
         options,
         option_id="local-qwen-fast",
-        label="Qwen 3.5 9B · Fast ebook translation",
+        label="Qwen 3.5 9B · Ebook translation only",
         provider_label="Private Ollama",
         api_key=config.local_qwen_api_key,
         base_url=config.local_qwen_base_url,
@@ -329,6 +329,28 @@ def default_text_provider(config: Settings = settings) -> Optional[LLMProviderCo
         return None
     provider = server_model_pair(*model_ids, config=config)
     return replace(provider, is_default=True) if provider is not None else None
+
+
+def local_qwen_translation_provider(
+    config: Settings = settings,
+) -> Optional[LLMProviderConfig]:
+    """Return the private Qwen profile reserved for ebook counterpart text."""
+    option = server_model_by_id("local-qwen-fast", config)
+    return option.config if option is not None else None
+
+
+def ebook_annotation_provider(
+    provider: Optional[LLMProviderConfig],
+    config: Settings = settings,
+) -> Optional[LLMProviderConfig]:
+    """Keep ebook annotations on a Deep model, including legacy requests."""
+    if provider is None:
+        return default_text_provider(config)
+    if provider.server_model_id:
+        option = server_model_by_id(provider.server_model_id, config)
+        if option is not None and option.mode == "fast":
+            return default_text_provider(config)
+    return provider
 
 
 def server_model_for_name(model: str, config: Settings = settings) -> Optional[ServerModelOption]:

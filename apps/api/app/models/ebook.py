@@ -333,6 +333,14 @@ class EbookAIAnnotation(BaseModel):
         return value if value in ERROR_TAXONOMY else "sentence.structure"
 
 
+class EbookTranslationAIResult(BaseModel):
+    units: list[EbookAIUnit] = Field(default_factory=list, max_length=240)
+
+
+class EbookAnnotationsAIResult(BaseModel):
+    annotations: list[EbookAIAnnotation] = Field(default_factory=list, max_length=8)
+
+
 class EbookPageAIResult(BaseModel):
     units: list[EbookAIUnit] = Field(default_factory=list, max_length=240)
     annotations: list[EbookAIAnnotation] = Field(default_factory=list, max_length=8)
