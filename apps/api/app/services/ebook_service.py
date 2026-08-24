@@ -6,6 +6,7 @@ small page-sized text units so ebook analysis remains efficient to query.
 
 from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor
 import hashlib
 from html.parser import HTMLParser
 import json
@@ -96,6 +97,13 @@ class EbookImportError(ValueError):
 
 class EbookProcessingError(RuntimeError):
     pass
+
+
+class EbookTranslationUnavailable(EbookProcessingError):
+    """The private translation stage exhausted its two request attempts."""
+
+
+TRANSLATION_READY_STATUS = "translation_ready"
 
 
 def _public(row: dict) -> dict:
@@ -731,54 +739,135 @@ def _generate_page_result(
     max_output_tokens: Optional[int],
     trace_id: str,
 ) -> EbookPageAIResult:
-    """Bound each model request and retry malformed unit coverage once."""
+    """Generate each stage independently so annotation retries never rerun translation."""
+    translations = _generate_translation_result(
+        units,
+        comparison_language,
+        provider,
+        max_output_tokens,
+        trace_id,
+    )
+    annotations = _generate_annotation_result(
+        units,
+        comparison_language,
+        model_tier,
+        provider,
+        max_output_tokens,
+        trace_id,
+    )
+    return EbookPageAIResult(
+        units=translations.units,
+        annotations=annotations.annotations,
+    )
+
+
+def _generate_translation_result(
+    units: list[dict],
+    comparison_language: str,
+    provider: Optional[LLMProviderConfig],
+    max_output_tokens: Optional[int],
+    trace_id: str,
+) -> EbookTranslationAIResult:
+    """Retry and validate only the translation stage, at most twice per chunk."""
     all_units: list[EbookAIUnit] = []
-    all_annotations: list[EbookAIAnnotation] = []
     for chunk_index in range(0, len(units), 60):
         chunk = units[chunk_index:chunk_index + 60]
         expected_ids = [unit["unitId"] for unit in chunk]
-        result: Optional[EbookPageAIResult] = None
+        result: Optional[EbookTranslationAIResult] = None
         last_error: Optional[Exception] = None
         for attempt in range(2):
             try:
                 candidate = (
-                    _deterministic_page_result(chunk, comparison_language)
+                    EbookTranslationAIResult(
+                        units=_deterministic_page_result(chunk, comparison_language).units
+                    )
                     if settings.use_fake_ai
-                    else EbookPageAIResult(
-                        units=_call_translation_model(
-                            chunk,
-                            comparison_language,
-                            provider,
-                            max_output_tokens,
-                            f"{trace_id}:translation:chunk-{chunk_index // 60}:attempt-{attempt}",
-                        ).units,
-                        annotations=_call_annotation_model(
-                            chunk,
-                            comparison_language,
-                            model_tier,
-                            provider,
-                            max_output_tokens,
-                            f"{trace_id}:annotations:chunk-{chunk_index // 60}:attempt-{attempt}",
-                        ).annotations,
+                    else _call_translation_model(
+                        chunk,
+                        comparison_language,
+                        provider,
+                        max_output_tokens,
+                        f"{trace_id}:translation:chunk-{chunk_index // 60}:attempt-{attempt}",
                     )
                 )
                 if [unit.unitId for unit in candidate.units] != expected_ids:
                     raise EbookProcessingError(
                         "The model did not return every source unit exactly once."
                     )
-                if len(candidate.annotations) > 5:
-                    raise EbookProcessingError(
-                        "The model returned more than five annotations for one page chunk."
-                    )
                 result = candidate
                 break
             except Exception as exc:
                 last_error = exc
         if result is None:
-            raise EbookProcessingError("A page analysis chunk failed grounding validation.") from last_error
+            raise EbookTranslationUnavailable(
+                "Ebook translation failed twice consecutively."
+            ) from last_error
         all_units.extend(result.units)
+    return EbookTranslationAIResult(units=all_units)
+
+
+def _generate_annotation_result(
+    units: list[dict],
+    comparison_language: str,
+    model_tier: EbookModelTier,
+    provider: Optional[LLMProviderConfig],
+    max_output_tokens: Optional[int],
+    trace_id: str,
+) -> EbookAnnotationsAIResult:
+    """Retry and ground only annotations, preserving any completed translation."""
+    all_annotations: list[EbookAIAnnotation] = []
+    for chunk_index in range(0, len(units), 60):
+        chunk = units[chunk_index:chunk_index + 60]
+        by_id = {unit["unitId"]: unit["sourceText"] for unit in chunk}
+        result: Optional[EbookAnnotationsAIResult] = None
+        last_error: Optional[Exception] = None
+        for attempt in range(2):
+            try:
+                candidate = (
+                    EbookAnnotationsAIResult(
+                        annotations=_deterministic_page_result(
+                            chunk,
+                            comparison_language,
+                        ).annotations
+                    )
+                    if settings.use_fake_ai
+                    else _call_annotation_model(
+                        chunk,
+                        comparison_language,
+                        model_tier,
+                        provider,
+                        max_output_tokens,
+                        f"{trace_id}:annotations:chunk-{chunk_index // 60}:attempt-{attempt}",
+                    )
+                )
+                if len(candidate.annotations) > 5:
+                    raise EbookProcessingError(
+                        "The model returned more than five annotations for one page chunk."
+                    )
+                seen: set[tuple[str, str]] = set()
+                for annotation in candidate.annotations:
+                    selected = annotation.selectedText.strip()
+                    source = by_id.get(annotation.unitId)
+                    if source is None or not selected or selected not in source:
+                        raise EbookProcessingError(
+                            "The model annotation was not grounded in the supplied source."
+                        )
+                    key = (annotation.unitId, selected)
+                    if key in seen:
+                        raise EbookProcessingError(
+                            "The model returned a duplicate annotation."
+                        )
+                    seen.add(key)
+                result = candidate
+                break
+            except Exception as exc:
+                last_error = exc
+        if result is None:
+            raise EbookProcessingError(
+                "An ebook annotation chunk failed grounding validation."
+            ) from last_error
         all_annotations.extend(result.annotations)
-    return EbookPageAIResult(units=all_units, annotations=all_annotations[:5])
+    return EbookAnnotationsAIResult(annotations=all_annotations[:5])
 
 
 def _analysis_cache_id(
@@ -801,23 +890,19 @@ def _analysis_cache_id(
     return _stable_id("ecache", *parts)
 
 
-def _normalized_analysis(
-    user_id: str,
-    book_id: str,
+def _normalized_translation_units(
     page: dict,
     language: str,
-    model_tier: EbookModelTier,
-    result: EbookPageAIResult,
-) -> tuple[dict, list[dict]]:
+    ai_units: list[EbookAIUnit],
+) -> list[dict]:
     units = sentence_units(str(page.get("text") or ""), int(page["pageNumber"]))
     expected_ids = [unit["unitId"] for unit in units]
-    returned_ids = [unit.unitId for unit in result.units]
+    returned_ids = [unit.unitId for unit in ai_units]
     if returned_ids != expected_ids:
         raise EbookProcessingError("The model did not return every source unit exactly once.")
-    by_id = {unit["unitId"]: unit for unit in units}
     unit_rows = [
         {**source, "counterpartText": ai.counterpartText.strip()}
-        for source, ai in zip(units, result.units)
+        for source, ai in zip(units, ai_units)
     ]
     if any(
         not row["counterpartText"]
@@ -830,6 +915,107 @@ def _normalized_analysis(
         for row in unit_rows
     ):
         raise EbookProcessingError("The model did not return a Chinese counterpart for every unit.")
+    return unit_rows
+
+
+def _translation_result_from_cache(
+    cached: Optional[dict],
+    units: list[dict],
+) -> Optional[EbookTranslationAIResult]:
+    if not cached or cached.get("status") not in {TRANSLATION_READY_STATUS, "ready"}:
+        return None
+    cached_units = cached.get("units") or []
+    expected_ids = [unit["unitId"] for unit in units]
+    if [row.get("unitId") for row in cached_units] != expected_ids:
+        return None
+    try:
+        return EbookTranslationAIResult(
+            units=[
+                EbookAIUnit(
+                    unitId=str(row["unitId"]),
+                    counterpartText=str(row["counterpartText"]),
+                )
+                for row in cached_units
+            ]
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _translation_ready_analysis(
+    user_id: str,
+    book_id: str,
+    page: dict,
+    language: str,
+    model_tier: EbookModelTier,
+    result: EbookTranslationAIResult,
+    existing: Optional[dict] = None,
+) -> dict:
+    cache_id = _analysis_cache_id(book_id, page, language, model_tier)
+    now = now_iso()
+    return {
+        "id": cache_id,
+        "cacheId": cache_id,
+        "userId": user_id,
+        "bookId": book_id,
+        "pageNumber": page["pageNumber"],
+        "chapterTitle": page.get("chapterTitle"),
+        "comparisonLanguage": language,
+        "comparisonMode": "translation" if language == "zh-CN" else "plain_english",
+        "modelTier": model_tier,
+        "analysisVersion": ANALYSIS_VERSION,
+        "status": TRANSLATION_READY_STATUS,
+        "units": _normalized_translation_units(page, language, result.units),
+        "annotationIds": [],
+        "createdAt": (existing or {}).get("createdAt", now),
+        "updatedAt": now,
+    }
+
+
+def _translate_and_cache_page(
+    user_id: str,
+    book_id: str,
+    page: dict,
+    units: list[dict],
+    language: str,
+    model_tier: EbookModelTier,
+    provider: Optional[LLMProviderConfig],
+    max_output_tokens: Optional[int],
+    trace_id: str,
+    existing: Optional[dict],
+) -> EbookTranslationAIResult:
+    result = _generate_translation_result(
+        units,
+        language,
+        provider,
+        max_output_tokens,
+        trace_id,
+    )
+    save_ebook_analysis_page(
+        _translation_ready_analysis(
+            user_id,
+            book_id,
+            page,
+            language,
+            model_tier,
+            result,
+            existing,
+        )
+    )
+    return result
+
+
+def _normalized_analysis(
+    user_id: str,
+    book_id: str,
+    page: dict,
+    language: str,
+    model_tier: EbookModelTier,
+    result: EbookPageAIResult,
+) -> tuple[dict, list[dict]]:
+    units = sentence_units(str(page.get("text") or ""), int(page["pageNumber"]))
+    by_id = {unit["unitId"]: unit for unit in units}
+    unit_rows = _normalized_translation_units(page, language, result.units)
     annotations: list[dict] = []
     seen: set[tuple[str, str]] = set()
     for raw in result.annotations[:5]:
@@ -997,74 +1183,197 @@ def process_study_pack(
     failed: list[int] = []
     completed = 0
     try:
+        work_items: list[dict] = []
         for page_number in range(int(pack["startPage"]), int(pack["endPage"]) + 1):
-            if not _study_pack_claim_is_current(user_id, pack_id, claim_id):
-                return
-            try:
-                page = get_ebook_page(user_id, pack["bookId"], page_number)
-                if not page:
-                    raise EbookProcessingError("The extracted page is missing.")
-                cache_id = _analysis_cache_id(
-                    pack["bookId"],
-                    page,
-                    pack["comparisonLanguage"],
-                    model_tier,
-                )
-                cached = get_ebook_analysis_page(user_id, cache_id)
-                if not cached or cached.get("status") != "ready":
-                    units = sentence_units(str(page.get("text") or ""), page_number)
-                    if units:
-                        result = _generate_page_result(
-                            units,
-                            pack["comparisonLanguage"],
-                            model_tier,
-                            provider,
-                            max_output_tokens,
-                            f"{pack_id}:{page_number}",
-                        )
-                        analysis, _ = _normalized_analysis(
-                            user_id,
-                            pack["bookId"],
-                            page,
-                            pack["comparisonLanguage"],
-                            model_tier,
-                            result,
-                        )
-                    else:
-                        analysis = {
-                            "id": cache_id,
-                            "cacheId": cache_id,
-                            "userId": user_id,
-                            "bookId": pack["bookId"],
-                            "pageNumber": page_number,
-                            "chapterTitle": page.get("chapterTitle"),
-                            "comparisonLanguage": pack["comparisonLanguage"],
-                            "comparisonMode": pack["comparisonMode"],
-                            "modelTier": model_tier,
-                            "analysisVersion": ANALYSIS_VERSION,
-                            "status": "ready",
-                            "units": [],
-                            "annotationIds": [],
-                            "createdAt": now_iso(),
-                            "updatedAt": now_iso(),
-                        }
-                    save_ebook_analysis_page(analysis)
-                completed += 1
-            except Exception:
-                failed.append(page_number)
-            if not _study_pack_claim_is_current(user_id, pack_id, claim_id):
-                return
-            current = get_ebook_study_pack(user_id, pack_id)
-            if not current:
-                return
-            pack = current
-            pack.update({
-                "completedPageCount": completed,
-                "failedPages": failed,
-                "updatedAt": now_iso(),
+            page = get_ebook_page(user_id, pack["bookId"], page_number)
+            if not page:
+                work_items.append({"pageNumber": page_number, "error": "missing"})
+                continue
+            cache_id = _analysis_cache_id(
+                pack["bookId"],
+                page,
+                pack["comparisonLanguage"],
+                model_tier,
+            )
+            cached = get_ebook_analysis_page(user_id, cache_id)
+            units = (
+                []
+                if cached and cached.get("status") == "ready"
+                else sentence_units(str(page.get("text") or ""), page_number)
+            )
+            work_items.append({
+                "pageNumber": page_number,
+                "page": page,
+                "cacheId": cache_id,
+                "cached": cached,
+                "units": units,
+                "translation": _translation_result_from_cache(cached, units),
             })
-            if not save_ebook_study_pack_if_processing(pack, claim_id):
-                return
+
+        def next_translation(
+            executor: ThreadPoolExecutor,
+            start_index: int,
+        ) -> tuple[Optional[int], Optional[Future[EbookTranslationAIResult]]]:
+            for candidate_index in range(start_index, len(work_items)):
+                candidate = work_items[candidate_index]
+                if (
+                    candidate.get("page")
+                    and candidate.get("units")
+                    and candidate.get("translation") is None
+                    and (candidate.get("cached") or {}).get("status") != "ready"
+                ):
+                    future = executor.submit(
+                        _translate_and_cache_page,
+                        user_id,
+                        pack["bookId"],
+                        candidate["page"],
+                        candidate["units"],
+                        pack["comparisonLanguage"],
+                        model_tier,
+                        provider,
+                        max_output_tokens,
+                        f"{pack_id}:{candidate['pageNumber']}",
+                        candidate.get("cached"),
+                    )
+                    return candidate_index, future
+            return None, None
+
+        circuit_error: Optional[Exception] = None
+        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="ebook-qwen") as executor:
+            future_index, translation_future = next_translation(executor, 0)
+            for item_index, item in enumerate(work_items):
+                if not _study_pack_claim_is_current(user_id, pack_id, claim_id):
+                    if translation_future:
+                        translation_future.cancel()
+                    return
+                page_number = int(item["pageNumber"])
+                try:
+                    if item.get("error"):
+                        raise EbookProcessingError("The extracted page is missing.")
+                    cached = item.get("cached")
+                    if cached and cached.get("status") == "ready":
+                        completed += 1
+                    else:
+                        page = item["page"]
+                        units = item["units"]
+                        if not units:
+                            now = now_iso()
+                            save_ebook_analysis_page({
+                                "id": item["cacheId"],
+                                "cacheId": item["cacheId"],
+                                "userId": user_id,
+                                "bookId": pack["bookId"],
+                                "pageNumber": page_number,
+                                "chapterTitle": page.get("chapterTitle"),
+                                "comparisonLanguage": pack["comparisonLanguage"],
+                                "comparisonMode": pack["comparisonMode"],
+                                "modelTier": model_tier,
+                                "analysisVersion": ANALYSIS_VERSION,
+                                "status": "ready",
+                                "units": [],
+                                "annotationIds": [],
+                                "createdAt": (cached or {}).get("createdAt", now),
+                                "updatedAt": now,
+                            })
+                            completed += 1
+                        else:
+                            translation = item.get("translation")
+                            if translation is None:
+                                if future_index != item_index or translation_future is None:
+                                    raise EbookProcessingError(
+                                        "The translation pipeline lost its page order."
+                                    )
+                                try:
+                                    translation = translation_future.result()
+                                except EbookTranslationUnavailable as exc:
+                                    remaining_failed = [
+                                        int(remaining["pageNumber"])
+                                        for remaining in work_items[item_index:]
+                                        if not (
+                                            remaining.get("cached")
+                                            and remaining["cached"].get("status") == "ready"
+                                        )
+                                    ]
+                                    failed.extend(
+                                        number
+                                        for number in remaining_failed
+                                        if number not in failed
+                                    )
+                                    circuit_error = EbookProcessingError(
+                                        "Translation stopped after two consecutive failures; "
+                                        "remaining pages were not attempted."
+                                    )
+                                    logger.warning(
+                                        "ebook_translation_circuit_open "
+                                        "pack=%s page=%s remaining=%d",
+                                        pack_id,
+                                        page_number,
+                                        len(remaining_failed),
+                                    )
+                                    raise circuit_error from exc
+                                except Exception:
+                                    future_index, translation_future = next_translation(
+                                        executor,
+                                        item_index + 1,
+                                    )
+                                    raise
+                                item["translation"] = translation
+                                item["cached"] = get_ebook_analysis_page(
+                                    user_id,
+                                    item["cacheId"],
+                                )
+                                future_index, translation_future = next_translation(
+                                    executor,
+                                    item_index + 1,
+                                )
+
+                            annotations = _generate_annotation_result(
+                                units,
+                                pack["comparisonLanguage"],
+                                model_tier,
+                                provider,
+                                max_output_tokens,
+                                f"{pack_id}:{page_number}",
+                            )
+                            analysis, _ = _normalized_analysis(
+                                user_id,
+                                pack["bookId"],
+                                page,
+                                pack["comparisonLanguage"],
+                                model_tier,
+                                EbookPageAIResult(
+                                    units=translation.units,
+                                    annotations=annotations.annotations,
+                                ),
+                            )
+                            save_ebook_analysis_page(analysis)
+                            completed += 1
+                except Exception:
+                    if page_number not in failed:
+                        failed.append(page_number)
+
+                if not _study_pack_claim_is_current(user_id, pack_id, claim_id):
+                    if translation_future:
+                        translation_future.cancel()
+                    return
+                current = get_ebook_study_pack(user_id, pack_id)
+                if not current:
+                    return
+                pack = current
+                pack.update({
+                    "completedPageCount": completed,
+                    "failedPages": failed,
+                    "updatedAt": now_iso(),
+                })
+                if not save_ebook_study_pack_if_processing(pack, claim_id):
+                    return
+                if circuit_error is not None:
+                    if translation_future:
+                        translation_future.cancel()
+                    break
+
+        if circuit_error is not None:
+            raise circuit_error
         if failed:
             raise EbookProcessingError(f"Could not read pages: {', '.join(map(str, failed))}")
         if not _study_pack_claim_is_current(user_id, pack_id, claim_id):
@@ -1117,7 +1426,7 @@ def get_study_pack_for_user(user_id: str, pack_id: str) -> Optional[dict]:
             model_tier,
         )
         analysis = get_ebook_analysis_page(user_id, cache_id)
-        if not analysis:
+        if not analysis or analysis.get("status") != "ready":
             continue
         annotations = [
             _public(annotation)
