@@ -138,6 +138,67 @@ def nonlinguistic_translation_contract() -> None:
         pass
 
 
+def translation_content_repair_contract() -> None:
+    units = [{
+        "unitId": "p27_u11",
+        "sourceText": "• Burner: 350 F",
+    }]
+    invalid = EbookTranslationAIResult(
+        units=[EbookAIUnit(unitId="p27_u11", counterpartText="• Burner：350 F")]
+    )
+    repaired = EbookTranslationAIResult(
+        units=[EbookAIUnit(unitId="p27_u11", counterpartText="• 炉灶：350 F")]
+    )
+    repair_modes: list[bool] = []
+
+    def translation_stub(
+        chunk,
+        comparison_language,
+        provider,
+        max_output_tokens,
+        trace_id,
+        repair_content=False,
+    ):
+        del chunk, comparison_language, provider, max_output_tokens, trace_id
+        repair_modes.append(repair_content)
+        return repaired if repair_content else invalid
+
+    with (
+        patch.object(ebook_service.settings, "use_fake_ai", False),
+        patch.object(
+            ebook_service,
+            "_call_translation_model",
+            side_effect=translation_stub,
+        ),
+    ):
+        result = ebook_service._generate_translation_result(
+            units,
+            "zh-CN",
+            None,
+            4000,
+            "repair-test",
+        )
+
+    assert result.units[0].counterpartText == "• 炉灶：350 F"
+    assert repair_modes == [False, True]
+
+    with (
+        patch.object(ebook_service.settings, "use_fake_ai", False),
+        patch.object(ebook_service, "_call_translation_model", return_value=invalid),
+    ):
+        try:
+            ebook_service._generate_translation_result(
+                units,
+                "zh-CN",
+                None,
+                4000,
+                "invalid-content-test",
+            )
+            raise AssertionError("Repeated content validation failures must fail the page")
+        except ebook_service.EbookTranslationContentInvalid:
+            pass
+
+
 def pipeline_and_circuit_contract() -> None:
     pack = {
         "id": "pipeline-pack",
@@ -534,6 +595,7 @@ def cancellation_contract() -> None:
 def main() -> None:
     split_call_contract()
     nonlinguistic_translation_contract()
+    translation_content_repair_contract()
     parallel_annotation_contract()
     cancellation_contract()
     pipeline_and_circuit_contract()
