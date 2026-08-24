@@ -866,6 +866,7 @@ export type EbookComparisonLanguage = "zh-CN" | "en"
 export type EbookComparisonMode = "translation" | "plain_english"
 export type EbookModelTier = "fast" | "deep"
 export type EbookStatus = "processing" | "ready" | "failed"
+export type EbookStudyPackStatus = EbookStatus | "cancelled"
 export type EbookAnnotationKind = "word" | "phrase" | "collocation" | "grammar_pattern" | "complex_sentence"
 export type EbookLearningTargetStatus = "provisional" | "confirmed" | "learning" | "mastered" | "archived"
 
@@ -961,10 +962,11 @@ export interface EbookStudyPack {
   comparisonLanguage: EbookComparisonLanguage
   comparisonMode: EbookComparisonMode
   modelTier: EbookModelTier
-  status: EbookStatus
+  status: EbookStudyPackStatus
   totalPageCount: number
   completedPageCount: number
   failedPages: number[]
+  cancelledPages: number[]
   error?: string | null
   pages?: EbookStudyPage[]
   createdAt: string

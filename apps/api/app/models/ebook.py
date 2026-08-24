@@ -10,6 +10,7 @@ ComparisonMode = Literal["translation", "plain_english"]
 EbookModelTier = Literal["fast", "deep"]
 EbookFormat = Literal["epub", "pdf"]
 EbookStatus = Literal["processing", "ready", "failed"]
+EbookStudyPackStatus = Literal["processing", "ready", "failed", "cancelled"]
 EbookAnnotationKind = Literal[
     "word",
     "phrase",
@@ -130,10 +131,11 @@ class EbookStudyPack(BaseModel):
     comparisonLanguage: ComparisonLanguage
     comparisonMode: ComparisonMode
     modelTier: EbookModelTier = "deep"
-    status: EbookStatus
+    status: EbookStudyPackStatus
     totalPageCount: int = Field(ge=1, le=15)
     completedPageCount: int = Field(ge=0, le=15)
     failedPages: list[int] = Field(default_factory=list)
+    cancelledPages: list[int] = Field(default_factory=list)
     error: Optional[str] = None
     pages: Optional[list[EbookStudyPage]] = None
     createdAt: str

@@ -20,6 +20,7 @@ import {
   NotebookPen,
   PlayCircle,
   ShieldCheck,
+  Square,
   Sparkles,
   Trash2,
   X,
@@ -36,6 +37,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { getMe, isAuthConfigured, loginPageUrl } from "@/lib/auth"
 import {
+  cancelEbookStudyPack,
   createEbookAnnotation,
   createEbookStudyPack,
   deleteEbook,
@@ -90,6 +92,7 @@ export default function EbookLearningPage() {
   const [studyTier, setStudyTier] = useState<EbookModelTier>("fast")
   const [studyPack, setStudyPack] = useState<EbookStudyPack | null>(null)
   const [studying, setStudying] = useState(false)
+  const [stoppingStudyPackId, setStoppingStudyPackId] = useState<string | null>(null)
   const [deletingStudyPackId, setDeletingStudyPackId] = useState<string | null>(null)
   const [readerView, setReaderView] = useState<EbookReaderView>("study")
   const [selection, setSelection] = useState<SelectionDraft | null>(null)
@@ -328,6 +331,8 @@ export default function EbookLearningPage() {
       await Promise.all([refreshBooks(), refreshStudyPackHistory()])
       if (completed.status === "failed") {
         toast.error(zh ? "部分学习页生成失败" : "Some study pages failed", { description: completed.error ?? undefined })
+      } else if (completed.status === "cancelled") {
+        toast.info(zh ? "已停止剩余处理，完成的页面仍然保留。" : "Remaining work stopped; completed pages were kept.")
       } else {
         toast.success(zh ? "逐句学习页已准备好。" : "Your sentence-by-sentence study pages are ready.")
       }
@@ -371,6 +376,44 @@ export default function EbookLearningPage() {
       }
     } finally {
       if (studyPackSelectionRef.current === selectionId) setStudying(false)
+    }
+  }
+
+  async function stopStudyPack(pack: EbookStudyPack) {
+    if (stoppingStudyPackId) return
+    const remaining = Math.max(0, pack.totalPageCount - pack.completedPageCount)
+    const rangeLabel = zh
+      ? `第 ${pack.startPage}–${pack.endPage} 页`
+      : `pages ${pack.startPage}–${pack.endPage}`
+    const confirmed = window.confirm(zh
+      ? `停止${rangeLabel}剩余 ${remaining} 页的处理？已完成的 ${pack.completedPageCount} 页翻译和批注会完整保留，之后可继续处理剩余页面。`
+      : `Stop the remaining ${remaining} pages in ${rangeLabel}? All translations and annotations for the ${pack.completedPageCount} completed pages will be kept, and you can resume the rest later.`)
+    if (!confirmed) return
+    setStoppingStudyPackId(pack.id)
+    try {
+      const stopped = await cancelEbookStudyPack(pack.id)
+      if (studyPack?.id === pack.id) {
+        studyPackAbortRef.current?.abort()
+        studyPackSelectionRef.current += 1
+        setStudyPack(stopped)
+        setStudying(false)
+      }
+      const updatedHistory = studyPackHistory.map((candidate) => candidate.id === pack.id
+        ? { ...candidate, ...stopped, pages: undefined }
+        : candidate)
+      await refreshStudyPackHistory(updatedHistory, { revalidate: false })
+      void refreshStudyPackHistory()
+      toast.success(zh ? "已停止剩余处理" : "Remaining work stopped", {
+        description: zh
+          ? `已完成的 ${stopped.completedPageCount} 页翻译和批注仍可继续使用。`
+          : `Translations and annotations for ${stopped.completedPageCount} completed pages remain available.`,
+      })
+    } catch (error) {
+      toast.error(zh ? "无法停止这项任务" : "Could not stop this task", {
+        description: error instanceof Error ? error.message : undefined,
+      })
+    } finally {
+      setStoppingStudyPackId(null)
     }
   }
 
@@ -667,6 +710,8 @@ export default function EbookLearningPage() {
                                   ? <LoaderCircle className="size-4 animate-spin text-primary" />
                                   : pack.status === "ready"
                                     ? <CheckCircle2 className="size-4 text-primary" />
+                                    : pack.status === "cancelled"
+                                      ? <Square className="size-3.5 fill-amber-500/20 text-amber-600" />
                                     : <span className="size-2 rounded-full bg-amber-500" />}
                                 <span>
                                   <span className="block text-sm font-medium">{rangeLabel}</span>
@@ -679,15 +724,24 @@ export default function EbookLearningPage() {
                                 type="button"
                                 variant="ghost"
                                 size="icon-sm"
-                                disabled={deletingStudyPackId !== null}
-                                aria-label={zh ? `删除${rangeLabel}` : `Delete ${rangeLabel}`}
-                                title={zh ? "删除这段阅读范围" : "Delete this analyzed range"}
-                                onClick={() => void removeStudyPack(pack)}
-                                className="my-1 mr-1 self-start text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                disabled={deletingStudyPackId !== null || stoppingStudyPackId !== null}
+                                aria-label={pack.status === "processing"
+                                  ? (zh ? `停止${rangeLabel}剩余处理` : `Stop remaining work for ${rangeLabel}`)
+                                  : (zh ? `删除${rangeLabel}` : `Delete ${rangeLabel}`)}
+                                title={pack.status === "processing"
+                                  ? (zh ? `停止剩余页面并保留已完成的 ${pack.completedPageCount} 页` : `Stop remaining pages and keep ${pack.completedPageCount} completed pages`)
+                                  : (zh ? "删除这段阅读范围" : "Delete this analyzed range")}
+                                onClick={() => void (pack.status === "processing" ? stopStudyPack(pack) : removeStudyPack(pack))}
+                                className={cn(
+                                  "my-1 mr-1 self-start text-muted-foreground",
+                                  pack.status === "processing"
+                                    ? "hover:bg-amber-500/10 hover:text-amber-700"
+                                    : "hover:bg-destructive/10 hover:text-destructive",
+                                )}
                               >
-                                {deletingStudyPackId === pack.id
+                                {deletingStudyPackId === pack.id || stoppingStudyPackId === pack.id
                                   ? <LoaderCircle className="animate-spin" />
-                                  : <Trash2 />}
+                                  : pack.status === "processing" ? <Square /> : <Trash2 />}
                               </Button>
                             </div>
                           )
@@ -695,7 +749,8 @@ export default function EbookLearningPage() {
                       </div>
                     </section>
                   ) : null}
-                  {studyPack?.status === "processing" ? <div className="space-y-2"><div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span>{zh ? "逐页翻译和批注" : "Translating and annotating pages"} · {studyPack.modelTier === "fast" ? "Fast" : "Deep"}</span><div className="flex items-center gap-2"><span>{studyPack.completedPageCount}/{studyPack.totalPageCount}</span>{!studying ? <Button variant="outline" size="sm" onClick={() => void beginStudy(true)}>{zh ? "继续处理" : "Resume"}</Button> : null}</div></div><Progress value={(studyPack.completedPageCount / studyPack.totalPageCount) * 100} /><p className="text-xs text-muted-foreground">{zh ? "每完成一页就会显示在下方，其余页面继续在后台生成。" : "Each completed page appears below while the remaining pages continue in the background."}</p></div> : null}
+                  {studyPack?.status === "processing" ? <div className="space-y-2"><div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground"><span>{zh ? "逐页翻译和批注" : "Translating and annotating pages"} · {studyPack.modelTier === "fast" ? "Fast" : "Deep"}</span><div className="flex items-center gap-2"><span>{studyPack.completedPageCount}/{studyPack.totalPageCount}</span><Button variant="outline" size="sm" disabled={stoppingStudyPackId !== null} onClick={() => void stopStudyPack(studyPack)}>{stoppingStudyPackId === studyPack.id ? <LoaderCircle className="animate-spin" /> : <Square />}{zh ? `停止并保留 ${studyPack.completedPageCount} 页` : `Stop & keep ${studyPack.completedPageCount}`}</Button>{!studying ? <Button variant="outline" size="sm" onClick={() => void beginStudy(true)}>{zh ? "继续处理" : "Resume"}</Button> : null}</div></div><Progress value={(studyPack.completedPageCount / studyPack.totalPageCount) * 100} /><p className="text-xs text-muted-foreground">{zh ? "每完成一页就会保存并显示；停止任务不会删除已经完成的翻译和批注。" : "Each completed page is saved and shown; stopping the task never deletes finished translations or annotations."}</p></div> : null}
+                  {studyPack?.status === "cancelled" ? <div className="flex flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">{zh ? "已停止剩余页面，完成内容已保留" : "Remaining pages stopped; completed work kept"}</p><p className="text-xs text-muted-foreground">{zh ? `已完成 ${studyPack.completedPageCount}/${studyPack.totalPageCount} 页。你现在可以阅读这些页面，或稍后只继续未完成部分。` : `${studyPack.completedPageCount}/${studyPack.totalPageCount} pages are complete. Read them now or resume only the unfinished pages later.`}</p></div><Button variant="outline" size="sm" onClick={() => void beginStudy(true)}>{zh ? `继续剩余 ${studyPack.totalPageCount - studyPack.completedPageCount} 页` : `Resume ${studyPack.totalPageCount - studyPack.completedPageCount} remaining`}</Button></div> : null}
                   {studyPack?.status === "failed" ? <div className="flex flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">{zh ? "部分页面没有生成成功" : "Some pages were not prepared"}</p><p className="text-xs text-muted-foreground">{studyPack.failedPages.length ? `${zh ? "失败页" : "Failed pages"}: ${studyPack.failedPages.join(", ")}` : studyPack.error}</p></div><Button variant="outline" size="sm" onClick={() => void beginStudy(true)}>{zh ? "安全重试" : "Retry safely"}</Button></div> : null}
                 </CardContent>
               </Card>

@@ -1611,6 +1611,29 @@ def save_ebook_study_pack_if_processing(pack: dict, claim_id: Optional[str]) -> 
         return result.rowcount == 1
 
 
+def cancel_ebook_study_pack(pack: dict, claim_id: Optional[str]) -> bool:
+    """Atomically replace an active processing claim with a durable cancelled pack."""
+    ensure_payload_fits(pack, entity_type="ebook study pack")
+    with session_scope() as session:
+        conditions = [
+            schema.ebook_study_packs.c.user_id == pack["userId"],
+            schema.ebook_study_packs.c.pack_id == pack["id"],
+            schema.ebook_study_packs.c.status == "processing",
+        ]
+        if claim_id:
+            conditions.append(schema.ebook_study_packs.c.claim_id == claim_id)
+        result = session.execute(
+            update(schema.ebook_study_packs)
+            .where(*conditions)
+            .values(**{
+                key: value
+                for key, value in _pack_values(pack).items()
+                if key not in {"user_id", "pack_id"}
+            })
+        )
+        return result.rowcount == 1
+
+
 def get_ebook_study_pack(user_id: str, pack_id: str) -> Optional[dict]:
     with session_scope() as session:
         return _get(

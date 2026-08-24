@@ -111,6 +111,7 @@ def main() -> int:
             _normalize_text,
             _pdf_pages,
             begin_ebook_import,
+            cancel_study_pack_for_user,
             create_on_demand_annotation,
             create_study_pack,
             delete_book_for_user,
@@ -323,6 +324,38 @@ def main() -> int:
         delete_study_pack_for_user(user_id, cancelled_pack["id"])
         process_study_pack(user_id, cancelled_pack["id"], None, 8192, cancelled_claim)
         assert get_study_pack_for_user(user_id, cancelled_pack["id"]) is None
+
+        # Cancelling is distinct from deletion: it invalidates the worker claim
+        # while preserving ready page caches and the range card for later resume.
+        fast_cached_page = create_study_pack(
+            user_id,
+            ready["id"],
+            CreateStudyPackRequest(startPage=1, endPage=1, modelTier="fast"),
+        )
+        fast_cached_claim = fast_cached_page.pop("_claimId")
+        process_study_pack(user_id, fast_cached_page["id"], None, 8192, fast_cached_claim)
+        partially_cached_pack = create_study_pack(
+            user_id,
+            ready["id"],
+            CreateStudyPackRequest(startPage=1, endPage=2, modelTier="fast"),
+        )
+        partially_cached_claim = partially_cached_pack.pop("_claimId")
+        before_cancel = get_study_pack_for_user(user_id, partially_cached_pack["id"])
+        assert before_cancel["status"] == "processing"
+        assert before_cancel["completedPageCount"] == 1
+        stopped_pack = cancel_study_pack_for_user(user_id, partially_cached_pack["id"])
+        assert stopped_pack["status"] == "cancelled"
+        assert stopped_pack["completedPageCount"] == 1
+        assert stopped_pack["cancelledPages"] == [2]
+        assert [page["pageNumber"] for page in stopped_pack["pages"]] == [1]
+        process_study_pack(
+            user_id,
+            partially_cached_pack["id"],
+            None,
+            8192,
+            partially_cached_claim,
+        )
+        assert get_study_pack_for_user(user_id, partially_cached_pack["id"])["status"] == "cancelled"
 
         # Fast and Deep use separate caches. A forced retry replaces the
         # processing claim, so a stale worker cannot overwrite resumed progress.
@@ -595,6 +628,23 @@ def main() -> int:
             cookies={"session": other_token},
         )
         assert other_pack_history.status_code == 404
+        route_cancel_pack = create_study_pack(
+            user_id,
+            ready["id"],
+            CreateStudyPackRequest(startPage=3, endPage=4, modelTier="fast"),
+        )
+        cross_user_cancel = client.post(
+            f"/api/v1/ebook-study-packs/{route_cancel_pack['id']}/cancel",
+            cookies={"session": other_token},
+        )
+        assert cross_user_cancel.status_code == 404
+        owner_cancel = client.post(
+            f"/api/v1/ebook-study-packs/{route_cancel_pack['id']}/cancel",
+            cookies={"session": owner_token},
+        )
+        assert owner_cancel.status_code == 200, owner_cancel.text
+        assert owner_cancel.json()["studyPack"]["status"] == "cancelled"
+        assert owner_cancel.json()["studyPack"]["cancelledPages"] == [3, 4]
         route_delete_pack = create_study_pack(
             user_id,
             ready["id"],

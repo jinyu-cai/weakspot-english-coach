@@ -25,6 +25,7 @@ from app.services.ebook_service import (
     EbookImportError,
     EbookProcessingError,
     begin_ebook_import,
+    cancel_study_pack_for_user,
     create_on_demand_annotation,
     create_study_pack,
     delete_book_for_user,
@@ -222,6 +223,19 @@ def delete_study_pack(pack_id: str, identity: Identity = Depends(resolve_identit
         return delete_study_pack_for_user(identity.user_id, pack_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/ebook-study-packs/{pack_id}/cancel", response_model=EbookStudyPackResponse)
+def cancel_study_pack(pack_id: str, identity: Identity = Depends(resolve_identity)):
+    _signed_in(identity)
+    try:
+        return {"studyPack": cancel_study_pack_for_user(identity.user_id, pack_id)}
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except EbookProcessingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/ebook-study-packs/{pack_id}/annotations", response_model=EbookAnnotationResponse)
