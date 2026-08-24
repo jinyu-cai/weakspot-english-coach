@@ -6,7 +6,7 @@ small page-sized text units so ebook analysis remains efficient to query.
 
 from __future__ import annotations
 
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 import hashlib
 from html.parser import HTMLParser
 import json
@@ -1005,6 +1005,40 @@ def _translate_and_cache_page(
     return result
 
 
+def _annotate_and_cache_page(
+    user_id: str,
+    book_id: str,
+    page: dict,
+    units: list[dict],
+    translation: EbookTranslationAIResult,
+    language: str,
+    model_tier: EbookModelTier,
+    provider: Optional[LLMProviderConfig],
+    max_output_tokens: Optional[int],
+    trace_id: str,
+) -> None:
+    annotations = _generate_annotation_result(
+        units,
+        language,
+        model_tier,
+        provider,
+        max_output_tokens,
+        trace_id,
+    )
+    analysis, _ = _normalized_analysis(
+        user_id,
+        book_id,
+        page,
+        language,
+        model_tier,
+        EbookPageAIResult(
+            units=translation.units,
+            annotations=annotations.annotations,
+        ),
+    )
+    save_ebook_analysis_page(analysis)
+
+
 def _normalized_analysis(
     user_id: str,
     book_id: str,
@@ -1210,167 +1244,188 @@ def process_study_pack(
                 "translation": _translation_result_from_cache(cached, units),
             })
 
-        def next_translation(
-            executor: ThreadPoolExecutor,
-            start_index: int,
-        ) -> tuple[Optional[int], Optional[Future[EbookTranslationAIResult]]]:
-            for candidate_index in range(start_index, len(work_items)):
-                candidate = work_items[candidate_index]
-                if (
-                    candidate.get("page")
-                    and candidate.get("units")
-                    and candidate.get("translation") is None
-                    and (candidate.get("cached") or {}).get("status") != "ready"
-                ):
-                    future = executor.submit(
-                        _translate_and_cache_page,
-                        user_id,
-                        pack["bookId"],
-                        candidate["page"],
-                        candidate["units"],
-                        pack["comparisonLanguage"],
-                        model_tier,
-                        provider,
-                        max_output_tokens,
-                        f"{pack_id}:{candidate['pageNumber']}",
-                        candidate.get("cached"),
-                    )
-                    return candidate_index, future
-            return None, None
-
         circuit_error: Optional[Exception] = None
-        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="ebook-qwen") as executor:
-            future_index, translation_future = next_translation(executor, 0)
-            for item_index, item in enumerate(work_items):
+        annotation_futures: dict[Future[None], int] = {}
+        translation_items: list[dict] = []
+
+        def persist_progress() -> bool:
+            if not _study_pack_claim_is_current(user_id, pack_id, claim_id):
+                return False
+            current = get_ebook_study_pack(user_id, pack_id)
+            if not current:
+                return False
+            current.update({
+                "completedPageCount": completed,
+                "failedPages": sorted(set(failed)),
+                "updatedAt": now_iso(),
+            })
+            if not save_ebook_study_pack_if_processing(current, claim_id):
+                return False
+            pack.update(current)
+            return True
+
+        def submit_annotation(executor: ThreadPoolExecutor, item: dict) -> None:
+            page_number = int(item["pageNumber"])
+            future = executor.submit(
+                _annotate_and_cache_page,
+                user_id,
+                pack["bookId"],
+                item["page"],
+                item["units"],
+                item["translation"],
+                pack["comparisonLanguage"],
+                model_tier,
+                provider,
+                max_output_tokens,
+                f"{pack_id}:{page_number}",
+            )
+            annotation_futures[future] = page_number
+
+        def record_annotation_result(future: Future[None]) -> bool:
+            nonlocal completed
+            page_number = annotation_futures.pop(future)
+            try:
+                future.result()
+                completed += 1
+            except Exception:
+                if page_number not in failed:
+                    failed.append(page_number)
+            return persist_progress()
+
+        worker_count = max(1, min(15, len(work_items)))
+        translation_executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="ebook-qwen",
+        )
+        annotation_executor = ThreadPoolExecutor(
+            max_workers=worker_count,
+            thread_name_prefix="ebook-luna",
+        )
+        executors_abandoned = False
+        try:
+            # Start every annotation that already has a durable translation cache.
+            # New translations join the same pool as soon as Qwen finishes each page.
+            for item in work_items:
+                page_number = int(item["pageNumber"])
+                cached = item.get("cached")
+                if item.get("error"):
+                    failed.append(page_number)
+                elif cached and cached.get("status") == "ready":
+                    completed += 1
+                elif not item["units"]:
+                    page = item["page"]
+                    now = now_iso()
+                    save_ebook_analysis_page({
+                        "id": item["cacheId"],
+                        "cacheId": item["cacheId"],
+                        "userId": user_id,
+                        "bookId": pack["bookId"],
+                        "pageNumber": page_number,
+                        "chapterTitle": page.get("chapterTitle"),
+                        "comparisonLanguage": pack["comparisonLanguage"],
+                        "comparisonMode": pack["comparisonMode"],
+                        "modelTier": model_tier,
+                        "analysisVersion": ANALYSIS_VERSION,
+                        "status": "ready",
+                        "units": [],
+                        "annotationIds": [],
+                        "createdAt": (cached or {}).get("createdAt", now),
+                        "updatedAt": now,
+                    })
+                    completed += 1
+                elif item.get("translation") is not None:
+                    submit_annotation(annotation_executor, item)
+                else:
+                    translation_items.append(item)
+
+            logger.info(
+                "ebook_pipeline_started pack=%s pages=%d qwen_workers=1 "
+                "luna_workers=%d cached_annotations=%d qwen_pages=%d",
+                pack_id,
+                len(work_items),
+                worker_count,
+                len(annotation_futures),
+                len(translation_items),
+            )
+            if not persist_progress():
+                executors_abandoned = True
+                translation_executor.shutdown(wait=False, cancel_futures=True)
+                annotation_executor.shutdown(wait=False, cancel_futures=True)
+                return
+
+            # Qwen deliberately remains serial so the local GPU handles one page at
+            # a time. Luna work never blocks this loop and can fan out to the pack max.
+            for item_index, item in enumerate(translation_items):
                 if not _study_pack_claim_is_current(user_id, pack_id, claim_id):
-                    if translation_future:
-                        translation_future.cancel()
+                    executors_abandoned = True
+                    translation_executor.shutdown(wait=False, cancel_futures=True)
+                    annotation_executor.shutdown(wait=False, cancel_futures=True)
                     return
                 page_number = int(item["pageNumber"])
+                translation_future = translation_executor.submit(
+                    _translate_and_cache_page,
+                    user_id,
+                    pack["bookId"],
+                    item["page"],
+                    item["units"],
+                    pack["comparisonLanguage"],
+                    model_tier,
+                    provider,
+                    max_output_tokens,
+                    f"{pack_id}:{page_number}",
+                    item.get("cached"),
+                )
                 try:
-                    if item.get("error"):
-                        raise EbookProcessingError("The extracted page is missing.")
-                    cached = item.get("cached")
-                    if cached and cached.get("status") == "ready":
-                        completed += 1
-                    else:
-                        page = item["page"]
-                        units = item["units"]
-                        if not units:
-                            now = now_iso()
-                            save_ebook_analysis_page({
-                                "id": item["cacheId"],
-                                "cacheId": item["cacheId"],
-                                "userId": user_id,
-                                "bookId": pack["bookId"],
-                                "pageNumber": page_number,
-                                "chapterTitle": page.get("chapterTitle"),
-                                "comparisonLanguage": pack["comparisonLanguage"],
-                                "comparisonMode": pack["comparisonMode"],
-                                "modelTier": model_tier,
-                                "analysisVersion": ANALYSIS_VERSION,
-                                "status": "ready",
-                                "units": [],
-                                "annotationIds": [],
-                                "createdAt": (cached or {}).get("createdAt", now),
-                                "updatedAt": now,
-                            })
-                            completed += 1
-                        else:
-                            translation = item.get("translation")
-                            if translation is None:
-                                if future_index != item_index or translation_future is None:
-                                    raise EbookProcessingError(
-                                        "The translation pipeline lost its page order."
-                                    )
-                                try:
-                                    translation = translation_future.result()
-                                except EbookTranslationUnavailable as exc:
-                                    remaining_failed = [
-                                        int(remaining["pageNumber"])
-                                        for remaining in work_items[item_index:]
-                                        if not (
-                                            remaining.get("cached")
-                                            and remaining["cached"].get("status") == "ready"
-                                        )
-                                    ]
-                                    failed.extend(
-                                        number
-                                        for number in remaining_failed
-                                        if number not in failed
-                                    )
-                                    circuit_error = EbookProcessingError(
-                                        "Translation stopped after two consecutive failures; "
-                                        "remaining pages were not attempted."
-                                    )
-                                    logger.warning(
-                                        "ebook_translation_circuit_open "
-                                        "pack=%s page=%s remaining=%d",
-                                        pack_id,
-                                        page_number,
-                                        len(remaining_failed),
-                                    )
-                                    raise circuit_error from exc
-                                except Exception:
-                                    future_index, translation_future = next_translation(
-                                        executor,
-                                        item_index + 1,
-                                    )
-                                    raise
-                                item["translation"] = translation
-                                item["cached"] = get_ebook_analysis_page(
-                                    user_id,
-                                    item["cacheId"],
-                                )
-                                future_index, translation_future = next_translation(
-                                    executor,
-                                    item_index + 1,
-                                )
-
-                            annotations = _generate_annotation_result(
-                                units,
-                                pack["comparisonLanguage"],
-                                model_tier,
-                                provider,
-                                max_output_tokens,
-                                f"{pack_id}:{page_number}",
-                            )
-                            analysis, _ = _normalized_analysis(
-                                user_id,
-                                pack["bookId"],
-                                page,
-                                pack["comparisonLanguage"],
-                                model_tier,
-                                EbookPageAIResult(
-                                    units=translation.units,
-                                    annotations=annotations.annotations,
-                                ),
-                            )
-                            save_ebook_analysis_page(analysis)
-                            completed += 1
+                    item["translation"] = translation_future.result()
+                    if not _study_pack_claim_is_current(user_id, pack_id, claim_id):
+                        executors_abandoned = True
+                        translation_executor.shutdown(wait=False, cancel_futures=True)
+                        annotation_executor.shutdown(wait=False, cancel_futures=True)
+                        return
+                    submit_annotation(annotation_executor, item)
+                except EbookTranslationUnavailable as exc:
+                    remaining_failed = [
+                        int(remaining["pageNumber"])
+                        for remaining in translation_items[item_index:]
+                    ]
+                    failed.extend(
+                        number for number in remaining_failed if number not in failed
+                    )
+                    circuit_error = EbookProcessingError(
+                        "Translation stopped after two consecutive failures; "
+                        "remaining pages were not attempted."
+                    )
+                    logger.warning(
+                        "ebook_translation_circuit_open pack=%s page=%s remaining=%d",
+                        pack_id,
+                        page_number,
+                        len(remaining_failed),
+                    )
+                    break
                 except Exception:
                     if page_number not in failed:
                         failed.append(page_number)
 
-                if not _study_pack_claim_is_current(user_id, pack_id, claim_id):
-                    if translation_future:
-                        translation_future.cancel()
+                # Report Luna pages that happened to finish while Qwen was working,
+                # without ever waiting for Luna before translating the next page.
+                for future in [future for future in annotation_futures if future.done()]:
+                    if not record_annotation_result(future):
+                        executors_abandoned = True
+                        translation_executor.shutdown(wait=False, cancel_futures=True)
+                        annotation_executor.shutdown(wait=False, cancel_futures=True)
+                        return
+
+            # All outstanding external annotation requests finish independently.
+            for future in as_completed(list(annotation_futures)):
+                if not record_annotation_result(future):
+                    executors_abandoned = True
+                    translation_executor.shutdown(wait=False, cancel_futures=True)
+                    annotation_executor.shutdown(wait=False, cancel_futures=True)
                     return
-                current = get_ebook_study_pack(user_id, pack_id)
-                if not current:
-                    return
-                pack = current
-                pack.update({
-                    "completedPageCount": completed,
-                    "failedPages": failed,
-                    "updatedAt": now_iso(),
-                })
-                if not save_ebook_study_pack_if_processing(pack, claim_id):
-                    return
-                if circuit_error is not None:
-                    if translation_future:
-                        translation_future.cancel()
-                    break
+        finally:
+            if not executors_abandoned:
+                translation_executor.shutdown(wait=True)
+                annotation_executor.shutdown(wait=True)
 
         if circuit_error is not None:
             raise circuit_error

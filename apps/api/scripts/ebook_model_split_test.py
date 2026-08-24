@@ -1,6 +1,7 @@
 """Contract checks that ebook translation and annotation use separate models."""
 
-from threading import Event
+from collections import Counter
+from threading import Barrier, Lock
 from unittest.mock import patch
 
 from app.models.ebook import (
@@ -142,7 +143,6 @@ def pipeline_and_circuit_contract() -> None:
     saved_statuses: list[tuple[int, str]] = []
     translation_calls: list[int] = []
     annotation_calls: list[int] = []
-    page_two_translation_started = Event()
     page_one_annotation_attempts = 0
 
     def page_number_from_trace(trace_id: str) -> int:
@@ -152,8 +152,6 @@ def pipeline_and_circuit_contract() -> None:
         del language, provider, max_output_tokens
         page_number = page_number_from_trace(trace_id)
         translation_calls.append(page_number)
-        if page_number == 2:
-            page_two_translation_started.set()
         if page_number == 3:
             raise ebook_service.EbookTranslationUnavailable("two failed requests")
         return EbookTranslationAIResult(
@@ -172,9 +170,6 @@ def pipeline_and_circuit_contract() -> None:
         page_number = page_number_from_trace(trace_id)
         annotation_calls.append(page_number)
         if page_number == 1:
-            assert page_two_translation_started.wait(2), (
-                "page 2 translation did not overlap page 1 annotation"
-            )
             page_one_annotation_attempts += 1
             if page_one_annotation_attempts == 1:
                 raise ValueError("temporary annotation failure")
@@ -253,7 +248,7 @@ def pipeline_and_circuit_contract() -> None:
 
     assert translation_calls == [1, 2, 3, 3]
     assert translation_calls.count(1) == 1
-    assert annotation_calls == [1, 2, 1]
+    assert Counter(annotation_calls) == Counter({1: 2, 2: 1})
     assert (1, ebook_service.TRANSLATION_READY_STATUS) in saved_statuses
     assert (2, ebook_service.TRANSLATION_READY_STATUS) in saved_statuses
     assert saved_statuses.index(
@@ -268,12 +263,147 @@ def pipeline_and_circuit_contract() -> None:
     assert "remaining pages were not attempted" in pack["error"]
 
 
+def parallel_annotation_contract() -> None:
+    page_count = 4
+    pack = {
+        "id": "parallel-pack",
+        "userId": "reader",
+        "bookId": "parallel-book",
+        "bookTitle": "Parallel Book",
+        "startPage": 1,
+        "endPage": page_count,
+        "comparisonLanguage": "zh-CN",
+        "comparisonMode": "translation",
+        "modelTier": "fast",
+        "status": "processing",
+        "processingClaimId": "parallel-claim",
+        "completedPageCount": 0,
+        "failedPages": [],
+    }
+    source = "Careful readers distinguish a transferable insight from a memorable detail."
+    pages = {
+        number: {
+            "id": f"parallel-page-{number}",
+            "bookId": "parallel-book",
+            "pageNumber": number,
+            "text": source,
+            "textHash": f"parallel-hash-{number}",
+            "chapterTitle": None,
+        }
+        for number in range(1, page_count + 1)
+    }
+    analyses: dict[str, dict] = {}
+    translation_calls: list[int] = []
+    annotation_calls: list[int] = []
+    annotation_barrier = Barrier(page_count)
+    counter_lock = Lock()
+    active_translations = 0
+    max_active_translations = 0
+    active_annotations = 0
+    max_active_annotations = 0
+
+    def page_number_from_trace(trace_id: str) -> int:
+        return int(trace_id.rsplit(":", 1)[-1])
+
+    def translate_stub(units, language, provider, max_output_tokens, trace_id):
+        nonlocal active_translations, max_active_translations
+        del language, provider, max_output_tokens
+        page_number = page_number_from_trace(trace_id)
+        with counter_lock:
+            active_translations += 1
+            max_active_translations = max(max_active_translations, active_translations)
+        try:
+            translation_calls.append(page_number)
+            return EbookTranslationAIResult(
+                units=[
+                    EbookAIUnit(
+                        unitId=unit["unitId"],
+                        counterpartText=f"第{page_number}页的中文翻译。",
+                    )
+                    for unit in units
+                ]
+            )
+        finally:
+            with counter_lock:
+                active_translations -= 1
+
+    def annotate_stub(units, language, model_tier, provider, max_output_tokens, trace_id):
+        nonlocal active_annotations, max_active_annotations
+        del language, model_tier, provider, max_output_tokens
+        page_number = page_number_from_trace(trace_id)
+        with counter_lock:
+            active_annotations += 1
+            max_active_annotations = max(max_active_annotations, active_annotations)
+        try:
+            annotation_calls.append(page_number)
+            annotation_barrier.wait(timeout=5)
+            return EbookAnnotationsAIResult(
+                annotations=[_annotation(units[0]["unitId"])]
+            )
+        finally:
+            with counter_lock:
+                active_annotations -= 1
+
+    def save_analysis(row: dict) -> None:
+        analyses[row["cacheId"]] = row.copy()
+
+    def get_pack(user_id: str, pack_id: str):
+        del user_id, pack_id
+        return pack.copy()
+
+    def save_pack(row: dict, claim_id: str | None) -> bool:
+        del claim_id
+        pack.update(row)
+        return True
+
+    with (
+        patch.object(ebook_service, "get_ebook_study_pack", side_effect=get_pack),
+        patch.object(ebook_service, "get_ebook", return_value={"id": "parallel-book"}),
+        patch.object(
+            ebook_service,
+            "get_ebook_page",
+            side_effect=lambda user_id, book_id, number: pages.get(number),
+        ),
+        patch.object(
+            ebook_service,
+            "get_ebook_analysis_page",
+            side_effect=lambda user_id, cache_id: analyses.get(cache_id),
+        ),
+        patch.object(ebook_service, "save_ebook_analysis_page", side_effect=save_analysis),
+        patch.object(ebook_service, "save_ebook_annotation"),
+        patch.object(
+            ebook_service,
+            "save_ebook_study_pack_if_processing",
+            side_effect=save_pack,
+        ),
+        patch.object(ebook_service, "update_ebook_last_studied_if_current"),
+        patch.object(ebook_service, "_generate_translation_result", side_effect=translate_stub),
+        patch.object(ebook_service, "_generate_annotation_result", side_effect=annotate_stub),
+    ):
+        ebook_service.process_study_pack(
+            "reader",
+            "parallel-pack",
+            None,
+            4000,
+            "parallel-claim",
+        )
+
+    assert translation_calls == [1, 2, 3, 4]
+    assert max_active_translations == 1
+    assert sorted(annotation_calls) == [1, 2, 3, 4]
+    assert max_active_annotations == page_count
+    assert pack["status"] == "ready"
+    assert pack["completedPageCount"] == page_count
+    assert pack["failedPages"] == []
+
+
 def main() -> None:
     split_call_contract()
+    parallel_annotation_contract()
     pipeline_and_circuit_contract()
     print(
-        "Ebook translation is durable and pipelined; annotations retry independently; "
-        "translation failures open the circuit."
+        "Qwen translation is serial and durable; Luna annotations fan out across all "
+        "pages and retry independently; translation failures open the circuit."
     )
 
 
