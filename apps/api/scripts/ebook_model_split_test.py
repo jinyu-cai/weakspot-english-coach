@@ -111,6 +111,33 @@ def split_call_contract() -> None:
     assert ":annotations:" in calls[2]["trace_id"]
 
 
+def nonlinguistic_translation_contract() -> None:
+    page = {
+        "pageNumber": 52,
+        "text": "A transferable insight matters.\n\n42",
+    }
+    rows = ebook_service._normalized_translation_units(
+        page,
+        "zh-CN",
+        [
+            EbookAIUnit(unitId="p52_u0", counterpartText="可迁移的见解很重要。"),
+            EbookAIUnit(unitId="p52_u1", counterpartText="42"),
+        ],
+    )
+    assert rows[1]["sourceText"] == "42"
+    assert rows[1]["counterpartText"] == "42"
+
+    try:
+        ebook_service._normalized_translation_units(
+            {"pageNumber": 1, "text": "Translate this sentence."},
+            "zh-CN",
+            [EbookAIUnit(unitId="p1_u0", counterpartText="Translate this sentence.")],
+        )
+        raise AssertionError("English prose must not pass through unchanged")
+    except ebook_service.EbookProcessingError:
+        pass
+
+
 def pipeline_and_circuit_contract() -> None:
     pack = {
         "id": "pipeline-pack",
@@ -506,6 +533,7 @@ def cancellation_contract() -> None:
 
 def main() -> None:
     split_call_contract()
+    nonlinguistic_translation_contract()
     parallel_annotation_contract()
     cancellation_contract()
     pipeline_and_circuit_contract()

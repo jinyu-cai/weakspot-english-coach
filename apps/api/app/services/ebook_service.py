@@ -905,14 +905,17 @@ def _normalized_translation_units(
         {**source, "counterpartText": ai.counterpartText.strip()}
         for source, ai in zip(units, ai_units)
     ]
+    if any(not row["counterpartText"] for row in unit_rows):
+        raise EbookProcessingError("The model returned an empty counterpart.")
     if any(
-        not row["counterpartText"]
-        or row["counterpartText"].casefold() == row["sourceText"].strip().casefold()
+        _english_words(row["sourceText"])
+        and row["counterpartText"].casefold() == row["sourceText"].strip().casefold()
         for row in unit_rows
     ):
-        raise EbookProcessingError("The model returned an empty or unchanged counterpart.")
+        raise EbookProcessingError("The model returned unchanged English text.")
     if language == "zh-CN" and any(
-        not re.search(r"[\u3400-\u9fff]", row["counterpartText"])
+        _english_words(row["sourceText"])
+        and not re.search(r"[\u3400-\u9fff]", row["counterpartText"])
         for row in unit_rows
     ):
         raise EbookProcessingError("The model did not return a Chinese counterpart for every unit.")
@@ -1289,7 +1292,14 @@ def process_study_pack(
             try:
                 future.result()
                 completed += 1
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "ebook_annotation_page_failed pack=%s page=%s error=%s detail=%s",
+                    pack_id,
+                    page_number,
+                    type(exc).__name__,
+                    str(exc)[:240],
+                )
                 if page_number not in failed:
                     failed.append(page_number)
             return persist_progress()
@@ -1415,7 +1425,14 @@ def process_study_pack(
                         len(remaining_failed),
                     )
                     break
-                except Exception:
+                except Exception as exc:
+                    logger.warning(
+                        "ebook_translation_page_failed pack=%s page=%s error=%s detail=%s",
+                        pack_id,
+                        page_number,
+                        type(exc).__name__,
+                        str(exc)[:240],
+                    )
                     if page_number not in failed:
                         failed.append(page_number)
 
