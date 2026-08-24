@@ -119,6 +119,7 @@ GET/PATCH/DELETE /ebooks/{book_id}
 GET  /ebooks/{book_id}/pages           # startPage/endPage, at most 15 pages
 POST /ebooks/{book_id}/study-packs     # 1-15 pages, Fast/Deep, safe retry
 GET  /ebook-study-packs/{pack_id}      # page progress and grounded study pack
+POST /ebook-study-packs/{pack_id}/cancel # stop remaining work and keep completed pages
 POST /ebook-study-packs/{pack_id}/annotations
 PUT  /ebook-annotations/{annotation_id}/learning-target
 GET  /ebook-learning-targets             # optionally dueOnly=true

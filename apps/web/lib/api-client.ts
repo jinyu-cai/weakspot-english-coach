@@ -1392,6 +1392,7 @@ export async function createEbookStudyPack(
       totalPageCount: pageNumbers.length,
       completedPageCount: pageNumbers.length,
       failedPages: [],
+      cancelledPages: [],
       pages: pageNumbers.map((pageNumber) => {
         const unitId = `p${pageNumber}_u0`
         const sourceText = "Although the plan looked simple at first, it turned out to require more patience than anyone expected."
@@ -1521,6 +1522,34 @@ export async function deleteEbookStudyPack(
     `/ebook-study-packs/${packId}`,
     { method: "DELETE" },
   )
+}
+
+export async function cancelEbookStudyPack(packId: string): Promise<EbookStudyPack> {
+  if (USE_MOCK) {
+    await delay(250)
+    const index = mockStudyPacks.findIndex((row) => row.id === packId)
+    if (index < 0) throw new Error("Study pack not found")
+    const current = mockStudyPacks[index]
+    const completedPages = current.pages ?? []
+    const completedPageNumbers = new Set(completedPages.map((page) => page.pageNumber))
+    const cancelled: EbookStudyPack = {
+      ...current,
+      status: "cancelled",
+      completedPageCount: completedPages.length,
+      cancelledPages: Array.from(
+        { length: current.totalPageCount },
+        (_, offset) => current.startPage + offset,
+      ).filter((pageNumber) => !completedPageNumbers.has(pageNumber)),
+      updatedAt: new Date().toISOString(),
+    }
+    mockStudyPacks[index] = cancelled
+    return cancelled
+  }
+  const { studyPack } = await apiFetch<{ studyPack: EbookStudyPack }>(
+    `/ebook-study-packs/${packId}/cancel`,
+    { method: "POST" },
+  )
+  return studyPack
 }
 
 export async function waitForEbookStudyPack(

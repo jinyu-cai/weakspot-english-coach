@@ -1,7 +1,7 @@
 """Contract checks that ebook translation and annotation use separate models."""
 
 from collections import Counter
-from threading import Barrier, Lock
+from threading import Barrier, Event, Lock, Thread
 from unittest.mock import patch
 
 from app.models.ebook import (
@@ -397,13 +397,122 @@ def parallel_annotation_contract() -> None:
     assert pack["failedPages"] == []
 
 
+def cancellation_contract() -> None:
+    source = "Careful readers distinguish a transferable insight from a memorable detail."
+    page = {
+        "id": "cancel-page-1",
+        "bookId": "cancel-book",
+        "pageNumber": 1,
+        "text": source,
+        "textHash": "cancel-hash-1",
+        "chapterTitle": None,
+    }
+    units = ebook_service.sentence_units(source, 1)
+    translation = EbookTranslationAIResult(
+        units=[
+            EbookAIUnit(unitId=unit["unitId"], counterpartText="认真阅读可区分可迁移的见解。")
+            for unit in units
+        ]
+    )
+    cache_id = ebook_service._analysis_cache_id("cancel-book", page, "zh-CN", "fast")
+    analyses = {
+        cache_id: ebook_service._translation_ready_analysis(
+            "reader",
+            "cancel-book",
+            page,
+            "zh-CN",
+            "fast",
+            translation,
+        )
+    }
+    pack = {
+        "id": "cancel-pack",
+        "userId": "reader",
+        "bookId": "cancel-book",
+        "bookTitle": "Cancel Book",
+        "startPage": 1,
+        "endPage": 1,
+        "comparisonLanguage": "zh-CN",
+        "comparisonMode": "translation",
+        "modelTier": "fast",
+        "status": "processing",
+        "processingClaimId": "cancel-claim",
+        "completedPageCount": 0,
+        "failedPages": [],
+    }
+    annotation_started = Event()
+    progress_persisted = Event()
+    release_annotation = Event()
+    analysis_saved = Event()
+
+    def annotate_stub(units, language, model_tier, provider, max_output_tokens, trace_id):
+        del language, model_tier, provider, max_output_tokens, trace_id
+        annotation_started.set()
+        assert release_annotation.wait(timeout=10)
+        return EbookAnnotationsAIResult(
+            annotations=[_annotation(units[0]["unitId"])]
+        )
+
+    def get_pack(user_id: str, pack_id: str):
+        del user_id, pack_id
+        return pack.copy()
+
+    def save_pack(row: dict, claim_id: str | None) -> bool:
+        if pack.get("status") != "processing" or pack.get("processingClaimId") != claim_id:
+            return False
+        pack.update(row)
+        progress_persisted.set()
+        return True
+
+    def save_analysis(row: dict) -> None:
+        analyses[row["cacheId"]] = row.copy()
+        if row.get("status") == "ready":
+            analysis_saved.set()
+
+    with (
+        patch.object(ebook_service, "get_ebook_study_pack", side_effect=get_pack),
+        patch.object(ebook_service, "get_ebook", return_value={"id": "cancel-book"}),
+        patch.object(ebook_service, "get_ebook_page", return_value=page),
+        patch.object(
+            ebook_service,
+            "get_ebook_analysis_page",
+            side_effect=lambda user_id, requested_cache_id: analyses.get(requested_cache_id),
+        ),
+        patch.object(ebook_service, "save_ebook_analysis_page", side_effect=save_analysis),
+        patch.object(ebook_service, "save_ebook_annotation"),
+        patch.object(
+            ebook_service,
+            "save_ebook_study_pack_if_processing",
+            side_effect=save_pack,
+        ),
+        patch.object(ebook_service, "_generate_annotation_result", side_effect=annotate_stub),
+    ):
+        worker = Thread(
+            target=ebook_service.process_study_pack,
+            args=("reader", "cancel-pack", None, 4000, "cancel-claim"),
+        )
+        worker.start()
+        assert annotation_started.wait(timeout=3)
+        assert progress_persisted.wait(timeout=3)
+        pack.update({"status": "cancelled", "processingClaimId": None})
+        worker.join(timeout=4)
+        assert not worker.is_alive(), "cancelled pack remained blocked on an external request"
+        release_annotation.set()
+        assert analysis_saved.wait(timeout=3)
+
+    assert pack["status"] == "cancelled"
+    assert analyses[cache_id]["status"] == "ready"
+
+
 def main() -> None:
     split_call_contract()
     parallel_annotation_contract()
+    cancellation_contract()
     pipeline_and_circuit_contract()
     print(
         "Qwen translation is serial and durable; Luna annotations fan out across all "
-        "pages and retry independently; translation failures open the circuit."
+        "pages and retry independently; cancellation releases the pack without "
+        "discarding completed work; translation failures open the circuit."
     )
 
 

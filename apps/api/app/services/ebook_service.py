@@ -6,7 +6,7 @@ small page-sized text units so ebook analysis remains efficient to query.
 
 from __future__ import annotations
 
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 import hashlib
 from html.parser import HTMLParser
 import json
@@ -24,6 +24,7 @@ from app.config import settings
 from app.core.mastery import DEFAULT_MASTERY, update_skill_from_practice
 from app.core.taxonomy import ERROR_TAXONOMY
 from app.db.repositories import (
+    cancel_ebook_study_pack,
     delete_ebook_study_pack,
     delete_ebook_learning_target,
     delete_ebook_rows,
@@ -1176,6 +1177,7 @@ def create_study_pack(user_id: str, book_id: str, req: CreateStudyPackRequest) -
         "totalPageCount": req.endPage - req.startPage + 1,
         "completedPageCount": int((existing or {}).get("completedPageCount", 0)),
         "failedPages": [],
+        "cancelledPages": [],
         "error": None,
         "processingClaimId": claim_id,
         "createdAt": existing.get("createdAt", now) if existing else now,
@@ -1302,6 +1304,17 @@ def process_study_pack(
             thread_name_prefix="ebook-luna",
         )
         executors_abandoned = False
+
+        def abandon_executors() -> None:
+            nonlocal executors_abandoned
+            if executors_abandoned:
+                return
+            executors_abandoned = True
+            for future in annotation_futures:
+                future.cancel()
+            translation_executor.shutdown(wait=False, cancel_futures=True)
+            annotation_executor.shutdown(wait=False, cancel_futures=True)
+
         try:
             # Start every annotation that already has a durable translation cache.
             # New translations join the same pool as soon as Qwen finishes each page.
@@ -1348,18 +1361,14 @@ def process_study_pack(
                 len(translation_items),
             )
             if not persist_progress():
-                executors_abandoned = True
-                translation_executor.shutdown(wait=False, cancel_futures=True)
-                annotation_executor.shutdown(wait=False, cancel_futures=True)
+                abandon_executors()
                 return
 
             # Qwen deliberately remains serial so the local GPU handles one page at
             # a time. Luna work never blocks this loop and can fan out to the pack max.
             for item_index, item in enumerate(translation_items):
                 if not _study_pack_claim_is_current(user_id, pack_id, claim_id):
-                    executors_abandoned = True
-                    translation_executor.shutdown(wait=False, cancel_futures=True)
-                    annotation_executor.shutdown(wait=False, cancel_futures=True)
+                    abandon_executors()
                     return
                 page_number = int(item["pageNumber"])
                 translation_future = translation_executor.submit(
@@ -1376,11 +1385,15 @@ def process_study_pack(
                     item.get("cached"),
                 )
                 try:
+                    while not translation_future.done():
+                        wait({translation_future}, timeout=2)
+                        if not _study_pack_claim_is_current(user_id, pack_id, claim_id):
+                            translation_future.cancel()
+                            abandon_executors()
+                            return
                     item["translation"] = translation_future.result()
                     if not _study_pack_claim_is_current(user_id, pack_id, claim_id):
-                        executors_abandoned = True
-                        translation_executor.shutdown(wait=False, cancel_futures=True)
-                        annotation_executor.shutdown(wait=False, cancel_futures=True)
+                        abandon_executors()
                         return
                     submit_annotation(annotation_executor, item)
                 except EbookTranslationUnavailable as exc:
@@ -1410,18 +1423,24 @@ def process_study_pack(
                 # without ever waiting for Luna before translating the next page.
                 for future in [future for future in annotation_futures if future.done()]:
                     if not record_annotation_result(future):
-                        executors_abandoned = True
-                        translation_executor.shutdown(wait=False, cancel_futures=True)
-                        annotation_executor.shutdown(wait=False, cancel_futures=True)
+                        abandon_executors()
                         return
 
             # All outstanding external annotation requests finish independently.
-            for future in as_completed(list(annotation_futures)):
-                if not record_annotation_result(future):
-                    executors_abandoned = True
-                    translation_executor.shutdown(wait=False, cancel_futures=True)
-                    annotation_executor.shutdown(wait=False, cancel_futures=True)
+            pending_annotations = set(annotation_futures)
+            while pending_annotations:
+                done, pending_annotations = wait(
+                    pending_annotations,
+                    timeout=2,
+                    return_when=FIRST_COMPLETED,
+                )
+                if not _study_pack_claim_is_current(user_id, pack_id, claim_id):
+                    abandon_executors()
                     return
+                for future in done:
+                    if not record_annotation_result(future):
+                        abandon_executors()
+                        return
         finally:
             if not executors_abandoned:
                 translation_executor.shutdown(wait=True)
@@ -1493,6 +1512,13 @@ def get_study_pack_for_user(user_id: str, pack_id: str) -> Optional[dict]:
     # public progress from durable ready-page caches so the client never sees
     # completed work disappear or the count move backwards during a retry.
     public["completedPageCount"] = len(pages)
+    if public.get("status") == "cancelled":
+        ready_page_numbers = {int(page["pageNumber"]) for page in pages}
+        public["cancelledPages"] = [
+            page_number
+            for page_number in range(int(pack["startPage"]), int(pack["endPage"]) + 1)
+            if page_number not in ready_page_numbers
+        ]
     return {**public, "pages": pages}
 
 
@@ -1530,6 +1556,49 @@ def delete_study_pack_for_user(user_id: str, pack_id: str) -> dict:
         "bookId": pack["bookId"],
         "nextStudyPackId": replacement.get("id") if replacement else None,
     }
+
+
+def cancel_study_pack_for_user(user_id: str, pack_id: str) -> dict:
+    pack = get_ebook_study_pack(user_id, pack_id)
+    if not pack or pack.get("deletedAt"):
+        raise LookupError("Ebook study pack not found.")
+    if pack.get("status") == "cancelled":
+        return get_study_pack_for_user(user_id, pack_id) or _public(pack)
+    if pack.get("status") != "processing":
+        raise ValueError("Only a processing ebook study pack can be cancelled.")
+
+    partial = get_study_pack_for_user(user_id, pack_id) or _public(pack)
+    cancelled_at = now_iso()
+    claim_id = pack.get("processingClaimId")
+    ready_page_numbers = {
+        int(page["pageNumber"])
+        for page in partial.get("pages") or []
+    }
+    pack.update({
+        "status": "cancelled",
+        "completedPageCount": len(ready_page_numbers),
+        "cancelledPages": [
+            page_number
+            for page_number in range(int(pack["startPage"]), int(pack["endPage"]) + 1)
+            if page_number not in ready_page_numbers
+        ],
+        "error": None,
+        "cancelledAt": cancelled_at,
+        "updatedAt": cancelled_at,
+    })
+    pack.pop("processingClaimId", None)
+    if not cancel_ebook_study_pack(pack, claim_id):
+        current = get_ebook_study_pack(user_id, pack_id)
+        if current and current.get("status") == "cancelled":
+            return get_study_pack_for_user(user_id, pack_id) or _public(current)
+        raise EbookProcessingError("The ebook task changed before it could be cancelled.")
+    logger.info(
+        "ebook_pack_cancelled pack=%s completed=%d remaining=%d",
+        pack_id,
+        len(ready_page_numbers),
+        len(pack["cancelledPages"]),
+    )
+    return get_study_pack_for_user(user_id, pack_id) or _public(pack)
 
 
 def _call_on_demand_model(
