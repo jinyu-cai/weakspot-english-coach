@@ -13,11 +13,12 @@ import logging
 import time
 from typing import Type, TypeVar
 
-from openai import OpenAI, OpenAIError
+from openai import OpenAI
 from pydantic import BaseModel
 
 from app.config import settings
 from app.models.coach import CoachGenerationMetadata
+from app.services.official_model_quota import record_official_usage
 
 
 T = TypeVar("T", bound=BaseModel)
@@ -96,7 +97,7 @@ def parse_gpt56_mission(
             store=False,
             timeout=settings.openai_build_week_timeout_seconds,
         )
-    except OpenAIError as exc:
+    except Exception as exc:
         status_code = getattr(exc, "status_code", None)
         error_code = getattr(exc, "code", None)
         logger.warning(
@@ -114,6 +115,21 @@ def parse_gpt56_mission(
             f"status={status_code}, code={error_code}): {exc}"
         ) from exc
 
+    usage = response.usage
+    try:
+        record_official_usage(
+            "sol",
+            input_tokens=int(getattr(usage, "input_tokens", 0) or 0),
+            output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
+            total_tokens=int(getattr(usage, "total_tokens", 0) or 0),
+        )
+    except Exception as accounting_exc:
+        logger.error(
+            "openai_mission[%s] quota_settlement_failed error=%s",
+            trace,
+            type(accounting_exc).__name__,
+        )
+
     parsed = response.output_parsed
     if parsed is None:
         refusal = response.output_text.strip()
@@ -121,7 +137,6 @@ def parse_gpt56_mission(
         raise ValueError(f"GPT-5.6 did not return a usable mission: {detail}")
 
     elapsed_ms = int((time.perf_counter() - started) * 1000)
-    usage = response.usage
     logger.info(
         "openai_mission[%s] upstream_ok response_id=%s model=%s elapsed_ms=%d "
         "input_tokens=%s output_tokens=%s total_tokens=%s",

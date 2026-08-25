@@ -82,8 +82,8 @@ def configured_server_models(config: Settings = settings) -> list[ServerModelOpt
     _add_option(
         options,
         option_id="openrouter-deep",
-        label="GPT-5.6 Luna Pro",
-        provider_label="OpenRouter",
+        label="GPT-5.6 Luna Pro · Deep xhigh quota routing",
+        provider_label="OpenAI → OpenRouter",
         api_key=config.openrouter_api_key,
         base_url=config.openrouter_base_url,
         model=config.openrouter_model,
@@ -92,8 +92,8 @@ def configured_server_models(config: Settings = settings) -> list[ServerModelOpt
     _add_option(
         options,
         option_id="openrouter-fast",
-        label="GPT-5.6 Luna",
-        provider_label="OpenRouter",
+        label="GPT-5.6 Luna · Fast medium quota routing",
+        provider_label="OpenAI → OpenRouter",
         api_key=config.openrouter_api_key,
         base_url=config.openrouter_base_url,
         model=config.openrouter_fast_model,
@@ -102,7 +102,7 @@ def configured_server_models(config: Settings = settings) -> list[ServerModelOpt
     _add_option(
         options,
         option_id="local-qwen-fast",
-        label="Qwen 3.5 9B · Ebook translation only",
+        label="Hunyuan MT2 7B · Ebook translation fallback",
         provider_label="Private Ollama",
         api_key=config.local_qwen_api_key,
         base_url=config.local_qwen_base_url,
@@ -294,13 +294,10 @@ def default_server_model_ids(config: Settings = settings) -> tuple[str, str] | N
     fast_priority: list[str] = []
     if config.uses_openrouter:
         deep_priority.append("openrouter-deep")
-    if config.uses_local_qwen:
-        fast_priority.append("local-qwen-fast")
+        fast_priority.append("openrouter-fast")
     if config.uses_opencode_go:
         deep_priority.append("deepseek-deep")
         fast_priority.append("deepseek-fast")
-    if config.uses_openrouter:
-        fast_priority.append("openrouter-fast")
     if config.uses_qwen_model_studio:
         deep_priority.append("qwen-deep")
         fast_priority.append("qwen-fast")
@@ -310,6 +307,8 @@ def default_server_model_ids(config: Settings = settings) -> tuple[str, str] | N
     if config.uses_deepseek and not config.uses_opencode_go:
         deep_priority.append("deepseek-deep")
         fast_priority.append("deepseek-fast")
+    if config.uses_local_qwen:
+        fast_priority.append("local-qwen-fast")
 
     deep_id = next(
         (model_id for model_id in deep_priority if model_id in available_ids),
@@ -329,6 +328,23 @@ def default_text_provider(config: Settings = settings) -> Optional[LLMProviderCo
         return None
     provider = server_model_pair(*model_ids, config=config)
     return replace(provider, is_default=True) if provider is not None else None
+
+
+def openai_translation_provider(
+    config: Settings = settings,
+) -> Optional[LLMProviderConfig]:
+    """Return official GPT-5.6 Luna for quota-aware ebook translation."""
+    if not config.uses_openai_translation:
+        return None
+    return LLMProviderConfig(
+        api_key=_normalized(config.openai_translation_effective_api_key),
+        base_url=_normalized(config.openai_translation_base_url).rstrip("/"),
+        model=_normalized(config.openai_translation_model),
+        fast_model=_normalized(config.openai_translation_model),
+        reasoning_effort_override="none",
+        fast_reasoning_effort_override="none",
+        server_model_id="openai-luna-primary",
+    )
 
 
 def local_qwen_translation_provider(

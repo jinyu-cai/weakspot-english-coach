@@ -184,15 +184,15 @@ def main() -> None:
     assert hosted_settings.default_llm_api_key == "test-openrouter-key"
     assert hosted_settings.default_llm_base_url == "https://openrouter.ai/api/v1"
     assert hosted_settings.default_llm_model == "openai/gpt-5.6-luna-pro"
-    assert hosted_settings.default_llm_fast_model == "deepseek-v4-flash"
-    assert hosted_settings.default_llm_fast_api_key == "test-opencode-go-key"
-    assert hosted_settings.default_llm_fast_base_url == "https://opencode.ai/zen/go/v1"
+    assert hosted_settings.default_llm_fast_model == "openai/gpt-5.6-luna"
+    assert hosted_settings.default_llm_fast_api_key == "test-openrouter-key"
+    assert hosted_settings.default_llm_fast_base_url == "https://openrouter.ai/api/v1"
     assert default_server_model_ids(hosted_settings) == (
         "openrouter-deep",
-        "deepseek-fast",
+        "openrouter-fast",
     )
     hosted_catalog = catalog_payload(hosted_settings)
-    assert hosted_catalog["models"][0]["fastModel"] == "deepseek-v4-flash"
+    assert hosted_catalog["models"][0]["fastModel"] == "openai/gpt-5.6-luna"
     assert [entry["id"] for entry in hosted_catalog["models"][:3]] == [
         "default",
         "openrouter-deep",
@@ -203,6 +203,8 @@ def main() -> None:
         entry["id"]: entry for entry in hosted_catalog["models"]
     }
     assert hosted_catalog_by_id["openrouter-fast"]["model"] == "openai/gpt-5.6-luna"
+    assert hosted_catalog_by_id["openrouter-fast"]["provider"] == "OpenAI → OpenRouter"
+    assert hosted_catalog_by_id["openrouter-deep"]["provider"] == "OpenAI → OpenRouter"
     assert hosted_catalog_by_id["deepseek-deep"]["model"] == "deepseek-v4-pro"
     assert hosted_catalog_by_id["deepseek-deep"]["provider"] == "OpenCode Go"
     assert hosted_catalog_by_id["deepseek-fast"]["model"] == "deepseek-v4-flash"
@@ -250,29 +252,29 @@ def main() -> None:
     default_provider = default_text_provider(hosted_settings)
     assert default_provider is not None
     assert default_provider.model == "openai/gpt-5.6-luna-pro"
-    assert default_provider.fast_model == "deepseek-v4-flash"
+    assert default_provider.fast_model == "openai/gpt-5.6-luna"
     assert default_provider.server_deep_model_id == "openrouter-deep"
-    assert default_provider.server_fast_model_id == "deepseek-fast"
+    assert default_provider.server_fast_model_id == "openrouter-fast"
     assert default_provider.is_default is True
     assert _provider_connection(
         default_provider,
         default_provider.fast_model,
-    ) == ("test-opencode-go-key", "https://opencode.ai/zen/go/v1")
+    ) == ("test-openrouter-key", "https://openrouter.ai/api/v1")
     assert _openrouter_routed_model(
         default_provider.fast_model,
         default_provider.fast_base_url or default_provider.base_url,
         "nitro",
-    ) == "deepseek-v4-flash"
+    ) == "openai/gpt-5.6-luna"
     assert _openrouter_routed_model(
         default_provider.fast_model,
         default_provider.fast_base_url or default_provider.base_url,
         "balanced",
-    ) == "deepseek-v4-flash"
+    ) == "openai/gpt-5.6-luna"
     assert _openrouter_routed_model(
         default_provider.fast_model,
         "https://openrouter.ai.attacker.example/api/v1",
         "nitro",
-    ) == "deepseek-v4-flash"
+    ) == "openai/gpt-5.6-luna"
     assert _provider_request_model(
         LLMProviderConfig(
             api_key="custom-key",
@@ -414,10 +416,13 @@ def main() -> None:
             reasoning_effort="medium",
         )
     assert parsed_openrouter_fast.value == "ok"
-    assert openrouter_create_kwargs["model"] == "deepseek-v4-flash"
-    assert "extra_body" not in openrouter_create_kwargs
-    assert openrouter_create_kwargs["temperature"] == 0.2
-    assert openrouter_create_kwargs["reasoning_effort"] == "medium"
+    assert openrouter_create_kwargs["model"] == "openai/gpt-5.6-luna"
+    assert openrouter_create_kwargs["extra_body"] == {
+        "provider": OPENROUTER_OPENAI_PROVIDER_ROUTING,
+        "reasoning": {"effort": "medium"},
+    }
+    assert "temperature" not in openrouter_create_kwargs
+    assert "reasoning_effort" not in openrouter_create_kwargs
 
     openrouter_create_kwargs.clear()
     with (
@@ -436,9 +441,9 @@ def main() -> None:
             openrouter_routing_mode="nitro",
         )
     assert parsed_openrouter_nitro.value == "ok"
-    # Nitro is an OpenRouter-only model suffix. OpenCode Go receives its bare
-    # documented model ID even when Fast Diagnose/Chat requests this hint.
-    assert openrouter_create_kwargs["model"] == "deepseek-v4-flash"
+    # Luna provider routing is controlled through the OpenRouter request body;
+    # its model ID remains unchanged for Fast Diagnose/Chat.
+    assert openrouter_create_kwargs["model"] == "openai/gpt-5.6-luna"
 
     openrouter_retry_calls = []
 
@@ -587,7 +592,7 @@ def main() -> None:
     assert select_input_learning_model(routing_provider) == "deep-model"
     assert select_diagnose_model("fast", routing_provider) == "fast-model"
     assert select_diagnose_model("deep", routing_provider) == "deep-model"
-    assert select_diagnose_model("fast", default_provider) == "deepseek-v4-flash"
+    assert select_diagnose_model("fast", default_provider) == "openai/gpt-5.6-luna"
     assert select_diagnose_model("fast", fixed_openrouter_provider) == "openai/gpt-5.6-luna"
     assert select_diagnose_model("deep", fixed_openrouter_provider) == "openai/gpt-5.6-luna-pro"
     assert select_chat_import_model("fast", routing_provider) == "fast-model"
@@ -643,7 +648,7 @@ def main() -> None:
         diagnose_calls[1]["openrouter_completion_token_budget"]
         == DIAGNOSIS_MAX_OUTPUT_TOKENS
     )
-    assert diagnose_calls[2]["model"] == "deepseek-v4-flash"
+    assert diagnose_calls[2]["model"] == "openai/gpt-5.6-luna"
     assert diagnose_calls[2]["openrouter_routing_mode"] == "nitro"
     print("Diagnose completion budget + strict structured-output retry policy OK.")
 

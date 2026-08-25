@@ -85,12 +85,23 @@ OPENCODE_GO_BASE_URL=https://opencode.ai/zen/go/v1
 OPENCODE_GO_DEEPSEEK_MODEL=deepseek-v4-pro
 OPENCODE_GO_DEEPSEEK_FAST_MODEL=deepseek-v4-flash
 
-# Optional private Fast model used only for ebook counterpart translation. Deep
-# annotations continue to use the selected analysis model. The host must already
-# be logged into the same Tailnet as the Ollama server.
+# Official Luna primary. Deep/Fast fall back to OpenRouter at 2.5M tokens;
+# ebook translation falls back directly to HY-MT2. Sol's 250K line is tracked
+# but does not switch providers. Usage resets at 05:00 America/Los_Angeles.
+OPENAI_TRANSLATION_BASE_URL=https://api.openai.com/v1
+OPENAI_TRANSLATION_MODEL=gpt-5.6-luna
+OPENAI_TRANSLATION_TIMEOUT_SECONDS=45
+OPENAI_LUNA_DAILY_TOKEN_LIMIT=2500000
+OPENAI_SOL_DAILY_TOKEN_LIMIT=250000
+OPENAI_QUOTA_TIMEZONE=America/Los_Angeles
+OPENAI_QUOTA_RESET_HOUR=5
+
+# Private Hunyuan MT2 fallback for ebook counterpart translation. Deep
+# annotations continue to use the selected analysis model. The host must
+# already be logged into the same Tailnet as the Ollama server.
 LOCAL_QWEN_API_KEY=ollama
 LOCAL_QWEN_BASE_URL=https://your-tailnet-host:8443/v1
-LOCAL_QWEN_MODEL=qwen3.5:9b
+LOCAL_QWEN_MODEL=hy-mt2:7b
 
 # Realtime voice only; keep this server-side.
 OPENAI_API_KEY=<openai-api-key>

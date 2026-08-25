@@ -17,6 +17,12 @@ def health_check():
                 "model": settings.openai_build_week_model,
                 "api": "responses",
                 "feature": "adaptive_mission_planner_v1",
+            },
+            "officialModelQuotaRouting": {
+                "timezone": settings.openai_quota_timezone,
+                "resetHour": settings.openai_quota_reset_hour,
+                "lunaDailyTokenLimit": settings.openai_luna_daily_token_limit,
+                "solDailyTokenLimit": settings.openai_sol_daily_token_limit,
             }
         },
     }
