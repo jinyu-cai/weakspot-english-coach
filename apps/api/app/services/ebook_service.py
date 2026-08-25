@@ -105,6 +105,10 @@ class EbookTranslationUnavailable(EbookProcessingError):
     """The private translation stage exhausted its two request attempts."""
 
 
+class EbookTranslationContentInvalid(EbookProcessingError):
+    """The translation response was reachable but its page content was invalid."""
+
+
 TRANSLATION_READY_STATUS = "translation_ready"
 
 
@@ -705,15 +709,26 @@ def _call_translation_model(
     provider: LLMProviderConfig,
     max_output_tokens: Optional[int],
     trace_id: str,
+    repair_content: bool = False,
 ) -> EbookTranslationAIResult:
     prompt = {
         "comparisonLanguage": comparison_language,
         "units": [{"unitId": row["unitId"], "sourceText": row["sourceText"]} for row in units],
     }
     uses_openai_primary = provider.server_model_id == "openai-luna-primary"
+    system_prompt = f"{TRANSLATION_SYSTEM_PROMPT}\n\n{language_instruction(comparison_language)}"
+    if repair_content:
+        system_prompt += (
+            "\n\nThis is a repair attempt because the previous response left translatable "
+            "English without target-language text. Every unit containing an English "
+            "word must contain a genuine target-language counterpart. In labels such "
+            "as bullet points followed by numbers, temperatures, times, or measurements, "
+            "preserve the values and units but translate the English label. Only units "
+            "with no English words may remain unchanged."
+        )
     return parse_with_model(
         messages=[
-            {"role": "system", "content": f"{TRANSLATION_SYSTEM_PROMPT}\n\n{language_instruction(comparison_language)}"},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
         ],
         response_model=EbookTranslationAIResult,
@@ -808,7 +823,6 @@ def _generate_translation_result(
     all_units: list[EbookAIUnit] = []
     for chunk_index in range(0, len(units), 60):
         chunk = units[chunk_index:chunk_index + 60]
-        expected_ids = [unit["unitId"] for unit in chunk]
         result: Optional[EbookTranslationAIResult] = None
         last_error: Optional[Exception] = None
         translation_providers = _translation_provider_chain(provider)
@@ -819,30 +833,47 @@ def _generate_translation_result(
         for provider_index, translation_provider in enumerate(translation_providers):
             if result is not None:
                 break
-            try:
-                candidate = _call_translation_model(
-                    chunk,
-                    comparison_language,
-                    translation_provider,
-                    max_output_tokens,
-                    f"{trace_id}:translation:chunk-{chunk_index // 60}:provider-{provider_index}",
-                )
-                if [unit.unitId for unit in candidate.units] != expected_ids:
-                    raise EbookProcessingError(
-                        "The model did not return every source unit exactly once."
+            provider_error: Optional[Exception] = None
+            for attempt in range(2):
+                try:
+                    candidate = _call_translation_model(
+                        chunk,
+                        comparison_language,
+                        translation_provider,
+                        max_output_tokens,
+                        (
+                            f"{trace_id}:translation:chunk-{chunk_index // 60}"
+                            f":provider-{provider_index}:attempt-{attempt}"
+                        ),
+                        repair_content=attempt > 0,
                     )
-                result = candidate
-                break
-            except Exception as exc:
-                last_error = exc
+                    _validated_translation_rows(
+                        chunk,
+                        comparison_language,
+                        candidate.units,
+                    )
+                    result = candidate
+                    break
+                except EbookTranslationContentInvalid as exc:
+                    provider_error = exc
+                    if attempt == 0:
+                        continue
+                    break
+                except Exception as exc:
+                    provider_error = exc
+                    break
+            if result is None and provider_error is not None:
+                last_error = provider_error
                 logger.warning(
                     "ebook_translation_provider_failed trace=%s model=%s has_fallback=%s error=%s",
                     trace_id,
                     select_text_model("fast", translation_provider),
                     provider_index + 1 < len(translation_providers),
-                    type(exc).__name__,
+                    type(provider_error).__name__,
                 )
         if result is None:
+            if isinstance(last_error, EbookTranslationContentInvalid):
+                raise last_error
             raise EbookTranslationUnavailable(
                 "All configured ebook translation providers failed."
             ) from last_error
@@ -934,35 +965,47 @@ def _analysis_cache_id(
     return _stable_id("ecache", *parts)
 
 
+def _validated_translation_rows(
+    units: list[dict],
+    language: str,
+    ai_units: list[EbookAIUnit],
+) -> list[dict]:
+    expected_ids = [unit["unitId"] for unit in units]
+    returned_ids = [unit.unitId for unit in ai_units]
+    if returned_ids != expected_ids:
+        raise EbookTranslationContentInvalid(
+            "The model did not return every source unit exactly once."
+        )
+    unit_rows = [
+        {**source, "counterpartText": ai.counterpartText.strip()}
+        for source, ai in zip(units, ai_units)
+    ]
+    if any(not row["counterpartText"] for row in unit_rows):
+        raise EbookTranslationContentInvalid("The model returned an empty counterpart.")
+    if any(
+        _english_words(row["sourceText"])
+        and row["counterpartText"].casefold() == row["sourceText"].strip().casefold()
+        for row in unit_rows
+    ):
+        raise EbookTranslationContentInvalid("The model returned unchanged English text.")
+    if language == "zh-CN" and any(
+        _english_words(row["sourceText"])
+        and not re.search(r"[\u3400-\u9fff]", row["counterpartText"])
+        for row in unit_rows
+    ):
+        raise EbookTranslationContentInvalid(
+            "The model did not return a Chinese counterpart for every unit."
+        )
+    return unit_rows
+
+
 def _normalized_translation_units(
     page: dict,
     language: str,
     ai_units: list[EbookAIUnit],
 ) -> list[dict]:
     units = sentence_units(str(page.get("text") or ""), int(page["pageNumber"]))
-    expected_ids = [unit["unitId"] for unit in units]
-    returned_ids = [unit.unitId for unit in ai_units]
-    if returned_ids != expected_ids:
-        raise EbookProcessingError("The model did not return every source unit exactly once.")
-    unit_rows = [
-        {**source, "counterpartText": ai.counterpartText.strip()}
-        for source, ai in zip(units, ai_units)
-    ]
-    if any(not row["counterpartText"] for row in unit_rows):
-        raise EbookProcessingError("The model returned an empty counterpart.")
-    if any(
-        _english_words(row["sourceText"])
-        and row["counterpartText"].casefold() == row["sourceText"].strip().casefold()
-        for row in unit_rows
-    ):
-        raise EbookProcessingError("The model returned unchanged English text.")
-    if language == "zh-CN" and any(
-        _english_words(row["sourceText"])
-        and not re.search(r"[\u3400-\u9fff]", row["counterpartText"])
-        for row in unit_rows
-    ):
-        raise EbookProcessingError("The model did not return a Chinese counterpart for every unit.")
-    return unit_rows
+    return _validated_translation_rows(units, language, ai_units)
 
 
 def _translation_result_from_cache(
