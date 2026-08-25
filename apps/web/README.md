@@ -16,8 +16,11 @@ This frontend talks to the WeakSpot **FastAPI backend** in the repo-level
 `apps/api` directory and deployed on the Linux server.
 The backend URL is configured via `NEXT_PUBLIC_API_BASE_URL`:
 
-- **Local**: create `.env.local` with `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000`.
-  Run a no-keys local backend with `uv run python -m scripts.dev_server` (moto + fake AI).
+- **Local**: create `.env.local` with `NEXT_PUBLIC_API_BASE_URL=/backend`.
+  Next.js proxies that same-origin path to `127.0.0.1:8000`, so local testing also
+  works from a fallback frontend port or another device on the LAN. Start the
+  durable fake-AI API and PostgreSQL with `docker compose -f
+  docker-compose.local.yml up -d --build` from `apps/api`.
 - **Vercel**: set `NEXT_PUBLIC_API_BASE_URL=https://<your-backend-domain>` in
   Project Settings → Environment Variables, then redeploy (it's inlined at build time).
 

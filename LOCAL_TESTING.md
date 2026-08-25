@@ -74,7 +74,7 @@ pnpm dev
 ```
 
 Do not set `NEXT_PUBLIC_API_BASE_URL`. The app will use `apps/web/lib/mock-data.ts`.
-If your `apps/web/.env.local` points at `http://localhost:8000`, temporarily
+If your `apps/web/.env.local` points at `/backend`, temporarily
 override it for a mock-only run:
 
 ```bash
@@ -157,25 +157,24 @@ by the integration, MemoryAgent, learning-loop, and Input Learning scripts.
 
 ## Full local frontend + backend
 
-Terminal A:
+Terminal A (recommended durable local services):
 
 ```bash
 cd apps/api
-uv run python -m scripts.dev_server
+docker compose -f docker-compose.local.yml up -d --build
 ```
 
-This recommended learning mode uses the local PostgreSQL container, applies
-Alembic migrations, and enables fake AI. Start the container with the command
-from the preceding test section first. It needs no AWS or model keys. Local
-development data persists in Docker until its volume is intentionally removed.
-To test real configured services, use `uv run uvicorn app.main:app --reload
---port 8000` with a valid `.env`.
+This mode runs PostgreSQL and a restartable local API container, applies Alembic
+migrations, and enables fake AI. It needs no AWS or model keys. Local development
+data persists in Docker until its volume is intentionally removed. To test real
+configured services, stop the local API container and use `uv run python -m
+uvicorn app.main:app --reload --port 8000` with a valid `.env`.
 
 Terminal B:
 
 ```bash
 cd apps/web
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm dev
+NEXT_PUBLIC_API_BASE_URL=/backend pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000), then verify:

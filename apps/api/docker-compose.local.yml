@@ -24,5 +24,41 @@ services:
       - weakspot-postgres-data:/var/lib/postgresql/data
       - ./deploy/init-local.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro
 
+  api:
+    build: .
+    container_name: weakspot-api-local
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://weakspot:weakspot@postgres:5432/weakspot
+      USE_FAKE_AI: "true"
+      APP_ENV: development
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      SESSION_SECRET: local-compose-session-secret
+      GUEST_DAILY_LIMIT: "100"
+      USER_DAILY_LIMIT: "100"
+    command:
+      [
+        "sh",
+        "-c",
+        "python -m alembic upgrade head && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000",
+      ]
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=5).read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
 volumes:
   weakspot-postgres-data:
