@@ -435,14 +435,14 @@ ebook reader's translation-only model, configure:
 ```bash
 LOCAL_QWEN_API_KEY=ollama
 LOCAL_QWEN_BASE_URL=https://your-tailnet-host:8443/v1
-LOCAL_QWEN_MODEL=qwen3.5:9b
+LOCAL_QWEN_MODEL=hy-mt2:7b
 ```
 
 The API host must be connected to the same Tailnet. The model is published only
 as a Fast option. In the ebook reader it generates counterpart translations but
 never automatic or on-demand learning annotations; those stay on the selected
-Deep model. `reasoning_effort=none` keeps Ollama/Qwen focused on the JSON answer
-instead of consuming the completion budget with hidden reasoning.
+Deep model. `reasoning_effort=none` keeps the Ollama translation model focused
+on the JSON answer.
 
 To use Alibaba Cloud Model Studio as an external provider, set the Qwen 3.7
 profile. The backend
@@ -480,7 +480,7 @@ X-LLM-Server-Fast-Model: deepseek-fast
 
 The server resolves that ID to its matching key, endpoint, and exact model. No
 provider credentials or base URLs are returned to the browser. When private
-Qwen is configured, “Server default” uses `qwen3.5:9b` for Fast work and for
+Ollama is configured, “Server default” uses `hy-mt2:7b` for Fast work and for
 ebook counterpart translation, while retaining the highest-priority configured
 Deep model for ebook annotations. Without private Qwen, an OpenRouter +
 OpenCode Go deployment resolves to Luna Pro Deep plus DeepSeek V4 Flash Fast.

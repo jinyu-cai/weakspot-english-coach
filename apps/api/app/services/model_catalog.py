@@ -102,7 +102,7 @@ def configured_server_models(config: Settings = settings) -> list[ServerModelOpt
     _add_option(
         options,
         option_id="local-qwen-fast",
-        label="Qwen 3.5 9B · Ebook translation only",
+        label="Hunyuan MT2 7B · Ebook translation only",
         provider_label="Private Ollama",
         api_key=config.local_qwen_api_key,
         base_url=config.local_qwen_base_url,

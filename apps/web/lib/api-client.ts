@@ -98,7 +98,7 @@ import {
 } from "./mock-data"
 import {
   getLLMProviderHeaders,
-  LOCAL_QWEN_35_9B_MODEL,
+  LOCAL_HY_MT2_7B_MODEL,
   OPENCODE_GO_DEEPSEEK_V4_FLASH_MODEL,
   OPENCODE_GO_DEEPSEEK_V4_PRO_MODEL,
   OPENROUTER_56_LUNA_MODEL,
@@ -299,7 +299,7 @@ export async function getServerLLMModels(): Promise<ServerLLMModel[]> {
         label: "Server default",
         provider: "Server",
         model: OPENROUTER_56_LUNA_PRO_MODEL,
-        fastModel: LOCAL_QWEN_35_9B_MODEL,
+        fastModel: LOCAL_HY_MT2_7B_MODEL,
         adaptive: true,
       },
       {
@@ -332,9 +332,9 @@ export async function getServerLLMModels(): Promise<ServerLLMModel[]> {
       },
       {
         id: "local-qwen-fast",
-        label: "Qwen 3.5 9B · Ebook translation only",
+        label: "Hunyuan MT2 7B · Ebook translation only",
         provider: "Private Ollama",
-        model: LOCAL_QWEN_35_9B_MODEL,
+        model: LOCAL_HY_MT2_7B_MODEL,
         mode: "fast",
       },
       {

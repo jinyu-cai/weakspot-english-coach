@@ -90,7 +90,7 @@ OPENCODE_GO_DEEPSEEK_FAST_MODEL=deepseek-v4-flash
 # be logged into the same Tailnet as the Ollama server.
 LOCAL_QWEN_API_KEY=ollama
 LOCAL_QWEN_BASE_URL=https://your-tailnet-host:8443/v1
-LOCAL_QWEN_MODEL=qwen3.5:9b
+LOCAL_QWEN_MODEL=hy-mt2:7b
 
 # Realtime voice only; keep this server-side.
 OPENAI_API_KEY=<openai-api-key>

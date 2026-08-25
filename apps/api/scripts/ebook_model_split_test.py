@@ -32,8 +32,8 @@ def split_call_contract() -> None:
     qwen = LLMProviderConfig(
         api_key="ollama",
         base_url="https://private-model.example/v1",
-        model="qwen3.5:9b",
-        fast_model="qwen3.5:9b",
+        model="hy-mt2:7b",
+        fast_model="hy-mt2:7b",
         reasoning_effort_override="none",
         fast_reasoning_effort_override="none",
         server_model_id="local-qwen-fast",
@@ -42,7 +42,7 @@ def split_call_contract() -> None:
         api_key="deep-key",
         base_url="https://openrouter.ai/api/v1",
         model="openai/gpt-5.6-luna-pro",
-        fast_model="qwen3.5:9b",
+        fast_model="hy-mt2:7b",
         fast_api_key="ollama",
         fast_base_url="https://private-model.example/v1",
         server_deep_model_id="openrouter-deep",
@@ -95,7 +95,7 @@ def split_call_contract() -> None:
     assert result.units[0].counterpartText == "可迁移的见解很重要。"
     assert len(result.annotations) == 1
     assert [call["model"] for call in calls] == [
-        "qwen3.5:9b",
+        "hy-mt2:7b",
         "openai/gpt-5.6-luna-pro",
         "openai/gpt-5.6-luna-pro",
         "openai/gpt-5.6-luna-pro",

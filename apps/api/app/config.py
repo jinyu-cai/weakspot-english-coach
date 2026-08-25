@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     # in deployment configuration rather than exposing them to the browser.
     local_qwen_api_key: str = ""
     local_qwen_base_url: str = ""
-    local_qwen_model: str = "qwen3.5:9b"
+    local_qwen_model: str = "hy-mt2:7b"
     # Embeddings may use a Qwen key without changing the server's default text
     # provider. This keeps text routing unchanged while enabling Model Studio
     # semantic retrieval and stealth-practice topic matching.

@@ -1,4 +1,4 @@
-"""Offline contract checks for the private Ollama Qwen Fast model."""
+"""Offline contract checks for the private Ollama Hunyuan MT2 model."""
 
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -29,36 +29,36 @@ def main() -> None:
         openai_compat_api_key="",
         local_qwen_api_key="ollama",
         local_qwen_base_url="https://private-model.example/v1",
-        local_qwen_model="qwen3.5:9b",
+        local_qwen_model="hy-mt2:7b",
     )
     assert config.uses_local_qwen is True
-    assert config.default_llm_fast_model == "qwen3.5:9b"
+    assert config.default_llm_fast_model == "hy-mt2:7b"
     assert config.default_llm_fast_api_key == "ollama"
     assert config.default_llm_fast_base_url == "https://private-model.example/v1"
     assert default_server_model_ids(config) == ("openrouter-deep", "local-qwen-fast")
 
     payload = catalog_payload(config)
     models = {item["id"]: item for item in payload["models"]}
-    assert models["default"]["fastModel"] == "qwen3.5:9b"
+    assert models["default"]["fastModel"] == "hy-mt2:7b"
     assert models["local-qwen-fast"] == {
         "id": "local-qwen-fast",
-        "label": "Qwen 3.5 9B · Ebook translation only",
+        "label": "Hunyuan MT2 7B · Ebook translation only",
         "provider": "Private Ollama",
-        "model": "qwen3.5:9b",
+        "model": "hy-mt2:7b",
         "mode": "fast",
     }
     assert all("apiKey" not in item and "baseUrl" not in item for item in payload["models"])
 
     provider = default_text_provider(config)
     assert provider is not None
-    assert provider.fast_model == "qwen3.5:9b"
+    assert provider.fast_model == "hy-mt2:7b"
     assert provider.fast_api_key == "ollama"
     assert provider.fast_base_url == "https://private-model.example/v1"
     assert provider.fast_reasoning_effort_override == "none"
 
     translation_provider = local_qwen_translation_provider(config)
     assert translation_provider is not None
-    assert translation_provider.model == "qwen3.5:9b"
+    assert translation_provider.model == "hy-mt2:7b"
     annotation_provider = ebook_annotation_provider(translation_provider, config)
     assert annotation_provider is not None
     assert annotation_provider.model == config.openrouter_model
@@ -94,10 +94,10 @@ def main() -> None:
         )
 
     assert result.translation == "你好，世界"
-    assert request["model"] == "qwen3.5:9b"
+    assert request["model"] == "hy-mt2:7b"
     assert request["reasoning_effort"] == "none"
     assert request["response_format"] == {"type": "json_object"}
-    print("Private Qwen Fast model catalog, routing, and reasoning override OK.")
+    print("Private Hunyuan MT2 model catalog, routing, and reasoning override OK.")
 
 
 if __name__ == "__main__":
