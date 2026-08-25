@@ -52,3 +52,7 @@ apps/api/deploy/certs/*.pem
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local notes and editor metadata
+prerequisite_knowledge_guide.md
+.obsidian

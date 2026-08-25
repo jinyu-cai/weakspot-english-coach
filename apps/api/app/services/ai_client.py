@@ -293,6 +293,32 @@ def _response_format_schema(
     return response_model.model_json_schema()
 
 
+def _request_timeout_with_deadline(
+    request_timeout_seconds: Optional[float],
+    deadline_monotonic: Optional[float],
+    total_timeout_seconds: Optional[float],
+) -> float:
+    """Bound one provider call by both its own timeout and a shared deadline."""
+    timeout = (
+        max(0.1, request_timeout_seconds)
+        if request_timeout_seconds is not None
+        else 600.0
+    )
+    if deadline_monotonic is None:
+        return timeout
+    remaining = deadline_monotonic - time.monotonic()
+    if remaining <= 0:
+        deadline_label = (
+            f"{total_timeout_seconds:g}-second"
+            if total_timeout_seconds is not None
+            else "configured"
+        )
+        raise TimeoutError(
+            f"LLM request exceeded its {deadline_label} total deadline."
+        )
+    return min(timeout, max(0.001, remaining))
+
+
 def parse_with_model(
     messages: list,
     response_model: Type[T],
@@ -308,15 +334,20 @@ def parse_with_model(
     retry_reasoning_effort: Optional[str] = None,
     openrouter_routing_mode: OpenRouterRoutingMode = "balanced",
     request_timeout_seconds: Optional[float] = None,
+    total_timeout_seconds: Optional[float] = None,
     _prefer_official_luna: bool = True,
     _quota_managed: bool = False,
     _usage_observer: Optional[Callable[[dict[str, int]], None]] = None,
+    _deadline_monotonic: Optional[float] = None,
 ) -> T:
     # Local testing: return canned results without calling an external model.
     if settings.use_fake_ai:
         from app.services.fake_ai import fake_for
 
         return fake_for(response_model)
+
+    if _deadline_monotonic is None and total_timeout_seconds is not None:
+        _deadline_monotonic = time.monotonic() + max(0.1, total_timeout_seconds)
 
     selected_model = model or (provider.model if provider else settings.default_llm_model)
     if not selected_model:
@@ -348,8 +379,10 @@ def parse_with_model(
                     retry_reasoning_effort=luna_reasoning_effort,
                     openrouter_routing_mode=openrouter_routing_mode,
                     request_timeout_seconds=request_timeout_seconds,
+                    total_timeout_seconds=total_timeout_seconds,
                     _prefer_official_luna=False,
                     _usage_observer=_usage_observer,
+                    _deadline_monotonic=_deadline_monotonic,
                 )
             except Exception as exc:
                 logger.warning(
@@ -374,8 +407,10 @@ def parse_with_model(
                     retry_reasoning_effort=luna_reasoning_effort,
                     openrouter_routing_mode=openrouter_routing_mode,
                     request_timeout_seconds=request_timeout_seconds,
+                    total_timeout_seconds=total_timeout_seconds,
                     _prefer_official_luna=False,
                     _usage_observer=_usage_observer,
+                    _deadline_monotonic=_deadline_monotonic,
                 )
 
     if (
@@ -435,9 +470,11 @@ def parse_with_model(
                 retry_reasoning_effort=retry_reasoning_effort,
                 openrouter_routing_mode=openrouter_routing_mode,
                 request_timeout_seconds=request_timeout_seconds,
+                total_timeout_seconds=total_timeout_seconds,
                 _prefer_official_luna=False,
                 _quota_managed=True,
                 _usage_observer=observe_usage,
+                _deadline_monotonic=_deadline_monotonic,
             )
         except Exception:
             try:
@@ -565,11 +602,7 @@ def parse_with_model(
                     if native_structured_output
                     else {"type": "json_object"}
                 ),
-                timeout=(
-                    max(0.1, request_timeout_seconds)
-                    if request_timeout_seconds is not None
-                    else 600
-                ),
+                timeout=600,
             )
             # Luna's published OpenRouter parameter set does not require a
             # temperature override, and OpenAI reasoning endpoints may reject
@@ -599,7 +632,19 @@ def parse_with_model(
                 else:
                     create_kwargs.pop("reasoning_effort", None)
                 try:
-                    resp = get_client(provider, selected_model).chat.completions.create(**create_kwargs)
+                    create_kwargs["timeout"] = _request_timeout_with_deadline(
+                        request_timeout_seconds,
+                        _deadline_monotonic,
+                        total_timeout_seconds,
+                    )
+                    client = get_client(provider, selected_model)
+                    if _deadline_monotonic is not None:
+                        # The SDK retries network failures by default, with a
+                        # fresh per-attempt timeout each time. Disable those
+                        # hidden retries when a shared deadline is active;
+                        # parse_with_model owns schema retries and fallback.
+                        client = client.with_options(max_retries=0)
+                    resp = client.chat.completions.create(**create_kwargs)
                     break
                 except OpenAIError as e:
                     if use_reasoning_effort and _is_unsupported_reasoning_effort(e):

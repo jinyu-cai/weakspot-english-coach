@@ -49,6 +49,57 @@ def main() -> None:
             assert _safe_redirect(unsafe) == "https://app.example"
     print("OAuth redirect exact-origin validation OK.")
 
+    # Unexpected dependency/database failures remain readable to browsers
+    # instead of being masked as a CORS-level "Failed to fetch".
+    from fastapi.testclient import TestClient
+    from app.api import deps as api_deps
+
+    with patch.object(
+        api_deps,
+        "incr_rate_counter",
+        side_effect=RuntimeError("simulated unavailable rate store"),
+    ):
+        boundary_response = TestClient(app, raise_server_exceptions=False).post(
+            "/api/v1/chat/send",
+            headers={"Origin": "http://localhost:3000"},
+            json={
+                "userId": "ignored",
+                "sessionId": "cs_boundary",
+                "text": "Hello.",
+                "clientMessageId": "boundary-message-1",
+            },
+        )
+    assert boundary_response.status_code == 500, boundary_response.text
+    assert boundary_response.headers["access-control-allow-origin"] == "http://localhost:3000"
+    assert boundary_response.headers["x-request-id"]
+    assert boundary_response.json()["detail"]["code"] == "internal_error"
+    print("Unhandled request boundary keeps JSON, request ID, and CORS headers OK.")
+
+    # Reading a conversation is not a generative quota event.
+    from app.api.routes import chat as chat_routes
+
+    read_session = {
+        "id": "cs_read_only",
+        "userId": "guest_read-only",
+        "mode": "text",
+        "textModel": "fake-model",
+        "messageCount": 0,
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:00Z",
+    }
+    with (
+        patch.object(
+            api_deps,
+            "incr_rate_counter",
+            side_effect=AssertionError("Chat history read consumed generation quota"),
+        ),
+        patch.object(chat_routes, "get_chat_session", return_value=read_session),
+        patch.object(chat_routes, "list_chat_messages", return_value=[]),
+    ):
+        read_response = TestClient(app).get("/api/v1/chat/sessions/cs_read_only/messages")
+    assert read_response.status_code == 200, read_response.text
+    print("Chat history reads do not consume generation quota OK.")
+
     # 2. JSON schema generation for every AI response model.
     from app.models.chat_import import ChatImportAIResult
     from app.models.coach import (
@@ -157,12 +208,23 @@ def main() -> None:
         _provider_connection,
         _provider_extra_body,
         _provider_request_model,
+        _request_timeout_with_deadline,
         _openrouter_routed_model,
         _response_format_schema,
         _uses_model_studio_qwen,
         _uses_openrouter_api,
         _uses_openrouter_openai_provider,
     )
+
+    with patch("app.services.ai_client.time.monotonic", return_value=100.0):
+        assert _request_timeout_with_deadline(20.0, 105.0, 5.0) == 5.0
+    with patch("app.services.ai_client.time.monotonic", return_value=106.0):
+        try:
+            _request_timeout_with_deadline(None, 105.0, 5.0)
+            raise AssertionError("Expired shared LLM deadline was accepted.")
+        except TimeoutError:
+            pass
+    print("Shared LLM deadline bounds retries and provider fallbacks OK.")
     from app.services.model_catalog import (
         catalog_payload,
         default_server_model_ids,

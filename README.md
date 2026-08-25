@@ -210,13 +210,7 @@ in [Coach Mode / Input Lab 2.0 P0](docs/COACH_MODE_P0.md).
 apps/api/   FastAPI, GPT-5.6/Qwen integrations, PostgreSQL, MemoryAgent, tests, deploy
 apps/web/   Next.js application and Memory Center
 docs/       architecture, MemoryAgent design, submission, demo, deployment
-prompts/    personal prompt library (TOEFL learning, vocabulary, essay polishing)
 ```
-
-## Prompts
-
-A personal library of learning prompts (TOEFL, vocabulary, writing) lives in
-[`prompts/`](prompts/README.md).
 
 ## Learn the codebase
 
@@ -245,9 +239,7 @@ Backend:
 cd apps/api
 uv sync
 cp .env.example .env
-docker compose -f docker-compose.local.yml up -d postgres
-uv run alembic upgrade head
-uv run uvicorn app.main:app --reload --port 8000
+docker compose -f docker-compose.local.yml up -d --build
 ```
 
 Frontend:
@@ -255,7 +247,7 @@ Frontend:
 ```bash
 cd apps/web
 pnpm install
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm dev
+NEXT_PUBLIC_API_BASE_URL=/backend pnpm dev
 ```
 
 The OpenAI Build Week planner configuration is shown above. The pre-existing

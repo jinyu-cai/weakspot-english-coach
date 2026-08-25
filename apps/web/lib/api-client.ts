@@ -108,7 +108,7 @@ import {
   type ServerLLMModel,
 } from "./llm-settings"
 import { getOutputLanguage } from "./language"
-import { fetchWithTotalTimeout } from "./timed-fetch"
+import { fetchWithTotalTimeout, REQUEST_TIMEOUT_MESSAGE } from "./timed-fetch"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
 const USE_MOCK = !API_BASE_URL
@@ -130,6 +130,27 @@ const REALTIME_TRANSCRIPT_REQUEST_MAX_BYTES = 800_000
 const REALTIME_TRANSCRIPT_MESSAGE_MAX_CHARS = 16_000
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+class ApiRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message)
+    this.name = "ApiRequestError"
+  }
+}
+
+class ApiNetworkError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "ApiNetworkError"
+  }
+}
+
+export function isAmbiguousApiFailure(error: unknown): boolean {
+  return error instanceof ApiNetworkError
+    || (error instanceof ApiRequestError && (error.status === 409 || error.status >= 500))
+    || (error instanceof Error && error.message === REQUEST_TIMEOUT_MESSAGE)
+}
+
 const withOutputLanguage = <T extends Record<string, unknown>>(body: T) => ({
   ...body,
   outputLanguage: getOutputLanguage(),
@@ -225,39 +246,53 @@ async function apiFetch<T>(
   init?: RequestInit,
   timeoutMs = DEFAULT_API_TIMEOUT_MS,
 ): Promise<T> {
-  return fetchWithTotalTimeout(
-    `${API_BASE_URL}/api/v1${path}`,
-    {
-      ...init,
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        ...getLLMProviderHeaders(),
-        ...(init?.headers ?? {}),
+  try {
+    return await fetchWithTotalTimeout(
+      `${API_BASE_URL}/api/v1${path}`,
+      {
+        ...init,
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...getLLMProviderHeaders(),
+          ...(init?.headers ?? {}),
+        },
       },
-    },
-    timeoutMs,
-    async (res) => {
-      if (!res.ok) {
-        const message = await getErrorMessage(res, path)
-        if (res.status === 429 && typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("weakspot:needauth", { detail: { message } }))
+      timeoutMs,
+      async (res) => {
+        if (!res.ok) {
+          const message = await getErrorMessage(res, path)
+          if (res.status === 429 && typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("weakspot:needauth", { detail: { message } }))
+          }
+          throw new ApiRequestError(message, res.status)
         }
-        throw new Error(message)
-      }
-      const payload = await res.json()
-      if (payload && typeof payload === "object" && !Array.isArray(payload) && "error" in payload && payload.error) {
-        const detail = "detail" in payload ? payload.detail : undefined
-        const message = typeof detail === "string"
-          ? detail
-          : "message" in payload
-            ? String(payload.message)
-            : `Request failed: ${path}`
-        throw new Error(message)
-      }
-      return payload as T
-    },
-  )
+        const payload = await res.json()
+        if (payload && typeof payload === "object" && !Array.isArray(payload) && "error" in payload && payload.error) {
+          const detail = "detail" in payload ? payload.detail : undefined
+          const message = typeof detail === "string"
+            ? detail
+            : "message" in payload
+              ? String(payload.message)
+              : `Request failed: ${path}`
+          throw new Error(message)
+        }
+        return payload as T
+      },
+    )
+  } catch (error) {
+    if (error instanceof ApiRequestError) throw error
+    const message = error instanceof Error ? error.message : String(error)
+    const isNetworkFailure = error instanceof TypeError
+      || /failed to fetch|networkerror|network request failed|load failed/i.test(message)
+    if (!isNetworkFailure) throw error
+
+    const offline = typeof navigator !== "undefined" && navigator.onLine === false
+    throw new ApiNetworkError(offline
+      ? "This device is offline. Reconnect and try again."
+      : "The browser could not reach the API. Check that the backend is running and reload this page.",
+    )
+  }
 }
 
 const LEARNER_HISTORY_PAGE_SIZE = 100
