@@ -197,6 +197,12 @@ def _uses_openrouter_api(base_url: str) -> bool:
     return hostname == "openrouter.ai"
 
 
+def _uses_official_openai_api(base_url: str) -> bool:
+    """Match the official OpenAI API host, not arbitrary compatible servers."""
+    hostname = (urlparse(base_url.strip()).hostname or "").lower()
+    return hostname == "api.openai.com"
+
+
 def _provider_extra_body(
     model: str,
     base_url: str,
@@ -245,6 +251,7 @@ def parse_with_model(
     max_attempts: int = 2,
     retry_reasoning_effort: Optional[str] = None,
     openrouter_routing_mode: OpenRouterRoutingMode = "balanced",
+    request_timeout_seconds: Optional[float] = None,
 ) -> T:
     # Local testing: return canned results without calling an external model.
     if settings.use_fake_ai:
@@ -279,10 +286,12 @@ def parse_with_model(
     uses_model_studio_qwen = _uses_model_studio_qwen(request_model, base_url)
     uses_openrouter = _uses_openrouter_api(base_url)
     uses_openrouter_openai = _uses_openrouter_openai_provider(request_model, base_url)
+    uses_official_openai = _uses_official_openai_api(base_url)
+    uses_openai_model = uses_openrouter_openai or uses_official_openai
 
     schema = json.dumps(response_model.model_json_schema(), ensure_ascii=False)
 
-    native_structured_output = use_native_structured_output and uses_openrouter_openai
+    native_structured_output = use_native_structured_output and uses_openai_model
     messages = list(messages)
     if native_structured_output:
         messages[0] = {
@@ -357,19 +366,25 @@ def parse_with_model(
                     if native_structured_output
                     else {"type": "json_object"}
                 ),
-                timeout=600,
+                timeout=(
+                    max(0.1, request_timeout_seconds)
+                    if request_timeout_seconds is not None
+                    else 600
+                ),
             )
             # Luna's published OpenRouter parameter set does not require a
             # temperature override, and OpenAI reasoning endpoints may reject
             # unsupported sampling parameters.
-            if not uses_openrouter_openai:
+            if not uses_openai_model:
                 create_kwargs["temperature"] = 0.2
-            if uses_openrouter_openai and openrouter_completion_token_budget is not None:
+            if uses_openai_model and openrouter_completion_token_budget is not None:
                 # Reasoning tokens count toward OpenRouter's completion budget.
                 # Use the non-deprecated total-budget parameter for compact
                 # structured calls that reserve most of their budget for MAX
                 # reasoning while still leaving room for the final JSON.
                 create_kwargs["max_completion_tokens"] = openrouter_completion_token_budget
+            elif uses_official_openai and max_tokens is not None:
+                create_kwargs["max_completion_tokens"] = max_tokens
             elif max_tokens is not None:
                 create_kwargs["max_tokens"] = max_tokens
             extra_body = _provider_extra_body(

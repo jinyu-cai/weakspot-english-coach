@@ -78,6 +78,7 @@ from app.services.memory_write_service import memory_write_locked, save_memory
 from app.services.model_catalog import (
     ebook_annotation_provider,
     local_qwen_translation_provider,
+    openai_translation_provider,
 )
 from app.services.model_routing import reasoning_effort_for_tier, select_text_model
 from app.services.output_language import language_instruction
@@ -671,10 +672,38 @@ def _deterministic_page_result(units: list[dict], language: str) -> EbookPageAIR
     return EbookPageAIResult(units=ai_units, annotations=annotations)
 
 
+def _translation_provider_chain(
+    provider: Optional[LLMProviderConfig],
+) -> list[LLMProviderConfig]:
+    """Return primary-to-fallback ebook translation providers without duplicates."""
+    candidates = [
+        openai_translation_provider(),
+        local_qwen_translation_provider(),
+        provider,
+    ]
+    result: list[LLMProviderConfig] = []
+    seen: set[tuple[str, str]] = set()
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        selected_model = select_text_model("fast", candidate)
+        selected_base_url = (
+            candidate.fast_base_url
+            if candidate.fast_model == selected_model and candidate.fast_base_url
+            else candidate.base_url
+        )
+        key = (selected_base_url.rstrip("/"), selected_model)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(candidate)
+    return result
+
+
 def _call_translation_model(
     units: list[dict],
     comparison_language: str,
-    provider: Optional[LLMProviderConfig],
+    provider: LLMProviderConfig,
     max_output_tokens: Optional[int],
     trace_id: str,
 ) -> EbookTranslationAIResult:
@@ -682,18 +711,25 @@ def _call_translation_model(
         "comparisonLanguage": comparison_language,
         "units": [{"unitId": row["unitId"], "sourceText": row["sourceText"]} for row in units],
     }
-    translation_provider = local_qwen_translation_provider() or provider
+    uses_openai_primary = provider.server_model_id == "openai-translation-primary"
     return parse_with_model(
         messages=[
             {"role": "system", "content": f"{TRANSLATION_SYSTEM_PROMPT}\n\n{language_instruction(comparison_language)}"},
             {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
         ],
         response_model=EbookTranslationAIResult,
-        provider=translation_provider,
-        model=select_text_model("fast", translation_provider),
+        provider=provider,
+        model=select_text_model("fast", provider),
         max_tokens=max_output_tokens,
         trace_id=trace_id,
         reasoning_effort=reasoning_effort_for_tier("fast"),
+        use_native_structured_output=uses_openai_primary,
+        max_attempts=1 if uses_openai_primary else 2,
+        request_timeout_seconds=(
+            settings.openai_translation_timeout_seconds
+            if uses_openai_primary
+            else None
+        ),
     )
 
 
@@ -769,27 +805,28 @@ def _generate_translation_result(
     max_output_tokens: Optional[int],
     trace_id: str,
 ) -> EbookTranslationAIResult:
-    """Retry and validate only the translation stage, at most twice per chunk."""
+    """Try translation providers in priority order and validate every chunk."""
     all_units: list[EbookAIUnit] = []
     for chunk_index in range(0, len(units), 60):
         chunk = units[chunk_index:chunk_index + 60]
         expected_ids = [unit["unitId"] for unit in chunk]
         result: Optional[EbookTranslationAIResult] = None
         last_error: Optional[Exception] = None
-        for attempt in range(2):
+        translation_providers = _translation_provider_chain(provider)
+        if settings.use_fake_ai:
+            result = EbookTranslationAIResult(
+                units=_deterministic_page_result(chunk, comparison_language).units
+            )
+        for provider_index, translation_provider in enumerate(translation_providers):
+            if result is not None:
+                break
             try:
-                candidate = (
-                    EbookTranslationAIResult(
-                        units=_deterministic_page_result(chunk, comparison_language).units
-                    )
-                    if settings.use_fake_ai
-                    else _call_translation_model(
-                        chunk,
-                        comparison_language,
-                        provider,
-                        max_output_tokens,
-                        f"{trace_id}:translation:chunk-{chunk_index // 60}:attempt-{attempt}",
-                    )
+                candidate = _call_translation_model(
+                    chunk,
+                    comparison_language,
+                    translation_provider,
+                    max_output_tokens,
+                    f"{trace_id}:translation:chunk-{chunk_index // 60}:provider-{provider_index}",
                 )
                 if [unit.unitId for unit in candidate.units] != expected_ids:
                     raise EbookProcessingError(
@@ -799,9 +836,16 @@ def _generate_translation_result(
                 break
             except Exception as exc:
                 last_error = exc
+                logger.warning(
+                    "ebook_translation_provider_failed trace=%s model=%s has_fallback=%s error=%s",
+                    trace_id,
+                    select_text_model("fast", translation_provider),
+                    provider_index + 1 < len(translation_providers),
+                    type(exc).__name__,
+                )
         if result is None:
             raise EbookTranslationUnavailable(
-                "Ebook translation failed twice consecutively."
+                "All configured ebook translation providers failed."
             ) from last_error
         all_units.extend(result.units)
     return EbookTranslationAIResult(units=all_units)

@@ -29,6 +29,15 @@ def _annotation(unit_id: str = "p1_u0") -> EbookAIAnnotation:
 
 
 def split_call_contract() -> None:
+    openai = LLMProviderConfig(
+        api_key="official-key",
+        base_url="https://api.openai.com/v1",
+        model="gpt-5.4-mini",
+        fast_model="gpt-5.4-mini",
+        reasoning_effort_override="none",
+        fast_reasoning_effort_override="none",
+        server_model_id="openai-translation-primary",
+    )
     qwen = LLMProviderConfig(
         api_key="ollama",
         base_url="https://private-model.example/v1",
@@ -55,6 +64,8 @@ def split_call_contract() -> None:
         nonlocal annotation_attempts
         calls.append(kwargs)
         if kwargs["response_model"] is EbookTranslationAIResult:
+            if kwargs["provider"] is openai:
+                raise ValueError("primary quota exhausted")
             return EbookTranslationAIResult(
                 units=[EbookAIUnit(unitId="p1_u0", counterpartText="可迁移的见解很重要。")]
             )
@@ -70,6 +81,7 @@ def split_call_contract() -> None:
     units = [{"unitId": "p1_u0", "sourceText": "A transferable insight matters."}]
     with (
         patch.object(ebook_service.settings, "use_fake_ai", False),
+        patch.object(ebook_service, "openai_translation_provider", return_value=openai),
         patch.object(ebook_service, "local_qwen_translation_provider", return_value=qwen),
         patch.object(ebook_service, "ebook_annotation_provider", return_value=selected_pair),
         patch.object(ebook_service, "parse_with_model", side_effect=parse_stub),
@@ -95,20 +107,66 @@ def split_call_contract() -> None:
     assert result.units[0].counterpartText == "可迁移的见解很重要。"
     assert len(result.annotations) == 1
     assert [call["model"] for call in calls] == [
+        "gpt-5.4-mini",
         "hy-mt2:7b",
         "openai/gpt-5.6-luna-pro",
         "openai/gpt-5.6-luna-pro",
         "openai/gpt-5.6-luna-pro",
     ]
-    assert calls[0]["provider"] is qwen
-    assert calls[1]["provider"] is selected_pair
+    assert calls[0]["provider"] is openai
+    assert calls[0]["use_native_structured_output"] is True
+    assert calls[0]["max_attempts"] == 1
+    assert calls[0]["request_timeout_seconds"] == 45.0
+    assert calls[1]["provider"] is qwen
     assert calls[2]["provider"] is selected_pair
     assert calls[3]["provider"] is selected_pair
+    assert calls[4]["provider"] is selected_pair
     assert "Do not select, explain, rank, or annotate" in calls[0]["messages"][0]["content"]
-    assert "Analyze only the English source" in calls[1]["messages"][0]["content"]
+    assert "Analyze only the English source" in calls[2]["messages"][0]["content"]
     assert ":translation:" in calls[0]["trace_id"]
-    assert ":annotations:" in calls[1]["trace_id"]
     assert ":annotations:" in calls[2]["trace_id"]
+    assert ":annotations:" in calls[3]["trace_id"]
+
+
+def primary_translation_contract() -> None:
+    openai = LLMProviderConfig(
+        api_key="official-key",
+        base_url="https://api.openai.com/v1",
+        model="gpt-5.4-mini",
+        fast_model="gpt-5.4-mini",
+        server_model_id="openai-translation-primary",
+    )
+    qwen = LLMProviderConfig(
+        api_key="ollama",
+        base_url="https://private-model.example/v1",
+        model="hy-mt2:7b",
+        fast_model="hy-mt2:7b",
+        server_model_id="local-qwen-fast",
+    )
+    calls: list[dict] = []
+
+    def parse_stub(**kwargs):
+        calls.append(kwargs)
+        return EbookTranslationAIResult(
+            units=[EbookAIUnit(unitId="p1_u0", counterpartText="首选模型已成功翻译。")]
+        )
+
+    with (
+        patch.object(ebook_service.settings, "use_fake_ai", False),
+        patch.object(ebook_service, "openai_translation_provider", return_value=openai),
+        patch.object(ebook_service, "local_qwen_translation_provider", return_value=qwen),
+        patch.object(ebook_service, "parse_with_model", side_effect=parse_stub),
+    ):
+        result = ebook_service._generate_translation_result(
+            [{"unitId": "p1_u0", "sourceText": "The primary model succeeded."}],
+            "zh-CN",
+            qwen,
+            2000,
+            "primary-test",
+        )
+
+    assert result.units[0].counterpartText == "首选模型已成功翻译。"
+    assert [call["model"] for call in calls] == ["gpt-5.4-mini"]
 
 
 def nonlinguistic_translation_contract() -> None:
@@ -533,12 +591,13 @@ def cancellation_contract() -> None:
 
 def main() -> None:
     split_call_contract()
+    primary_translation_contract()
     nonlinguistic_translation_contract()
     parallel_annotation_contract()
     cancellation_contract()
     pipeline_and_circuit_contract()
     print(
-        "Qwen translation is serial and durable; Luna annotations fan out across all "
+        "GPT-5.4 mini translation falls back to Hunyuan MT2; Luna annotations fan out across all "
         "pages and retry independently; cancellation releases the pack without "
         "discarding completed work; translation failures open the circuit."
     )

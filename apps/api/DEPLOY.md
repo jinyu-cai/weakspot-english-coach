@@ -85,9 +85,15 @@ OPENCODE_GO_BASE_URL=https://opencode.ai/zen/go/v1
 OPENCODE_GO_DEEPSEEK_MODEL=deepseek-v4-pro
 OPENCODE_GO_DEEPSEEK_FAST_MODEL=deepseek-v4-flash
 
-# Optional private Fast model used only for ebook counterpart translation. Deep
-# annotations continue to use the selected analysis model. The host must already
-# be logged into the same Tailnet as the Ollama server.
+# Official OpenAI ebook translation primary. The dedicated key is optional and
+# OPENAI_API_KEY is reused when it is omitted.
+OPENAI_TRANSLATION_BASE_URL=https://api.openai.com/v1
+OPENAI_TRANSLATION_MODEL=gpt-5.4-mini
+OPENAI_TRANSLATION_TIMEOUT_SECONDS=45
+
+# Private Hunyuan MT2 fallback for ebook counterpart translation. Deep
+# annotations continue to use the selected analysis model. The host must
+# already be logged into the same Tailnet as the Ollama server.
 LOCAL_QWEN_API_KEY=ollama
 LOCAL_QWEN_BASE_URL=https://your-tailnet-host:8443/v1
 LOCAL_QWEN_MODEL=hy-mt2:7b

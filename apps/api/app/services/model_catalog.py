@@ -102,7 +102,7 @@ def configured_server_models(config: Settings = settings) -> list[ServerModelOpt
     _add_option(
         options,
         option_id="local-qwen-fast",
-        label="Hunyuan MT2 7B · Ebook translation only",
+        label="Hunyuan MT2 7B · Ebook translation fallback",
         provider_label="Private Ollama",
         api_key=config.local_qwen_api_key,
         base_url=config.local_qwen_base_url,
@@ -329,6 +329,23 @@ def default_text_provider(config: Settings = settings) -> Optional[LLMProviderCo
         return None
     provider = server_model_pair(*model_ids, config=config)
     return replace(provider, is_default=True) if provider is not None else None
+
+
+def openai_translation_provider(
+    config: Settings = settings,
+) -> Optional[LLMProviderConfig]:
+    """Return the official OpenAI provider reserved for ebook translation."""
+    if not config.uses_openai_translation:
+        return None
+    return LLMProviderConfig(
+        api_key=_normalized(config.openai_translation_effective_api_key),
+        base_url=_normalized(config.openai_translation_base_url).rstrip("/"),
+        model=_normalized(config.openai_translation_model),
+        fast_model=_normalized(config.openai_translation_model),
+        reasoning_effort_override="none",
+        fast_reasoning_effort_override="none",
+        server_model_id="openai-translation-primary",
+    )
 
 
 def local_qwen_translation_provider(

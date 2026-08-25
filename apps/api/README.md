@@ -429,8 +429,17 @@ OPENCODE_GO_DEEPSEEK_MODEL=deepseek-v4-pro
 OPENCODE_GO_DEEPSEEK_FAST_MODEL=deepseek-v4-flash
 ```
 
-To use a private Ollama deployment as the preferred Fast model and as the
-ebook reader's translation-only model, configure:
+Ebook counterpart translation uses the official OpenAI API first. It reuses
+`OPENAI_API_KEY` unless a dedicated key is supplied:
+
+```bash
+OPENAI_TRANSLATION_API_KEY=... # optional
+OPENAI_TRANSLATION_BASE_URL=https://api.openai.com/v1
+OPENAI_TRANSLATION_MODEL=gpt-5.4-mini
+OPENAI_TRANSLATION_TIMEOUT_SECONDS=45
+```
+
+Configure the private Ollama deployment as the fallback:
 
 ```bash
 LOCAL_QWEN_API_KEY=ollama
@@ -438,11 +447,12 @@ LOCAL_QWEN_BASE_URL=https://your-tailnet-host:8443/v1
 LOCAL_QWEN_MODEL=hy-mt2:7b
 ```
 
-The API host must be connected to the same Tailnet. The model is published only
-as a Fast option. In the ebook reader it generates counterpart translations but
-never automatic or on-demand learning annotations; those stay on the selected
-Deep model. `reasoning_effort=none` keeps the Ollama translation model focused
-on the JSON answer.
+The API host must be connected to the same Tailnet. Quota, timeout, network,
+schema-validation, and other upstream failures from the official OpenAI request
+fall through to `hy-mt2:7b`. Neither translation model generates automatic or
+on-demand learning annotations; those stay on the selected Deep model.
+`reasoning_effort=none` keeps both translation requests focused on the JSON
+answer.
 
 To use Alibaba Cloud Model Studio as an external provider, set the Qwen 3.7
 profile. The backend

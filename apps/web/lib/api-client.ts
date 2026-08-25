@@ -332,7 +332,7 @@ export async function getServerLLMModels(): Promise<ServerLLMModel[]> {
       },
       {
         id: "local-qwen-fast",
-        label: "Hunyuan MT2 7B · Ebook translation only",
+        label: "Hunyuan MT2 7B · Ebook translation fallback",
         provider: "Private Ollama",
         model: LOCAL_HY_MT2_7B_MODEL,
         mode: "fast",

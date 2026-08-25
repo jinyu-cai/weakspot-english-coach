@@ -13,6 +13,7 @@ from app.services.model_catalog import (
     default_text_provider,
     ebook_annotation_provider,
     local_qwen_translation_provider,
+    openai_translation_provider,
 )
 
 
@@ -27,6 +28,7 @@ def main() -> None:
         qwen_model_studio_api_key="",
         deepseek_api_key="",
         openai_compat_api_key="",
+        openai_api_key="official-key",
         local_qwen_api_key="ollama",
         local_qwen_base_url="https://private-model.example/v1",
         local_qwen_model="hy-mt2:7b",
@@ -42,7 +44,7 @@ def main() -> None:
     assert models["default"]["fastModel"] == "hy-mt2:7b"
     assert models["local-qwen-fast"] == {
         "id": "local-qwen-fast",
-        "label": "Hunyuan MT2 7B · Ebook translation only",
+        "label": "Hunyuan MT2 7B · Ebook translation fallback",
         "provider": "Private Ollama",
         "model": "hy-mt2:7b",
         "mode": "fast",
@@ -59,6 +61,12 @@ def main() -> None:
     translation_provider = local_qwen_translation_provider(config)
     assert translation_provider is not None
     assert translation_provider.model == "hy-mt2:7b"
+    primary_provider = openai_translation_provider(config)
+    assert primary_provider is not None
+    assert primary_provider.api_key == "official-key"
+    assert primary_provider.base_url == "https://api.openai.com/v1"
+    assert primary_provider.model == "gpt-5.4-mini"
+    assert primary_provider.reasoning_effort_override == "none"
     annotation_provider = ebook_annotation_provider(translation_provider, config)
     assert annotation_provider is not None
     assert annotation_provider.model == config.openrouter_model
@@ -97,7 +105,35 @@ def main() -> None:
     assert request["model"] == "hy-mt2:7b"
     assert request["reasoning_effort"] == "none"
     assert request["response_format"] == {"type": "json_object"}
-    print("Private Hunyuan MT2 model catalog, routing, and reasoning override OK.")
+
+    request.clear()
+    with (
+        patch.object(ai_client.settings, "use_fake_ai", False),
+        patch.object(ai_client, "get_client", return_value=client),
+    ):
+        result = ai_client.parse_with_model(
+            messages=[
+                {"role": "system", "content": "Return JSON."},
+                {"role": "user", "content": "Translate hello world."},
+            ],
+            response_model=TranslationResult,
+            provider=primary_provider,
+            model=primary_provider.fast_model,
+            reasoning_effort="none",
+            max_tokens=512,
+            use_native_structured_output=True,
+            request_timeout_seconds=45,
+        )
+
+    assert result.translation == "你好，世界"
+    assert request["model"] == "gpt-5.4-mini"
+    assert request["reasoning_effort"] == "none"
+    assert request["response_format"]["type"] == "json_schema"
+    assert request["max_completion_tokens"] == 512
+    assert request["timeout"] == 45
+    assert "temperature" not in request
+    assert "max_tokens" not in request
+    print("Official GPT-5.4 mini primary and private Hunyuan MT2 fallback contracts OK.")
 
 
 if __name__ == "__main__":

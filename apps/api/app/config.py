@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     qwen_embedding_model: str = "text-embedding-v4"
     qwen_embedding_dimensions: int = 256
     openai_api_key: str = ""
+    # Ebook counterpart translation prefers the official OpenAI API when a
+    # key is available, then falls back to the private Ollama model.
+    openai_translation_api_key: str = ""
+    openai_translation_base_url: str = "https://api.openai.com/v1"
+    openai_translation_model: str = "gpt-5.4-mini"
+    openai_translation_timeout_seconds: float = 45.0
     # OpenAI Build Week extension. When enabled, Coach Mode uses the official
     # Responses API and GPT-5.6 Sol for adaptive mission generation. The
     # dedicated key may be omitted to reuse OPENAI_API_KEY; both remain
@@ -152,6 +158,18 @@ class Settings(BaseSettings):
             self.local_qwen_api_key.strip()
             and self.local_qwen_base_url.strip()
             and self.local_qwen_model.strip()
+        )
+
+    @property
+    def openai_translation_effective_api_key(self) -> str:
+        return self.openai_translation_api_key or self.openai_api_key
+
+    @property
+    def uses_openai_translation(self) -> bool:
+        return bool(
+            self.openai_translation_effective_api_key.strip()
+            and self.openai_translation_base_url.strip()
+            and self.openai_translation_model.strip()
         )
 
     @property
