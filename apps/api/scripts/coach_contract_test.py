@@ -8,6 +8,7 @@ No network, database, or model-provider call is made.
 """
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -59,9 +60,11 @@ from app.services.diagnose_service import (
 
 def main() -> None:
     paths = app.openapi()["paths"]
+    assert "/api/v1/admin/model-usage" in paths
     assert "/api/v1/coach/missions" in paths
     assert "/api/v1/coach/input-lab-2/transcript-missions" in paths
     assert "/api/v1/coach/speech" in paths
+    assert "/api/v1/admin/model-usage" in paths
 
     previous_fake_ai = settings.use_fake_ai
     previous_build_week_enabled = settings.openai_build_week_enabled
@@ -155,12 +158,16 @@ def main() -> None:
         settings.openai_build_week_model = "gpt-5.6-sol"
         settings.openai_build_week_reasoning_effort = "medium"
         openai_mission_service.OpenAI = _FakeOpenAIResponsesClient
-        gpt56_response = generate_coach_mission(
-            CoachMissionRequest(preferredType="decision_response"),
-            recommended_skills=["clarity.expression"],
-            learning_context="Selection reason: a transfer check is due.",
-            user_id="private-product-user-id",
-        )
+        with patch.object(
+            openai_mission_service,
+            "record_official_usage",
+        ) as record_sol_usage:
+            gpt56_response = generate_coach_mission(
+                CoachMissionRequest(preferredType="decision_response"),
+                recommended_skills=["clarity.expression"],
+                learning_context="Selection reason: a transfer check is due.",
+                user_id="private-product-user-id",
+            )
         assert gpt56_response.mission.generation is not None
         assert gpt56_response.mission.generation.model == "gpt-5.6-sol"
         assert gpt56_response.mission.generation.api == "responses"
@@ -171,6 +178,12 @@ def main() -> None:
         assert captured_responses_request["text_format"] is GPT56DecisionResponseMissionAIResult
         assert captured_responses_request["safety_identifier"].startswith("weakspot_")
         assert "private-product-user-id" not in captured_responses_request["safety_identifier"]
+        record_sol_usage.assert_called_once_with(
+            "sol",
+            input_tokens=400,
+            output_tokens=200,
+            total_tokens=600,
+        )
     finally:
         settings.openai_build_week_enabled = previous_build_week_enabled
         settings.openai_build_week_api_key = previous_build_week_key

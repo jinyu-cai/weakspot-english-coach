@@ -32,11 +32,11 @@ def split_call_contract() -> None:
     openai = LLMProviderConfig(
         api_key="official-key",
         base_url="https://api.openai.com/v1",
-        model="gpt-5.4-mini",
-        fast_model="gpt-5.4-mini",
+        model="gpt-5.6-luna",
+        fast_model="gpt-5.6-luna",
         reasoning_effort_override="none",
         fast_reasoning_effort_override="none",
-        server_model_id="openai-translation-primary",
+        server_model_id="openai-luna-primary",
     )
     qwen = LLMProviderConfig(
         api_key="ollama",
@@ -107,7 +107,7 @@ def split_call_contract() -> None:
     assert result.units[0].counterpartText == "可迁移的见解很重要。"
     assert len(result.annotations) == 1
     assert [call["model"] for call in calls] == [
-        "gpt-5.4-mini",
+        "gpt-5.6-luna",
         "hy-mt2:7b",
         "openai/gpt-5.6-luna-pro",
         "openai/gpt-5.6-luna-pro",
@@ -132,9 +132,9 @@ def primary_translation_contract() -> None:
     openai = LLMProviderConfig(
         api_key="official-key",
         base_url="https://api.openai.com/v1",
-        model="gpt-5.4-mini",
-        fast_model="gpt-5.4-mini",
-        server_model_id="openai-translation-primary",
+        model="gpt-5.6-luna",
+        fast_model="gpt-5.6-luna",
+        server_model_id="openai-luna-primary",
     )
     qwen = LLMProviderConfig(
         api_key="ollama",
@@ -166,7 +166,50 @@ def primary_translation_contract() -> None:
         )
 
     assert result.units[0].counterpartText == "首选模型已成功翻译。"
-    assert [call["model"] for call in calls] == ["gpt-5.4-mini"]
+    assert [call["model"] for call in calls] == ["gpt-5.6-luna"]
+
+
+def local_translation_fallback_contract() -> None:
+    openai = LLMProviderConfig(
+        api_key="official-key",
+        base_url="https://api.openai.com/v1",
+        model="gpt-5.6-luna",
+        fast_model="gpt-5.6-luna",
+        server_model_id="openai-luna-primary",
+    )
+    qwen = LLMProviderConfig(
+        api_key="ollama",
+        base_url="https://private-model.example/v1",
+        model="hy-mt2:7b",
+        fast_model="hy-mt2:7b",
+        server_model_id="local-qwen-fast",
+    )
+    calls: list[str] = []
+
+    def parse_stub(**kwargs):
+        calls.append(kwargs["model"])
+        if kwargs["provider"] is not qwen:
+            raise ValueError("provider unavailable")
+        return EbookTranslationAIResult(
+            units=[EbookAIUnit(unitId="p1_u0", counterpartText="本地兜底成功。")]
+        )
+
+    with (
+        patch.object(ebook_service.settings, "use_fake_ai", False),
+        patch.object(ebook_service, "openai_translation_provider", return_value=openai),
+        patch.object(ebook_service, "local_qwen_translation_provider", return_value=qwen),
+        patch.object(ebook_service, "parse_with_model", side_effect=parse_stub),
+    ):
+        result = ebook_service._generate_translation_result(
+            [{"unitId": "p1_u0", "sourceText": "Use the final fallback."}],
+            "zh-CN",
+            qwen,
+            2000,
+            "local-fallback-test",
+        )
+
+    assert result.units[0].counterpartText == "本地兜底成功。"
+    assert calls == ["gpt-5.6-luna", "hy-mt2:7b"]
 
 
 def nonlinguistic_translation_contract() -> None:
@@ -592,12 +635,13 @@ def cancellation_contract() -> None:
 def main() -> None:
     split_call_contract()
     primary_translation_contract()
+    local_translation_fallback_contract()
     nonlinguistic_translation_contract()
     parallel_annotation_contract()
     cancellation_contract()
     pipeline_and_circuit_contract()
     print(
-        "GPT-5.4 mini translation falls back to Hunyuan MT2; Luna annotations fan out across all "
+        "Official Luna translation falls back directly to Hunyuan MT2; Luna Pro annotations fan out across all "
         "pages and retry independently; cancellation releases the pack without "
         "discarding completed work; translation failures open the circuit."
     )

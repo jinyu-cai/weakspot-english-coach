@@ -435,8 +435,12 @@ Ebook counterpart translation uses the official OpenAI API first. It reuses
 ```bash
 OPENAI_TRANSLATION_API_KEY=... # optional
 OPENAI_TRANSLATION_BASE_URL=https://api.openai.com/v1
-OPENAI_TRANSLATION_MODEL=gpt-5.4-mini
+OPENAI_TRANSLATION_MODEL=gpt-5.6-luna
 OPENAI_TRANSLATION_TIMEOUT_SECONDS=45
+OPENAI_LUNA_DAILY_TOKEN_LIMIT=2500000
+OPENAI_SOL_DAILY_TOKEN_LIMIT=250000
+OPENAI_QUOTA_TIMEZONE=America/Los_Angeles
+OPENAI_QUOTA_RESET_HOUR=5
 ```
 
 Configure the private Ollama deployment as the fallback:
@@ -447,12 +451,14 @@ LOCAL_QWEN_BASE_URL=https://your-tailnet-host:8443/v1
 LOCAL_QWEN_MODEL=hy-mt2:7b
 ```
 
-The API host must be connected to the same Tailnet. Quota, timeout, network,
-schema-validation, and other upstream failures from the official OpenAI request
-fall through to `hy-mt2:7b`. Neither translation model generates automatic or
-on-demand learning annotations; those stay on the selected Deep model.
-`reasoning_effort=none` keeps both translation requests focused on the JSON
-answer.
+Official usage is persisted from each API response's `total_tokens` value.
+Every quota window runs from 05:00 to 05:00 in `America/Los_Angeles`. Luna Deep
+(`xhigh`) and Fast (`medium`) share a 2.5M-token budget and move to their
+OpenRouter models when it is exhausted. Ebook translation instead moves
+directly from official Luna to `hy-mt2:7b`. Sol's 250K-token line is tracked for
+visibility only: Sol continues to use the official Responses API after crossing
+it because no provider fallback is configured. Owner accounts can inspect the
+current counters and next reset through `GET /api/v1/admin/model-usage`.
 
 To use Alibaba Cloud Model Studio as an external provider, set the Qwen 3.7
 profile. The backend
@@ -489,17 +495,15 @@ X-LLM-Server-Fast-Model: deepseek-fast
 ```
 
 The server resolves that ID to its matching key, endpoint, and exact model. No
-provider credentials or base URLs are returned to the browser. When private
-Ollama is configured, “Server default” uses `hy-mt2:7b` for Fast work and for
-ebook counterpart translation, while retaining the highest-priority configured
-Deep model for ebook annotations. Without private Qwen, an OpenRouter +
-OpenCode Go deployment resolves to Luna Pro Deep plus DeepSeek V4 Flash Fast.
-OpenRouter Luna remains a selectable Fast alternative. With only OpenCode Go
-configured, the default is DeepSeek V4
-Pro/Flash; with only OpenRouter configured, it is Luna Pro/Luna. Other
-deployments can default to their configured Model Studio Qwen or legacy
-DeepSeek pair. An explicitly selected slot can use any matching configured
-model, including mixed-provider combinations.
+provider credentials or base URLs are returned to the browser. With OpenRouter
+configured, “Server default” uses the quota-routed Luna Pro/Luna pair: official
+Luna first, then the matching OpenRouter slot. OpenCode Go and Model Studio
+remain selectable alternatives. With only OpenCode Go configured, the default
+is DeepSeek V4 Pro/Flash; other deployments can default to their configured
+Model Studio Qwen or legacy DeepSeek pair. Private `hy-mt2:7b` is reserved for
+ebook translation fallback and is only considered as a generic Fast default
+when no hosted Fast provider exists. An explicitly selected slot can use any
+matching configured model, including mixed-provider combinations.
 The built-in selector applies to text features (diagnosis, plans, practice,
 imports, and new text chats). Text-chat sessions retain their chosen pair so a
 later browser selection does not change an existing session. The legacy

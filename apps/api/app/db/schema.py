@@ -461,6 +461,24 @@ rate_limit_counters = Table(
 )
 Index("ix_rate_limit_expiry", rate_limit_counters.c.expires_at)
 
+official_model_quota_usage = Table(
+    "official_model_quota_usage",
+    metadata,
+    Column("quota_key", String(64), primary_key=True),
+    Column("window_started_at", DateTime(timezone=True), primary_key=True),
+    Column("window_ends_at", DateTime(timezone=True), nullable=False),
+    Column("token_limit", BigInteger, nullable=False),
+    Column("input_tokens", BigInteger, nullable=False, server_default="0"),
+    Column("output_tokens", BigInteger, nullable=False, server_default="0"),
+    Column("total_tokens", BigInteger, nullable=False, server_default="0"),
+    Column("reserved_tokens", BigInteger, nullable=False, server_default="0"),
+    Column("official_request_count", BigInteger, nullable=False, server_default="0"),
+    Column("fallback_count", BigInteger, nullable=False, server_default="0"),
+    Column("upstream_failure_count", BigInteger, nullable=False, server_default="0"),
+    *_timestamps(),
+)
+Index("ix_official_model_quota_window_end", official_model_quota_usage.c.window_ends_at)
+
 migration_runs = Table(
     "migration_runs",
     metadata,

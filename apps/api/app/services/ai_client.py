@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import json
 import logging
 import time
-from typing import Literal, Optional, Type, TypeVar
+from typing import Callable, Literal, Optional, Type, TypeVar
 from urllib.parse import urlparse
 
 from openai import OpenAI, OpenAIError
@@ -59,6 +59,22 @@ class LLMProviderConfig:
     server_fast_model_id: Optional[str] = None
     is_default: bool = False
     is_byok: bool = False
+
+
+def _official_luna_provider(reasoning_effort: str) -> Optional[LLMProviderConfig]:
+    if not settings.uses_openai_translation:
+        return None
+    if settings.openai_translation_model.strip().lower() != "gpt-5.6-luna":
+        return None
+    return LLMProviderConfig(
+        api_key=settings.openai_translation_effective_api_key.strip(),
+        base_url=settings.openai_translation_base_url.strip().rstrip("/"),
+        model=settings.openai_translation_model.strip(),
+        fast_model=settings.openai_translation_model.strip(),
+        reasoning_effort_override=reasoning_effort,
+        fast_reasoning_effort_override=reasoning_effort,
+        server_model_id="openai-luna-primary",
+    )
 
 
 def _provider_connection(
@@ -203,6 +219,46 @@ def _uses_official_openai_api(base_url: str) -> bool:
     return hostname == "api.openai.com"
 
 
+def _is_openrouter_luna_request(model: str, base_url: str) -> bool:
+    return bool(
+        _uses_openrouter_api(base_url)
+        and settings.uses_openai_translation
+        and model.strip().lower()
+        in {
+            settings.openrouter_model.strip().lower(),
+            settings.openrouter_fast_model.strip().lower(),
+        }
+        and settings.openai_translation_model.strip().lower() == "gpt-5.6-luna"
+    )
+
+
+def _luna_reasoning_effort(model: str) -> str:
+    if model.strip().lower() == settings.openrouter_model.strip().lower():
+        return "xhigh"
+    return "medium"
+
+
+def _usage_values(usage: object | None) -> dict[str, int]:
+    def value(*names: str) -> int:
+        for name in names:
+            raw = getattr(usage, name, None)
+            if raw is not None:
+                try:
+                    return max(0, int(raw))
+                except (TypeError, ValueError):
+                    return 0
+        return 0
+
+    input_tokens = value("prompt_tokens", "input_tokens")
+    output_tokens = value("completion_tokens", "output_tokens")
+    total_tokens = value("total_tokens") or input_tokens + output_tokens
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
 def _provider_extra_body(
     model: str,
     base_url: str,
@@ -252,6 +308,9 @@ def parse_with_model(
     retry_reasoning_effort: Optional[str] = None,
     openrouter_routing_mode: OpenRouterRoutingMode = "balanced",
     request_timeout_seconds: Optional[float] = None,
+    _prefer_official_luna: bool = True,
+    _quota_managed: bool = False,
+    _usage_observer: Optional[Callable[[dict[str, int]], None]] = None,
 ) -> T:
     # Local testing: return canned results without calling an external model.
     if settings.use_fake_ai:
@@ -268,6 +327,146 @@ def parse_with_model(
         base_url = settings.default_llm_fast_base_url
     else:
         base_url = settings.default_llm_base_url
+
+    if _prefer_official_luna and _is_openrouter_luna_request(selected_model, base_url):
+        luna_reasoning_effort = _luna_reasoning_effort(selected_model)
+        official_provider = _official_luna_provider(luna_reasoning_effort)
+        if official_provider is not None:
+            try:
+                return parse_with_model(
+                    messages=messages,
+                    response_model=response_model,
+                    max_tokens=max_tokens,
+                    model=official_provider.model,
+                    provider=official_provider,
+                    trace_id=trace_id,
+                    reasoning_effort=luna_reasoning_effort,
+                    openrouter_completion_token_budget=openrouter_completion_token_budget,
+                    use_native_structured_output=True,
+                    native_structured_output_strict=native_structured_output_strict,
+                    max_attempts=max_attempts,
+                    retry_reasoning_effort=luna_reasoning_effort,
+                    openrouter_routing_mode=openrouter_routing_mode,
+                    request_timeout_seconds=request_timeout_seconds,
+                    _prefer_official_luna=False,
+                    _usage_observer=_usage_observer,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "llm[%s] official_luna_fallback model=%s fallback_model=%s error=%s",
+                    trace_id or "-",
+                    official_provider.model,
+                    selected_model,
+                    type(exc).__name__,
+                )
+                return parse_with_model(
+                    messages=messages,
+                    response_model=response_model,
+                    max_tokens=max_tokens,
+                    model=selected_model,
+                    provider=provider,
+                    trace_id=trace_id,
+                    reasoning_effort=luna_reasoning_effort,
+                    openrouter_completion_token_budget=openrouter_completion_token_budget,
+                    use_native_structured_output=use_native_structured_output,
+                    native_structured_output_strict=native_structured_output_strict,
+                    max_attempts=max_attempts,
+                    retry_reasoning_effort=luna_reasoning_effort,
+                    openrouter_routing_mode=openrouter_routing_mode,
+                    request_timeout_seconds=request_timeout_seconds,
+                    _prefer_official_luna=False,
+                    _usage_observer=_usage_observer,
+                )
+
+    if (
+        provider is not None
+        and provider.server_model_id == "openai-luna-primary"
+        and not _quota_managed
+    ):
+        from app.services.official_model_quota import (
+            estimate_request_tokens,
+            mark_fallback,
+            release_quota,
+            reserve_quota,
+            settle_quota,
+        )
+
+        requested_tokens = estimate_request_tokens(
+            messages,
+            max_output_tokens=(
+                openrouter_completion_token_budget
+                if openrouter_completion_token_budget is not None
+                else max_tokens
+            ),
+            attempts=max_attempts,
+        )
+        try:
+            reservation = reserve_quota("luna", requested_tokens)
+        except Exception as exc:
+            logger.warning(
+                "llm[%s] official_luna_quota_unavailable requested_tokens=%d error=%s",
+                trace_id or "-",
+                requested_tokens,
+                type(exc).__name__,
+            )
+            raise ValueError(f"Official Luna quota unavailable: {exc}") from exc
+
+        observed = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+        def observe_usage(values: dict[str, int]) -> None:
+            for key in observed:
+                observed[key] += values.get(key, 0)
+            if _usage_observer is not None:
+                _usage_observer(values)
+
+        try:
+            result = parse_with_model(
+                messages=messages,
+                response_model=response_model,
+                max_tokens=max_tokens,
+                model=selected_model,
+                provider=provider,
+                trace_id=trace_id,
+                reasoning_effort=reasoning_effort,
+                openrouter_completion_token_budget=openrouter_completion_token_budget,
+                use_native_structured_output=use_native_structured_output,
+                native_structured_output_strict=native_structured_output_strict,
+                max_attempts=max_attempts,
+                retry_reasoning_effort=retry_reasoning_effort,
+                openrouter_routing_mode=openrouter_routing_mode,
+                request_timeout_seconds=request_timeout_seconds,
+                _prefer_official_luna=False,
+                _quota_managed=True,
+                _usage_observer=observe_usage,
+            )
+        except Exception:
+            try:
+                if observed["total_tokens"]:
+                    settle_quota(reservation, **observed)
+                    mark_fallback("luna", upstream_failure=True)
+                else:
+                    release_quota(
+                        reservation,
+                        upstream_failure=True,
+                        count_fallback=True,
+                    )
+            except Exception as accounting_exc:
+                logger.error(
+                    "llm[%s] official_luna_accounting_failed error=%s",
+                    trace_id or "-",
+                    type(accounting_exc).__name__,
+                )
+            raise
+        try:
+            settle_quota(reservation, **observed)
+        except Exception as accounting_exc:
+            logger.error(
+                "llm[%s] official_luna_accounting_failed error=%s",
+                trace_id or "-",
+                type(accounting_exc).__name__,
+            )
+        return result
+
     request_model = _openrouter_routed_model(
         _provider_request_model(provider, selected_model, base_url),
         base_url,
@@ -447,6 +646,8 @@ def parse_with_model(
             getattr(usage, "completion_tokens", None),
             getattr(usage, "total_tokens", None),
         )
+        if _usage_observer is not None:
+            _usage_observer(_usage_values(usage))
         try:
             parsed = response_model.model_validate_json(content)
             logger.info(

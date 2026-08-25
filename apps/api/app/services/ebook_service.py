@@ -676,11 +676,10 @@ def _translation_provider_chain(
     provider: Optional[LLMProviderConfig],
 ) -> list[LLMProviderConfig]:
     """Return primary-to-fallback ebook translation providers without duplicates."""
-    candidates = [
-        openai_translation_provider(),
-        local_qwen_translation_provider(),
-        provider,
-    ]
+    local_fallback = local_qwen_translation_provider()
+    candidates = [openai_translation_provider(), local_fallback]
+    if local_fallback is None:
+        candidates.append(provider)
     result: list[LLMProviderConfig] = []
     seen: set[tuple[str, str]] = set()
     for candidate in candidates:
@@ -711,7 +710,7 @@ def _call_translation_model(
         "comparisonLanguage": comparison_language,
         "units": [{"unitId": row["unitId"], "sourceText": row["sourceText"]} for row in units],
     }
-    uses_openai_primary = provider.server_model_id == "openai-translation-primary"
+    uses_openai_primary = provider.server_model_id == "openai-luna-primary"
     return parse_with_model(
         messages=[
             {"role": "system", "content": f"{TRANSLATION_SYSTEM_PROMPT}\n\n{language_instruction(comparison_language)}"},

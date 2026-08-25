@@ -34,14 +34,14 @@ def main() -> None:
         local_qwen_model="hy-mt2:7b",
     )
     assert config.uses_local_qwen is True
-    assert config.default_llm_fast_model == "hy-mt2:7b"
-    assert config.default_llm_fast_api_key == "ollama"
-    assert config.default_llm_fast_base_url == "https://private-model.example/v1"
-    assert default_server_model_ids(config) == ("openrouter-deep", "local-qwen-fast")
+    assert config.default_llm_fast_model == "openai/gpt-5.6-luna"
+    assert config.default_llm_fast_api_key == "deep-key"
+    assert config.default_llm_fast_base_url == "https://openrouter.ai/api/v1"
+    assert default_server_model_ids(config) == ("openrouter-deep", "openrouter-fast")
 
     payload = catalog_payload(config)
     models = {item["id"]: item for item in payload["models"]}
-    assert models["default"]["fastModel"] == "hy-mt2:7b"
+    assert models["default"]["fastModel"] == "openai/gpt-5.6-luna"
     assert models["local-qwen-fast"] == {
         "id": "local-qwen-fast",
         "label": "Hunyuan MT2 7B · Ebook translation fallback",
@@ -53,10 +53,7 @@ def main() -> None:
 
     provider = default_text_provider(config)
     assert provider is not None
-    assert provider.fast_model == "hy-mt2:7b"
-    assert provider.fast_api_key == "ollama"
-    assert provider.fast_base_url == "https://private-model.example/v1"
-    assert provider.fast_reasoning_effort_override == "none"
+    assert provider.fast_model == "openai/gpt-5.6-luna"
 
     translation_provider = local_qwen_translation_provider(config)
     assert translation_provider is not None
@@ -65,7 +62,8 @@ def main() -> None:
     assert primary_provider is not None
     assert primary_provider.api_key == "official-key"
     assert primary_provider.base_url == "https://api.openai.com/v1"
-    assert primary_provider.model == "gpt-5.4-mini"
+    assert primary_provider.model == "gpt-5.6-luna"
+    assert primary_provider.server_model_id == "openai-luna-primary"
     assert primary_provider.reasoning_effort_override == "none"
     annotation_provider = ebook_annotation_provider(translation_provider, config)
     assert annotation_provider is not None
@@ -96,8 +94,8 @@ def main() -> None:
                 {"role": "user", "content": "Translate hello world."},
             ],
             response_model=TranslationResult,
-            provider=provider,
-            model=provider.fast_model,
+            provider=translation_provider,
+            model=translation_provider.fast_model,
             reasoning_effort="medium",
         )
 
@@ -123,17 +121,18 @@ def main() -> None:
             max_tokens=512,
             use_native_structured_output=True,
             request_timeout_seconds=45,
+            _quota_managed=True,
         )
 
     assert result.translation == "你好，世界"
-    assert request["model"] == "gpt-5.4-mini"
+    assert request["model"] == "gpt-5.6-luna"
     assert request["reasoning_effort"] == "none"
     assert request["response_format"]["type"] == "json_schema"
     assert request["max_completion_tokens"] == 512
     assert request["timeout"] == 45
     assert "temperature" not in request
     assert "max_tokens" not in request
-    print("Official GPT-5.4 mini primary and private Hunyuan MT2 fallback contracts OK.")
+    print("Official Luna primary and private Hunyuan MT2 translation fallback contracts OK.")
 
 
 if __name__ == "__main__":

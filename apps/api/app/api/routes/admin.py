@@ -4,9 +4,20 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.api.deps import Identity, require_owner
-from app.db.repositories import delete_access_role, get_access_role, list_access_roles, set_access_role
+from app.db.repositories import (
+    delete_access_role,
+    get_access_role,
+    list_access_roles,
+    set_access_role,
+)
+from app.services.official_model_quota import all_quota_statuses
 
 router = APIRouter(prefix="/admin")
+
+
+@router.get("/model-usage")
+def model_usage_endpoint(identity: Identity = Depends(require_owner)):
+    return {"dailyModelUsage": all_quota_statuses()}
 
 
 class AccessRoleRequest(BaseModel):

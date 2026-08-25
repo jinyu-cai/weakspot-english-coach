@@ -52,12 +52,17 @@ class Settings(BaseSettings):
     qwen_embedding_model: str = "text-embedding-v4"
     qwen_embedding_dimensions: int = 256
     openai_api_key: str = ""
-    # Ebook counterpart translation prefers the official OpenAI API when a
-    # key is available, then falls back to the private Ollama model.
+    # Official GPT-5.6 Luna is preferred for high-volume/translation work.
+    # The same configuration also upgrades OpenRouter Luna requests to the
+    # official endpoint until the daily quota is exhausted.
     openai_translation_api_key: str = ""
     openai_translation_base_url: str = "https://api.openai.com/v1"
-    openai_translation_model: str = "gpt-5.4-mini"
+    openai_translation_model: str = "gpt-5.6-luna"
     openai_translation_timeout_seconds: float = 45.0
+    openai_luna_daily_token_limit: int = 2_500_000
+    openai_sol_daily_token_limit: int = 250_000
+    openai_quota_timezone: str = "America/Los_Angeles"
+    openai_quota_reset_hour: int = 5
     # OpenAI Build Week extension. When enabled, Coach Mode uses the official
     # Responses API and GPT-5.6 Sol for adaptive mission generation. The
     # dedicated key may be omitted to reuse OPENAI_API_KEY; both remain
@@ -232,38 +237,38 @@ class Settings(BaseSettings):
 
     @property
     def default_llm_fast_model(self) -> str:
-        if self.uses_local_qwen:
-            return self.local_qwen_model
-        if self.uses_opencode_go and self.opencode_go_deepseek_fast_model.strip():
-            return self.opencode_go_deepseek_fast_model
         if self.uses_openrouter:
             return self.openrouter_fast_model
+        if self.uses_opencode_go and self.opencode_go_deepseek_fast_model.strip():
+            return self.opencode_go_deepseek_fast_model
         if self.uses_qwen_model_studio:
             return self.qwen_model_studio_fast_model
+        if self.uses_local_qwen:
+            return self.local_qwen_model
         return self.openai_compat_fast_model or self.llm_model_fast
 
     @property
     def default_llm_fast_api_key(self) -> str:
-        if self.uses_local_qwen:
-            return self.local_qwen_api_key
-        if self.uses_opencode_go and self.opencode_go_deepseek_fast_model.strip():
-            return self.opencode_go_api_key
         if self.uses_openrouter:
             return self.openrouter_api_key
+        if self.uses_opencode_go and self.opencode_go_deepseek_fast_model.strip():
+            return self.opencode_go_api_key
         if self.uses_qwen_model_studio:
             return self.qwen_model_studio_api_key
+        if self.uses_local_qwen:
+            return self.local_qwen_api_key
         return self.openai_compat_api_key or self.deepseek_api_key
 
     @property
     def default_llm_fast_base_url(self) -> str:
-        if self.uses_local_qwen:
-            return self.local_qwen_base_url
-        if self.uses_opencode_go and self.opencode_go_deepseek_fast_model.strip():
-            return self.opencode_go_base_url
         if self.uses_openrouter:
             return self.openrouter_base_url
+        if self.uses_opencode_go and self.opencode_go_deepseek_fast_model.strip():
+            return self.opencode_go_base_url
         if self.uses_qwen_model_studio:
             return self.qwen_model_studio_base_url
+        if self.uses_local_qwen:
+            return self.local_qwen_base_url
         return self.openai_compat_base_url or self.deepseek_base_url
 
     @property
