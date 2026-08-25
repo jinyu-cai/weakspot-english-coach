@@ -54,6 +54,7 @@ from app.models.practice import (
 )
 from app.services.coach_service import generate_coach_mission
 from app.services import decision_service
+from app.services import chat_service
 
 
 def _identity(user_id: str = "contract-user") -> Identity:
@@ -113,6 +114,26 @@ def _coach_response_with_long_prompt() -> CoachMissionResponse:
 
 def main() -> None:
     identity = _identity()
+
+    captured_chat_call = {}
+    with patch.object(
+        chat_service,
+        "parse_with_model",
+        side_effect=lambda **kwargs: captured_chat_call.update(kwargs) or ChatReplyAI(
+            reply="Bounded reply.",
+            corrections=[],
+            betterExpression=None,
+            practiceOpportunityCreated=False,
+        ),
+    ):
+        chat_service.chat_reply([], "Hello.", model="fake-model")
+    assert captured_chat_call["max_tokens"] == 2000
+    assert (
+        captured_chat_call["total_timeout_seconds"]
+        == chat_service.CHAT_REPLY_TOTAL_TIMEOUT_SECONDS
+    )
+    assert captured_chat_call["total_timeout_seconds"] < 110
+    assert captured_chat_call["use_native_structured_output"] is True
 
     # Full Chat topics stay on the session while compact ActivityRun metadata
     # conforms to its separate 240-character title contract.

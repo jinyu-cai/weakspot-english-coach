@@ -1,13 +1,76 @@
+import logging
+from uuid import uuid4
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.datastructures import MutableHeaders
 
 from app.config import settings
 from app.api.routes import admin, auth, chat, chat_import, coach, diagnose, ebooks, health, history, input_learning, learning, memory, models, notes, plan, practice, profile, realtime, stats
 from app.db.repositories import MemoryWriteClaimLostError
 from app.services.memory_write_service import MemoryWriteBusyError
 
+logger = logging.getLogger("uvicorn.error")
+
+
+class RequestBoundaryMiddleware:
+    """Return observable JSON for unexpected HTTP failures.
+
+    Keeping this middleware inside CORS means browsers receive the real 500
+    response instead of reducing it to an opaque ``Failed to fetch`` error.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request_id = uuid4().hex[:16]
+        scope.setdefault("state", {})["request_id"] = request_id
+        response_started = False
+
+        async def send_with_request_id(message):
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+                MutableHeaders(scope=message)["X-Request-ID"] = request_id
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_with_request_id)
+        except Exception:  # noqa: BLE001 - final application HTTP boundary.
+            logger.exception(
+                "request[%s] unhandled method=%s path=%s",
+                request_id,
+                scope.get("method"),
+                scope.get("path"),
+            )
+            if response_started:
+                raise
+            response = JSONResponse(
+                status_code=500,
+                content={
+                    "detail": {
+                        "code": "internal_error",
+                        "message": (
+                            "The server could not complete this request. "
+                            f"Request ID: {request_id}"
+                        ),
+                    }
+                },
+            )
+            await response(scope, receive, send_with_request_id)
+
+
 app = FastAPI(title=settings.app_name)
+
+# Starlette wraps later-added middleware around earlier middleware. Add the
+# boundary first, then CORS below, so CORS remains the outer user middleware.
+app.add_middleware(RequestBoundaryMiddleware)
 
 
 @app.exception_handler(MemoryWriteBusyError)

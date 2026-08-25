@@ -12,6 +12,9 @@ from app.services.ai_client import (
 from app.services.memory_service import MEMORY_EXTRACTION_INSTRUCTION
 from app.services.model_routing import reasoning_effort_for_tier, select_text_model
 
+
+CHAT_REPLY_TOTAL_TIMEOUT_SECONDS = 95.0
+
 CHAT_SYSTEM_PROMPT = """\
 You are a friendly, patient English conversation partner for Chinese-speaking learners.
 
@@ -129,6 +132,12 @@ def chat_reply(
         trace_id=trace_id,
         reasoning_effort=reasoning_effort,
         openrouter_routing_mode=openrouter_routing_mode,
+        # Stay inside the browser's 110-second request deadline across schema
+        # retries and official-provider fallback, not once per attempt.
+        total_timeout_seconds=CHAT_REPLY_TOTAL_TIMEOUT_SECONDS,
+        # OpenAI endpoints can satisfy the schema natively. Other compatible
+        # providers continue to use JSON mode inside parse_with_model.
+        use_native_structured_output=True,
     )
 
 

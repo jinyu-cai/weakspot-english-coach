@@ -512,7 +512,9 @@ def _session_text_model(session: dict, llm_provider: LLMProviderConfig | None) -
 def create_session(
     req: ChatCreateSessionRequest,
     llm_provider: LLMProviderConfig | None = Depends(get_llm_provider),
-    identity: Identity = Depends(rate_limited("chat")),
+    # Session preparation is not a model generation. Keep a separate abuse
+    # bucket so creating a session does not consume the learner's Chat turns.
+    identity: Identity = Depends(rate_limited("chat_session")),
 ):
     req.userId = identity.user_id
     text_model, text_model_mode, server_model_id, deep_model_id, fast_model_id = _new_session_model(
@@ -621,7 +623,7 @@ def get_sessions(
 @router.get("/sessions/{session_id}/messages")
 def get_messages(
     session_id: str,
-    identity: Identity = Depends(rate_limited("chat")),
+    identity: Identity = Depends(resolve_identity),
 ):
     session = get_chat_session(identity.user_id, session_id)
     if not session:
@@ -799,7 +801,9 @@ def send_message(
             topic=_session_conversation_context(session),
             llm_provider=effective_provider,
             model=text_model,
-            max_tokens=None if _unlimited_llm_output(identity) else 2000,
+            # Unlimited account quota must not turn a conversational reply into
+            # unlimited output latency. Analysis retains its separate budget.
+            max_tokens=2000,
             trace_id=request_id,
             memory_context=memory_pack.get("text"),
             hidden_practice_instruction=build_stealth_probe_instruction(candidate_stealth_probe),

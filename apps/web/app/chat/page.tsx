@@ -24,6 +24,7 @@ import {
   getChatMessages,
   getChatSessions,
   generateCoachMission,
+  isAmbiguousApiFailure,
   saveChatSelectionToNote,
   sendChatMessage,
   learnerResponseCharacterCount,
@@ -629,22 +630,33 @@ export default function ChatPage() {
         assistantMessage,
       ])
     } catch (error) {
-      try {
-        const refreshed = await getChatMessages(activeSession.id, DEMO_USER_ID)
-        if (refreshed.messages.some((message) => message.clientMessageId === clientMessageId)) {
-          pendingSendRef.current = null
-          if (activeSessionIdRef.current === activeSession.id) {
-            setActiveSession(refreshed.session)
-            setSessions((current) => current.map((session) =>
-              session.id === refreshed.session.id ? refreshed.session : session,
-            ))
-            setMessages(withSessionStarter(refreshed.session, refreshed.messages))
+      // Only reconcile ambiguous failures. Validation and quota errors are
+      // definitive and should be shown immediately instead of polling.
+      if (isAmbiguousApiFailure(error)) {
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          if (attempt > 0) {
+            await new Promise((resolve) => window.setTimeout(resolve, attempt * 1_000))
           }
-          return
+          try {
+            const refreshed = await getChatMessages(activeSession.id, DEMO_USER_ID)
+            if (refreshed.messages.some((message) => message.clientMessageId === clientMessageId)) {
+              pendingSendRef.current = null
+              if (activeSessionIdRef.current === activeSession.id) {
+                setActiveSession(refreshed.session)
+                setSessions((current) => current.map((session) =>
+                  session.id === refreshed.session.id ? refreshed.session : session,
+                ))
+                setMessages(withSessionStarter(refreshed.session, refreshed.messages))
+              }
+              return
+            }
+          } catch {
+            // If even the read path is unreachable, polling cannot help.
+            break
+          }
         }
-      } catch {
-        // Keep the stable clientMessageId so a manual retry remains idempotent.
       }
+      // Keep the stable clientMessageId so a manual retry remains idempotent.
       setMessages((prev) => prev.filter((m) => m.id !== optimisticUser.id))
       setInput(text)
       toast.error(t.chat.sendFailed, {
