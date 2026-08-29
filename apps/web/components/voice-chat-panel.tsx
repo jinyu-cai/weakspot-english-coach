@@ -18,12 +18,14 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { SceneBriefing, type SceneBriefingSession } from "@/components/scene-briefing"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/components/language-provider"
 
 interface VoiceChatPanelProps {
   topic?: string
   sessionContext?: RealtimeSessionContext
+  briefing?: SceneBriefingSession
   onConnected?: () => void
   onEnd: (sessionId?: string) => void
   onLifecycleChange?: (state: VoiceChatLifecycle) => void
@@ -34,7 +36,7 @@ export interface VoiceChatLifecycle {
   pending: boolean
 }
 
-export function VoiceChatPanel({ topic, sessionContext, onConnected, onEnd, onLifecycleChange }: VoiceChatPanelProps) {
+export function VoiceChatPanel({ topic, sessionContext, briefing, onConnected, onEnd, onLifecycleChange }: VoiceChatPanelProps) {
   const [voiceModel, setVoiceModel] = useState<RealtimeVoiceModel>("gpt-realtime-mini-2025-12-15")
   const { t } = useLanguage()
   const onEndRef = useRef(onEnd)
@@ -101,42 +103,45 @@ export function VoiceChatPanel({ topic, sessionContext, onConnected, onEnd, onLi
   // ---- Not connected: show start button ----
   if (status === "idle" || status === "error") {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-6">
-        <div className="flex size-24 items-center justify-center rounded-full bg-primary/10">
-          <Mic className="size-12 text-primary" />
-        </div>
-        <div className="flex flex-col items-center gap-2 text-center">
-          <h3 className="text-lg font-medium">{t.chat.voicePanel.title}</h3>
-          <p className="max-w-sm text-sm text-muted-foreground">{t.chat.voicePanel.description}</p>
-          {error && (
-            <p className="mt-1 text-sm text-destructive">{error}</p>
+      <div className="flex h-full flex-col overflow-y-auto py-4">
+        {briefing ? <SceneBriefing session={briefing} className="mx-2 mb-6 shrink-0" /> : null}
+        <div className="flex flex-1 flex-col items-center justify-center gap-6">
+          <div className="flex size-24 items-center justify-center rounded-full bg-primary/10">
+            <Mic className="size-12 text-primary" />
+          </div>
+          <div className="flex flex-col items-center gap-2 text-center">
+            <h3 className="text-lg font-medium">{t.chat.voicePanel.title}</h3>
+            <p className="max-w-sm text-sm text-muted-foreground">{t.chat.voicePanel.description}</p>
+            {error && (
+              <p className="mt-1 text-sm text-destructive">{error}</p>
+            )}
+          </div>
+          <ToggleGroup
+            value={[voiceModel]}
+            onValueChange={(v) => v[0] && setVoiceModel(v[0] as RealtimeVoiceModel)}
+            className="rounded-lg border border-border p-0.5"
+          >
+            <ToggleGroupItem value="gpt-realtime-mini-2025-12-15" className="h-8 rounded-md px-3 text-xs">
+              Mini
+            </ToggleGroupItem>
+            <ToggleGroupItem value="gpt-realtime-2" className="h-8 rounded-md px-3 text-xs">
+              Realtime 2
+            </ToggleGroupItem>
+          </ToggleGroup>
+          {hasPendingTranscript ? (
+            <Button size="lg" onClick={handleEnd} disabled={isSavingTranscript} className="gap-2">
+              {isSavingTranscript ? <Spinner className="size-5" /> : <RefreshCw className="size-5" />}
+              {isSavingTranscript
+                ? t.chat.voicePanel.savingTranscript
+                : t.chat.voicePanel.retrySaveTranscript}
+            </Button>
+          ) : (
+            <Button size="lg" onClick={handleConnect} className="gap-2">
+              <Phone className="size-5" />
+              {t.chat.voicePanel.start}
+            </Button>
           )}
         </div>
-        <ToggleGroup
-          value={[voiceModel]}
-          onValueChange={(v) => v[0] && setVoiceModel(v[0] as RealtimeVoiceModel)}
-          className="rounded-lg border border-border p-0.5"
-        >
-          <ToggleGroupItem value="gpt-realtime-mini-2025-12-15" className="h-8 rounded-md px-3 text-xs">
-            Mini
-          </ToggleGroupItem>
-          <ToggleGroupItem value="gpt-realtime-2" className="h-8 rounded-md px-3 text-xs">
-            Realtime 2
-          </ToggleGroupItem>
-        </ToggleGroup>
-        {hasPendingTranscript ? (
-          <Button size="lg" onClick={handleEnd} disabled={isSavingTranscript} className="gap-2">
-            {isSavingTranscript ? <Spinner className="size-5" /> : <RefreshCw className="size-5" />}
-            {isSavingTranscript
-              ? t.chat.voicePanel.savingTranscript
-              : t.chat.voicePanel.retrySaveTranscript}
-          </Button>
-        ) : (
-          <Button size="lg" onClick={handleConnect} className="gap-2">
-            <Phone className="size-5" />
-            {t.chat.voicePanel.start}
-          </Button>
-        )}
       </div>
     )
   }
@@ -144,9 +149,12 @@ export function VoiceChatPanel({ topic, sessionContext, onConnected, onEnd, onLi
   // ---- Connecting ----
   if (status === "connecting") {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4">
-        <Spinner className="size-8" />
-        <p className="text-sm text-muted-foreground">{t.chat.voicePanel.connecting}</p>
+      <div className="flex h-full flex-col overflow-y-auto py-4">
+        {briefing ? <SceneBriefing session={briefing} className="mx-2 mb-6 shrink-0" /> : null}
+        <div className="flex flex-1 flex-col items-center justify-center gap-4">
+          <Spinner className="size-8" />
+          <p className="text-sm text-muted-foreground">{t.chat.voicePanel.connecting}</p>
+        </div>
       </div>
     )
   }
@@ -156,6 +164,7 @@ export function VoiceChatPanel({ topic, sessionContext, onConnected, onEnd, onLi
     <div className="flex h-full flex-col">
       {/* Transcript area */}
       <div className="flex-1 overflow-y-auto px-2 py-4">
+        {briefing ? <SceneBriefing session={briefing} className="mb-5" /> : null}
         {transcript.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-muted-foreground">
             <Volume2 className="size-8 opacity-30" />
