@@ -1472,6 +1472,7 @@ export default function CoachPage() {
             <div className="h-[34rem] min-h-96 rounded-3xl border border-border bg-card p-4 shadow-sm sm:p-5">
               <VoiceChatPanel
                 topic={mission.title}
+                briefing={mission.scene}
                 sessionContext={{
                   scenarioPrompt: mission.scene.scenarioPrompt,
                   starterMessage: mission.scene.starterMessage,

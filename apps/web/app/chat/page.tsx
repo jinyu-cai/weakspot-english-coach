@@ -45,6 +45,7 @@ import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { VoiceChatPanel, type VoiceChatLifecycle } from "@/components/voice-chat-panel"
+import { SceneBriefing } from "@/components/scene-briefing"
 import { SessionSummary } from "@/components/session-summary"
 import { cn } from "@/lib/utils"
 import { shouldSendFromChatComposer } from "@/lib/chat-composer"
@@ -978,6 +979,16 @@ export default function ChatPage() {
       {viewState === "chat" && mode === "voice" && (
         <VoiceChatPanel
           topic={activeSession.topic ?? undefined}
+          briefing={activeSession}
+          sessionContext={{
+            scenarioPrompt: activeSession.scenarioPrompt ?? undefined,
+            starterMessage: activeSession.starterMessage ?? undefined,
+            scenarioFamily: activeSession.scenarioFamily ?? undefined,
+            scenarioKey: activeSession.scenarioKey ?? undefined,
+            missionRunId: activeSession.missionRunId ?? undefined,
+            missionType: activeSession.missionType ?? undefined,
+            missionTargetSkills: activeSession.missionTargetSkills,
+          }}
           onEnd={handleVoiceEnd}
           onLifecycleChange={setVoiceLifecycle}
         />
@@ -1090,45 +1101,6 @@ export default function ChatPage() {
         </>
       )}
     </div>
-  )
-}
-
-function SceneBriefing({ session }: { session: ChatSession }) {
-  const { t } = useLanguage()
-  const details = [
-    [t.chat.sceneBriefing.setting, session.setting?.trim()],
-    [t.chat.sceneBriefing.yourRole, session.userRole?.trim()],
-    [t.chat.sceneBriefing.aiRole, session.aiRole?.trim()],
-    [t.chat.sceneBriefing.goal, session.goal?.trim()],
-  ].filter((detail): detail is [string, string] => Boolean(detail[1]))
-
-  if (details.length === 0) return null
-
-  return (
-    <section
-      aria-label={t.chat.sceneBriefing.title}
-      className="rounded-2xl border border-primary/25 bg-primary/5 p-4 sm:p-5"
-    >
-      <div className="flex items-start gap-3">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <Sparkles className="size-4" />
-        </span>
-        <div>
-          <h2 className="font-heading text-sm font-semibold">{t.chat.sceneBriefing.title}</h2>
-          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-            {t.chat.sceneBriefing.description}
-          </p>
-        </div>
-      </div>
-      <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-        {details.map(([label, value]) => (
-          <div key={label} className="rounded-xl border border-border/70 bg-background/70 px-3.5 py-3">
-            <dt className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{label}</dt>
-            <dd className="mt-1 text-sm leading-relaxed text-foreground">{value}</dd>
-          </div>
-        ))}
-      </dl>
-    </section>
   )
 }
 
