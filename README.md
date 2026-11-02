@@ -8,7 +8,7 @@ the evidence shows you have mastered them.**
 **API health:** [enapi.jinxxx.de/api/v1/health](https://enapi.jinxxx.de/api/v1/health) ·
 **License:** [MIT](LICENSE)
 
-Try it as a guest or sign in with GitHub or Google. The interface and the
+Try it as a guest or sign in with GitHub or Google(is still developing). The interface and the
 coach's explanations are available in English and Simplified Chinese.
 
 ![Today's Mission briefing for a generated roleplay, showing the setting, both roles, the goal, and a success checklist](docs/screenshots/mission-briefing.webp)
