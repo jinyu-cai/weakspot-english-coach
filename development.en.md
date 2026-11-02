@@ -1,5 +1,7 @@
 # WeakSpot English Coach: A From-Zero Development Guide
 
+> **New starting route (2026-09-23):** begin with the [complete beginner English guide](docs/BEGINNER_GUIDE.en.md) or [中文版](docs/BEGINNER_GUIDE.zh-CN.md) for tool installation, a no-key local run, and a small app built from an empty directory. Return here for deeper reference. For current production deployment, use the [server-local PostgreSQL runbook](docs/LOCAL_POSTGRESQL_PRODUCTION.md).
+
 > Audience: a first-year student with no prior development experience. You may never have used a terminal or written
 > a program.
 >

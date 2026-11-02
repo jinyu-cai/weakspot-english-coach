@@ -1,5 +1,7 @@
 # WeakSpot English Coach：从零读懂项目的学习指南
 
+> **新的入门路线（2026-09-23）：**先阅读 [完全新手中文指南](docs/BEGINNER_GUIDE.zh-CN.md) 或 [English guide](docs/BEGINNER_GUIDE.en.md)，完成环境安装、无密钥运行和从空目录写小项目，再回到本文深入学习。本文保留为详细参考；当前生产部署以 [本机 PostgreSQL runbook](docs/LOCAL_POSTGRESQL_PRODUCTION.md) 为准。
+
 > 适合读者：真正从零开始的大一新生。你可以还没写过程序、没用过终端，也不知道 API、端口、数据库和部署是什么。
 >
 > 最后核对日期：2026-08-19。本文以真实代码为准，不再作为“让 AI 生成项目的规格”，而是作为读懂和重建项目的学习教程。
