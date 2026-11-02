@@ -13,12 +13,9 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -f "deploy/certs/global-bundle.pem" ]]; then
-  echo "Missing deploy/certs/global-bundle.pem. Download the AWS RDS global CA bundle first." >&2
-  exit 1
-fi
-
+docker compose config --quiet
 docker compose build
+docker compose up -d postgres
 docker compose run --rm api python -m scripts.check_production_database
 docker compose run --rm api alembic upgrade head
 docker compose up -d

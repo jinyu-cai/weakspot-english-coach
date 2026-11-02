@@ -19,7 +19,7 @@ uv run alembic upgrade head
 
 Common production `.env` values are: at least one text-model provider profile
 (`QWEN_MODEL_STUDIO_*`, `OPENAI_COMPAT_*`, or the backwards-compatible
-`DEEPSEEK_*` variables), an RDS PostgreSQL `DATABASE_URL`, and
+`DEEPSEEK_*` variables), the private Compose PostgreSQL settings, and
 `CORS_ORIGINS` (include your Vercel URL). Add `OPENAI_API_KEY` when realtime
 voice or Coach AI speech is enabled, and add OAuth/session values when login is enabled. See
 `.env.example`.
@@ -30,6 +30,8 @@ Managing dependencies: `uv add <pkg>` / `uv remove <pkg>` (updates the lockfile)
 ## Verify without cloud/model secrets
 
 ```bash
+uv run python -m scripts.local_postgres_deployment_test # production DB config guard
+uv run python -m scripts.verify_postgres_copy_test      # migration digest canonicalization
 uv run python -m scripts.smoke_test          # imports + schemas + validation
 uv run python -m scripts.integration_test    # full loop against local PostgreSQL + fake AI
 uv run python -m scripts.memory_agent_test   # lifecycle/graduation/relapse/API/decision
@@ -390,9 +392,9 @@ capture removes its dependent items and prevents them from later memory recall.
 curl http://localhost:8000/api/v1/health/ready
 ```
 
-Then put Nginx in front and issue HTTPS with Certbot. Provision and migrate the
-database with the active
-[`RDS PostgreSQL runbook`](../../docs/AWS_RDS_POSTGRESQL_DEPLOYMENT.md).
+Then put Nginx in front and issue HTTPS with Certbot. Provision, migrate, back
+up, and restore the database with the active
+[`server-local PostgreSQL runbook`](../../docs/LOCAL_POSTGRESQL_PRODUCTION.md).
 The frontend's `NEXT_PUBLIC_API_BASE_URL` must point at
 the HTTPS backend domain, and that domain must be listed in `CORS_ORIGINS`.
 Production uses one stable API hostname routed to the Oracle San Jose backend.
