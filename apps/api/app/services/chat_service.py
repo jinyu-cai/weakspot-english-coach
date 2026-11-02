@@ -111,6 +111,7 @@ def chat_reply(
     model: Optional[str] = None,
     max_tokens: Optional[int] = 2000,
     trace_id: Optional[str] = None,
+    conversation_id: Optional[str] = None,
     memory_context: Optional[str] = None,
     hidden_practice_instruction: Optional[str] = None,
     reasoning_effort: Optional[str] = DEEP_REASONING_EFFORT,
@@ -130,6 +131,7 @@ def chat_reply(
         model=model,
         provider=llm_provider,
         trace_id=trace_id,
+        conversation_id=conversation_id,
         reasoning_effort=reasoning_effort,
         openrouter_routing_mode=openrouter_routing_mode,
         # Stay inside the browser's 110-second request deadline across schema
@@ -177,6 +179,7 @@ def predict_completion(
     llm_provider: Optional[LLMProviderConfig] = None,
     max_tokens: Optional[int] = 500,
     trace_id: Optional[str] = None,
+    conversation_id: Optional[str] = None,
 ) -> ChatPredictionAI:
     messages = build_predict_messages(history, partial_text, topic)
 
@@ -187,6 +190,7 @@ def predict_completion(
         model=select_text_model("fast", llm_provider),
         provider=llm_provider,
         trace_id=trace_id,
+        conversation_id=conversation_id,
         reasoning_effort=reasoning_effort_for_tier("fast"),
         openrouter_routing_mode="nitro",
     )

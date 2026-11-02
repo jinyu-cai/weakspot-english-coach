@@ -209,9 +209,11 @@ def main() -> None:
         _provider_extra_body,
         _provider_request_model,
         _request_timeout_with_deadline,
+        _stable_opencode_session_id,
         _openrouter_routed_model,
         _response_format_schema,
         _uses_model_studio_qwen,
+        _uses_opencode_go_api,
         _uses_openrouter_api,
         _uses_openrouter_openai_provider,
     )
@@ -383,6 +385,8 @@ def main() -> None:
     assert opencode_go_only_provider is not None
     assert opencode_go_only_provider.model == "deepseek-v4-pro"
     assert opencode_go_only_provider.fast_model == "deepseek-v4-flash"
+    assert _uses_opencode_go_api(opencode_go_only_provider.base_url)
+    assert not _uses_opencode_go_api("https://opencode.ai.attacker.example/zen/go/v1")
     assert _uses_openrouter_api(fixed_openrouter_provider.base_url)
     assert not _uses_openrouter_api("https://openrouter.ai.attacker.example/api/v1")
     assert _uses_openrouter_openai_provider(
@@ -461,6 +465,67 @@ def main() -> None:
     }
     assert "temperature" not in openrouter_create_kwargs
     assert "reasoning_effort" not in openrouter_create_kwargs
+    assert "extra_headers" not in openrouter_create_kwargs
+
+    opencode_create_kwargs = {}
+
+    def create_opencode_completion(**kwargs):
+        opencode_create_kwargs.update(kwargs)
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content='{"value":"ok"}'),
+                    finish_reason="stop",
+                )
+            ],
+            usage=None,
+        )
+
+    opencode_client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=create_opencode_completion)
+        )
+    )
+    with (
+        patch.object(ai_client_module.settings, "use_fake_ai", False),
+        patch.object(ai_client_module, "get_client", return_value=opencode_client),
+    ):
+        parsed_opencode = ai_client_module.parse_with_model(
+            messages=[
+                {"role": "system", "content": "Return a result."},
+                {"role": "user", "content": "Test."},
+            ],
+            response_model=OpenRouterSmokeResult,
+            model=opencode_go_only_provider.fast_model,
+            provider=opencode_go_only_provider,
+            trace_id="request-changes-between-turns",
+            conversation_id="cs_stable_conversation",
+        )
+    assert parsed_opencode.value == "ok"
+    expected_opencode_headers = {
+        "x-opencode-session": _stable_opencode_session_id("cs_stable_conversation"),
+    }
+    assert opencode_create_kwargs["extra_headers"] == expected_opencode_headers
+
+    # A request trace changes on every turn, while the upstream session must
+    # remain stable for the full conversation.
+    opencode_create_kwargs.clear()
+    with (
+        patch.object(ai_client_module.settings, "use_fake_ai", False),
+        patch.object(ai_client_module, "get_client", return_value=opencode_client),
+    ):
+        ai_client_module.parse_with_model(
+            messages=[
+                {"role": "system", "content": "Return a result."},
+                {"role": "user", "content": "Another turn."},
+            ],
+            response_model=OpenRouterSmokeResult,
+            model=opencode_go_only_provider.fast_model,
+            provider=opencode_go_only_provider,
+            trace_id="a-different-request-trace",
+            conversation_id="cs_stable_conversation",
+        )
+    assert opencode_create_kwargs["extra_headers"] == expected_opencode_headers
 
     openrouter_create_kwargs.clear()
     with (
