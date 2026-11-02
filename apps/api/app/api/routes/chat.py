@@ -805,6 +805,7 @@ def send_message(
             # unlimited output latency. Analysis retains its separate budget.
             max_tokens=2000,
             trace_id=request_id,
+            conversation_id=req.sessionId,
             memory_context=memory_pack.get("text"),
             hidden_practice_instruction=build_stealth_probe_instruction(candidate_stealth_probe),
             reasoning_effort=reasoning_effort_for_tier(
@@ -972,6 +973,7 @@ def predict(
             llm_provider=effective_provider,
             max_tokens=None if _unlimited_llm_output(identity) else 500,
             trace_id=request_id,
+            conversation_id=req.sessionId,
         )
 
         logger.info(
@@ -1141,6 +1143,7 @@ def analyze_chat_session(
                 llm_provider=effective_provider,
                 max_tokens=None if _unlimited_llm_output(identity) else identity.max_output_tokens,
                 trace_id=request_id,
+                conversation_id=session_id,
                 memory_context=memory_pack.get("text"),
                 stealth_probes=active_stealth_probes,
                 mission_targets=session.get("missionTargetSkills") or [],

@@ -1,9 +1,10 @@
 # Amazon RDS PostgreSQL Deployment
 
-This is the active production runbook. The backend runs only on the Oracle San
-Jose server; Alibaba ECS is no longer a backend origin. Qwen Model Studio can
-still be configured as an external model, embedding, or speech provider from
-Oracle.
+> Historical provisioning and rollback reference. RDS is the migration source
+> during the move to server-local PostgreSQL and is not the target production
+> architecture. Use the active
+> [server-local PostgreSQL runbook](LOCAL_POSTGRESQL_PRODUCTION.md) for current
+> deployment, backup, restore, and retirement instructions.
 
 ## Production deployment record (2026-08-19)
 

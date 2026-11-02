@@ -169,5 +169,5 @@ uv run python -m scripts.storage_contract_test
 uv run python -m scripts.stealth_input_test
 ```
 
-For production provisioning, TLS, migration, backup, and rollback, use the
-[Amazon RDS PostgreSQL runbook](AWS_RDS_POSTGRESQL_DEPLOYMENT.md).
+For production provisioning, RDS-to-local migration, backup, and rollback, use
+the [server-local PostgreSQL runbook](LOCAL_POSTGRESQL_PRODUCTION.md).

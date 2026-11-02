@@ -7,11 +7,13 @@ works across OpenAI-compatible providers.
 """
 
 from dataclasses import dataclass
+import hashlib
 import json
 import logging
 import time
 from typing import Callable, Literal, Optional, Type, TypeVar
 from urllib.parse import urlparse
+from uuid import uuid4
 
 from openai import OpenAI, OpenAIError
 from openai.lib._pydantic import to_strict_json_schema
@@ -213,6 +215,21 @@ def _uses_openrouter_api(base_url: str) -> bool:
     return hostname == "openrouter.ai"
 
 
+def _uses_opencode_go_api(base_url: str) -> bool:
+    """Match only the official OpenCode API host, not lookalike subdomains."""
+    parsed = urlparse(base_url.strip())
+    return (
+        parsed.scheme.lower() == "https"
+        and (parsed.hostname or "").lower() == "opencode.ai"
+    )
+
+
+def _stable_opencode_session_id(source: str) -> str:
+    """Return an opaque, HTTP-safe session ID without exposing internal IDs."""
+    digest = hashlib.sha256(source.encode("utf-8")).hexdigest()[:32]
+    return f"weakspot-{digest}"
+
+
 def _uses_official_openai_api(base_url: str) -> bool:
     """Match the official OpenAI API host, not arbitrary compatible servers."""
     hostname = (urlparse(base_url.strip()).hostname or "").lower()
@@ -326,6 +343,7 @@ def parse_with_model(
     model: Optional[str] = None,
     provider: Optional[LLMProviderConfig] = None,
     trace_id: Optional[str] = None,
+    conversation_id: Optional[str] = None,
     reasoning_effort: Optional[str] = DEEP_REASONING_EFFORT,
     openrouter_completion_token_budget: Optional[int] = None,
     use_native_structured_output: bool = False,
@@ -339,6 +357,7 @@ def parse_with_model(
     _quota_managed: bool = False,
     _usage_observer: Optional[Callable[[dict[str, int]], None]] = None,
     _deadline_monotonic: Optional[float] = None,
+    _opencode_session_id: Optional[str] = None,
 ) -> T:
     # Local testing: return canned results without calling an external model.
     if settings.use_fake_ai:
@@ -348,6 +367,17 @@ def parse_with_model(
 
     if _deadline_monotonic is None and total_timeout_seconds is not None:
         _deadline_monotonic = time.monotonic() + max(0.1, total_timeout_seconds)
+
+    if _opencode_session_id is None:
+        # Conversation IDs keep multi-turn chat requests grouped together.
+        # Request trace IDs cover one-shot operations, and the random fallback
+        # guarantees the required header is still present for direct callers.
+        session_source = (
+            (conversation_id or "").strip()
+            or (trace_id or "").strip()
+            or uuid4().hex
+        )
+        _opencode_session_id = _stable_opencode_session_id(session_source)
 
     selected_model = model or (provider.model if provider else settings.default_llm_model)
     if not selected_model:
@@ -371,6 +401,7 @@ def parse_with_model(
                     model=official_provider.model,
                     provider=official_provider,
                     trace_id=trace_id,
+                    conversation_id=conversation_id,
                     reasoning_effort=luna_reasoning_effort,
                     openrouter_completion_token_budget=openrouter_completion_token_budget,
                     use_native_structured_output=True,
@@ -383,6 +414,7 @@ def parse_with_model(
                     _prefer_official_luna=False,
                     _usage_observer=_usage_observer,
                     _deadline_monotonic=_deadline_monotonic,
+                    _opencode_session_id=_opencode_session_id,
                 )
             except Exception as exc:
                 logger.warning(
@@ -399,6 +431,7 @@ def parse_with_model(
                     model=selected_model,
                     provider=provider,
                     trace_id=trace_id,
+                    conversation_id=conversation_id,
                     reasoning_effort=luna_reasoning_effort,
                     openrouter_completion_token_budget=openrouter_completion_token_budget,
                     use_native_structured_output=use_native_structured_output,
@@ -411,6 +444,7 @@ def parse_with_model(
                     _prefer_official_luna=False,
                     _usage_observer=_usage_observer,
                     _deadline_monotonic=_deadline_monotonic,
+                    _opencode_session_id=_opencode_session_id,
                 )
 
     if (
@@ -462,6 +496,7 @@ def parse_with_model(
                 model=selected_model,
                 provider=provider,
                 trace_id=trace_id,
+                conversation_id=conversation_id,
                 reasoning_effort=reasoning_effort,
                 openrouter_completion_token_budget=openrouter_completion_token_budget,
                 use_native_structured_output=use_native_structured_output,
@@ -475,6 +510,7 @@ def parse_with_model(
                 _quota_managed=True,
                 _usage_observer=observe_usage,
                 _deadline_monotonic=_deadline_monotonic,
+                _opencode_session_id=_opencode_session_id,
             )
         except Exception:
             try:
@@ -626,6 +662,10 @@ def parse_with_model(
             )
             if extra_body:
                 create_kwargs["extra_body"] = extra_body
+            if _uses_opencode_go_api(base_url):
+                create_kwargs["extra_headers"] = {
+                    "x-opencode-session": _opencode_session_id,
+                }
             while True:
                 if use_reasoning_effort:
                     create_kwargs["reasoning_effort"] = attempt_reasoning_effort

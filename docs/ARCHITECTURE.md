@@ -19,7 +19,7 @@ flowchart TB
 
     API --> Memory[Memory lifecycle + hybrid ranker]
     API --> Learning[Learning state + evidence policy]
-    Memory <--> DB[(Amazon RDS PostgreSQL 16\nus-west-1)]
+    Memory <--> DB[(PostgreSQL 16\nserver-local Docker volume)]
     Learning <--> DB
 
     Voice[OpenAI Realtime API] <-->|WebRTC audio| Web
@@ -30,10 +30,11 @@ Oracle is the only backend origin. Alibaba ECS is no longer deployed or used as
 a standby. Alibaba Model Studio is an external API provider and does not host
 the application.
 
-RDS uses a public endpoint because the backend is outside AWS. Its security
-group permits port 5432 only from the Oracle server's static public `/32`.
-Connections use TLS with `sslmode=verify-full` and the AWS RDS CA bundle. See
-the [RDS production runbook](AWS_RDS_POSTGRESQL_DEPLOYMENT.md).
+PostgreSQL runs beside the API in Docker. Port 5432 is not published on the
+host; the API connects through the private Compose hostname `postgres`. Data
+persists in the explicitly named `weakspot-postgres-data` volume and daily
+custom-format dumps are stored separately on the host. See the
+[server-local PostgreSQL runbook](LOCAL_POSTGRESQL_PRODUCTION.md).
 
 ## Request and transaction flow
 
@@ -43,7 +44,7 @@ sequenceDiagram
     participant A as FastAPI
     participant S as Service rules
     participant R as PostgreSQL repository
-    participant P as RDS PostgreSQL
+    participant P as Local PostgreSQL
     participant M as Model provider
 
     U->>A: authenticated API request
@@ -136,15 +137,16 @@ model prompt grow without bound.
 ## Security and privacy
 
 - Model, database, OAuth, and realtime secrets remain server-side.
-- The RDS master credential is managed by AWS Secrets Manager; the API uses a
-  separate non-superuser login.
-- RDS storage and backups are encrypted, deletion protection is enabled, and
-  CloudFormation replacements retain snapshots.
+- The API and PostgreSQL container receive one dedicated database credential
+  from the protected production environment; the database has no public port.
+- The named database volume survives container replacement. A verified local
+  `pg_dump` runs daily and retains seven days of archives.
 - Authenticated/guest identity overrides any body/path `userId`.
 - BYOK values are request-scoped and never written to PostgreSQL.
 - Memory Center gives learners visibility and correction/forget controls.
 - Recall traces keep bounded audit data and expire through logical filtering
   plus scheduled cleanup.
 
-The former DynamoDB single-table and Alibaba backend architecture is preserved
-only in dated change logs and hackathon material; it is not the current runtime.
+The former DynamoDB, Alibaba backend, and Amazon RDS architectures are preserved
+only in dated migration records and hackathon material; they are not the current
+runtime.

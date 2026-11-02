@@ -125,6 +125,8 @@ key.
 ```bash
 cd apps/api
 docker compose -f docker-compose.local.yml up -d postgres
+uv run python -m scripts.local_postgres_deployment_test
+uv run python -m scripts.verify_postgres_copy_test
 uv run python -m scripts.smoke_test
 uv run python -m scripts.integration_test
 uv run python -m scripts.dedup_test

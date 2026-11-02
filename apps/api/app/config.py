@@ -91,9 +91,9 @@ class Settings(BaseSettings):
     llm_model: str = "deepseek-v4-pro"
     llm_model_fast: str = "ds-v4-flash-0731"
 
-    # PostgreSQL. Production supplies an RDS URL with sslmode=verify-full.
-    # The local default is intentionally non-secret and connects only to the
-    # Docker Compose development database.
+    # PostgreSQL. Production connects to the private `postgres` Compose service;
+    # the local default is intentionally non-secret and connects only to the
+    # Docker Compose development database from the host.
     database_url: str = (
         "postgresql+psycopg://weakspot:weakspot@127.0.0.1:5432/weakspot"
     )
